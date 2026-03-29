@@ -6,13 +6,15 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QComboBox, QFileDialog, QTableWidget, QTableWidgetItem,
     QHeaderView, QMessageBox, QProgressBar, QFrame, QCheckBox,
-    QPlainTextEdit, QApplication, QScrollArea
+    QPlainTextEdit, QApplication, QScrollArea, QProgressDialog
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QColor
 from datetime import datetime
 import json
+import os
 import re
+import warnings
 
 from ui.theme import Theme
 from core.session import session
@@ -44,7 +46,60 @@ class StatementImportScreen(QWidget):
         self.duplicate_count = 0
         self.statement_text = ""  # Store for metadata extraction
         self.fds_created_last_import = 0
+        self._loader = None
         self._build_ui()
+
+    def _show_loader(self, title: str, message: str) -> None:
+        if self._loader is None:
+            self._loader = QProgressDialog(message, "", 0, 0, self)
+            self._loader.setCancelButton(None)
+            self._loader.setWindowModality(Qt.WindowModality.WindowModal)
+            self._loader.setMinimumDuration(0)
+            self._loader.setAutoClose(False)
+            self._loader.setAutoReset(False)
+            self._loader.setWindowTitle(title)
+            self._loader.setStyleSheet(f"""
+                QProgressDialog {{
+                    background: {Theme.SURFACE};
+                    color: {Theme.TEXT_PRIMARY};
+                }}
+                QLabel {{
+                    color: {Theme.TEXT_PRIMARY};
+                    font-size: 13px;
+                    font-weight: 600;
+                    min-width: 320px;
+                }}
+                QProgressBar {{
+                    border: 1px solid {Theme.BORDER};
+                    border-radius: 8px;
+                    background: {Theme.SURFACE_ALT};
+                    text-align: center;
+                    min-height: 14px;
+                }}
+                QProgressBar::chunk {{
+                    background: {Theme.PRIMARY};
+                    border-radius: 7px;
+                }}
+            """)
+        else:
+            self._loader.setWindowTitle(title)
+            self._loader.setLabelText(message)
+
+        self.btn_next.setEnabled(False)
+        self.btn_back.setEnabled(False)
+        self._loader.show()
+        QApplication.processEvents()
+
+    def _update_loader(self, message: str) -> None:
+        if self._loader is not None:
+            self._loader.setLabelText(message)
+            QApplication.processEvents()
+
+    def _hide_loader(self) -> None:
+        if self._loader is not None:
+            self._loader.hide()
+        self.btn_next.setEnabled(True)
+        self.btn_back.setEnabled(self.current_step > 1)
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
@@ -415,6 +470,35 @@ class StatementImportScreen(QWidget):
         ]
         return any(re.search(p, desc) for p in patterns)
 
+    def _extract_fd_reference(self, description: str) -> str | None:
+        text = (description or "").upper()
+        patterns = [
+            r"\bFD\s*(?:NO|NUMBER|A/C|ACCOUNT)?\s*[:\-]?\s*([A-Z0-9\-/]{5,})\b",
+            r"\bTD\s*(?:NO|NUMBER|A/C|ACCOUNT)?\s*[:\-]?\s*([A-Z0-9\-/]{5,})\b",
+            r"\bTERM\s*DEPOSIT\s*(?:NO|NUMBER|A/C|ACCOUNT)?\s*[:\-]?\s*([A-Z0-9\-/]{5,})\b",
+            r"\bTD/([A-Z0-9\-/]{5,})\b",
+        ]
+        for pattern in patterns:
+            m = re.search(pattern, text)
+            if m:
+                return m.group(1).strip("-/ ")[:50]
+        return None
+
+    def _extract_maturity_amount(self, description: str) -> float | None:
+        text = (description or "")
+        patterns = [
+            r"(?i)MATURITY\s*(?:AMT|AMOUNT|VALUE)?\s*[:\-]?\s*\₹?\s*([\d,]+(?:\.\d{1,2})?)",
+            r"(?i)MAT\s*AMT\s*[:\-]?\s*\₹?\s*([\d,]+(?:\.\d{1,2})?)",
+        ]
+        for pattern in patterns:
+            m = re.search(pattern, text)
+            if m:
+                try:
+                    return float(m.group(1).replace(",", ""))
+                except ValueError:
+                    return None
+        return None
+
     def _browse_file(self):
         path, _ = QFileDialog.getOpenFileName(
             self, "Select Bank Statement", "",
@@ -563,6 +647,10 @@ class StatementImportScreen(QWidget):
             if not self.selected_file:
                 QMessageBox.warning(self, "No File", "Please select a statement file."); return
             self.file_type = self.file_type_combo.currentText()
+            self._show_loader(
+                "Processing Statement",
+                "Reading statement and extracting transactions..."
+            )
             try:
                 # Parse statement
                 txns, debug_info = parse_statement_with_debug(
@@ -574,6 +662,7 @@ class StatementImportScreen(QWidget):
                 
                 # Extract and offer to update account metadata
                 try:
+                    self._update_loader("Extracting account metadata from statement...")
                     # Read statement text for metadata extraction
                     if self.file_type.upper() == "PDF":
                         import pdfplumber
@@ -581,7 +670,13 @@ class StatementImportScreen(QWidget):
                             self.statement_text = "\n".join([page.extract_text() or "" for page in pdf.pages])
                     else:
                         import pandas as pd
-                        df = pd.read_excel(self.selected_file)
+                        with warnings.catch_warnings():
+                            warnings.filterwarnings(
+                                "ignore",
+                                message="Workbook contains no default style, apply openpyxl's default",
+                                category=UserWarning,
+                            )
+                            df = pd.read_excel(self.selected_file)
                         self.statement_text = df.to_string()
                     
                     metadata = extract_account_metadata(self.statement_text)
@@ -589,6 +684,7 @@ class StatementImportScreen(QWidget):
                     # Show metadata dialog if any metadata found
                     if any(metadata.values()):
                         acc = get_account(self.selected_account_id)
+                        self._hide_loader()
                         dialog = AccountMetadataDialog(
                             self,
                             self.selected_account_id,
@@ -596,9 +692,15 @@ class StatementImportScreen(QWidget):
                             metadata
                         )
                         dialog.exec()
+                        self._show_loader(
+                            "Processing Statement",
+                            "Validating transactions and checking duplicates..."
+                        )
                 except Exception as e:
                     # Metadata extraction is optional, don't fail import
                     print(f"Metadata extraction failed: {e}")
+
+                self._update_loader("Validating transactions and checking duplicates...")
                 
                 if not txns:
                     self.parsed_transactions = []
@@ -651,6 +753,8 @@ class StatementImportScreen(QWidget):
                 self._show_step(4)
             except Exception as e:
                 QMessageBox.critical(self,"Parse Error", str(e))
+            finally:
+                self._hide_loader()
 
         elif self.current_step == 4:
             if not self.preview_transactions:
@@ -661,60 +765,84 @@ class StatementImportScreen(QWidget):
                 )
                 return
 
+            self._show_loader(
+                "Importing Transactions",
+                "Saving transactions, creating FD entries, and writing import log..."
+            )
+
             imported = 0
             fds_created = 0
-            for idx, txn in enumerate(self.preview_transactions):
-                is_duplicate = self.preview_duplicate_flags[idx] if idx < len(self.preview_duplicate_flags) else False
-                if is_duplicate:
-                    continue
-                cb = self.preview_table.cellWidget(idx, 8)
-                if cb and cb.isChecked():
-                    add_transaction(
-                        account_id=self.selected_account_id,
-                        person_id=self.selected_person_id,
-                        transaction_date=txn["transaction_date"],
-                        transaction_type=txn["transaction_type"],
-                        amount=txn["amount"],
-                        category=txn.get("category"),
-                        mode=txn.get("mode"),
-                        description=txn.get("description"),
-                        balance_after=txn.get("balance_after"),
-                        source="Statement Import"
-                    )
-                    imported += 1
+            try:
+                total_rows = len(self.preview_transactions)
+                for idx, txn in enumerate(self.preview_transactions):
+                    if idx % 25 == 0:
+                        self._update_loader(
+                            f"Importing selected transactions... {idx}/{total_rows} processed"
+                        )
 
-                    if self._is_fd_opening_transaction(txn):
-                        fd_id = add_fd_from_statement(
+                    is_duplicate = self.preview_duplicate_flags[idx] if idx < len(self.preview_duplicate_flags) else False
+                    if is_duplicate:
+                        continue
+                    cb = self.preview_table.cellWidget(idx, 8)
+                    if cb and cb.isChecked():
+                        txn_id = add_transaction(
                             account_id=self.selected_account_id,
                             person_id=self.selected_person_id,
-                            principal_amount=float(txn["amount"]),
-                            start_date=txn["transaction_date"],
-                            tenure_months=None,
-                            interest_rate=None,
-                            compounding_type=None,
-                            maturity_date=None,
-                            maturity_amount=None,
-                            source_description=txn.get("description")
+                            transaction_date=txn["transaction_date"],
+                            transaction_type=txn["transaction_type"],
+                            amount=txn["amount"],
+                            category=txn.get("category"),
+                            mode=txn.get("mode"),
+                            description=txn.get("description"),
+                            balance_after=txn.get("balance_after"),
+                            source="Statement Import"
                         )
-                        if fd_id:
-                            fds_created += 1
+                        imported += 1
 
-            if imported == 0:
-                QMessageBox.warning(
-                    self,
-                    "Nothing Selected",
-                    "Please select at least one transaction to import."
-                )
-                return
+                        if self._is_fd_opening_transaction(txn):
+                            desc = txn.get("description") or ""
+                            fd_ref = self._extract_fd_reference(desc)
+                            maturity_amt = self._extract_maturity_amount(desc)
+                            fd_id = add_fd_from_statement(
+                                account_id=self.selected_account_id,
+                                person_id=self.selected_person_id,
+                                principal_amount=float(txn["amount"]),
+                                start_date=txn["transaction_date"],
+                                fd_reference_no=fd_ref,
+                                tenure_months=None,
+                                interest_rate=None,
+                                compounding_type=None,
+                                maturity_date=None,
+                                maturity_amount=maturity_amt,
+                                maturity_amount_formula=maturity_amt,
+                                maturity_amount_bank=maturity_amt,
+                                expected_interest_amount=(maturity_amt - float(txn["amount"])) if maturity_amt else None,
+                                source_statement_file=os.path.basename(self.selected_file) if self.selected_file else None,
+                                source_transaction_id=txn_id,
+                                source_description=desc
+                            )
+                            if fd_id:
+                                fds_created += 1
 
-            log_import(
-                account_id=self.selected_account_id, person_id=self.selected_person_id,
-                bank_name=self.bank_name,
-                file_name=(self.selected_file.split("/")[-1] or self.selected_file.split("\\")[-1]),
-                file_type=self.file_type, records_imported=imported, status="Success")
-            self.fds_created_last_import = fds_created
-            self.parsed_transactions = self.parsed_transactions[:imported]
-            self._show_step(5)
+                if imported == 0:
+                    QMessageBox.warning(
+                        self,
+                        "Nothing Selected",
+                        "Please select at least one transaction to import."
+                    )
+                    return
+
+                self._update_loader("Finalizing import log and summary...")
+                log_import(
+                    account_id=self.selected_account_id, person_id=self.selected_person_id,
+                    bank_name=self.bank_name,
+                    file_name=(self.selected_file.split("/")[-1] or self.selected_file.split("\\")[-1]),
+                    file_type=self.file_type, records_imported=imported, status="Success")
+                self.fds_created_last_import = fds_created
+                self.parsed_transactions = self.parsed_transactions[:imported]
+                self._show_step(5)
+            finally:
+                self._hide_loader()
 
         elif self.current_step == 5:
             if self.parent_window: self.parent_window.refresh_overview()

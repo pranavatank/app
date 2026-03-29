@@ -7,6 +7,7 @@ from typing import Optional
 
 
 def add_account(person_id: int, bank_name: str, account_type: str,
+                account_holder_name: str = None,
                 account_number_masked: str = None, account_number_full: str = None,
                 ifsc_code: str = None, micr_code: str = None,
                 customer_id: str = None, ckyc_id: str = None,
@@ -22,14 +23,14 @@ def add_account(person_id: int, bank_name: str, account_type: str,
     conn = get_connection()
     cur = conn.execute("""
         INSERT INTO BankAccount
-            (person_id, bank_name, account_type, account_number_masked, account_number_full,
+            (person_id, bank_name, account_holder_name, account_type, account_number_masked, account_number_full,
              ifsc_code, micr_code, customer_id, ckyc_id, branch_name, branch_address,
              communication_address, email_id, phone_no, account_opening_date,
              account_status, currency, nomination_status, nominee_name,
              debit_card_enabled, debit_card_charges, debit_card_effective_from,
              opening_balance, current_balance, interest_rate)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (person_id, bank_name, account_type, account_number_masked, account_number_full,
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (person_id, bank_name, account_holder_name, account_type, account_number_masked, account_number_full,
           ifsc_code, micr_code, customer_id, ckyc_id, branch_name, branch_address,
           communication_address, email_id, phone_no, account_opening_date,
           account_status, currency, nomination_status, nominee_name,
@@ -81,7 +82,7 @@ def update_account(account_id: int, **kwargs) -> None:
     conn = get_connection()
     
     allowed_fields = [
-        "person_id", "bank_name", "account_type", "account_number_masked", "account_number_full",
+        "person_id", "bank_name", "account_holder_name", "account_type", "account_number_masked", "account_number_full",
         "ifsc_code", "micr_code", "customer_id", "ckyc_id", "branch_name", "branch_address",
         "communication_address", "email_id", "phone_no", "account_opening_date",
         "account_status", "currency", "nomination_status", "nominee_name",

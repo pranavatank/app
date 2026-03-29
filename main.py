@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtGui import QFont
+from PyQt6.QtCore import qInstallMessageHandler
 
 from core.database import initialise_database
 from core.auth import is_first_run
@@ -21,7 +22,15 @@ def bootstrap():
     initialise_database()
 
 
+def _qt_message_handler(msg_type, context, message):
+    # Filter known noisy font warning that does not affect rendering.
+    if "QFont::setPointSize: Point size <= 0" in message:
+        return
+    print(message)
+
+
 def launch_app():
+    qInstallMessageHandler(_qt_message_handler)
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setApplicationVersion(APP_VERSION)

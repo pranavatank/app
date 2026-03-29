@@ -9,7 +9,7 @@ from config import DB_PATH, DATA_DIR
 
 
 def _migrate_fixed_deposit_schema_if_needed(conn: sqlite3.Connection, cur: sqlite3.Cursor) -> None:
-    """Upgrade FixedDeposit table to allow NULL unknown values for statement-inferred FDs."""
+    """Upgrade FixedDeposit table for nullable and calculation-method support."""
     info = cur.execute("PRAGMA table_info(FixedDeposit)").fetchall()
     if not info:
         return
@@ -22,6 +22,17 @@ def _migrate_fixed_deposit_schema_if_needed(conn: sqlite3.Connection, cur: sqlit
             break
 
     has_source_description = "source_description" in col_meta
+    has_tenure_years = "tenure_years" in col_meta
+    has_tenure_days = "tenure_days" in col_meta
+    has_fd_reference_no = "fd_reference_no" in col_meta
+    has_expected_interest_amount = "expected_interest_amount" in col_meta
+    has_actual_interest_amount = "actual_interest_amount" in col_meta
+    has_linked_transaction_id = "linked_transaction_id" in col_meta
+    has_source_statement_file = "source_statement_file" in col_meta
+    has_source_transaction_id = "source_transaction_id" in col_meta
+    has_maturity_amount_formula = "maturity_amount_formula" in col_meta
+    has_maturity_amount_bank = "maturity_amount_bank" in col_meta
+    has_maturity_calc_method = "maturity_calc_method" in col_meta
 
     if needs_nullable_migration:
         conn.execute("PRAGMA foreign_keys=OFF")
@@ -32,11 +43,22 @@ def _migrate_fixed_deposit_schema_if_needed(conn: sqlite3.Connection, cur: sqlit
                 person_id           INTEGER NOT NULL REFERENCES Person(person_id),
                 principal_amount    REAL    NOT NULL,
                 start_date          TEXT    NOT NULL,
+                fd_reference_no     TEXT,
+                tenure_years        INTEGER DEFAULT 0,
                 tenure_months       INTEGER,
+                tenure_days         INTEGER DEFAULT 0,
                 interest_rate       REAL,
                 compounding_type    TEXT    DEFAULT 'Quarterly',
                 maturity_date       TEXT,
                 maturity_amount     REAL,
+                maturity_amount_formula REAL,
+                maturity_amount_bank REAL,
+                maturity_calc_method TEXT DEFAULT 'Formula',
+                expected_interest_amount REAL DEFAULT 0,
+                actual_interest_amount REAL DEFAULT 0,
+                linked_transaction_id INTEGER REFERENCES Transactions(transaction_id),
+                source_statement_file TEXT,
+                source_transaction_id INTEGER REFERENCES Transactions(transaction_id),
                 status              TEXT    NOT NULL DEFAULT 'Active',
                 source_description  TEXT
             )
@@ -45,12 +67,21 @@ def _migrate_fixed_deposit_schema_if_needed(conn: sqlite3.Connection, cur: sqlit
         cur.execute("""
             INSERT INTO FixedDeposit_new
                 (fd_id, account_id, person_id, principal_amount, start_date,
-                 tenure_months, interest_rate, compounding_type,
-                 maturity_date, maturity_amount, status, source_description)
+                                 fd_reference_no,
+                                 tenure_years, tenure_months, tenure_days,
+                                 interest_rate, compounding_type,
+                   maturity_date, maturity_amount, maturity_amount_formula,
+                   maturity_amount_bank, maturity_calc_method,
+                                     expected_interest_amount, actual_interest_amount,
+                                     linked_transaction_id, source_statement_file, source_transaction_id,
+                   status, source_description)
             SELECT fd_id, account_id, person_id, principal_amount, start_date,
-                   tenure_months, interest_rate, compounding_type,
-                   maturity_date, maturity_amount, status,
-                   NULL
+                                     NULL,
+                                     0, tenure_months, 0, interest_rate, compounding_type,
+                     maturity_date, maturity_amount, maturity_amount,
+                    maturity_amount, 'Formula',
+                              0, 0, NULL, NULL, NULL,
+                     status, NULL
             FROM FixedDeposit
         """)
 
@@ -61,6 +92,39 @@ def _migrate_fixed_deposit_schema_if_needed(conn: sqlite3.Connection, cur: sqlit
 
     if not has_source_description:
         cur.execute("ALTER TABLE FixedDeposit ADD COLUMN source_description TEXT")
+    if not has_tenure_years:
+        cur.execute("ALTER TABLE FixedDeposit ADD COLUMN tenure_years INTEGER DEFAULT 0")
+    if not has_tenure_days:
+        cur.execute("ALTER TABLE FixedDeposit ADD COLUMN tenure_days INTEGER DEFAULT 0")
+    if not has_fd_reference_no:
+        cur.execute("ALTER TABLE FixedDeposit ADD COLUMN fd_reference_no TEXT")
+    if not has_expected_interest_amount:
+        cur.execute("ALTER TABLE FixedDeposit ADD COLUMN expected_interest_amount REAL DEFAULT 0")
+    if not has_actual_interest_amount:
+        cur.execute("ALTER TABLE FixedDeposit ADD COLUMN actual_interest_amount REAL DEFAULT 0")
+    if not has_linked_transaction_id:
+        cur.execute("ALTER TABLE FixedDeposit ADD COLUMN linked_transaction_id INTEGER")
+    if not has_source_statement_file:
+        cur.execute("ALTER TABLE FixedDeposit ADD COLUMN source_statement_file TEXT")
+    if not has_source_transaction_id:
+        cur.execute("ALTER TABLE FixedDeposit ADD COLUMN source_transaction_id INTEGER")
+    if not has_maturity_amount_formula:
+        cur.execute("ALTER TABLE FixedDeposit ADD COLUMN maturity_amount_formula REAL")
+    if not has_maturity_amount_bank:
+        cur.execute("ALTER TABLE FixedDeposit ADD COLUMN maturity_amount_bank REAL")
+    if not has_maturity_calc_method:
+        cur.execute("ALTER TABLE FixedDeposit ADD COLUMN maturity_calc_method TEXT DEFAULT 'Formula'")
+
+    cur.execute("""
+        UPDATE FixedDeposit
+        SET tenure_years = COALESCE(tenure_years, 0),
+            tenure_days = COALESCE(tenure_days, 0),
+            maturity_amount_formula = COALESCE(maturity_amount_formula, maturity_amount),
+            maturity_amount_bank = COALESCE(maturity_amount_bank, maturity_amount),
+            maturity_calc_method = COALESCE(maturity_calc_method, 'Formula'),
+            expected_interest_amount = COALESCE(expected_interest_amount, 0),
+            actual_interest_amount = COALESCE(actual_interest_amount, 0)
+    """)
 
 
 def get_connection() -> sqlite3.Connection:
@@ -108,6 +172,7 @@ def initialise_database() -> None:
             account_id          INTEGER PRIMARY KEY AUTOINCREMENT,
             person_id           INTEGER NOT NULL REFERENCES Person(person_id),
             bank_name           TEXT    NOT NULL,
+            account_holder_name TEXT,
             account_type        TEXT    NOT NULL,
             account_number_masked TEXT,
             account_number_full TEXT,
@@ -161,11 +226,22 @@ def initialise_database() -> None:
             person_id         INTEGER NOT NULL REFERENCES Person(person_id),
             principal_amount  REAL    NOT NULL,
             start_date        TEXT    NOT NULL,
+            fd_reference_no   TEXT,
+            tenure_years      INTEGER DEFAULT 0,
             tenure_months     INTEGER,
+            tenure_days       INTEGER DEFAULT 0,
             interest_rate     REAL,
             compounding_type  TEXT    DEFAULT 'Quarterly',
             maturity_date     TEXT,
             maturity_amount   REAL,
+            maturity_amount_formula REAL,
+            maturity_amount_bank REAL,
+            maturity_calc_method TEXT DEFAULT 'Formula',
+            expected_interest_amount REAL DEFAULT 0,
+            actual_interest_amount REAL DEFAULT 0,
+            linked_transaction_id INTEGER REFERENCES Transactions(transaction_id),
+            source_statement_file TEXT,
+            source_transaction_id INTEGER REFERENCES Transactions(transaction_id),
             status            TEXT    NOT NULL DEFAULT 'Active',
             source_description TEXT
         )
@@ -233,6 +309,32 @@ def initialise_database() -> None:
             import_date      TEXT    NOT NULL DEFAULT (datetime('now')),
             records_imported INTEGER NOT NULL DEFAULT 0,
             status           TEXT    NOT NULL DEFAULT 'Success'
+        )
+    """)
+
+    # ── IncomeExpectation ────────────────────────────────────────────────────
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS IncomeExpectation (
+            expectation_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            person_id INTEGER NOT NULL REFERENCES Person(person_id),
+            account_id INTEGER NOT NULL REFERENCES BankAccount(account_id),
+            income_type TEXT NOT NULL,
+            expected_amount REAL NOT NULL,
+            expected_date TEXT NOT NULL,
+            frequency TEXT NOT NULL,
+            financial_year TEXT NOT NULL,
+            actual_transaction_id INTEGER REFERENCES Transactions(transaction_id),
+            notes TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        )
+    """)
+
+    # ── Bank ─────────────────────────────────────────────────────────────────
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS Bank (
+            bank_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            bank_name TEXT NOT NULL UNIQUE,
+            created_at TEXT DEFAULT (datetime('now'))
         )
     """)
 

@@ -5,6 +5,7 @@ engines/statement_parser.py — PDF/Excel bank statement import (Phase 6)
 import json
 import os
 import re
+import warnings
 from datetime import datetime
 from typing import List, Dict, Optional
 from urllib import error as url_error
@@ -274,10 +275,16 @@ class GenericExcelParser(BankTemplate):
         
         try:
             # Try reading with different engines
-            try:
-                df = pd.read_excel(file_path, engine='openpyxl')
-            except Exception:
-                df = pd.read_excel(file_path)
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore",
+                    message="Workbook contains no default style, apply openpyxl's default",
+                    category=UserWarning,
+                )
+                try:
+                    df = pd.read_excel(file_path, engine='openpyxl')
+                except Exception:
+                    df = pd.read_excel(file_path)
             
             # Common column name variations across banks.
             date_cols = [

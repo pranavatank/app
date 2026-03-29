@@ -28,6 +28,7 @@ _NAV_ITEMS = [
     ("Overview",         "🏠"),
     ("Accounts",         "🏛️"),
     ("Transactions",     "💸"),
+    ("Income Management", "💰"),
     ("Fixed Deposits",   "🏦"),
     ("Statement Import", "📄"),
     ("Tax",              "📋"),
@@ -274,6 +275,10 @@ class DashboardScreen(QMainWindow):
         from ui.transactions_screen import TransactionsScreen
         self.transactions_page = TransactionsScreen(self)
         self.stack.addWidget(self.transactions_page)
+
+        from ui.income_management_screen import IncomeManagementScreen
+        self.income_page = IncomeManagementScreen(self)
+        self.stack.addWidget(self.income_page)
 
         from ui.fixed_deposits_screen import FixedDepositsScreen
         self.fd_page = FixedDepositsScreen(self)
@@ -533,6 +538,7 @@ class DashboardScreen(QMainWindow):
             lambda: self._refresh_overview(),
             lambda: self.accounts_page._load_accounts(),
             lambda: self.transactions_page.refresh(),
+            lambda: self.income_page.refresh(),
             lambda: self.fd_page.refresh(),
             lambda: self.import_page.refresh(),
             lambda: self.tax_page.refresh(),

@@ -14,7 +14,7 @@ from PyQt6.QtGui import QFont
 from ui.theme import Theme
 from models.bank_account import get_all_accounts, delete_account
 from models.person import get_all_persons
-from ui.dialogs.account_dialog import AccountDialog
+from ui.dialogs.account_dialog_improved import AccountDialog
 
 
 class AccountsScreen(QWidget):
@@ -44,6 +44,20 @@ class AccountsScreen(QWidget):
         btn_add.setObjectName("primaryBtn")
         btn_add.setFixedHeight(38)
         btn_add.setFixedWidth(140)
+        btn_add.setStyleSheet(f"""
+            QPushButton {{
+                background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
+                    stop:0 {Theme.PRIMARY}, stop:1 {Theme.PRIMARY_DARK});
+                color: white;
+                border: none;
+                border-radius: 8px;
+                font-size: 14px;
+                font-weight: 600;
+            }}
+            QPushButton:hover {{
+                background: {Theme.PRIMARY_DARK};
+            }}
+        """)
         btn_add.clicked.connect(self._on_add_account)
         header.addWidget(btn_add)
 
@@ -233,36 +247,68 @@ class AccountsScreen(QWidget):
 
 
 class AccountDetailsDialog(QDialog):
-    """Detailed view of account with all information."""
+    """Detailed view of account with all information - matching settings dialog style."""
 
     def __init__(self, parent, account: dict):
         super().__init__(parent)
         self.account = account
         self.setWindowTitle(f"{account['bank_name']} - Account Details")
-        self.setMinimumSize(750, 650)
+        self.setMinimumSize(700, 650)
         self._build_ui()
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
-        layout.setSpacing(20)
+        layout.setSpacing(0)
         layout.setContentsMargins(0, 0, 0, 0)
 
         # Header with gradient
-        header_frame = QFrame()
-        header_frame.setStyleSheet(f"""
+        header = self._create_header()
+        layout.addWidget(header)
+
+        # Scroll area for tabs
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setStyleSheet(f"background: {Theme.BG}; border: none;")
+
+        content = QWidget()
+        content.setStyleSheet(f"background: {Theme.BG};")
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(24, 20, 24, 20)
+        content_layout.setSpacing(16)
+
+        # Tabs for organized display
+        from PyQt6.QtWidgets import QTabWidget
+        tabs = QTabWidget()
+        tabs.addTab(self._create_basic_info_tab(), "Basic Info")
+        tabs.addTab(self._create_bank_details_tab(), "Bank Details")
+        tabs.addTab(self._create_contact_tab(), "Contact & Nomination")
+        tabs.addTab(self._create_debit_card_tab(), "Debit Card")
+        content_layout.addWidget(tabs)
+
+        scroll.setWidget(content)
+        layout.addWidget(scroll)
+
+        # Footer with action buttons
+        footer = self._create_footer()
+        layout.addWidget(footer)
+
+    def _create_header(self) -> QFrame:
+        header = QFrame()
+        header.setStyleSheet(f"""
             QFrame {{
                 background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
                     stop:0 {Theme.PRIMARY}, stop:1 {Theme.PRIMARY_DARK});
                 border-radius: 0;
             }}
         """)
-        header_frame.setFixedHeight(80)
+        header.setFixedHeight(70)
         
-        header_layout = QHBoxLayout(header_frame)
+        header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(28, 0, 28, 0)
         
         title = QLabel(f"🏦 {self.account['bank_name']}")
-        title.setFont(QFont("Segoe UI", 18, QFont.Weight.Bold))
+        title.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
         title.setStyleSheet("color: white; background: transparent;")
         header_layout.addWidget(title)
         header_layout.addStretch()
@@ -279,104 +325,134 @@ class AccountDetailsDialog(QDialog):
         """)
         header_layout.addWidget(status_label)
         
-        layout.addWidget(header_frame)
+        return header
 
-        # Scroll area for details
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setStyleSheet(f"background: {Theme.BG}; border: none;")
+    def _create_footer(self) -> QFrame:
+        footer = QFrame()
+        footer.setStyleSheet(f"""
+            QFrame {{
+                background: {Theme.SURFACE};
+                border-top: 1px solid {Theme.BORDER};
+            }}
+        """)
+        footer.setFixedHeight(70)
 
-        content = QWidget()
-        content.setStyleSheet(f"background: {Theme.BG};")
-        content_layout = QVBoxLayout(content)
-        content_layout.setSpacing(16)
-        content_layout.setContentsMargins(28, 24, 28, 24)
+        layout = QHBoxLayout(footer)
+        layout.setContentsMargins(28, 15, 28, 15)
+        layout.addStretch()
 
-        # Account Information Section
-        content_layout.addWidget(self._create_section("Account Information", [
+        btn_edit = QPushButton("✏️ Edit")
+        btn_edit.setObjectName("primaryBtn")
+        btn_edit.setFixedHeight(40)
+        btn_edit.setFixedWidth(110)
+        btn_edit.clicked.connect(self._on_edit)
+        layout.addWidget(btn_edit)
+
+        btn_delete = QPushButton("🗑️ Delete")
+        btn_delete.setObjectName("dangerBtn")
+        btn_delete.setFixedHeight(40)
+        btn_delete.setFixedWidth(110)
+        btn_delete.clicked.connect(self._on_delete)
+        layout.addWidget(btn_delete)
+
+        btn_close = QPushButton("Close")
+        btn_close.setObjectName("secondaryBtn")
+        btn_close.setFixedHeight(40)
+        btn_close.setFixedWidth(110)
+        btn_close.clicked.connect(self.reject)
+        layout.addWidget(btn_close)
+
+        return footer
+
+    def _create_basic_info_tab(self) -> QWidget:
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setSpacing(16)
+        layout.setContentsMargins(10, 10, 10, 10)
+
+        holder_name = self.account.get('account_holder_name') or self.account.get('person_name', '—')
+        
+        layout.addWidget(self._create_info_section("Account Information", [
             ("Account Type", self.account.get('account_type', '—')),
-            ("Account Holder", self.account.get('person_name', '—')),
+            ("Account Holder (Person)", self.account.get('person_name', '—')),
+            ("Account Holder Name (Bank)", holder_name),
             ("Account Number", self.account.get('account_number_masked', '—')),
             ("Customer ID", self.account.get('customer_id', '—')),
             ("CKYC ID", self.account.get('ckyc_id', '—')),
             ("Opening Date", self.account.get('account_opening_date', '—')),
             ("Currency", self.account.get('currency', 'INR')),
+            ("Status", self.account.get('account_status', 'Active')),
         ]))
 
-        # Bank Details Section
-        content_layout.addWidget(self._create_section("Bank Details", [
+        layout.addWidget(self._create_info_section("Balance Information", [
+            ("Opening Balance", f"₹ {self.account.get('opening_balance', 0):,.2f}"),
+            ("Current Balance", f"₹ {self.account.get('current_balance', 0):,.2f}"),
+            ("Interest Rate", f"{self.account.get('interest_rate', 0):.2f}%"),
+        ]))
+
+        layout.addStretch()
+        return widget
+
+    def _create_bank_details_tab(self) -> QWidget:
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setSpacing(16)
+        layout.setContentsMargins(10, 10, 10, 10)
+
+        layout.addWidget(self._create_info_section("Bank Details", [
             ("IFSC Code", self.account.get('ifsc_code', '—')),
             ("MICR Code", self.account.get('micr_code', '—')),
             ("Branch Name", self.account.get('branch_name', '—')),
             ("Branch Address", self.account.get('branch_address', '—'), True),
         ]))
 
-        # Balance Information
-        content_layout.addWidget(self._create_section("Balance Information", [
-            ("Opening Balance", f"₹ {self.account.get('opening_balance', 0):,.2f}"),
-            ("Current Balance", f"₹ {self.account.get('current_balance', 0):,.2f}"),
-            ("Interest Rate", f"{self.account.get('interest_rate', 0):.2f}%"),
-        ]))
+        layout.addStretch()
+        return widget
 
-        # Contact Information
+    def _create_contact_tab(self) -> QWidget:
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setSpacing(16)
+        layout.setContentsMargins(10, 10, 10, 10)
+
         if self.account.get('email_id') or self.account.get('phone_no') or self.account.get('communication_address'):
-            content_layout.addWidget(self._create_section("Contact Information", [
+            layout.addWidget(self._create_info_section("Contact Information", [
                 ("Email", self.account.get('email_id', '—')),
                 ("Phone", self.account.get('phone_no', '—')),
                 ("Address", self.account.get('communication_address', '—'), True),
             ]))
 
-        # Nomination Details
         if self.account.get('nomination_status'):
-            content_layout.addWidget(self._create_section("Nomination", [
+            layout.addWidget(self._create_info_section("Nomination", [
                 ("Status", self.account.get('nomination_status', '—')),
                 ("Nominee Name", self.account.get('nominee_name', '—')),
             ]))
 
-        # Debit Card Details
+        layout.addStretch()
+        return widget
+
+    def _create_debit_card_tab(self) -> QWidget:
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setSpacing(16)
+        layout.setContentsMargins(10, 10, 10, 10)
+
         if self.account.get('debit_card_enabled'):
-            content_layout.addWidget(self._create_section("Debit Card", [
+            layout.addWidget(self._create_info_section("Debit Card", [
                 ("Status", "Enabled"),
                 ("Annual Charges", f"₹ {self.account.get('debit_card_charges', 0):,.2f}"),
                 ("Effective From", self.account.get('debit_card_effective_from', '—')),
             ]))
+        else:
+            no_card = QLabel("💳 No debit card enabled for this account")
+            no_card.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            no_card.setStyleSheet(f"color: {Theme.TEXT_MUTED}; font-size: 14px; padding: 40px;")
+            layout.addWidget(no_card)
 
-        content_layout.addStretch()
-        scroll.setWidget(content)
-        layout.addWidget(scroll)
+        layout.addStretch()
+        return widget
 
-        # Action buttons
-        btn_frame = QFrame()
-        btn_frame.setStyleSheet(f"background: {Theme.SURFACE}; border-top: 1px solid {Theme.BORDER};")
-        btn_layout = QHBoxLayout(btn_frame)
-        btn_layout.setContentsMargins(28, 16, 28, 16)
-        btn_layout.addStretch()
-
-        btn_edit = QPushButton("✏️ Edit")
-        btn_edit.setObjectName("primaryBtn")
-        btn_edit.setFixedHeight(38)
-        btn_edit.setFixedWidth(100)
-        btn_edit.clicked.connect(self._on_edit)
-        btn_layout.addWidget(btn_edit)
-
-        btn_delete = QPushButton("🗑️ Delete")
-        btn_delete.setObjectName("dangerBtn")
-        btn_delete.setFixedHeight(38)
-        btn_delete.setFixedWidth(100)
-        btn_delete.clicked.connect(self._on_delete)
-        btn_layout.addWidget(btn_delete)
-
-        btn_close = QPushButton("Close")
-        btn_close.setObjectName("secondaryBtn")
-        btn_close.setFixedHeight(38)
-        btn_close.setFixedWidth(100)
-        btn_close.clicked.connect(self.reject)
-        btn_layout.addWidget(btn_close)
-
-        layout.addWidget(btn_frame)
-
-    def _create_section(self, title: str, fields: list) -> QFrame:
+    def _create_info_section(self, title: str, fields: list) -> QFrame:
         """Create a section with title and fields."""
         section = QFrame()
         section.setStyleSheet(f"""
@@ -405,41 +481,29 @@ class AccountDetailsDialog(QDialog):
         layout.addWidget(div)
 
         # Fields
+        from PyQt6.QtWidgets import QFormLayout
+        form = QFormLayout()
+        form.setSpacing(10)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        
         for field in fields:
-            if len(field) == 3 and field[2]:  # Multiline field
-                field_layout = QVBoxLayout()
-                field_layout.setSpacing(6)
-                
-                label = QLabel(f"{field[0]}:")
-                label.setStyleSheet(f"color: {Theme.TEXT_SECONDARY}; font-size: 12px; font-weight: 600; background: transparent;")
-                field_layout.addWidget(label)
-                
-                value = QLabel(field[1])
-                value.setStyleSheet(f"color: {Theme.TEXT_PRIMARY}; font-size: 13px; background: transparent;")
+            label = QLabel(f"{field[0]}:")
+            label.setStyleSheet(f"color: {Theme.TEXT_SECONDARY}; font-size: 12px; font-weight: 600; background: transparent;")
+            
+            value = QLabel(field[1])
+            value.setStyleSheet(f"color: {Theme.TEXT_PRIMARY}; font-size: 13px; background: transparent;")
+            if len(field) == 3 and field[2]:  # Multiline
                 value.setWordWrap(True)
-                field_layout.addWidget(value)
-                
-                layout.addLayout(field_layout)
-            else:
-                field_layout = QHBoxLayout()
-                
-                label = QLabel(f"{field[0]}:")
-                label.setStyleSheet(f"color: {Theme.TEXT_SECONDARY}; font-size: 12px; font-weight: 600; background: transparent;")
-                label.setFixedWidth(160)
-                field_layout.addWidget(label)
-                
-                value = QLabel(field[1])
-                value.setStyleSheet(f"color: {Theme.TEXT_PRIMARY}; font-size: 13px; background: transparent;")
-                field_layout.addWidget(value)
-                field_layout.addStretch()
-                
-                layout.addLayout(field_layout)
-
+            
+            form.addRow(label, value)
+        
+        layout.addLayout(form)
         return section
 
     def _on_edit(self):
         """Edit account."""
         from models.person import get_all_persons
+        from ui.dialogs.account_dialog import AccountDialog
         persons = get_all_persons()
         dialog = AccountDialog(self, persons, self.account)
         if dialog.exec() == QDialog.DialogCode.Accepted:

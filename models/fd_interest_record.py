@@ -9,11 +9,14 @@ def upsert_fd_interest(fd_id: int, financial_year: str,
                        interest_earned: float, assessment_year: str) -> None:
     """Insert or replace an FD interest record for a given FY."""
     conn = get_connection()
+    conn.execute(
+        "DELETE FROM FDInterestRecord WHERE fd_id = ? AND financial_year = ?",
+        (fd_id, financial_year)
+    )
     conn.execute("""
         INSERT INTO FDInterestRecord
             (fd_id, financial_year, interest_earned, assessment_year)
         VALUES (?, ?, ?, ?)
-        ON CONFLICT DO NOTHING
     """, (fd_id, financial_year, interest_earned, assessment_year))
     conn.commit()
     conn.close()
