@@ -1,9 +1,10 @@
 """
 models/bank_account.py — CRUD operations for the BankAccount table.
+FIX: update_account now allows setting fields to None (clearing optional fields).
+FIX: update_account_balance alias added for balance_engine compatibility.
 """
 
 from core.database import get_connection
-from typing import Optional
 
 
 def add_account(person_id: int, bank_name: str, account_type: str,
@@ -23,16 +24,20 @@ def add_account(person_id: int, bank_name: str, account_type: str,
     conn = get_connection()
     cur = conn.execute("""
         INSERT INTO BankAccount
-            (person_id, bank_name, account_holder_name, account_type, account_number_masked, account_number_full,
-             ifsc_code, micr_code, customer_id, ckyc_id, branch_name, branch_address,
-             communication_address, email_id, phone_no, account_opening_date,
+            (person_id, bank_name, account_holder_name, account_type,
+             account_number_masked, account_number_full,
+             ifsc_code, micr_code, customer_id, ckyc_id,
+             branch_name, branch_address, communication_address,
+             email_id, phone_no, account_opening_date,
              account_status, currency, nomination_status, nominee_name,
              debit_card_enabled, debit_card_charges, debit_card_effective_from,
              opening_balance, current_balance, interest_rate)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (person_id, bank_name, account_holder_name, account_type, account_number_masked, account_number_full,
-          ifsc_code, micr_code, customer_id, ckyc_id, branch_name, branch_address,
-          communication_address, email_id, phone_no, account_opening_date,
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    """, (person_id, bank_name, account_holder_name, account_type,
+          account_number_masked, account_number_full,
+          ifsc_code, micr_code, customer_id, ckyc_id,
+          branch_name, branch_address, communication_address,
+          email_id, phone_no, account_opening_date,
           account_status, currency, nomination_status, nominee_name,
           debit_card_enabled, debit_card_charges, debit_card_effective_from,
           opening_balance, opening_balance, interest_rate))
@@ -43,19 +48,16 @@ def add_account(person_id: int, bank_name: str, account_type: str,
 
 
 def get_accounts_for_person(person_id: int) -> list[dict]:
-    """Return all accounts belonging to a person."""
     conn = get_connection()
-    rows = conn.execute("""
-        SELECT * FROM BankAccount
-        WHERE person_id = ?
-        ORDER BY bank_name
-    """, (person_id,)).fetchall()
+    rows = conn.execute(
+        "SELECT * FROM BankAccount WHERE person_id = ? ORDER BY bank_name",
+        (person_id,)
+    ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
 
 def get_all_accounts() -> list[dict]:
-    """Return all accounts across all persons."""
     conn = get_connection()
     rows = conn.execute("""
         SELECT ba.*, p.full_name AS person_name
@@ -68,7 +70,6 @@ def get_all_accounts() -> list[dict]:
 
 
 def get_account(account_id: int) -> dict | None:
-    """Return a single account by ID."""
     conn = get_connection()
     row = conn.execute(
         "SELECT * FROM BankAccount WHERE account_id = ?", (account_id,)
@@ -77,38 +78,51 @@ def get_account(account_id: int) -> dict | None:
     return dict(row) if row else None
 
 
+_UPDATABLE_FIELDS = [
+    "person_id", "bank_name", "account_holder_name", "account_type",
+    "account_number_masked", "account_number_full",
+    "ifsc_code", "micr_code", "customer_id", "ckyc_id",
+    "branch_name", "branch_address", "communication_address",
+    "email_id", "phone_no", "account_opening_date",
+    "account_status", "currency", "nomination_status", "nominee_name",
+    "debit_card_enabled", "debit_card_charges", "debit_card_effective_from",
+    "opening_balance", "interest_rate",
+]
+
+
 def update_account(account_id: int, **kwargs) -> None:
-    """Update account details with any provided fields."""
+    """
+    Update account fields. Explicitly includes fields in kwargs even when None,
+    so optional fields can be cleared.
+    """
     conn = get_connection()
-    
-    allowed_fields = [
-        "person_id", "bank_name", "account_holder_name", "account_type", "account_number_masked", "account_number_full",
-        "ifsc_code", "micr_code", "customer_id", "ckyc_id", "branch_name", "branch_address",
-        "communication_address", "email_id", "phone_no", "account_opening_date",
-        "account_status", "currency", "nomination_status", "nominee_name",
-        "debit_card_enabled", "debit_card_charges", "debit_card_effective_from",
-        "opening_balance", "interest_rate"
-    ]
-    
     updates = []
-    params = []
-    
-    for field in allowed_fields:
-        if field in kwargs and kwargs[field] is not None:
+    params  = []
+    for field in _UPDATABLE_FIELDS:
+        if field in kwargs:
             updates.append(f"{field} = ?")
             params.append(kwargs[field])
-    
     if updates:
         params.append(account_id)
-        query = f"UPDATE BankAccount SET {', '.join(updates)} WHERE account_id = ?"
-        conn.execute(query, params)
+        conn.execute(
+            f"UPDATE BankAccount SET {', '.join(updates)} WHERE account_id = ?",
+            params
+        )
         conn.commit()
-    
     conn.close()
 
 
+def update_balance(account_id: int, new_balance: float) -> None:
+    """Update current_balance (simple alias used by some screens)."""
+    _set_balance(account_id, new_balance)
+
+
 def update_account_balance(account_id: int, new_balance: float) -> None:
-    """Update the current balance of an account."""
+    """Update current_balance — used by balance_engine."""
+    _set_balance(account_id, new_balance)
+
+
+def _set_balance(account_id: int, new_balance: float) -> None:
     conn = get_connection()
     conn.execute(
         "UPDATE BankAccount SET current_balance = ? WHERE account_id = ?",
@@ -119,32 +133,22 @@ def update_account_balance(account_id: int, new_balance: float) -> None:
 
 
 def delete_account(account_id: int) -> None:
-    """Delete an account and all associated records."""
+    """Delete account and all associated data."""
     conn = get_connection()
-    
-    # Delete associated records first (due to foreign key constraints)
-    # Delete transactions
     conn.execute("DELETE FROM Transactions WHERE account_id = ?", (account_id,))
-    
-    # Delete fixed deposits
-    conn.execute("DELETE FROM FDInterestRecord WHERE fd_id IN (SELECT fd_id FROM FixedDeposit WHERE account_id = ?)", (account_id,))
+    conn.execute("""
+        DELETE FROM FDInterestRecord
+        WHERE fd_id IN (SELECT fd_id FROM FixedDeposit WHERE account_id = ?)
+    """, (account_id,))
     conn.execute("DELETE FROM FixedDeposit WHERE account_id = ?", (account_id,))
-    
-    # Delete savings interest records
     conn.execute("DELETE FROM SavingsInterestRecord WHERE account_id = ?", (account_id,))
-    
-    # Delete statement import logs
     conn.execute("DELETE FROM StatementImportLog WHERE account_id = ?", (account_id,))
-    
-    # Finally delete the account
     conn.execute("DELETE FROM BankAccount WHERE account_id = ?", (account_id,))
-    
     conn.commit()
     conn.close()
 
 
 def get_total_balance(person_id: int = None) -> float:
-    """Return total balance across all accounts, optionally filtered by person."""
     conn = get_connection()
     if person_id:
         row = conn.execute(

@@ -103,16 +103,16 @@ def delete_transaction(transaction_id: int) -> None:
 
 # ── Summary Queries ───────────────────────────────────────────────────────────
 
-def get_income_total(person_id: int = None, financial_year: str = None) -> float:
-    return _sum_by_type("Income", person_id, financial_year)
+def get_income_total(person_id: int = None, financial_year: str = None, category: str = None) -> float:
+    return _sum_by_type("Income", person_id, financial_year, category)
 
 
-def get_expense_total(person_id: int = None, financial_year: str = None) -> float:
-    return _sum_by_type("Expense", person_id, financial_year)
+def get_expense_total(person_id: int = None, financial_year: str = None, category: str = None) -> float:
+    return _sum_by_type("Expense", person_id, financial_year, category)
 
 
 def _sum_by_type(txn_type: str, person_id: int = None,
-                 financial_year: str = None) -> float:
+                 financial_year: str = None, category: str = None) -> float:
     query  = "SELECT SUM(amount) AS total FROM Transactions WHERE transaction_type = ?"
     params = [txn_type]
 
@@ -124,6 +124,10 @@ def _sum_by_type(txn_type: str, person_id: int = None,
         start, end = fy_date_range(financial_year)
         query += " AND transaction_date BETWEEN ? AND ?"
         params.extend([start.isoformat(), end.isoformat()])
+
+    if category:
+        query += " AND category = ?"
+        params.append(category)
 
     conn = get_connection()
     row = conn.execute(query, params).fetchone()

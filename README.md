@@ -33,6 +33,14 @@ A fully offline, encrypted desktop application for managing personal and family 
 - 🔍 Duplicate detection
 - 🏷️ Smart category suggestions
 
+### AIS/TIS Import
+- 📑 Import Annual Information Statement (AIS) from Income Tax portal
+- 📋 Import Tax Information Statement (TIS) from Income Tax portal
+- 🔄 Auto-extract salary, interest, dividend, rental income
+- ⚖️ Compare actual (IT portal) vs expected (app) income data
+- 📊 Visual comparison with difference highlighting
+- 💡 Identify income discrepancies for tax filing
+
 ### Reports & Analytics
 - 📈 Income vs Expense charts
 - 🥧 Category-wise expense breakdown
@@ -93,7 +101,7 @@ Financial App/
 │   ├── encryption.py       # AES-256 encryption
 │   └── session.py          # Session management
 │
-├── models/                  # Data access layer (9 tables)
+├── models/                  # Data access layer (10 tables)
 │   ├── person.py
 │   ├── bank_account.py
 │   ├── transaction.py
@@ -102,12 +110,14 @@ Financial App/
 │   ├── savings_interest.py
 │   ├── tax_profile.py
 │   ├── statement_import_log.py
+│   ├── ais_tis_import.py
 │   └── auth_security.py
 │
 ├── engines/                 # Business logic
 │   ├── interest_engine.py  # FD & savings interest
 │   ├── tax_engine.py       # Tax calculations
 │   ├── statement_parser.py # Statement import
+│   ├── ais_tis_parser.py   # AIS/TIS JSON parser
 │   └── balance_engine.py   # Balance calculations
 │
 ├── ui/                      # User interface
@@ -116,6 +126,7 @@ Financial App/
 │   ├── transactions_screen.py
 │   ├── fixed_deposits_screen.py
 │   ├── statement_import_screen.py
+│   ├── ais_tis_import_screen.py
 │   ├── tax_screen.py
 │   ├── reports_screen.py
 │   ├── settings_screen.py
@@ -138,9 +149,10 @@ Financial App/
 2. **💸 Transactions** - Manage income/expenses
 3. **🏦 Fixed Deposits** - Track FDs and interest
 4. **📄 Statement Import** - Import bank statements
-5. **📋 Tax** - Calculate taxes
-6. **📊 Reports** - View analytics
-7. **⚙️ Settings** - Security & preferences
+5. **📑 AIS/TIS Import** - Import Income Tax portal data
+6. **📋 Tax** - Calculate taxes
+7. **📊 Reports** - View analytics
+8. **⚙️ Settings** - Security & preferences
 
 ### Key Workflows
 
@@ -193,6 +205,25 @@ Modes:
 5. Click "Calculate Tax"
 6. View old vs new regime comparison
 
+#### Importing AIS/TIS from Income Tax Portal
+1. Download AIS/TIS JSON from Income Tax e-filing portal
+   - Login to https://www.incometax.gov.in/
+   - Go to "Annual Information Statement (AIS)" or "Tax Information Statement (TIS)"
+   - Download JSON file for the financial year
+2. Go to AIS/TIS Import screen in the app
+3. Select person from top bar
+4. Click "Import JSON"
+5. Select downloaded JSON file
+6. View comparison table:
+   - **Actual (AIS/TIS)**: Income reported to IT department
+   - **Expected (App)**: Income tracked in your app
+   - **Difference**: Highlights discrepancies
+   - **Status**: ✓ Match / ⚠ Minor Diff / ✗ Mismatch
+7. Use this data to:
+   - Verify all income is tracked in app
+   - Identify missing transactions
+   - Ensure accurate tax filing
+
 ## 🔒 Security Features
 
 - **Encryption**: All data encrypted with AES-256
@@ -204,7 +235,7 @@ Modes:
 
 ## 📊 Database Schema
 
-The application uses 9 tables:
+The application uses 10 tables:
 1. **AuthSecurity** - Authentication data
 2. **Person** - Family members
 3. **BankAccount** - Bank accounts
@@ -214,6 +245,7 @@ The application uses 9 tables:
 7. **SavingsInterestRecord** - Savings interest by FY
 8. **TaxProfile** - Tax calculations by person/FY
 9. **StatementImportLog** - Import history
+10. **AISTISImport** - AIS/TIS import data
 
 ## 🎨 UI Theme
 

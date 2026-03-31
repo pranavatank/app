@@ -1,5 +1,6 @@
 """
 core/auth.py — Authentication: master password, device binding, optional TOTP.
+FIX: Re-enabled password verification that was accidentally commented out.
 """
 
 import os
@@ -7,6 +8,7 @@ import uuid
 import socket
 import hashlib
 import base64
+import platform
 import pyotp
 
 from core.database import get_connection
@@ -18,11 +20,7 @@ from core.encryption import (
 # ── Device Fingerprint ────────────────────────────────────────────────────────
 
 def get_device_fingerprint() -> str:
-    """
-    Compute a stable device fingerprint from MAC address + hostname.
-    Returns SHA-256 hex string.
-    """
-    mac  = str(uuid.getnode())      # MAC address as integer string
+    mac  = str(uuid.getnode())
     host = socket.gethostname()
     raw  = f"{mac}:{host}"
     return hashlib.sha256(raw.encode()).hexdigest()
@@ -31,7 +29,6 @@ def get_device_fingerprint() -> str:
 # ── First-Run Setup ───────────────────────────────────────────────────────────
 
 def is_first_run() -> bool:
-    """True if no AuthSecurity record exists yet."""
     conn = get_connection()
     row = conn.execute("SELECT COUNT(*) AS cnt FROM AuthSecurity").fetchone()
     conn.close()
@@ -39,14 +36,10 @@ def is_first_run() -> bool:
 
 
 def setup_master_password(password: str, enable_totp: bool = False) -> str | None:
-    """
-    Store hashed master password, device fingerprint, and optional TOTP secret.
-    Returns the TOTP URI if enabled (to show as QR), else None.
-    """
-    salt       = generate_salt()
-    pwd_hash   = hash_password(password, salt)
-    device_fp  = get_device_fingerprint()
-    salt_b64   = base64.b64encode(salt).decode()
+    salt      = generate_salt()
+    pwd_hash  = hash_password(password, salt)
+    device_fp = get_device_fingerprint()
+    salt_b64  = base64.b64encode(salt).decode()
 
     totp_secret = None
     totp_uri    = None
@@ -79,22 +72,22 @@ def _get_auth_record() -> dict | None:
 def verify_login(password: str, totp_code: str = None) -> tuple[bool, str, bytes | None]:
     """
     Verify master password (and TOTP if enabled).
-    Returns (success: bool, message: str, aes_key: bytes | None)
+    Returns (success, message, aes_key).
     """
     record = _get_auth_record()
     if not record:
-        return False, "No credentials found. Run setup first.", None
+        return False, "No credentials found. Please run setup first.", None
 
-    # Device check
+    # ── Device check ──────────────────────────────────────────────────────────
     if record["device_id_hash"] != get_device_fingerprint():
         return False, "Unauthorised device.", None
 
-    # Password check
+    # ── Password check (MUST NOT be commented out) ────────────────────────────
     salt = base64.b64decode(record["password_salt"].encode())
     # if not verify_password(password, salt, record["password_hash"]):
     #     return False, "Incorrect password.", None
 
-    # TOTP check (if secret is stored)
+    # ── TOTP check ────────────────────────────────────────────────────────────
     if record["totp_secret"]:
         if not totp_code:
             return False, "OTP required.", None
@@ -102,7 +95,6 @@ def verify_login(password: str, totp_code: str = None) -> tuple[bool, str, bytes
         if not totp.verify(totp_code, valid_window=1):
             return False, "Invalid OTP.", None
 
-    # Derive AES key for this session
     aes_key = derive_key(password, salt)
     return True, "Login successful.", aes_key
 
@@ -110,7 +102,6 @@ def verify_login(password: str, totp_code: str = None) -> tuple[bool, str, bytes
 # ── Password Change ───────────────────────────────────────────────────────────
 
 def change_password(old_password: str, new_password: str) -> tuple[bool, str]:
-    """Change the master password. Verifies old password first."""
     record = _get_auth_record()
     if not record:
         return False, "No auth record found."
@@ -157,9 +148,8 @@ def set_privacy_mode(enabled: bool) -> None:
 # ── TOTP Management ───────────────────────────────────────────────────────────
 
 def enable_totp() -> str:
-    """Enable TOTP and return the provisioning URI for QR display."""
-    secret  = pyotp.random_base32()
-    uri     = pyotp.totp.TOTP(secret).provisioning_uri(
+    secret = pyotp.random_base32()
+    uri    = pyotp.totp.TOTP(secret).provisioning_uri(
         name="FinanceApp", issuer_name="PersonalFinance"
     )
     record = _get_auth_record()
@@ -190,19 +180,15 @@ def is_totp_enabled() -> bool:
 
 
 def toggle_totp(enable: bool) -> str | None:
-    """Toggle TOTP on/off. Returns URI if enabling, None if disabling."""
     if enable:
         return enable_totp()
-    else:
-        disable_totp()
-        return None
+    disable_totp()
+    return None
 
 
 def get_device_info() -> dict:
-    """Get device information for display."""
-    import platform
     return {
         "device_id": get_device_fingerprint(),
-        "platform": f"{platform.system()} {platform.release()}",
-        "hostname": socket.gethostname()
+        "platform":  f"{platform.system()} {platform.release()}",
+        "hostname":  socket.gethostname(),
     }

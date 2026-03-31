@@ -31,6 +31,7 @@ _NAV_ITEMS = [
     ("Income Management", "💰"),
     ("Fixed Deposits",   "🏦"),
     ("Statement Import", "📄"),
+    ("AIS/TIS Import",   "📑"),
     ("Tax",              "📋"),
     ("Reports",          "📊"),
     ("Settings",         "⚙️"),
@@ -288,6 +289,10 @@ class DashboardScreen(QMainWindow):
         self.import_page = StatementImportScreen(self)
         self.stack.addWidget(self.import_page)
 
+        from ui.ais_tis_import_screen import AISTISImportScreen
+        self.ais_tis_page = AISTISImportScreen(self)
+        self.stack.addWidget(self.ais_tis_page)
+
         from ui.tax_screen import TaxScreen
         self.tax_page = TaxScreen(self)
         self.stack.addWidget(self.tax_page)
@@ -541,6 +546,7 @@ class DashboardScreen(QMainWindow):
             lambda: self.income_page.refresh(),
             lambda: self.fd_page.refresh(),
             lambda: self.import_page.refresh(),
+            lambda: self.ais_tis_page.refresh(),
             lambda: self.tax_page.refresh(),
             lambda: self.reports_page.refresh(),
             lambda: self.settings_page.refresh(),

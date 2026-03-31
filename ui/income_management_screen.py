@@ -250,7 +250,14 @@ class IncomeManagementScreen(QWidget):
             filtered = []
             today = datetime.now().date()
             for r in rows:
-                exp_date = datetime.strptime(r["expected_date"], "%Y-%m-%d").date()
+                exp_date_str = r["expected_date"]
+                if "-" in exp_date_str:
+                    exp_date = datetime.strptime(exp_date_str, "%Y-%m-%d").date()
+                else:
+                    # Day-only for recurring - use current month
+                    day = int(exp_date_str)
+                    exp_date = today.replace(day=min(day, 28))
+                
                 if status_filter == "Pending":
                     if r["actual_transaction_id"] is None and exp_date >= today:
                         filtered.append(r)
@@ -276,7 +283,15 @@ class IncomeManagementScreen(QWidget):
             r = self.table.rowCount()
             self.table.insertRow(r)
 
-            exp_date = datetime.strptime(row["expected_date"], "%Y-%m-%d").date()
+            # Handle both full dates and day-only values
+            exp_date_str = row["expected_date"]
+            if "-" in exp_date_str:
+                exp_date = datetime.strptime(exp_date_str, "%Y-%m-%d").date()
+            else:
+                # Day-only for recurring frequencies - use current month for comparison
+                day = int(exp_date_str)
+                exp_date = today.replace(day=min(day, 28))  # Safe day for comparison
+            
             is_linked = row["actual_transaction_id"] is not None
             is_overdue = not is_linked and exp_date < today
 
@@ -295,7 +310,9 @@ class IncomeManagementScreen(QWidget):
             self.table.setItem(r, 0, item(row["person_name"]))
             self.table.setItem(r, 1, item(row["income_type"]))
             self.table.setItem(r, 2, item(row["frequency"]))
-            self.table.setItem(r, 3, item(row["expected_date"]))
+            # Display day-only as "Day X" for recurring frequencies
+            exp_display = row["expected_date"] if "-" in row["expected_date"] else f"Day {row['expected_date']}"
+            self.table.setItem(r, 3, item(exp_display))
             self.table.setItem(r, 4, amt_item(row["expected_amount"]))
             
             actual_date = row.get("actual_date") or "—"

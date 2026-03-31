@@ -334,7 +334,38 @@ def initialise_database() -> None:
         CREATE TABLE IF NOT EXISTS Bank (
             bank_id INTEGER PRIMARY KEY AUTOINCREMENT,
             bank_name TEXT NOT NULL UNIQUE,
+            tan_code TEXT,
             created_at TEXT DEFAULT (datetime('now'))
+        )
+    """)
+
+    # Bank table migration for older DBs
+    bank_cols = {row[1] for row in cur.execute("PRAGMA table_info(Bank)").fetchall()}
+    if "tan_code" not in bank_cols:
+        cur.execute("ALTER TABLE Bank ADD COLUMN tan_code TEXT")
+    cur.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_Bank_tan_code_unique "
+        "ON Bank(tan_code) WHERE tan_code IS NOT NULL AND tan_code <> ''"
+    )
+
+    # ── AISTISImport ─────────────────────────────────────────────────────────
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS AISTISImport (
+            import_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            person_id INTEGER NOT NULL REFERENCES Person(person_id),
+            financial_year TEXT NOT NULL,
+            import_date TEXT NOT NULL DEFAULT (datetime('now')),
+            source_type TEXT NOT NULL,
+            raw_json TEXT NOT NULL,
+            salary_income REAL DEFAULT 0,
+            fd_interest REAL DEFAULT 0,
+            savings_interest REAL DEFAULT 0,
+            other_interest REAL DEFAULT 0,
+            dividend_income REAL DEFAULT 0,
+            rental_income REAL DEFAULT 0,
+            other_income REAL DEFAULT 0,
+            tds_deducted REAL DEFAULT 0,
+            UNIQUE(person_id, financial_year, source_type)
         )
     """)
 
