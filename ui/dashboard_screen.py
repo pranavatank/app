@@ -409,24 +409,50 @@ class DashboardScreen(QMainWindow):
             self.fy_combo.setCurrentIndex(idx)
         self.fy_combo.blockSignals(False)
         session.set_financial_year(self.fy_combo.currentText())
-        self._reload_persons()
+        self._sync_context_selectors()
+
+    def _sync_context_selectors(self):
+        """Reload top-bar selectors from DB and keep/choose a sensible active selection."""
+        self._reload_persons(select_id=session.selected_person_id)
+
+        # Auto-select first real person only when exactly one person exists.
+        if session.selected_person_id is None and self.person_combo.count() == 2:
+            self.person_combo.setCurrentIndex(1)
+            session.set_person(self.person_combo.currentData())
+
+        self._reload_accounts(select_id=session.selected_account_id)
+
+        # Auto-select first real account only when exactly one account exists.
+        if session.selected_account_id is None and self.account_combo.count() == 2:
+            self.account_combo.setCurrentIndex(1)
+            session.set_account(self.account_combo.currentData())
 
     def _reload_persons(self, select_id=None):
+        previous_person = session.selected_person_id
+        previous_account = session.selected_account_id
+
         self.person_combo.blockSignals(True)
         self.person_combo.clear()
         self._persons = get_all_persons()
         self.person_combo.addItem("All Persons", userData=None)
         for p in self._persons:
             self.person_combo.addItem(p["full_name"], userData=p["person_id"])
-        if select_id:
+        if select_id is not None:
             for i in range(self.person_combo.count()):
                 if self.person_combo.itemData(i) == select_id:
                     self.person_combo.setCurrentIndex(i)
                     break
-        self.person_combo.blockSignals(False)
-        self._reload_accounts()
+        else:
+            self.person_combo.setCurrentIndex(0)
 
-    def _reload_accounts(self):
+        selected_person = self.person_combo.currentData()
+        session.selected_person_id = selected_person
+        self.person_combo.blockSignals(False)
+
+        preferred_account = previous_account if selected_person == previous_person else None
+        self._reload_accounts(select_id=preferred_account)
+
+    def _reload_accounts(self, select_id=None):
         self.account_combo.blockSignals(True)
         self.account_combo.clear()
         pid = self.person_combo.currentData()
@@ -435,16 +461,27 @@ class DashboardScreen(QMainWindow):
             self.account_combo.addItem("All Accounts", userData=None)
             for a in self._accounts:
                 self.account_combo.addItem(
-                    f"{a['person_name']} — {a['bank_name']} ({a['account_type']})",
+                    f"{a['person_name']} — {a.get('bank_display_name', a['bank_name'])} ({a['account_type']})",
                     userData=a["account_id"])
         else:
             self._accounts = get_accounts_for_person(pid)
             self.account_combo.addItem("All Accounts", userData=None)
             for a in self._accounts:
                 self.account_combo.addItem(
-                    f"{a['bank_name']} ({a['account_type']})",
+                    f"{a.get('bank_display_name', a['bank_name'])} ({a['account_type']})",
                     userData=a["account_id"])
-        session.set_account(None)
+
+        selected = False
+        if select_id is not None:
+            for i in range(self.account_combo.count()):
+                if self.account_combo.itemData(i) == select_id:
+                    self.account_combo.setCurrentIndex(i)
+                    selected = True
+                    break
+        if not selected:
+            self.account_combo.setCurrentIndex(0)
+
+        session.set_account(self.account_combo.currentData())
         self.account_combo.blockSignals(False)
 
     # ═══════════════════════════════════════════════════════════════════════
@@ -487,7 +524,7 @@ class DashboardScreen(QMainWindow):
         for acc in accounts:
             self.panel_bank.add_stat(
                 f"acc_{acc['account_id']}",
-                f"{acc['bank_name']}  ·  {acc['account_type']}",
+                f"{acc.get('bank_display_name', acc['bank_name'])}  ·  {acc['account_type']}",
                 session.mask(acc["current_balance"])
             )
 
@@ -538,6 +575,7 @@ class DashboardScreen(QMainWindow):
         self._on_refresh_all()
 
     def _on_refresh_all(self):
+        self._sync_context_selectors()
         idx = self.stack.currentIndex()
         pages = [
             lambda: self._refresh_overview(),
@@ -569,6 +607,7 @@ class DashboardScreen(QMainWindow):
             self._on_refresh_all()
 
     def refresh_overview(self):
+        self._sync_context_selectors()
         self._refresh_overview()
 
     def _on_logout(self):

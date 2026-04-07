@@ -1,13 +1,13 @@
 """
-ui/setup_screen.py — First-run master password setup. Beautiful centered card layout.
+ui/setup_screen.py — First-run password setup. All buttons use Theme.btn().
 """
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QLineEdit, QPushButton, QCheckBox, QMessageBox, QFrame
+    QLineEdit, QCheckBox, QMessageBox, QFrame
 )
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont, QColor
+from PyQt6.QtGui import QFont
 
 from core.auth import setup_master_password
 from config import APP_NAME
@@ -18,7 +18,7 @@ class SetupScreen(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(f"{APP_NAME} — Setup")
-        self.setFixedSize(480, 580)
+        self.setFixedSize(480, 600)
         self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowCloseButtonHint)
         self.setStyleSheet(f"background-color: {Theme.BG};")
         self._build_ui()
@@ -28,11 +28,9 @@ class SetupScreen(QWidget):
         root.setContentsMargins(0, 0, 0, 0)
         root.addStretch(1)
 
-        # ── Centered Card ───────────────────────────────────────────────────
         card = QFrame()
-        card.setObjectName("card")
         card.setStyleSheet(f"""
-            QFrame#card {{
+            QFrame {{
                 background-color: {Theme.SURFACE};
                 border: 1px solid {Theme.BORDER};
                 border-radius: 16px;
@@ -40,83 +38,82 @@ class SetupScreen(QWidget):
         """)
         card.setFixedWidth(400)
 
-        card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(40, 36, 40, 36)
-        card_layout.setSpacing(0)
+        cl = QVBoxLayout(card)
+        cl.setContentsMargins(40, 36, 40, 36)
+        cl.setSpacing(0)
 
-        # Logo area
-        logo_row = QHBoxLayout()
-        logo_lbl = QLabel("💰")
-        logo_lbl.setFont(QFont("Segoe UI Emoji", 28))
-        logo_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        logo_row.addStretch()
-        logo_row.addWidget(logo_lbl)
-        logo_row.addStretch()
-        card_layout.addLayout(logo_row)
-        card_layout.addSpacing(12)
+        # Logo + gradient bar
+        logo = QLabel("💰")
+        logo.setFont(QFont("Segoe UI Emoji", 28))
+        logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        cl.addWidget(logo)
+        cl.addSpacing(8)
 
-        # Title
+        strip = QFrame()
+        strip.setFixedHeight(4)
+        strip.setStyleSheet(f"""
+            background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
+                stop:0 {Theme.PRIMARY}, stop:1 {Theme.SUCCESS});
+            border-radius: 2px;
+        """)
+        cl.addWidget(strip)
+        cl.addSpacing(14)
+
         title = QLabel("Welcome")
         title.setFont(QFont("Segoe UI", 22, QFont.Weight.Bold))
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setStyleSheet(f"color: {Theme.TEXT_PRIMARY};")
-        card_layout.addWidget(title)
-        card_layout.addSpacing(4)
+        cl.addWidget(title)
 
         subtitle = QLabel("Set a master password to secure your data")
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         subtitle.setStyleSheet(f"color: {Theme.TEXT_SECONDARY}; font-size: 13px;")
-        card_layout.addWidget(subtitle)
-        card_layout.addSpacing(28)
+        cl.addWidget(subtitle)
+        cl.addSpacing(26)
 
         # Password
-        card_layout.addWidget(self._field_label("Master Password"))
-        card_layout.addSpacing(4)
-        self.pwd_input = self._line_edit("Enter master password", password=True)
+        cl.addWidget(self._lbl("Master Password"))
+        cl.addSpacing(4)
+        self.pwd_input = self._field("Enter master password", password=True)
         self.pwd_input.textChanged.connect(self._update_strength)
-        card_layout.addWidget(self.pwd_input)
-        card_layout.addSpacing(6)
+        cl.addWidget(self.pwd_input)
+        cl.addSpacing(5)
 
-        # Strength bar
         self.strength_bar = QFrame()
         self.strength_bar.setFixedHeight(4)
         self.strength_bar.setStyleSheet(f"background:{Theme.BORDER}; border-radius:2px;")
-        card_layout.addWidget(self.strength_bar)
+        cl.addWidget(self.strength_bar)
 
         self.strength_label = QLabel("")
         self.strength_label.setStyleSheet(f"font-size: 11px; color: {Theme.TEXT_MUTED};")
-        card_layout.addWidget(self.strength_label)
-        card_layout.addSpacing(14)
+        cl.addWidget(self.strength_label)
+        cl.addSpacing(14)
 
-        # Confirm password
-        card_layout.addWidget(self._field_label("Confirm Password"))
-        card_layout.addSpacing(4)
-        self.confirm_input = self._line_edit("Re-enter master password", password=True)
-        card_layout.addWidget(self.confirm_input)
-        card_layout.addSpacing(16)
+        # Confirm
+        cl.addWidget(self._lbl("Confirm Password"))
+        cl.addSpacing(4)
+        self.confirm_input = self._field("Re-enter master password", password=True)
+        cl.addWidget(self.confirm_input)
+        cl.addSpacing(16)
 
-        # TOTP checkbox
+        # TOTP
         self.totp_check = QCheckBox("Enable two-factor authentication (TOTP)")
         self.totp_check.setStyleSheet(f"color: {Theme.TEXT_SECONDARY}; font-size: 12px;")
-        card_layout.addWidget(self.totp_check)
-        card_layout.addSpacing(24)
+        cl.addWidget(self.totp_check)
+        cl.addSpacing(24)
 
-        # Setup button
-        self.btn_setup = QPushButton("Create Account")
-        self.btn_setup.setObjectName("primaryBtn")
-        self.btn_setup.setFixedHeight(44)
+        # Create button — inline style for guaranteed visibility
+        self.btn_setup = Theme.btn("✅  Create Account", "primary", height=46, min_width=320)
         self.btn_setup.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
         self.btn_setup.clicked.connect(self._on_setup)
-        card_layout.addWidget(self.btn_setup)
-        card_layout.addSpacing(12)
+        cl.addWidget(self.btn_setup)
+        cl.addSpacing(12)
 
-        # Warning note
         note = QLabel("⚠  Your password cannot be recovered. Keep it safe.")
         note.setAlignment(Qt.AlignmentFlag.AlignCenter)
         note.setStyleSheet(f"color: {Theme.WARNING}; font-size: 11px;")
-        card_layout.addWidget(note)
+        cl.addWidget(note)
 
-        # Center card horizontally
         h = QHBoxLayout()
         h.addStretch()
         h.addWidget(card)
@@ -124,18 +121,18 @@ class SetupScreen(QWidget):
         root.addLayout(h)
         root.addStretch(1)
 
-    def _field_label(self, text: str) -> QLabel:
-        lbl = QLabel(text)
-        lbl.setStyleSheet(f"font-weight: 600; font-size: 13px; color: {Theme.TEXT_PRIMARY};")
-        return lbl
+    def _lbl(self, text: str) -> QLabel:
+        l = QLabel(text)
+        l.setStyleSheet(f"font-weight: 600; font-size: 13px; color: {Theme.TEXT_PRIMARY};")
+        return l
 
-    def _line_edit(self, placeholder: str, password: bool = False) -> QLineEdit:
-        edit = QLineEdit()
-        edit.setPlaceholderText(placeholder)
-        edit.setFixedHeight(42)
+    def _field(self, placeholder: str, password: bool = False) -> QLineEdit:
+        e = QLineEdit()
+        e.setPlaceholderText(placeholder)
+        e.setFixedHeight(42)
         if password:
-            edit.setEchoMode(QLineEdit.EchoMode.Password)
-        return edit
+            e.setEchoMode(QLineEdit.EchoMode.Password)
+        return e
 
     def _update_strength(self, text: str):
         n = len(text)
@@ -164,12 +161,10 @@ class SetupScreen(QWidget):
         if pwd != confirm:
             QMessageBox.warning(self, "Mismatch", "Passwords do not match.")
             return
-
         totp_uri = setup_master_password(pwd, self.totp_check.isChecked())
         if totp_uri:
             QMessageBox.information(self, "TOTP Enabled",
                 f"Scan this URI in Google Authenticator:\n\n{totp_uri}")
-
         QMessageBox.information(self, "Setup Complete", "Account created! Please log in.")
         from ui.login_screen import LoginScreen
         self.login = LoginScreen()

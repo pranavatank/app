@@ -16,16 +16,20 @@ import os
 import re
 import warnings
 
+from ui.widgets.excel_table import ExcelTableWithStats
+
 from ui.theme import Theme
+from ui.date_utils import format_display_date
 from core.session import session
 from models.person import get_all_persons
-from models.bank_account import get_accounts_for_person, get_account
+from models.bank_account import get_accounts_for_person, get_account, update_account
+from models.bank import get_or_create_bank, update_bank_tan_code_if_exists
 from models.transaction import add_transaction, check_duplicate
-from models.fixed_deposit import add_fd_from_statement
+from models.fixed_deposit import add_fd_from_statement, apply_statement_redemption_event
 from models.statement_import_log import log_import
 from engines.statement_parser import parse_statement_with_debug, filter_duplicates, validate_transactions
 from engines.statement_metadata_extractor import extract_account_metadata
-from ui.dialogs.account_metadata_dialog import AccountMetadataDialog
+from ui.dialogs.account_dialog import AccountDialog
 
 
 class StatementImportScreen(QWidget):
@@ -250,7 +254,7 @@ class StatementImportScreen(QWidget):
         accounts = get_accounts_for_person(self.selected_person_id)
         for acc in accounts:
             self.account_combo.addItem(
-                f"{acc['bank_name']} — {acc['account_type']} ({acc.get('account_number_masked','') or ''})",
+                f"{acc.get('bank_display_name', acc['bank_name'])} — {acc['account_type']} ({acc.get('account_number_masked','') or ''})",
                 userData=acc["account_id"])
         if self.selected_account_id:
             for i in range(self.account_combo.count()):
@@ -327,15 +331,13 @@ class StatementImportScreen(QWidget):
 
         self.content_layout.addLayout(summary_row)
 
-        self.preview_table = QTableWidget()
-        self.preview_table.setColumnCount(9)
-        self.preview_table.setHorizontalHeaderLabels([
-            "Date", "Type", "Mode", "Category", "Amount", "Balance", "Description", "Status", "Import"
+        self.preview_table_widget = ExcelTableWithStats(show_checkboxes=True)
+        self.preview_table = self.preview_table_widget.table
+        self.preview_table.setHeaders([
+            "Date", "Type", "Mode", "Category", "Amount", "Balance", "Description", "Status"
         ])
         self.preview_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
-        self.preview_table.setAlternatingRowColors(True)
-        self.preview_table.setShowGrid(False)
-        self.preview_table.verticalHeader().setVisible(False)
+        self.preview_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.preview_table.setStyleSheet(f"""
             QTableWidget {{
                 background: {Theme.SURFACE_ALT};
@@ -352,13 +354,26 @@ class StatementImportScreen(QWidget):
                 font-weight: 600;
             }}
         """)
-        for i, w in enumerate([95,80,95,120,110,110,280,95,65]):
+        for i, w in enumerate([40,95,80,95,120,110,110,280,95]):
             self.preview_table.setColumnWidth(i, w)
 
         self.preview_table.setRowCount(len(self.preview_transactions))
+        # Block signals during population
+        self.preview_table.blockSignals(True)
+        
         for idx, txn in enumerate(self.preview_transactions):
+            # Add checkbox widget in column 0
+            cb = QCheckBox()
             is_duplicate = self.preview_duplicate_flags[idx] if idx < len(self.preview_duplicate_flags) else False
-            date_item = QTableWidgetItem(txn["transaction_date"])
+            cb.setChecked(not is_duplicate)
+            cb_widget = QWidget()
+            cb_layout = QHBoxLayout(cb_widget)
+            cb_layout.addWidget(cb)
+            cb_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            cb_layout.setContentsMargins(0, 0, 0, 0)
+            self.preview_table.setCellWidget(idx, 0, cb_widget)
+            
+            date_item = QTableWidgetItem(format_display_date(txn.get("transaction_date")))
             type_item = QTableWidgetItem(txn["transaction_type"])
             mode_item = QTableWidgetItem(txn.get("mode", "") or "")
             cat_item = QTableWidgetItem(txn.get("category","") or "")
@@ -376,21 +391,15 @@ class StatementImportScreen(QWidget):
                         item.setForeground(QColor(56, 161, 105))
                     elif txn["transaction_type"] == "Expense":
                         item.setForeground(QColor(220, 38, 38))
-                self.preview_table.setItem(idx, col, item)
+                self.preview_table.setItem(idx, col+1, item)
 
             amt_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             bal_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-
-            cb = QCheckBox()
-            cb.setChecked(not is_duplicate)
-            cb.setEnabled(not is_duplicate)
-            cb.stateChanged.connect(self._update_preview_summary)
-            if is_duplicate:
-                cb.setToolTip("Duplicate in this account; already imported")
-            self.preview_table.setCellWidget(idx, 8, cb)
             self.preview_table.setRowHeight(idx, 30)
+            
+        self.preview_table.blockSignals(False)  # Re-enable signals
         self.preview_table.setMinimumHeight(260)
-        self.content_layout.addWidget(self.preview_table, stretch=2)
+        self.content_layout.addWidget(self.preview_table_widget, stretch=2)
         self._update_preview_summary()
 
         debug_title = QLabel("Import Debug Panel")
@@ -464,6 +473,8 @@ class StatementImportScreen(QWidget):
             r"\bINITIAL\s+PAYIN\s+FD\b",
             r"\bFD\d{6,}\b",
             r"\bTD/\d+\b",
+            r"\bTD\.?\s+GENERIC\s+PAYIN\b",
+            r"\bPAYIN\s+DEBIT\b",
             r"\bTERM\s+DEPOSIT\b",
             r"\bFIXED\s+DEPOSIT\b",
             r"\b\d+\s*FD\b",
@@ -552,11 +563,8 @@ class StatementImportScreen(QWidget):
     def _set_preview_selection(self, selected: bool):
         for idx in range(len(self.preview_transactions)):
             is_duplicate = self.preview_duplicate_flags[idx] if idx < len(self.preview_duplicate_flags) else False
-            if is_duplicate:
-                continue
-            cb = self.preview_table.cellWidget(idx, 8)
-            if cb:
-                cb.setChecked(selected)
+            if not is_duplicate:
+                self.preview_table.setRowChecked(idx, selected)
         self._update_preview_summary()
 
     def _update_preview_summary(self):
@@ -564,14 +572,7 @@ class StatementImportScreen(QWidget):
             return
         total = len(self.preview_transactions)
         importable = sum(1 for flag in self.preview_duplicate_flags if not flag)
-        selected = 0
-        for idx in range(total):
-            is_duplicate = self.preview_duplicate_flags[idx] if idx < len(self.preview_duplicate_flags) else False
-            if is_duplicate:
-                continue
-            cb = self.preview_table.cellWidget(idx, 8)
-            if cb and cb.isChecked():
-                selected += 1
+        selected = len(self.preview_table.getCheckedRows())
         self.preview_summary_label.setText(
             f"Total: {total}   |   Importable: {importable}   |   Selected: {selected}"
         )
@@ -685,13 +686,21 @@ class StatementImportScreen(QWidget):
                     if any(metadata.values()):
                         acc = get_account(self.selected_account_id)
                         self._hide_loader()
-                        dialog = AccountMetadataDialog(
-                            self,
-                            self.selected_account_id,
-                            acc["bank_name"] if acc else "Account",
-                            metadata
-                        )
-                        dialog.exec()
+                        persons = get_all_persons()
+                        merged = dict(acc or {})
+                        for k, v in metadata.items():
+                            if v not in (None, ""):
+                                merged[k] = v
+
+                        dialog = AccountDialog(self, persons, merged)
+                        dialog.setWindowTitle(f"Update Account Details - {(acc or {}).get('bank_name', 'Account')}")
+                        if dialog.exec() == QDialog.DialogCode.Accepted:
+                            payload = dialog.get_data()
+                            tan_code = payload.pop("tan_code", None)
+                            update_account(self.selected_account_id, **payload)
+                            get_or_create_bank(payload.get("bank_name") or "")
+                            if tan_code:
+                                update_bank_tan_code_if_exists(payload.get("bank_name") or "", tan_code)
                         self._show_loader(
                             "Processing Statement",
                             "Validating transactions and checking duplicates..."
@@ -774,55 +783,70 @@ class StatementImportScreen(QWidget):
             fds_created = 0
             try:
                 total_rows = len(self.preview_transactions)
-                for idx, txn in enumerate(self.preview_transactions):
+                checked_rows = self.preview_table.getCheckedRows()
+                
+                for idx in checked_rows:
                     if idx % 25 == 0:
                         self._update_loader(
-                            f"Importing selected transactions... {idx}/{total_rows} processed"
+                            f"Importing selected transactions... {len([i for i in checked_rows if i <= idx])}/{len(checked_rows)} processed"
                         )
 
                     is_duplicate = self.preview_duplicate_flags[idx] if idx < len(self.preview_duplicate_flags) else False
                     if is_duplicate:
                         continue
-                    cb = self.preview_table.cellWidget(idx, 8)
-                    if cb and cb.isChecked():
-                        txn_id = add_transaction(
+                        
+                    txn = self.preview_transactions[idx]
+                    txn_id = add_transaction(
+                        account_id=self.selected_account_id,
+                        person_id=self.selected_person_id,
+                        transaction_date=txn["transaction_date"],
+                        transaction_type=txn["transaction_type"],
+                        amount=txn["amount"],
+                        category=txn.get("category"),
+                        mode=txn.get("mode"),
+                        reference_no=txn.get("reference_no"),
+                        description=txn.get("description"),
+                        balance_after=txn.get("balance_after"),
+                        source="Statement Import"
+                    )
+                    imported += 1
+
+                    # Best-effort maturity handling for redemption-like income rows.
+                    if txn.get("transaction_type") == "Income":
+                        apply_statement_redemption_event(
                             account_id=self.selected_account_id,
                             person_id=self.selected_person_id,
+                            transaction_id=txn_id,
                             transaction_date=txn["transaction_date"],
-                            transaction_type=txn["transaction_type"],
-                            amount=txn["amount"],
-                            category=txn.get("category"),
-                            mode=txn.get("mode"),
-                            description=txn.get("description"),
-                            balance_after=txn.get("balance_after"),
-                            source="Statement Import"
+                            amount=float(txn["amount"]),
+                            description=txn.get("description") or "",
+                            reference_no=txn.get("reference_no"),
                         )
-                        imported += 1
 
-                        if self._is_fd_opening_transaction(txn):
-                            desc = txn.get("description") or ""
-                            fd_ref = self._extract_fd_reference(desc)
-                            maturity_amt = self._extract_maturity_amount(desc)
-                            fd_id = add_fd_from_statement(
-                                account_id=self.selected_account_id,
-                                person_id=self.selected_person_id,
-                                principal_amount=float(txn["amount"]),
-                                start_date=txn["transaction_date"],
-                                fd_reference_no=fd_ref,
-                                tenure_months=None,
-                                interest_rate=None,
-                                compounding_type=None,
-                                maturity_date=None,
-                                maturity_amount=maturity_amt,
-                                maturity_amount_formula=maturity_amt,
-                                maturity_amount_bank=maturity_amt,
-                                expected_interest_amount=(maturity_amt - float(txn["amount"])) if maturity_amt else None,
-                                source_statement_file=os.path.basename(self.selected_file) if self.selected_file else None,
-                                source_transaction_id=txn_id,
-                                source_description=desc
-                            )
-                            if fd_id:
-                                fds_created += 1
+                    if self._is_fd_opening_transaction(txn):
+                        desc = txn.get("description") or ""
+                        fd_ref = self._extract_fd_reference(desc) or txn.get("reference_no")
+                        maturity_amt = self._extract_maturity_amount(desc)
+                        fd_id = add_fd_from_statement(
+                            account_id=self.selected_account_id,
+                            person_id=self.selected_person_id,
+                            principal_amount=float(txn["amount"]),
+                            start_date=txn["transaction_date"],
+                            fd_reference_no=fd_ref,
+                            tenure_months=None,
+                            interest_rate=None,
+                            compounding_type=None,
+                            maturity_date=None,
+                            maturity_amount=maturity_amt,
+                            maturity_amount_formula=maturity_amt,
+                            maturity_amount_bank=maturity_amt,
+                            expected_interest_amount=(maturity_amt - float(txn["amount"])) if maturity_amt else None,
+                            source_statement_file=os.path.basename(self.selected_file) if self.selected_file else None,
+                            source_transaction_id=txn_id,
+                            source_description=desc
+                        )
+                        if fd_id:
+                            fds_created += 1
 
                 if imported == 0:
                     QMessageBox.warning(

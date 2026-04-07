@@ -6,18 +6,27 @@ from core.database import get_connection
 
 
 def upsert_fd_interest(fd_id: int, financial_year: str,
-                       interest_earned: float, assessment_year: str) -> None:
+                       interest_earned: float, assessment_year: str,
+                       quarter: str | None = None,
+                       period_start: str | None = None,
+                       period_end: str | None = None) -> None:
     """Insert or replace an FD interest record for a given FY."""
     conn = get_connection()
-    conn.execute(
-        "DELETE FROM FDInterestRecord WHERE fd_id = ? AND financial_year = ?",
-        (fd_id, financial_year)
-    )
+    if quarter:
+        conn.execute(
+            "DELETE FROM FDInterestRecord WHERE fd_id = ? AND financial_year = ? AND quarter = ?",
+            (fd_id, financial_year, quarter)
+        )
+    else:
+        conn.execute(
+            "DELETE FROM FDInterestRecord WHERE fd_id = ? AND financial_year = ? AND quarter IS NULL",
+            (fd_id, financial_year)
+        )
     conn.execute("""
         INSERT INTO FDInterestRecord
-            (fd_id, financial_year, interest_earned, assessment_year)
-        VALUES (?, ?, ?, ?)
-    """, (fd_id, financial_year, interest_earned, assessment_year))
+            (fd_id, financial_year, quarter, period_start, period_end, interest_earned, assessment_year)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (fd_id, financial_year, quarter, period_start, period_end, interest_earned, assessment_year))
     conn.commit()
     conn.close()
 
@@ -38,6 +47,7 @@ def get_fd_interest_by_fy(financial_year: str,
     if person_id:
         query += " AND fd.person_id = ?"
         params.append(person_id)
+    query += " ORDER BY fir.quarter, fir.period_start"
 
     conn = get_connection()
     rows = conn.execute(query, params).fetchall()

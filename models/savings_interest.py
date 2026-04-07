@@ -40,9 +40,12 @@ def get_savings_interest_by_fy(financial_year: str,
                                 person_id: int = None) -> list[dict]:
     """Return savings interest records for a FY."""
     query = """
-        SELECT sir.*, ba.bank_name, ba.account_type, p.full_name AS person_name
+        SELECT sir.*, ba.bank_name,
+               COALESCE(NULLIF(b.nickname, ''), ba.bank_name) AS bank_display_name,
+               ba.account_type, p.full_name AS person_name
         FROM SavingsInterestRecord sir
         JOIN BankAccount ba ON sir.account_id = ba.account_id
+        LEFT JOIN Bank b ON lower(b.bank_name) = lower(ba.bank_name)
         JOIN Person p ON ba.person_id = p.person_id
         WHERE sir.financial_year = ?
     """

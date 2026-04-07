@@ -2,6 +2,7 @@
 models/fixed_deposit.py — CRUD for the FixedDeposit table.
 """
 
+import re
 from typing import Optional
 
 from core.database import get_connection
@@ -333,6 +334,157 @@ def auto_link_fd_records(person_id: int, financial_year: str | None = None) -> i
     conn.commit()
     conn.close()
     return linked
+
+
+def _extract_actual_fd_no(description: str, reference_no: str | None = None) -> str | None:
+    text = (description or "").upper()
+    if reference_no and "/" in reference_no:
+        return reference_no.strip().upper()[:50]
+
+    patterns = [
+        r"\b(\d{10,}/\d+)\b",  # e.g. 4522030012104165/1
+        r"\bFD\s*(?:NO|NUMBER|A/C|ACCOUNT)?\s*[:\-]?\s*([A-Z0-9\-/]{6,})\b",
+        r"\bTD\s*(?:NO|NUMBER|A/C|ACCOUNT)?\s*[:\-]?\s*([A-Z0-9\-/]{6,})\b",
+    ]
+    for pattern in patterns:
+        m = re.search(pattern, text)
+        if m:
+            return m.group(1).strip(" -/").upper()[:50]
+    return None
+
+
+def apply_statement_redemption_event(account_id: int, person_id: int,
+                                     transaction_id: int, transaction_date: str,
+                                     amount: float, description: str,
+                                     reference_no: str | None = None) -> int:
+    """Maturity linking for statement redemption credits.
+
+    Priority order:
+    1) Match by actual FD no found in narration (e.g. 452203.../1).
+    2) Fallback to principal-amount nearest match for redemption-principal rows.
+    3) If still not found, create placeholder FD with start_date NULL.
+
+    Returns fd_id if an FD was updated/created, else 0.
+    """
+    text = (description or "").upper()
+    if not text:
+        return 0
+
+    is_auto_redeem = any(k in text for k in ["AUTO REDEEM", "FD CR", "PAT CR"])
+    if not is_auto_redeem:
+        return 0
+
+    is_interest_only = ("INT AUTO REDEEM" in text) and ("PRINC AND INT AUTO REDEEM" not in text)
+    is_principal_redemption = ("PRINC AND INT AUTO REDEEM" in text) or not is_interest_only
+    fd_no = _extract_actual_fd_no(description, reference_no)
+
+    conn = get_connection()
+    tx_row = conn.execute(
+        "SELECT 1 FROM Transactions WHERE transaction_id = ?",
+        (transaction_id,),
+    ).fetchone()
+    tx_exists = tx_row is not None
+    chosen = None
+
+    if fd_no:
+        chosen = conn.execute(
+            """
+            SELECT fd_id, principal_amount, fd_reference_no, status
+            FROM FixedDeposit
+            WHERE account_id = ?
+              AND person_id = ?
+              AND UPPER(COALESCE(fd_reference_no, '')) = ?
+            ORDER BY CASE status WHEN 'Active' THEN 0 WHEN 'Pending Details' THEN 1 WHEN 'Matured' THEN 2 ELSE 3 END,
+                     fd_id DESC
+            LIMIT 1
+            """,
+            (account_id, person_id, fd_no),
+        ).fetchone()
+
+    if chosen is None and is_principal_redemption:
+        rows = conn.execute(
+            """
+            SELECT fd_id, principal_amount, fd_reference_no, status
+            FROM FixedDeposit
+            WHERE account_id = ?
+              AND person_id = ?
+              AND status IN ('Active', 'Pending Details')
+              AND (start_date IS NULL OR start_date <= ?)
+            ORDER BY fd_id DESC
+            """,
+            (account_id, person_id, transaction_date),
+        ).fetchall()
+        if rows:
+            scored = sorted(
+                rows,
+                key=lambda r: (abs(float(r["principal_amount"] or 0) - float(amount or 0)), r["fd_id"]),
+            )
+            chosen = scored[0]
+
+    if chosen is None:
+        principal = 0.0 if is_interest_only else float(amount or 0)
+        interest = float(amount or 0) if is_interest_only else None
+        cur = conn.execute(
+            """
+            INSERT INTO FixedDeposit
+                (account_id, person_id, principal_amount, start_date,
+                 fd_reference_no, tenure_years, tenure_months, tenure_days,
+                 interest_rate, compounding_type, maturity_date,
+                 maturity_amount, maturity_amount_formula, maturity_amount_bank,
+                 maturity_calc_method, expected_interest_amount, actual_interest_amount,
+                 linked_transaction_id, source_transaction_id, status, source_description)
+            VALUES (?, ?, ?, ?, ?, 0, NULL, 0, NULL, NULL, ?, NULL, NULL, NULL,
+                    'Bank Style', NULL, ?, ?, ?, 'Matured', ?)
+            """,
+            (
+                account_id,
+                person_id,
+                principal,
+                None,
+                fd_no,
+                transaction_date,
+                interest,
+                (transaction_id if tx_exists else None),
+                (transaction_id if tx_exists else None),
+                (description or "")[:500],
+            ),
+        )
+        conn.commit()
+        new_id = int(cur.lastrowid)
+        conn.close()
+        return new_id
+
+    fd_id = int(chosen["fd_id"])
+    updates = ["status = 'Matured'", "maturity_date = COALESCE(maturity_date, ?)"]
+    params: list = [transaction_date]
+
+    if tx_exists:
+        updates.append("source_transaction_id = COALESCE(source_transaction_id, ?)")
+        params.append(transaction_id)
+
+    # Keep principal transaction linked; interest transaction shouldn't overwrite that.
+    if not is_interest_only and tx_exists:
+        updates.append("linked_transaction_id = ?")
+        params.append(transaction_id)
+
+    if fd_no:
+        updates.append("fd_reference_no = ?")
+        params.append(fd_no)
+
+    if is_interest_only:
+        updates.append("actual_interest_amount = COALESCE(?, actual_interest_amount)")
+        params.append(float(amount or 0))
+    else:
+        current_principal = float(chosen["principal_amount"] or 0)
+        if current_principal <= 0 and float(amount or 0) > 0:
+            updates.append("principal_amount = ?")
+            params.append(float(amount or 0))
+
+    params.append(fd_id)
+    conn.execute(f"UPDATE FixedDeposit SET {', '.join(updates)} WHERE fd_id = ?", params)
+    conn.commit()
+    conn.close()
+    return fd_id
 
 
 def delete_fd(fd_id: int) -> None:

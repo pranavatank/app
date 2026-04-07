@@ -154,12 +154,14 @@ def get_income_expectations(person_id=None, financial_year=None, income_type=Non
             ie.*,
             p.full_name as person_name,
             ba.bank_name,
+            COALESCE(NULLIF(b.nickname, ''), ba.bank_name) AS bank_display_name,
             ba.account_type,
             t.amount as actual_amount,
             t.transaction_date as actual_date
         FROM IncomeExpectation ie
         JOIN Person p ON ie.person_id = p.person_id
         JOIN BankAccount ba ON ie.account_id = ba.account_id
+        LEFT JOIN Bank b ON lower(b.bank_name) = lower(ba.bank_name)
         LEFT JOIN Transactions t ON ie.actual_transaction_id = t.transaction_id
         WHERE 1=1
     """

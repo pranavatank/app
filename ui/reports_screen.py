@@ -171,7 +171,7 @@ class ReportsScreen(QWidget):
         accounts = get_accounts_for_person(pid) if pid else get_all_accounts()
         if not accounts: self.bank_chart.clear(); return
         self.bank_chart.plot_bar(
-            categories=[f"{a['bank_name']}\n{a['account_type']}" for a in accounts],
+            categories=[f"{a.get('bank_display_name', a['bank_name'])}\n{a['account_type']}" for a in accounts],
             values=[a["current_balance"] for a in accounts],
             title="Balance by Bank Account", ylabel="Balance (₹)")
 

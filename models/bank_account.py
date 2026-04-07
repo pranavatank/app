@@ -49,10 +49,14 @@ def add_account(person_id: int, bank_name: str, account_type: str,
 
 def get_accounts_for_person(person_id: int) -> list[dict]:
     conn = get_connection()
-    rows = conn.execute(
-        "SELECT * FROM BankAccount WHERE person_id = ? ORDER BY bank_name",
-        (person_id,)
-    ).fetchall()
+    rows = conn.execute("""
+        SELECT ba.*, b.tan_code, b.nickname AS bank_nickname,
+               COALESCE(NULLIF(b.nickname, ''), ba.bank_name) AS bank_display_name
+        FROM BankAccount ba
+        LEFT JOIN Bank b ON lower(b.bank_name) = lower(ba.bank_name)
+        WHERE ba.person_id = ?
+        ORDER BY lower(COALESCE(NULLIF(b.nickname, ''), ba.bank_name)), lower(ba.bank_name)
+    """, (person_id,)).fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
@@ -60,10 +64,13 @@ def get_accounts_for_person(person_id: int) -> list[dict]:
 def get_all_accounts() -> list[dict]:
     conn = get_connection()
     rows = conn.execute("""
-        SELECT ba.*, p.full_name AS person_name
+        SELECT ba.*, p.full_name AS person_name, b.tan_code,
+               b.nickname AS bank_nickname,
+               COALESCE(NULLIF(b.nickname, ''), ba.bank_name) AS bank_display_name
         FROM BankAccount ba
         JOIN Person p ON ba.person_id = p.person_id
-        ORDER BY p.full_name, ba.bank_name
+        LEFT JOIN Bank b ON lower(b.bank_name) = lower(ba.bank_name)
+        ORDER BY p.full_name, lower(COALESCE(NULLIF(b.nickname, ''), ba.bank_name)), lower(ba.bank_name)
     """).fetchall()
     conn.close()
     return [dict(r) for r in rows]
@@ -71,9 +78,13 @@ def get_all_accounts() -> list[dict]:
 
 def get_account(account_id: int) -> dict | None:
     conn = get_connection()
-    row = conn.execute(
-        "SELECT * FROM BankAccount WHERE account_id = ?", (account_id,)
-    ).fetchone()
+    row = conn.execute("""
+        SELECT ba.*, b.tan_code, b.nickname AS bank_nickname,
+               COALESCE(NULLIF(b.nickname, ''), ba.bank_name) AS bank_display_name
+        FROM BankAccount ba
+        LEFT JOIN Bank b ON lower(b.bank_name) = lower(ba.bank_name)
+        WHERE ba.account_id = ?
+    """, (account_id,)).fetchone()
     conn.close()
     return dict(row) if row else None
 

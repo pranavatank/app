@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView, QDialog,
     QFormLayout, QLineEdit, QComboBox, QDateEdit, QMessageBox, QFrame,
-    QPlainTextEdit, QSpinBox
+    QPlainTextEdit, QSpinBox, QScrollArea, QCheckBox
 )
 from PyQt6.QtCore import Qt, QDate
 from PyQt6.QtGui import QFont, QColor
@@ -14,7 +14,10 @@ from PyQt6.QtGui import QFont, QColor
 from datetime import date
 from dateutil.relativedelta import relativedelta
 
+from ui.widgets.excel_table import ExcelTableWithStats
+
 from ui.theme import Theme
+from ui.date_utils import format_display_date
 from core.session import session
 from config import COMPOUNDING_TYPES, fy_date_range, get_assessment_year, get_current_financial_year
 from models.person import get_all_persons
@@ -34,6 +37,7 @@ from engines.interest_engine import (
     calculate_fd_maturity_bank_style,
     calculate_fd_maturity_date,
     calculate_fd_maturity_flexible,
+    calculate_fd_quarterly_credit_breakdown,
     allocate_fd_interest_to_fy,
 )
 
@@ -55,6 +59,9 @@ class FixedDepositsScreen(QWidget):
         title.setFont(QFont("Segoe UI", 15, QFont.Weight.Bold))
         title.setStyleSheet(f"color: {Theme.TEXT_PRIMARY};")
         header.addWidget(title)
+        subtitle = QLabel("Track FD principal, expected vs actual interest, and transaction linkage")
+        subtitle.setStyleSheet(f"color: {Theme.TEXT_SECONDARY}; font-size: 12px;")
+        header.addWidget(subtitle)
         header.addStretch()
 
         btn_add = QPushButton("＋  Add FD")
@@ -77,34 +84,56 @@ class FixedDepositsScreen(QWidget):
         btn_auto.clicked.connect(self._on_auto_link)
         header.addWidget(btn_auto)
 
+        btn_recalc = QPushButton("📊  Recalculate Selected")
+        btn_recalc.setObjectName("primaryBtn"); btn_recalc.setFixedHeight(38)
+        btn_recalc.clicked.connect(self._on_recalculate_selected)
+        header.addWidget(btn_recalc)
+
+        btn_save = QPushButton("💾  Save Changes")
+        btn_save.setObjectName("successBtn"); btn_save.setFixedHeight(38)
+        btn_save.clicked.connect(self._on_save_changes)
+        header.addWidget(btn_save)
+
         layout.addLayout(header)
 
         # Table
-        self.table = QTableWidget()
-        self.table.setColumnCount(14)
-        self.table.setHorizontalHeaderLabels([
+        self.table_widget = ExcelTableWithStats(show_checkboxes=True)
+        self.table = self.table_widget.table
+        self.table.editable = True  # Enable editing
+        self.table.setHeaders([
             "Person", "Bank", "FD No", "Principal", "Rate %", "Tenure",
             "Compounding", "Start Date", "Maturity Date", "Maturity Amount",
             "Expected Interest", "Actual Interest", "Method", "Status"
         ])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
-        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.table.setAlternatingRowColors(True)
-        self.table.verticalHeader().setVisible(False)
-        self.table.setShowGrid(False)
+        self.table.setEditTriggers(QTableWidget.EditTrigger.DoubleClicked | QTableWidget.EditTrigger.EditKeyPressed)
+        self.table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection)  # Allow multi-cell selection
+        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectItems)  # Select individual cells
+        self.table.setHorizontalScrollMode(QTableWidget.ScrollMode.ScrollPerPixel)
+        self.table.setVerticalScrollMode(QTableWidget.ScrollMode.ScrollPerPixel)
         self.table.doubleClicked.connect(self._on_edit_fd)
-        for i, w in enumerate([110,120,110,110,70,90,100,100,110,130,130,120,110,85]):
+        self.table.cellDataChanged.connect(self._on_table_data_changed)
+        self.table.itemChanged.connect(self._on_item_changed)  # Track manual edits
+        for i, w in enumerate([40,110,120,110,110,70,90,100,100,110,130,130,120,110,85]):
             self.table.setColumnWidth(i, w)
-        layout.addWidget(self.table)
+        layout.addWidget(self.table_widget)
+
+        # Info label
+        info_label = QLabel("💡 Tip: Edit cells directly, then click 'Save Changes' or 'Recalculate Selected' to update database")
+        info_label.setStyleSheet(f"color: {Theme.INFO}; font-size: 11px; padding: 4px;")
+        info_label.setWordWrap(True)
+        layout.addWidget(info_label)
 
         self.status_label = QLabel("")
         self.status_label.setObjectName("mutedLabel")
         layout.addWidget(self.status_label)
 
     def refresh(self):
+        # Block signals during refresh to avoid triggering itemChanged
+        self.table.blockSignals(True)
         fds = get_all_fds(person_id=session.selected_person_id)
         self.table.setRowCount(0)
+        self.table.setSortingEnabled(False)  # Disable sorting during population
 
         status_colors = {
             "Active":  QColor(Theme.SUCCESS),
@@ -116,50 +145,79 @@ class FixedDepositsScreen(QWidget):
         for fd in fds:
             r = self.table.rowCount()
             self.table.insertRow(r)
+            
+            # Add checkbox widget in column 0
+            cb = QCheckBox()
+            cb.setChecked(False)
+            cb_widget = QWidget()
+            cb_layout = QHBoxLayout(cb_widget)
+            cb_layout.addWidget(cb)
+            cb_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            cb_layout.setContentsMargins(0, 0, 0, 0)
+            self.table.setCellWidget(r, 0, cb_widget)
 
-            def item(text, align=Qt.AlignmentFlag.AlignLeft):
+            def item(text, align=Qt.AlignmentFlag.AlignLeft, editable=False):
                 it = QTableWidgetItem(str(text) if text is not None else "—")
                 it.setTextAlignment(align | Qt.AlignmentFlag.AlignVCenter)
+                if editable:
+                    it.setFlags(it.flags() | Qt.ItemFlag.ItemIsEditable)
+                else:
+                    it.setFlags(it.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 return it
 
-            self.table.setItem(r, 0, item(fd["person_name"]))
-            self.table.setItem(r, 1, item(fd["bank_name"]))
-            self.table.setItem(r, 2, item(fd.get("fd_reference_no") or "—"))
-            self.table.setItem(r, 3, item(session.mask(fd["principal_amount"]),
-                                          Qt.AlignmentFlag.AlignRight))
+            # Checkbox column is at index 0, data starts at index 1
+            # Read-only columns
+            self.table.setItem(r, 0+1, item(fd["person_name"], editable=False))
+            self.table.setItem(r, 1+1, item(fd["bank_name"], editable=False))
+            
+            # Editable columns
+            self.table.setItem(r, 2+1, item(fd.get("fd_reference_no") or "—", editable=True))
+            self.table.setItem(r, 3+1, item(session.mask(fd["principal_amount"]), Qt.AlignmentFlag.AlignRight, editable=True))
+            
             rate = fd.get("interest_rate")
-            rate_text = "—" if rate is None else f"{rate:.2f}%"
-            self.table.setItem(r, 4, item(rate_text, Qt.AlignmentFlag.AlignRight))
+            rate_text = "—" if rate is None else f"{rate:.2f}"
+            self.table.setItem(r, 4+1, item(rate_text, Qt.AlignmentFlag.AlignRight, editable=True))
+            
             tenure_text = self._format_tenure(fd)
-            self.table.setItem(r, 5, item(tenure_text))
-            self.table.setItem(r, 6, item(fd.get("compounding_type") or "—"))
-            self.table.setItem(r, 7, item(fd["start_date"]))
-            self.table.setItem(r, 8, item(fd.get("maturity_date") or "—"))
+            self.table.setItem(r, 5+1, item(tenure_text, editable=True))
+            
+            self.table.setItem(r, 6+1, item(fd.get("compounding_type") or "—", editable=True))
+            self.table.setItem(r, 7+1, item(format_display_date(fd.get("start_date")), editable=True))
+            
+            # Read-only calculated fields
+            self.table.setItem(r, 8+1, item(format_display_date(fd.get("maturity_date")), editable=False))
+            
             maturity_amount = fd.get("maturity_amount")
             maturity_text = "—" if maturity_amount is None else session.mask(maturity_amount)
-            self.table.setItem(r, 9, item(maturity_text, Qt.AlignmentFlag.AlignRight))
+            self.table.setItem(r, 9+1, item(maturity_text, Qt.AlignmentFlag.AlignRight, editable=False))
 
             exp_i = fd.get("expected_interest_amount")
             exp_t = "—" if exp_i in (None, 0) else session.mask(exp_i)
-            self.table.setItem(r, 10, item(exp_t, Qt.AlignmentFlag.AlignRight))
+            self.table.setItem(r, 10+1, item(exp_t, Qt.AlignmentFlag.AlignRight, editable=False))
 
+            # Actual Interest - editable
             act_i = fd.get("actual_interest_amount")
             act_t = "—" if act_i in (None, 0) else session.mask(act_i)
-            self.table.setItem(r, 11, item(act_t, Qt.AlignmentFlag.AlignRight))
+            self.table.setItem(r, 11+1, item(act_t, Qt.AlignmentFlag.AlignRight, editable=True))
 
+            # Read-only
             method = fd.get("maturity_calc_method") or "Formula"
             method_text = "Bank-style" if method == "BankStyle" else "Formula"
-            self.table.setItem(r, 12, item(method_text))
+            self.table.setItem(r, 12+1, item(method_text, editable=False))
 
-            status_item = item(fd["status"])
+            status_item = item(fd["status"], editable=False)
             status_item.setForeground(status_colors.get(fd["status"], QColor(Theme.TEXT_MUTED)))
-            self.table.setItem(r, 13, status_item)
+            self.table.setItem(r, 13+1, status_item)
 
-            self.table.item(r, 0).setData(Qt.ItemDataRole.UserRole, fd["fd_id"])
+            # Store FD ID in first data column
+            self.table.item(r, 0+1).setData(Qt.ItemDataRole.UserRole, fd["fd_id"])
             self.table.setRowHeight(r, 32)
 
+        self.table.setSortingEnabled(True)  # Re-enable sorting
+        self.table.blockSignals(False)  # Re-enable signals
         count = self.table.rowCount()
         self.status_label.setText(f"Showing {count} fixed deposit{'s' if count!=1 else ''}.")
+        self.status_label.setStyleSheet("")  # Reset style
 
     def _format_tenure(self, fd: dict) -> str:
         years = fd.get("tenure_years") or 0
@@ -185,7 +243,7 @@ class FixedDepositsScreen(QWidget):
     def _on_edit_fd(self):
         row = self.table.currentRow()
         if row < 0: return
-        fd_id = self.table.item(row, 0).data(Qt.ItemDataRole.UserRole)
+        fd_id = self.table.item(row, 0+1).data(Qt.ItemDataRole.UserRole)
         if FDDialog(self, mode="edit", fd_id=fd_id).exec() == QDialog.DialogCode.Accepted:
             self.refresh()
             if self.parent_window: self.parent_window.refresh_overview()
@@ -194,7 +252,7 @@ class FixedDepositsScreen(QWidget):
         row = self.table.currentRow()
         if row < 0:
             QMessageBox.warning(self, "No Selection", "Please select an FD."); return
-        fd_id = self.table.item(row, 0).data(Qt.ItemDataRole.UserRole)
+        fd_id = self.table.item(row, 0+1).data(Qt.ItemDataRole.UserRole)
         reply = QMessageBox.question(self, "Delete FD", "Delete this Fixed Deposit?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         if reply == QMessageBox.StandardButton.Yes:
@@ -207,7 +265,7 @@ class FixedDepositsScreen(QWidget):
         if row < 0:
             QMessageBox.warning(self, "No Selection", "Please select an FD.")
             return None
-        return self.table.item(row, 0).data(Qt.ItemDataRole.UserRole)
+        return self.table.item(row, 0+1).data(Qt.ItemDataRole.UserRole)
 
     def _on_link_fd_transaction(self):
         fd_id = self._selected_fd_id()
@@ -237,6 +295,265 @@ class FixedDepositsScreen(QWidget):
         else:
             QMessageBox.information(self, "No Matches", "No FD references were matched in account transactions.")
 
+    def _on_table_data_changed(self):
+        """Handle data changes in table (after paste or edit)."""
+        # Show indicator that changes need to be saved
+        self.status_label.setText(f"⚠️ Unsaved changes - Click 'Save Changes' or 'Recalculate Selected' to update database")
+        self.status_label.setStyleSheet(f"color: {Theme.WARNING}; font-weight: 600;")
+
+    def _on_item_changed(self, item):
+        """Handle individual cell edits."""
+        if not self.table.signalsBlocked():
+            self._on_table_data_changed()
+
+    def _on_save_changes(self):
+        """Save all edited values to database without recalculation."""
+        checked_rows = self.table.getCheckedRows()
+        if not checked_rows:
+            reply = QMessageBox.question(
+                self,
+                "Save All Changes",
+                "No rows selected. Save changes for ALL FDs?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+            if reply == QMessageBox.StandardButton.Yes:
+                checked_rows = list(range(self.table.rowCount()))
+            else:
+                return
+
+        saved = 0
+        errors = []
+
+        for row in checked_rows:
+            try:
+                fd_id = self.table.item(row, 0+1).data(Qt.ItemDataRole.UserRole)
+                if not fd_id:
+                    continue
+
+                # Get current FD data
+                from models.fixed_deposit import get_fd
+                fd_data = get_fd(fd_id)
+                if not fd_data:
+                    continue
+
+                # Extract edited values from table
+                fd_no = self.table.item(row, 2+1).text()
+                if fd_no == "—":
+                    fd_no = None
+
+                principal_text = self.table.item(row, 3+1).text().replace("₹", "").replace(",", "").strip()
+                principal = float(principal_text) if principal_text and principal_text != "—" else fd_data["principal_amount"]
+
+                rate_text = self.table.item(row, 4+1).text().replace("%", "").strip()
+                rate = float(rate_text) if rate_text and rate_text != "—" else fd_data.get("interest_rate")
+
+                tenure_text = self.table.item(row, 5+1).text().strip()
+                # Parse tenure
+                years, months, days = fd_data.get("tenure_years", 0), fd_data.get("tenure_months", 0), fd_data.get("tenure_days", 0)
+                if tenure_text and tenure_text != "—":
+                    import re
+                    y_match = re.search(r'(\d+)y', tenure_text)
+                    m_match = re.search(r'(\d+)m', tenure_text)
+                    d_match = re.search(r'(\d+)d', tenure_text)
+                    if y_match:
+                        years = int(y_match.group(1))
+                    if m_match:
+                        months = int(m_match.group(1))
+                    if d_match:
+                        days = int(d_match.group(1))
+
+                compounding = self.table.item(row, 6+1).text().strip()
+                if compounding == "—":
+                    compounding = fd_data.get("compounding_type", "Quarterly")
+
+                start_date_text = self.table.item(row, 7+1).text().strip()
+                # Parse start date
+                from datetime import datetime
+                start_date = None
+                try:
+                    start_date = datetime.strptime(start_date_text, "%d/%m/%y").date()
+                except:
+                    try:
+                        start_date = datetime.strptime(start_date_text, "%Y-%m-%d").date()
+                    except:
+                        # If parsing fails, use existing date from database
+                        if isinstance(fd_data["start_date"], str):
+                            start_date = date.fromisoformat(fd_data["start_date"])
+                        else:
+                            start_date = fd_data["start_date"]
+
+                actual_interest_text = self.table.item(row, 11+1).text().replace("₹", "").replace(",", "").strip()
+                actual_interest = None
+                if actual_interest_text and actual_interest_text != "—":
+                    try:
+                        actual_interest = float(actual_interest_text)
+                    except:
+                        pass
+
+                # Update FD with edited values (keep existing calculated values)
+                update_fd(
+                    fd_id,
+                    principal,
+                    start_date.isoformat(),
+                    months,
+                    rate,
+                    compounding,
+                    fd_data["maturity_date"],  # Keep existing
+                    fd_data["maturity_amount"],  # Keep existing
+                    fd_data["status"],
+                    fd_data.get("maturity_amount_formula"),  # Keep existing
+                    fd_data.get("maturity_amount_bank"),  # Keep existing
+                    fd_data.get("maturity_calc_method", "Formula"),
+                    years,
+                    days,
+                    fd_no,
+                    fd_data.get("expected_interest_amount"),  # Keep existing
+                    actual_interest,
+                    fd_data.get("linked_transaction_id"),
+                    fd_data.get("source_statement_file"),
+                    fd_data.get("source_transaction_id")
+                )
+                saved += 1
+
+            except Exception as e:
+                errors.append(f"Row {row+1}: {str(e)}")
+
+        # Show results
+        if errors:
+            error_msg = "\n".join(errors[:10])
+            if len(errors) > 10:
+                error_msg += f"\n... and {len(errors)-10} more errors"
+            QMessageBox.warning(self, "Save Errors",
+                f"Saved {saved} FD(s).\n\nErrors:\n{error_msg}")
+        else:
+            QMessageBox.information(self, "Success",
+                f"Successfully saved {saved} FD(s)!")
+
+        self.refresh()
+        if self.parent_window:
+            self.parent_window.refresh_overview()
+
+    def _on_recalculate_selected(self):
+        """Recalculate maturity for selected FDs based on edited values."""
+        checked_rows = self.table.getCheckedRows()
+        if not checked_rows:
+            QMessageBox.information(self, "No Selection", "Please select FDs to recalculate using checkboxes.")
+            return
+
+        recalculated = 0
+        errors = []
+
+        for row in checked_rows:
+            try:
+                fd_id = self.table.item(row, 0+1).data(Qt.ItemDataRole.UserRole)
+                if not fd_id:
+                    continue
+
+                # Extract values from table
+                principal_text = self.table.item(row, 3+1).text().replace("₹", "").replace(",", "").strip()
+                rate_text = self.table.item(row, 4+1).text().replace("%", "").strip()
+                tenure_text = self.table.item(row, 5+1).text().strip()
+                compounding = self.table.item(row, 6+1).text().strip()
+                start_date_text = self.table.item(row, 7+1).text().strip()
+
+                # Parse values
+                if not principal_text or principal_text == "—":
+                    errors.append(f"Row {row+1}: Missing principal")
+                    continue
+                principal = float(principal_text)
+
+                if not rate_text or rate_text == "—":
+                    errors.append(f"Row {row+1}: Missing rate")
+                    continue
+                rate = float(rate_text)
+
+                # Parse tenure (format: "2y 3m 5d" or "24m" or "730d")
+                years, months, days = 0, 0, 0
+                if tenure_text and tenure_text != "—":
+                    import re
+                    y_match = re.search(r'(\d+)y', tenure_text)
+                    m_match = re.search(r'(\d+)m', tenure_text)
+                    d_match = re.search(r'(\d+)d', tenure_text)
+                    if y_match:
+                        years = int(y_match.group(1))
+                    if m_match:
+                        months = int(m_match.group(1))
+                    if d_match:
+                        days = int(d_match.group(1))
+
+                if years == 0 and months == 0 and days == 0:
+                    errors.append(f"Row {row+1}: Missing or invalid tenure")
+                    continue
+
+                # Parse start date
+                from datetime import datetime
+                start_date = None
+                try:
+                    start_date = datetime.strptime(start_date_text, "%d/%m/%y").date()
+                except:
+                    try:
+                        start_date = datetime.strptime(start_date_text, "%Y-%m-%d").date()
+                    except:
+                        errors.append(f"Row {row+1}: Invalid start date format")
+                        continue
+
+                if not compounding or compounding == "—":
+                    compounding = "Quarterly"
+
+                # Calculate maturity
+                if not compounding:
+                    compounding = "Quarterly"
+                    
+                mat_date = calculate_fd_maturity_date(start_date, years, months, days)
+                mat_formula = calculate_fd_maturity_flexible(
+                    principal, rate, start_date, mat_date, compounding,
+                    years, months, days
+                )
+                mat_bank = calculate_fd_maturity_bank_style(
+                    principal, rate, start_date, mat_date, compounding,
+                    years, months, days
+                )
+
+                # Get method from table or use Formula as default
+                method_text = self.table.item(row, 12+1).text()
+                method = "BankStyle" if "Bank" in method_text else "Formula"
+                mat_amt = mat_bank if method == "BankStyle" else mat_formula
+
+                # Update FD in database
+                update_fd(
+                    fd_id, principal, start_date.isoformat(), months, rate,
+                    compounding or "Quarterly", mat_date.isoformat(), mat_amt, "Active",
+                    mat_formula, mat_bank, method,
+                    years, days,
+                    self.table.item(row, 2+1).text() if self.table.item(row, 2+1).text() != "—" else None,
+                    mat_amt - principal,  # expected interest
+                    None,  # actual interest - keep existing
+                    None,  # linked_transaction_id
+                    None,  # source_statement_file
+                    None   # source_transaction_id
+                )
+                allocate_fd_interest_to_fy(fd_id)
+                recalculated += 1
+
+            except Exception as e:
+                errors.append(f"Row {row+1}: {str(e)}")
+
+        # Show results
+        if errors:
+            error_msg = "\n".join(errors[:10])
+            if len(errors) > 10:
+                error_msg += f"\n... and {len(errors)-10} more errors"
+            QMessageBox.warning(self, "Recalculation Errors", 
+                f"Recalculated {recalculated} FD(s).\n\nErrors:\n{error_msg}")
+        else:
+            QMessageBox.information(self, "Success", 
+                f"Successfully recalculated {recalculated} FD(s)!")
+
+        self.refresh()
+        if self.parent_window:
+            self.parent_window.refresh_overview()
+
 
 class FDDialog(QDialog):
     def __init__(self, parent, mode="add", fd_id=None):
@@ -252,6 +569,23 @@ class FDDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 24, 28, 20)
         layout.setSpacing(14)
+
+        title = QLabel("Fixed Deposit Details")
+        title.setStyleSheet(f"font-weight: 700; font-size: 15px; color: {Theme.TEXT_PRIMARY};")
+        layout.addWidget(title)
+
+        helper = QLabel("Enter FD inputs below. Scroll for advanced fields and bulk-create options.")
+        helper.setStyleSheet(f"color: {Theme.TEXT_SECONDARY}; font-size: 12px;")
+        layout.addWidget(helper)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+
+        form_container = QWidget()
+        form_container_layout = QVBoxLayout(form_container)
+        form_container_layout.setContentsMargins(0, 0, 0, 0)
+        form_container_layout.setSpacing(12)
 
         form = QFormLayout(); form.setSpacing(12)
 
@@ -337,7 +671,9 @@ class FDDialog(QDialog):
         self.fd_numbers_input.setPlaceholderText("Comma-separated FD Nos when count > 1")
         form.addRow("FD Nos (Bulk):", self.fd_numbers_input)
 
-        layout.addLayout(form)
+        form_container_layout.addLayout(form)
+        scroll.setWidget(form_container)
+        layout.addWidget(scroll, 1)
 
         btns = QHBoxLayout(); btns.addStretch()
         btn_show = QPushButton("Show Calculations")
@@ -355,7 +691,7 @@ class FDDialog(QDialog):
         pid = self.person_combo.currentData()
         self.account_combo.clear()
         for acc in get_accounts_for_person(pid):
-            self.account_combo.addItem(f"{acc['bank_name']} ({acc['account_type']})", userData=acc["account_id"])
+            self.account_combo.addItem(f"{acc.get('bank_display_name', acc['bank_name'])} ({acc['account_type']})", userData=acc["account_id"])
 
     def _calc(self):
         try:
@@ -375,7 +711,7 @@ class FDDialog(QDialog):
                 )
                 method = self.amount_method_combo.currentData()
                 selected = mat_bank if method == "BankStyle" else mat_formula
-                self.maturity_date_lbl.setText(mat_date.isoformat())
+                self.maturity_date_lbl.setText(mat_date.strftime("%d/%m/%y"))
                 self.maturity_amount_formula_lbl.setText(f"₹ {mat_formula:,.2f}")
                 self.maturity_amount_bank_lbl.setText(f"₹ {mat_bank:,.2f}")
                 self.maturity_amount_lbl.setText(f"₹ {selected:,.2f}")
@@ -454,9 +790,26 @@ class FDDialog(QDialog):
         fy_interest = (total_interest * overlap_days) / total_days
         return round(fy_interest, 2), overlap_days
 
+    def _quarter_rows_from_snapshot(self, snap: dict) -> list[dict]:
+        total_interest = snap["maturity_selected"] - snap["principal"]
+        rows = calculate_fd_quarterly_credit_breakdown(
+            principal=float(snap["principal"]),
+            rate=float(snap["rate"]),
+            start_date=snap["start"],
+            maturity_date=snap["maturity_date"],
+            compounding=snap["compounding"],
+            total_interest=float(total_interest),
+        )
+        return [{
+            **r,
+            "period": f"{r['period_start']} to {r['period_end']}",
+        } for r in rows]
+
     def _build_report_text(self, snap: dict) -> str:
         method_text = "Bank-style Daily (Leap-aware)" if snap["method"] == "BankStyle" else "Current Formula"
         total_interest = snap["maturity_selected"] - snap["principal"]
+
+        quarter_rows = self._quarter_rows_from_snapshot(snap)
 
         lines = [
             "FD Calculation Report",
@@ -464,8 +817,8 @@ class FDDialog(QDialog):
             f"Principal:            Rs {snap['principal']:,.2f}",
             f"Rate:                 {snap['rate']:.2f}%",
             f"Compounding:          {snap['compounding']}",
-            f"Start Date:           {snap['start'].isoformat()}",
-            f"Maturity Date:        {snap['maturity_date'].isoformat()}",
+            f"Start Date:           {snap['start'].strftime('%d/%m/%y')}",
+            f"Maturity Date:        {snap['maturity_date'].strftime('%d/%m/%y')}",
             f"Tenure Input:         {snap['tenure_years']}y {snap['tenure_months']}m {snap['tenure_days']}d",
             "",
             "Method-wise Maturity",
@@ -476,35 +829,22 @@ class FDDialog(QDialog):
             f"Selected Maturity:    Rs {snap['maturity_selected']:,.2f}",
             f"Selected Interest:    Rs {total_interest:,.2f}",
             "",
-            "FY-wise Interest Allocation (Selected Method)",
+            "Quarter-wise Interest Allocation (Selected Method)",
             "-" * 70,
-            "FY         AY         Days Overlap     Interest",
+            "FY         AY         Quarter  Days  Interest",
         ]
 
-        cursor = snap["start"]
-        seen = set()
         current_fy = get_current_financial_year()
         next_fy = self._next_financial_year(current_fy)
         current_fy_interest = 0.0
         next_fy_interest = 0.0
 
-        while cursor <= snap["maturity_date"]:
-            if cursor.month >= 4:
-                fy = f"{cursor.year}-{str(cursor.year + 1)[2:]}"
-            else:
-                fy = f"{cursor.year - 1}-{str(cursor.year)[2:]}"
-
-            if fy not in seen:
-                seen.add(fy)
-                ay = get_assessment_year(fy)
-                interest, days = self._fy_interest_from_snapshot(snap, fy)
-                lines.append(f"{fy:<10} {ay:<10} {days:<16} Rs {interest:,.2f}")
-                if fy == current_fy:
-                    current_fy_interest = interest
-                if fy == next_fy:
-                    next_fy_interest = interest
-
-            cursor = date(cursor.year + 1, 4, 1) if cursor.month >= 4 else date(cursor.year, 4, 1)
+        for row in quarter_rows:
+            lines.append(f"{row['fy']:<10} {row['ay']:<10} {row['quarter']:<8} {row['days']:<5} Rs {row['interest']:,.2f}")
+            if row["fy"] == current_fy:
+                current_fy_interest += row["interest"]
+            if row["fy"] == next_fy:
+                next_fy_interest += row["interest"]
 
         lines.extend([
             "",
@@ -525,19 +865,54 @@ class FDDialog(QDialog):
             return
 
         report = self._build_report_text(snap)
+        quarter_rows = self._quarter_rows_from_snapshot(snap)
 
         dlg = QDialog(self)
         dlg.setWindowTitle("FD Calculation Details")
-        dlg.setMinimumSize(760, 560)
+        dlg.setMinimumSize(860, 620)
         v = QVBoxLayout(dlg)
+        v.setContentsMargins(16, 14, 16, 12)
+        v.setSpacing(10)
 
         title = QLabel("Detailed FD Calculation")
         title.setStyleSheet(f"font-weight: 700; color: {Theme.TEXT_PRIMARY}; font-size: 14px;")
         v.addWidget(title)
 
+        summary = QLabel(
+            f"Selected Maturity: ₹ {snap['maturity_selected']:,.2f}   |   "
+            f"Selected Interest: ₹ {snap['maturity_selected'] - snap['principal']:,.2f}"
+        )
+        summary.setStyleSheet(f"color: {Theme.TEXT_PRIMARY}; font-weight: 600;")
+        v.addWidget(summary)
+
+        q_title = QLabel("Quarter-wise Interest")
+        q_title.setStyleSheet(f"font-weight: 700; color: {Theme.TEXT_PRIMARY};")
+        v.addWidget(q_title)
+
+        q_table = QTableWidget()
+        q_table.setColumnCount(6)
+        q_table.setHorizontalHeaderLabels(["FY", "AY", "Quarter", "Period", "Days", "Interest"])
+        q_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        for i, w in enumerate([90, 90, 70, 240, 70, 120]):
+            q_table.setColumnWidth(i, w)
+        q_table.setRowCount(len(quarter_rows))
+        for i, row in enumerate(quarter_rows):
+            q_table.setItem(i, 0, QTableWidgetItem(row["fy"]))
+            q_table.setItem(i, 1, QTableWidgetItem(row["ay"]))
+            q_table.setItem(i, 2, QTableWidgetItem(row["quarter"]))
+            q_table.setItem(i, 3, QTableWidgetItem(row["period"]))
+            q_table.setItem(i, 4, QTableWidgetItem(str(row["days"])))
+            q_table.setItem(i, 5, QTableWidgetItem(f"₹ {row['interest']:,.2f}"))
+            q_table.setRowHeight(i, 28)
+        q_table.setMinimumHeight(220)
+        q_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        q_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        v.addWidget(q_table)
+
         txt = QPlainTextEdit()
         txt.setReadOnly(True)
         txt.setPlainText(report)
+        txt.setMaximumHeight(210)
         v.addWidget(txt)
 
         btn_row = QHBoxLayout()
@@ -718,7 +1093,7 @@ class LinkFDTransactionDialog(QDialog):
         for row in rows:
             r = self.table.rowCount()
             self.table.insertRow(r)
-            self.table.setItem(r, 0, QTableWidgetItem(row.get("transaction_date") or "—"))
+            self.table.setItem(r, 0, QTableWidgetItem(format_display_date(row.get("transaction_date"))))
             self.table.setItem(r, 1, QTableWidgetItem(row.get("transaction_type") or "—"))
             self.table.setItem(r, 2, QTableWidgetItem(f"₹ {float(row.get('amount') or 0):,.2f}"))
             self.table.setItem(r, 3, QTableWidgetItem(row.get("category") or "—"))

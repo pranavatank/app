@@ -11,7 +11,8 @@ from PyQt6.QtCore import Qt, QDate
 from PyQt6.QtGui import QFont
 
 from ui.theme import Theme
-from models.person import add_person, get_all_persons, update_person, delete_person
+from ui.date_utils import format_display_date
+from models.person import add_person, get_all_persons, get_person, update_person, delete_person
 
 
 def _btn(text: str, style: str = "primary") -> QPushButton:
@@ -87,7 +88,7 @@ class PersonManagementDialog(QDialog):
         # Table
         self.table = QTableWidget()
         self.table.setColumnCount(5)
-        self.table.setHorizontalHeaderLabels(["Name", "Date of Birth", "PAN", "Notes", "ID"])
+        self.table.setHorizontalHeaderLabels(["Nickname", "Date of Birth", "PAN", "Notes", "ID"])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table.setColumnHidden(4, True)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
@@ -117,8 +118,8 @@ class PersonManagementDialog(QDialog):
         for p in get_all_persons():
             r = self.table.rowCount()
             self.table.insertRow(r)
-            self.table.setItem(r, 0, QTableWidgetItem(p["full_name"]))
-            self.table.setItem(r, 1, QTableWidgetItem(p.get("date_of_birth") or "—"))
+            self.table.setItem(r, 0, QTableWidgetItem(p.get("full_name") or ""))
+            self.table.setItem(r, 1, QTableWidgetItem(format_display_date(p.get("date_of_birth"))))
             self.table.setItem(r, 2, QTableWidgetItem(p.get("pan_number") or "—"))
             self.table.setItem(r, 3, QTableWidgetItem(p.get("contact_notes") or "—"))
             self.table.setItem(r, 4, QTableWidgetItem(str(p["person_id"])))
@@ -135,13 +136,11 @@ class PersonManagementDialog(QDialog):
         if row < 0:
             QMessageBox.warning(self, "No Selection", "Please select a person."); return
         pid  = int(self.table.item(row, 4).text())
-        data = {
-            "person_id":     pid,
-            "full_name":     self.table.item(row, 0).text(),
-            "date_of_birth": self.table.item(row, 1).text() if self.table.item(row, 1).text() != "—" else None,
-            "pan_number":    self.table.item(row, 2).text() if self.table.item(row, 2).text() != "—" else None,
-            "contact_notes": self.table.item(row, 3).text() if self.table.item(row, 3).text() != "—" else None,
-        }
+        data = get_person(pid)
+        if not data:
+            QMessageBox.warning(self, "Not Found", "Person record no longer exists.")
+            self._load_persons()
+            return
         dlg = PersonDialog(self, data)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             update_person(pid, **dlg.get_data())
@@ -180,15 +179,30 @@ class PersonDialog(QDialog):
         form.setSpacing(12)
         form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
 
-        self.name_input = QLineEdit()
-        self.name_input.setPlaceholderText("e.g. Rajesh Kumar")
-        self.name_input.setFixedHeight(40)
-        form.addRow("Full Name *:", self.name_input)
+        self.nickname_input = QLineEdit()
+        self.nickname_input.setPlaceholderText("e.g. Rajesh")
+        self.nickname_input.setFixedHeight(40)
+        form.addRow("Nickname *:", self.nickname_input)
+
+        self.first_name_input = QLineEdit()
+        self.first_name_input.setPlaceholderText("e.g. Rajesh")
+        self.first_name_input.setFixedHeight(40)
+        form.addRow("First Name:", self.first_name_input)
+
+        self.middle_name_input = QLineEdit()
+        self.middle_name_input.setPlaceholderText("e.g. Kumar")
+        self.middle_name_input.setFixedHeight(40)
+        form.addRow("Middle Name:", self.middle_name_input)
+
+        self.last_name_input = QLineEdit()
+        self.last_name_input.setPlaceholderText("e.g. Sharma")
+        self.last_name_input.setFixedHeight(40)
+        form.addRow("Last Name:", self.last_name_input)
 
         self.dob_input = QDateEdit()
         self.dob_input.setCalendarPopup(True)
         self.dob_input.setDate(QDate.currentDate())
-        self.dob_input.setDisplayFormat("dd-MM-yyyy")
+        self.dob_input.setDisplayFormat("dd/MM/yy")
         self.dob_input.setFixedHeight(40)
         form.addRow("Date of Birth:", self.dob_input)
 
@@ -220,7 +234,10 @@ class PersonDialog(QDialog):
         layout.addLayout(btns)
 
     def _load_data(self):
-        self.name_input.setText(self.person_data.get("full_name", ""))
+        self.nickname_input.setText(self.person_data.get("full_name", ""))
+        self.first_name_input.setText(self.person_data.get("first_name") or "")
+        self.middle_name_input.setText(self.person_data.get("middle_name") or "")
+        self.last_name_input.setText(self.person_data.get("last_name") or "")
         dob = self.person_data.get("date_of_birth")
         if dob:
             qd = QDate.fromString(dob, "yyyy-MM-dd")
@@ -229,13 +246,16 @@ class PersonDialog(QDialog):
         self.notes_input.setText(self.person_data.get("contact_notes") or "")
 
     def _on_save(self):
-        if not self.name_input.text().strip():
-            QMessageBox.warning(self, "Missing", "Please enter a name."); return
+        if not self.nickname_input.text().strip():
+            QMessageBox.warning(self, "Missing", "Please enter a nickname."); return
         self.accept()
 
     def get_data(self) -> dict:
         return {
-            "full_name":     self.name_input.text().strip(),
+            "full_name":     self.nickname_input.text().strip(),
+            "first_name":    self.first_name_input.text().strip() or None,
+            "middle_name":   self.middle_name_input.text().strip() or None,
+            "last_name":     self.last_name_input.text().strip() or None,
             "date_of_birth": self.dob_input.date().toString("yyyy-MM-dd"),
             "pan_number":    self.pan_input.text().strip() or None,
             "contact_notes": self.notes_input.text().strip() or None,

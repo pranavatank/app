@@ -184,10 +184,191 @@ def calculate_fd_interest_for_fy(fd_id: int, financial_year: str) -> float:
     return round(fy_interest, 2)
 
 
+def _fy_quarters(financial_year: str) -> list[tuple[str, date, date]]:
+    start_year = int(financial_year.split("-")[0])
+    return [
+        ("Q1", date(start_year, 4, 1), date(start_year, 6, 30)),
+        ("Q2", date(start_year, 7, 1), date(start_year, 9, 30)),
+        ("Q3", date(start_year, 10, 1), date(start_year, 12, 31)),
+        ("Q4", date(start_year + 1, 1, 1), date(start_year + 1, 3, 31)),
+    ]
+
+
+def _fy_of_date(d: date) -> str:
+    if d.month >= 4:
+        return f"{d.year}-{str(d.year + 1)[2:]}"
+    return f"{d.year - 1}-{str(d.year)[2:]}"
+
+
+def _quarter_of_date(d: date) -> str:
+    if d.month in (4, 5, 6):
+        return "Q1"
+    if d.month in (7, 8, 9):
+        return "Q2"
+    if d.month in (10, 11, 12):
+        return "Q3"
+    return "Q4"
+
+
+def _simulate_compounding_events(principal: float, rate: float,
+                                 start_date: date, maturity_date: date,
+                                 compounding: str) -> list[dict]:
+    """Generate interest credit events at compounding period ends."""
+    if principal <= 0 or rate <= 0 or maturity_date < start_date:
+        return []
+
+    period_months = _period_months_for_compounding(compounding)
+    current_principal = principal
+    annual_rate = rate / 100
+    events = []
+    period_start = start_date
+
+    while period_start <= maturity_date:
+        period_end = min(
+            period_start + relativedelta(months=period_months) - timedelta(days=1),
+            maturity_date,
+        )
+
+        chunk_start = period_start
+        period_interest = 0.0
+        while chunk_start <= period_end:
+            year_end = date(chunk_start.year, 12, 31)
+            chunk_end = min(period_end, year_end)
+            days = (chunk_end - chunk_start).days + 1
+            period_interest += current_principal * annual_rate * days / _year_days(chunk_start)
+            chunk_start = chunk_end + timedelta(days=1)
+
+        events.append({
+            "period_start": period_start,
+            "period_end": period_end,
+            "event_date": period_end,
+            "days": (period_end - period_start).days + 1,
+            "interest": period_interest,
+        })
+
+        if period_end < maturity_date:
+            current_principal += period_interest
+
+        period_start = period_end + timedelta(days=1)
+
+    return events
+
+
+def _scale_events_to_interest(events: list[dict], total_interest: float) -> list[dict]:
+    if not events:
+        return []
+    raw_total = sum(e["interest"] for e in events)
+    if raw_total <= 0:
+        return []
+
+    factor = total_interest / raw_total
+    scaled = []
+    running = 0.0
+    for i, e in enumerate(events):
+        if i == len(events) - 1:
+            amt = round(total_interest - running, 2)
+        else:
+            amt = round(e["interest"] * factor, 2)
+            running += amt
+        scaled.append({**e, "interest": amt})
+    return scaled
+
+
+def calculate_fd_quarterly_credit_breakdown(principal: float, rate: float,
+                                            start_date: date, maturity_date: date,
+                                            compounding: str,
+                                            total_interest: float) -> list[dict]:
+    """Quarter-wise interest based on credit events (AIS-comparable)."""
+    events = _simulate_compounding_events(principal, rate, start_date, maturity_date, compounding)
+    if not events:
+        if total_interest > 0:
+            d = maturity_date
+            fy = _fy_of_date(d)
+            return [{
+                "fy": fy,
+                "ay": get_assessment_year(fy),
+                "quarter": _quarter_of_date(d),
+                "period_start": start_date.isoformat(),
+                "period_end": maturity_date.isoformat(),
+                "interest": round(total_interest, 2),
+                "days": (maturity_date - start_date).days + 1,
+            }]
+        return []
+
+    events = _scale_events_to_interest(events, total_interest)
+    agg = {}
+    for e in events:
+        d = e["event_date"]
+        fy = _fy_of_date(d)
+        q = _quarter_of_date(d)
+        key = (fy, q)
+        if key not in agg:
+            agg[key] = {
+                "fy": fy,
+                "ay": get_assessment_year(fy),
+                "quarter": q,
+                "period_start": e["period_start"],
+                "period_end": e["period_end"],
+                "interest": 0.0,
+                "days": 0,
+            }
+        agg[key]["period_start"] = min(agg[key]["period_start"], e["period_start"])
+        agg[key]["period_end"] = max(agg[key]["period_end"], e["period_end"])
+        agg[key]["interest"] += e["interest"]
+        agg[key]["days"] += e["days"]
+
+    rows = []
+    for _, v in sorted(agg.items(), key=lambda kv: (kv[1]["fy"], kv[1]["quarter"])):
+        rows.append({
+            "fy": v["fy"],
+            "ay": v["ay"],
+            "quarter": v["quarter"],
+            "period_start": v["period_start"].isoformat(),
+            "period_end": v["period_end"].isoformat(),
+            "interest": round(v["interest"], 2),
+            "days": v["days"],
+        })
+    return rows
+
+
+def calculate_fd_interest_quarterly_for_fy(fd_id: int, financial_year: str) -> list[dict]:
+    """Allocate selected FD interest amount into FY quarters by overlap days."""
+    fd = get_fd(fd_id)
+    if not fd:
+        return []
+
+    fd_start = date.fromisoformat(fd["start_date"])
+    fd_end = date.fromisoformat(fd["maturity_date"])
+    total_days = (fd_end - fd_start).days + 1
+    if total_days <= 0:
+        return []
+
+    total_interest = _effective_maturity_amount(fd) - float(fd["principal_amount"])
+    rows = []
+    for quarter, q_start, q_end in _fy_quarters(financial_year):
+        overlap_start = max(fd_start, q_start)
+        overlap_end = min(fd_end, q_end)
+        if overlap_start > overlap_end:
+            continue
+        days = (overlap_end - overlap_start).days + 1
+        interest = round((total_interest * days) / total_days, 2)
+        rows.append({
+            "quarter": quarter,
+            "period_start": overlap_start.isoformat(),
+            "period_end": overlap_end.isoformat(),
+            "days": days,
+            "interest": interest,
+        })
+    return rows
+
+
 def allocate_fd_interest_to_fy(fd_id: int) -> None:
     """Allocate FD interest across all relevant FYs and store in DB."""
     fd = get_fd(fd_id)
     if not fd:
+        return
+    if not fd.get("maturity_date") or fd.get("maturity_amount") is None:
+        # Pending-details FDs cannot be allocated until maturity details are available.
         return
 
     # Rebuild FY allocations for this FD to avoid stale/duplicate records.
@@ -195,22 +376,29 @@ def allocate_fd_interest_to_fy(fd_id: int) -> None:
     
     fd_start = date.fromisoformat(fd["start_date"])
     fd_end = date.fromisoformat(fd["maturity_date"])
-    
-    # Generate all FYs that overlap with FD tenure
-    current_date = fd_start
-    while current_date <= fd_end:
-        if current_date.month >= 4:
-            fy = f"{current_date.year}-{str(current_date.year + 1)[2:]}"
-        else:
-            fy = f"{current_date.year - 1}-{str(current_date.year)[2:]}"
-        
-        interest = calculate_fd_interest_for_fy(fd_id, fy)
-        if interest > 0:
-            ay = get_assessment_year(fy)
-            upsert_fd_interest(fd_id, fy, interest, ay)
-        
-        # Move to next FY
-        current_date = date(current_date.year + 1, 4, 1) if current_date.month >= 4 else date(current_date.year, 4, 1)
+    total_interest = _effective_maturity_amount(fd) - float(fd["principal_amount"])
+
+    rows = calculate_fd_quarterly_credit_breakdown(
+        principal=float(fd["principal_amount"]),
+        rate=float(fd.get("interest_rate") or 0),
+        start_date=fd_start,
+        maturity_date=fd_end,
+        compounding=fd.get("compounding_type") or "Quarterly",
+        total_interest=total_interest,
+    )
+
+    for row in rows:
+        if row["interest"] <= 0:
+            continue
+        upsert_fd_interest(
+            fd_id,
+            row["fy"],
+            row["interest"],
+            row["ay"],
+            quarter=row["quarter"],
+            period_start=row["period_start"],
+            period_end=row["period_end"],
+        )
 
 
 def calculate_savings_interest_for_fy(account_id: int, financial_year: str,

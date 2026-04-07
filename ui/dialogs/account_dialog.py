@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView, QLineEdit,
     QFormLayout, QMessageBox, QComboBox, QDoubleSpinBox,
-    QCheckBox, QDateEdit, QTextEdit, QTabWidget, QWidget, QFrame
+    QCheckBox, QDateEdit, QTextEdit, QTabWidget, QWidget, QFrame, QScrollArea
 )
 from PyQt6.QtCore import Qt, QDate
 from PyQt6.QtGui import QFont
@@ -16,6 +16,7 @@ from ui.theme import Theme
 from config import ACCOUNT_TYPES
 from models.person import get_all_persons
 from models.bank_account import add_account, get_all_accounts, update_account, delete_account
+from models.bank import get_all_banks, get_or_create_bank, update_bank_tan_code_if_exists
 
 
 def _btn(text: str, style: str = "primary") -> QPushButton:
@@ -86,13 +87,13 @@ class AccountManagementDialog(QDialog):
         layout.addLayout(header)
 
         self.table = QTableWidget()
-        self.table.setColumnCount(8)
+        self.table.setColumnCount(9)
         self.table.setHorizontalHeaderLabels([
-            "Person", "Bank Name", "Type", "Account No.", "IFSC",
+            "Person", "Bank Name", "TAN", "Type", "Account No.", "IFSC",
             "Opening Balance", "Current Balance", "ID"
         ])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.table.setColumnHidden(7, True)
+        self.table.setColumnHidden(8, True)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setAlternatingRowColors(True)
@@ -119,13 +120,14 @@ class AccountManagementDialog(QDialog):
             r = self.table.rowCount()
             self.table.insertRow(r)
             self.table.setItem(r, 0, QTableWidgetItem(acc.get("person_name","—")))
-            self.table.setItem(r, 1, QTableWidgetItem(acc["bank_name"]))
-            self.table.setItem(r, 2, QTableWidgetItem(acc["account_type"]))
-            self.table.setItem(r, 3, QTableWidgetItem(acc.get("account_number_masked") or "—"))
-            self.table.setItem(r, 4, QTableWidgetItem(acc.get("ifsc_code") or "—"))
-            self.table.setItem(r, 5, QTableWidgetItem(f"₹ {acc['opening_balance']:,.2f}"))
-            self.table.setItem(r, 6, QTableWidgetItem(f"₹ {acc['current_balance']:,.2f}"))
-            self.table.setItem(r, 7, QTableWidgetItem(str(acc["account_id"])))
+            self.table.setItem(r, 1, QTableWidgetItem(acc.get("bank_display_name") or acc["bank_name"]))
+            self.table.setItem(r, 2, QTableWidgetItem(acc.get("tan_code") or "—"))
+            self.table.setItem(r, 3, QTableWidgetItem(acc["account_type"]))
+            self.table.setItem(r, 4, QTableWidgetItem(acc.get("account_number_masked") or "—"))
+            self.table.setItem(r, 5, QTableWidgetItem(acc.get("ifsc_code") or "—"))
+            self.table.setItem(r, 6, QTableWidgetItem(f"₹ {acc['opening_balance']:,.2f}"))
+            self.table.setItem(r, 7, QTableWidgetItem(f"₹ {acc['current_balance']:,.2f}"))
+            self.table.setItem(r, 8, QTableWidgetItem(str(acc["account_id"])))
             self.table.setRowHeight(r, 32)
 
     def _on_add(self):
@@ -134,27 +136,37 @@ class AccountManagementDialog(QDialog):
             QMessageBox.warning(self, "No Persons", "Add a family member first."); return
         dlg = AccountDialog(self, persons)
         if dlg.exec() == QDialog.DialogCode.Accepted:
-            add_account(**dlg.get_data())
+            payload = dlg.get_data()
+            tan_code = payload.pop("tan_code", None)
+            add_account(**payload)
+            get_or_create_bank(payload.get("bank_name") or "")
+            if tan_code:
+                update_bank_tan_code_if_exists(payload.get("bank_name") or "", tan_code)
             self._load_accounts()
 
     def _on_edit(self):
         row = self.table.currentRow()
         if row < 0:
             QMessageBox.warning(self, "No Selection", "Select an account."); return
-        aid = int(self.table.item(row, 7).text())
+        aid = int(self.table.item(row, 8).text())
         accounts = get_all_accounts()
         acc_data = next((a for a in accounts if a["account_id"] == aid), None)
         if not acc_data: return
         dlg = AccountDialog(self, get_all_persons(), acc_data)
         if dlg.exec() == QDialog.DialogCode.Accepted:
-            update_account(aid, **dlg.get_data())
+            payload = dlg.get_data()
+            tan_code = payload.pop("tan_code", None)
+            update_account(aid, **payload)
+            get_or_create_bank(payload.get("bank_name") or "")
+            if tan_code:
+                update_bank_tan_code_if_exists(payload.get("bank_name") or "", tan_code)
             self._load_accounts()
 
     def _on_delete(self):
         row = self.table.currentRow()
         if row < 0:
             QMessageBox.warning(self, "No Selection", "Select an account."); return
-        aid  = int(self.table.item(row, 7).text())
+        aid  = int(self.table.item(row, 8).text())
         name = self.table.item(row, 1).text()
         reply = QMessageBox.question(self, "Confirm Delete",
             f"Delete account '{name}'?\n\nAll transactions for this account will also be deleted!",
@@ -165,15 +177,34 @@ class AccountManagementDialog(QDialog):
 
 
 class AccountDialog(QDialog):
-    def __init__(self, parent=None, persons=None, account_data=None):
+    def __init__(self, parent=None, persons=None, account_data=None, view_only: bool = False):
         super().__init__(parent)
         self.persons = persons or []
         self.account_data = account_data
-        self.setWindowTitle("Edit Account" if account_data else "Add Account")
+        self.action = None
+        self.view_only = view_only
+        if view_only:
+            self.setWindowTitle("View Account")
+        else:
+            self.setWindowTitle("Edit Account" if account_data else "Add Account")
         self.setMinimumSize(660, 580)
         self._build_ui()
         if account_data:
             self._load_data()
+        if self.view_only:
+            self._set_view_only()
+
+    def _populate_bank_combo(self):
+        self.bank_combo.clear()
+        self.bank_combo.addItem("-- Select or Type New Bank --", userData=None)
+        for bank in get_all_banks():
+            display = bank.get("display_name") or bank.get("nickname") or bank.get("bank_name")
+            actual = bank.get("bank_name") or ""
+            if display and actual and display != actual:
+                text = f"{display} ({actual})"
+            else:
+                text = actual
+            self.bank_combo.addItem(text, userData=actual)
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
@@ -181,10 +212,10 @@ class AccountDialog(QDialog):
         layout.setContentsMargins(24, 20, 24, 18)
 
         tabs = QTabWidget()
-        tabs.addTab(self._basic_tab(),   "📋 Basic Info")
-        tabs.addTab(self._bank_tab(),    "🏦 Bank Details")
-        tabs.addTab(self._contact_tab(), "📞 Contact")
-        tabs.addTab(self._card_tab(),    "💳 Debit Card")
+        tabs.addTab(self._scroll_tab(self._basic_tab()),   "📋 Basic Info")
+        tabs.addTab(self._scroll_tab(self._bank_tab()),    "🏦 Bank Details")
+        tabs.addTab(self._scroll_tab(self._contact_tab()), "📞 Contact")
+        tabs.addTab(self._scroll_tab(self._card_tab()),    "💳 Debit Card")
         layout.addWidget(tabs)
 
         div = QFrame(); div.setFrameShape(QFrame.Shape.HLine)
@@ -192,13 +223,61 @@ class AccountDialog(QDialog):
         layout.addWidget(div)
 
         btns = QHBoxLayout(); btns.addStretch()
-        btn_cancel = _btn("Cancel", "secondary")
+        btn_cancel = _btn("Close" if self.view_only else "Cancel", "secondary")
         btn_cancel.clicked.connect(self.reject)
         btns.addWidget(btn_cancel)
-        btn_save = _btn("Save Account", "primary")
-        btn_save.clicked.connect(self._on_save)
-        btns.addWidget(btn_save)
+        if self.view_only:
+            btn_delete = _btn("Delete", "danger")
+            btn_delete.clicked.connect(self._on_delete_from_view)
+            btns.addWidget(btn_delete)
+            btn_edit = _btn("Edit", "primary")
+            btn_edit.clicked.connect(self._on_edit_from_view)
+            btns.addWidget(btn_edit)
+        else:
+            btn_save = _btn("Save Account", "primary")
+            btn_save.clicked.connect(self._on_save)
+            btns.addWidget(btn_save)
         layout.addLayout(btns)
+
+    def _on_edit_from_view(self):
+        self.action = "edit"
+        self.accept()
+
+    def _on_delete_from_view(self):
+        if not self.account_data:
+            return
+        reply = QMessageBox.question(
+            self, "Confirm Delete",
+            f"Delete account '{self.account_data.get('bank_name', 'Selected Account')}'?\n\n"
+            "All transactions for this account will also be deleted!",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            delete_account(self.account_data["account_id"])
+            QMessageBox.information(self, "Deleted", "Account deleted successfully!")
+            self.action = "delete"
+            self.accept()
+
+    def _set_view_only(self):
+        for w in self.findChildren(QLineEdit):
+            w.setReadOnly(True)
+        for w in self.findChildren(QTextEdit):
+            w.setReadOnly(True)
+        for w in self.findChildren(QComboBox):
+            w.setEnabled(False)
+        for w in self.findChildren(QDoubleSpinBox):
+            w.setEnabled(False)
+        for w in self.findChildren(QDateEdit):
+            w.setEnabled(False)
+        for w in self.findChildren(QCheckBox):
+            w.setEnabled(False)
+
+    def _scroll_tab(self, tab_widget: QWidget) -> QScrollArea:
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setWidget(tab_widget)
+        return scroll
 
     def _form_widget(self) -> tuple[QWidget, QFormLayout]:
         w = QWidget()
@@ -232,8 +311,22 @@ class AccountDialog(QDialog):
             self.person_combo.addItem(p["full_name"], userData=p["person_id"])
         f.addRow("Person *:", self.person_combo)
 
-        self.bank_input = self._field("e.g. HDFC Bank")
-        f.addRow("Bank Name *:", self.bank_input)
+        self.bank_combo = QComboBox()
+        self.bank_combo.setEditable(True)
+        self.bank_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self.bank_combo.setFixedHeight(40)
+        self._populate_bank_combo()
+        f.addRow("Bank Name *:", self.bank_combo)
+
+        self.holder_name_input = self._field("Name as per bank records")
+        f.addRow("Account Holder Name:", self.holder_name_input)
+
+        self.tan_input = self._field("e.g. BLRJ07125G")
+        self.tan_input.setMaxLength(10)
+        self.tan_input.textChanged.connect(
+            lambda txt: self.tan_input.setText((txt or "").upper()) if (txt or "") != (txt or "").upper() else None
+        )
+        f.addRow("TAN No.:", self.tan_input)
 
         self.type_combo = self._combo(ACCOUNT_TYPES)
         f.addRow("Account Type *:", self.type_combo)
@@ -241,27 +334,44 @@ class AccountDialog(QDialog):
         self.account_no_input = self._field("e.g. XXXX1234")
         f.addRow("Account No. (masked):", self.account_no_input)
 
+        self.account_no_full_input = self._field("Optional full account number")
+        f.addRow("Account No. (full):", self.account_no_full_input)
+
         self.customer_id_input = self._field()
         f.addRow("Customer ID:", self.customer_id_input)
+
+        self.ckyc_input = self._field()
+        f.addRow("CKYC ID:", self.ckyc_input)
 
         self.opening_date = QDateEdit()
         self.opening_date.setCalendarPopup(True)
         self.opening_date.setDate(QDate.currentDate())
-        self.opening_date.setDisplayFormat("yyyy-MM-dd")
+        self.opening_date.setDisplayFormat("dd/MM/yy")
         self.opening_date.setFixedHeight(40)
         f.addRow("Opening Date:", self.opening_date)
 
         self.status_combo = self._combo(["Active","Inactive","Closed"])
         f.addRow("Status:", self.status_combo)
 
+        self.currency_combo = self._combo(["INR", "USD", "EUR", "GBP"])
+        f.addRow("Currency:", self.currency_combo)
+
         self.opening_balance = self._spin()
         f.addRow("Opening Balance:", self.opening_balance)
+
+        self.current_balance_input = self._field()
+        self.current_balance_input.setReadOnly(True)
+        f.addRow("Current Balance:", self.current_balance_input)
 
         self.interest_rate = QDoubleSpinBox()
         self.interest_rate.setRange(0, 100); self.interest_rate.setDecimals(2)
         self.interest_rate.setSuffix(" %"); self.interest_rate.setValue(3.5)
         self.interest_rate.setFixedHeight(40)
         f.addRow("Interest Rate:", self.interest_rate)
+
+        self.created_at_input = self._field()
+        self.created_at_input.setReadOnly(True)
+        f.addRow("Created At:", self.created_at_input)
 
         return w
 
@@ -320,7 +430,7 @@ class AccountDialog(QDialog):
         self.debit_effective = QDateEdit()
         self.debit_effective.setCalendarPopup(True)
         self.debit_effective.setDate(QDate.currentDate())
-        self.debit_effective.setDisplayFormat("yyyy-MM-dd")
+        self.debit_effective.setDisplayFormat("dd/MM/yy")
         self.debit_effective.setFixedHeight(40)
         self.debit_effective.setEnabled(False)
         f.addRow("Effective From:", self.debit_effective)
@@ -336,16 +446,32 @@ class AccountDialog(QDialog):
         for i in range(self.person_combo.count()):
             if self.person_combo.itemData(i) == d.get("person_id"):
                 self.person_combo.setCurrentIndex(i); break
-        self.bank_input.setText(d.get("bank_name",""))
+        bank_name = d.get("bank_name", "")
+        idx = -1
+        for i in range(self.bank_combo.count()):
+            if (self.bank_combo.itemData(i) or "").strip().lower() == bank_name.strip().lower():
+                idx = i
+                break
+        if idx >= 0:
+            self.bank_combo.setCurrentIndex(idx)
+        else:
+            self.bank_combo.setEditText(bank_name)
+        self.holder_name_input.setText(d.get("account_holder_name") or "")
+        self.tan_input.setText((d.get("tan_code") or "").upper())
         self.type_combo.setCurrentText(d.get("account_type","Savings"))
         self.account_no_input.setText(d.get("account_number_masked") or "")
+        self.account_no_full_input.setText(d.get("account_number_full") or "")
         self.customer_id_input.setText(d.get("customer_id") or "")
+        self.ckyc_input.setText(d.get("ckyc_id") or "")
         if d.get("account_opening_date"):
             qd = QDate.fromString(d["account_opening_date"],"yyyy-MM-dd")
             if qd.isValid(): self.opening_date.setDate(qd)
         self.status_combo.setCurrentText(d.get("account_status","Active"))
+        self.currency_combo.setCurrentText(d.get("currency") or "INR")
         self.opening_balance.setValue(d.get("opening_balance",0.0))
+        self.current_balance_input.setText(f"₹ {d.get('current_balance', 0.0):,.2f}")
         self.interest_rate.setValue(d.get("interest_rate",3.5))
+        self.created_at_input.setText(d.get("created_at") or "")
         self.ifsc_input.setText(d.get("ifsc_code") or "")
         self.micr_input.setText(d.get("micr_code") or "")
         self.branch_name_input.setText(d.get("branch_name") or "")
@@ -362,19 +488,26 @@ class AccountDialog(QDialog):
             if qd.isValid(): self.debit_effective.setDate(qd)
 
     def _on_save(self):
-        if not self.bank_input.text().strip():
+        bank_name = (self.bank_combo.currentData() or self.bank_combo.currentText() or "").strip()
+        if not bank_name or bank_name == "-- Select or Type New Bank --":
             QMessageBox.warning(self,"Missing","Please enter a bank name."); return
         self.accept()
 
     def get_data(self) -> dict:
+        bank_name = (self.bank_combo.currentData() or self.bank_combo.currentText() or "").strip()
         return {
             "person_id":               self.person_combo.currentData(),
-            "bank_name":               self.bank_input.text().strip(),
+            "bank_name":               bank_name,
+            "account_holder_name":     self.holder_name_input.text().strip() or None,
+            "tan_code":                self.tan_input.text().strip().upper() or None,
             "account_type":            self.type_combo.currentText(),
             "account_number_masked":   self.account_no_input.text().strip() or None,
+            "account_number_full":     self.account_no_full_input.text().strip() or None,
             "customer_id":             self.customer_id_input.text().strip() or None,
+            "ckyc_id":                 self.ckyc_input.text().strip() or None,
             "account_opening_date":    self.opening_date.date().toString("yyyy-MM-dd"),
             "account_status":          self.status_combo.currentText(),
+            "currency":                self.currency_combo.currentText(),
             "opening_balance":         self.opening_balance.value(),
             "interest_rate":           self.interest_rate.value(),
             "ifsc_code":               self.ifsc_input.text().strip() or None,

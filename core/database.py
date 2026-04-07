@@ -16,7 +16,7 @@ def _migrate_fixed_deposit_schema_if_needed(conn: sqlite3.Connection, cur: sqlit
 
     col_meta = {row[1]: row for row in info}
     needs_nullable_migration = False
-    for col in ["tenure_months", "interest_rate", "maturity_date", "maturity_amount"]:
+    for col in ["start_date", "tenure_months", "interest_rate", "maturity_date", "maturity_amount"]:
         if col in col_meta and col_meta[col][3] == 1:  # notnull flag
             needs_nullable_migration = True
             break
@@ -42,7 +42,7 @@ def _migrate_fixed_deposit_schema_if_needed(conn: sqlite3.Connection, cur: sqlit
                 account_id          INTEGER NOT NULL REFERENCES BankAccount(account_id),
                 person_id           INTEGER NOT NULL REFERENCES Person(person_id),
                 principal_amount    REAL    NOT NULL,
-                start_date          TEXT    NOT NULL,
+                start_date          TEXT,
                 fd_reference_no     TEXT,
                 tenure_years        INTEGER DEFAULT 0,
                 tenure_months       INTEGER,
@@ -64,7 +64,20 @@ def _migrate_fixed_deposit_schema_if_needed(conn: sqlite3.Connection, cur: sqlit
             )
         """)
 
-        cur.execute("""
+        fd_reference_expr = "fd_reference_no" if has_fd_reference_no else "NULL"
+        tenure_years_expr = "COALESCE(tenure_years, 0)" if has_tenure_years else "0"
+        tenure_days_expr = "COALESCE(tenure_days, 0)" if has_tenure_days else "0"
+        maturity_amount_formula_expr = "maturity_amount_formula" if has_maturity_amount_formula else "maturity_amount"
+        maturity_amount_bank_expr = "maturity_amount_bank" if has_maturity_amount_bank else "maturity_amount"
+        maturity_calc_method_expr = "COALESCE(maturity_calc_method, 'Formula')" if has_maturity_calc_method else "'Formula'"
+        expected_interest_expr = "expected_interest_amount" if has_expected_interest_amount else "0"
+        actual_interest_expr = "actual_interest_amount" if has_actual_interest_amount else "0"
+        linked_tx_expr = "linked_transaction_id" if has_linked_transaction_id else "NULL"
+        source_file_expr = "source_statement_file" if has_source_statement_file else "NULL"
+        source_tx_expr = "source_transaction_id" if has_source_transaction_id else "NULL"
+        source_desc_expr = "source_description" if has_source_description else "NULL"
+
+        cur.execute(f"""
             INSERT INTO FixedDeposit_new
                 (fd_id, account_id, person_id, principal_amount, start_date,
                                  fd_reference_no,
@@ -76,12 +89,14 @@ def _migrate_fixed_deposit_schema_if_needed(conn: sqlite3.Connection, cur: sqlit
                                      linked_transaction_id, source_statement_file, source_transaction_id,
                    status, source_description)
             SELECT fd_id, account_id, person_id, principal_amount, start_date,
-                                     NULL,
-                                     0, tenure_months, 0, interest_rate, compounding_type,
-                     maturity_date, maturity_amount, maturity_amount,
-                    maturity_amount, 'Formula',
-                              0, 0, NULL, NULL, NULL,
-                     status, NULL
+                     {fd_reference_expr},
+                     {tenure_years_expr}, tenure_months, {tenure_days_expr},
+                     interest_rate, compounding_type,
+                     maturity_date, maturity_amount, {maturity_amount_formula_expr},
+                     {maturity_amount_bank_expr}, {maturity_calc_method_expr},
+                     {expected_interest_expr}, {actual_interest_expr},
+                     {linked_tx_expr}, {source_file_expr}, {source_tx_expr},
+                     status, {source_desc_expr}
             FROM FixedDeposit
         """)
 
@@ -127,6 +142,92 @@ def _migrate_fixed_deposit_schema_if_needed(conn: sqlite3.Connection, cur: sqlit
     """)
 
 
+def _migrate_fd_interest_record_schema_if_needed(cur: sqlite3.Cursor) -> None:
+    cols = {row[1] for row in cur.execute("PRAGMA table_info(FDInterestRecord)").fetchall()}
+    if "quarter" not in cols:
+        cur.execute("ALTER TABLE FDInterestRecord ADD COLUMN quarter TEXT")
+    if "period_start" not in cols:
+        cur.execute("ALTER TABLE FDInterestRecord ADD COLUMN period_start TEXT")
+    if "period_end" not in cols:
+        cur.execute("ALTER TABLE FDInterestRecord ADD COLUMN period_end TEXT")
+
+
+def _migrate_bank_account_schema_if_needed(cur: sqlite3.Cursor) -> None:
+    """Upgrade older BankAccount schemas with newer optional fields."""
+    cols = {row[1] for row in cur.execute("PRAGMA table_info(BankAccount)").fetchall()}
+    if not cols:
+        return
+
+    column_defs = {
+        "account_holder_name": "TEXT",
+        "account_number_masked": "TEXT",
+        "account_number_full": "TEXT",
+        "ifsc_code": "TEXT",
+        "micr_code": "TEXT",
+        "customer_id": "TEXT",
+        "ckyc_id": "TEXT",
+        "branch_name": "TEXT",
+        "branch_address": "TEXT",
+        "communication_address": "TEXT",
+        "email_id": "TEXT",
+        "phone_no": "TEXT",
+        "account_opening_date": "TEXT",
+        "account_status": "TEXT DEFAULT 'Active'",
+        "currency": "TEXT DEFAULT 'INR'",
+        "nomination_status": "TEXT",
+        "nominee_name": "TEXT",
+        "debit_card_enabled": "INTEGER DEFAULT 0",
+        "debit_card_charges": "REAL DEFAULT 0",
+        "debit_card_effective_from": "TEXT",
+        "opening_balance": "REAL NOT NULL DEFAULT 0",
+        "current_balance": "REAL NOT NULL DEFAULT 0",
+        "interest_rate": "REAL NOT NULL DEFAULT 0",
+        "created_at": "TEXT",
+    }
+
+    for col, ddl in column_defs.items():
+        if col not in cols:
+            cur.execute(f"ALTER TABLE BankAccount ADD COLUMN {col} {ddl}")
+
+
+def _migrate_transactions_schema_if_needed(cur: sqlite3.Cursor) -> None:
+    """Upgrade older Transactions schemas with reference number support."""
+    cols = {row[1] for row in cur.execute("PRAGMA table_info(Transactions)").fetchall()}
+    if not cols:
+        return
+
+    if "reference_no" not in cols:
+        cur.execute("ALTER TABLE Transactions ADD COLUMN reference_no TEXT")
+    if "linked_transaction_id" not in cols:
+        cur.execute("ALTER TABLE Transactions ADD COLUMN linked_transaction_id INTEGER")
+    if "internal_transfer_group_id" not in cols:
+        cur.execute("ALTER TABLE Transactions ADD COLUMN internal_transfer_group_id INTEGER")
+    if "is_internal_transfer" not in cols:
+        cur.execute("ALTER TABLE Transactions ADD COLUMN is_internal_transfer INTEGER NOT NULL DEFAULT 0")
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_Transactions_reference_no "
+        "ON Transactions(reference_no)"
+    )
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_Transactions_internal_transfer "
+        "ON Transactions(is_internal_transfer, internal_transfer_group_id)"
+    )
+
+
+def _migrate_person_schema_if_needed(cur: sqlite3.Cursor) -> None:
+    """Upgrade older Person schemas with split name fields."""
+    cols = {row[1] for row in cur.execute("PRAGMA table_info(Person)").fetchall()}
+    if not cols:
+        return
+
+    if "first_name" not in cols:
+        cur.execute("ALTER TABLE Person ADD COLUMN first_name TEXT")
+    if "middle_name" not in cols:
+        cur.execute("ALTER TABLE Person ADD COLUMN middle_name TEXT")
+    if "last_name" not in cols:
+        cur.execute("ALTER TABLE Person ADD COLUMN last_name TEXT")
+
+
 def get_connection() -> sqlite3.Connection:
     """Return a connection to the SQLite database."""
     os.makedirs(DATA_DIR, exist_ok=True)
@@ -159,12 +260,17 @@ def initialise_database() -> None:
         CREATE TABLE IF NOT EXISTS Person (
             person_id     INTEGER PRIMARY KEY AUTOINCREMENT,
             full_name     TEXT    NOT NULL,
+            first_name    TEXT,
+            middle_name   TEXT,
+            last_name     TEXT,
             date_of_birth TEXT,
             pan_number    TEXT,
             contact_notes TEXT,
             created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
         )
     """)
+
+    _migrate_person_schema_if_needed(cur)
 
     # ── BankAccount ──────────────────────────────────────────────────────────
     cur.execute("""
@@ -211,8 +317,12 @@ def initialise_database() -> None:
             category         TEXT,
             mode             TEXT,
             amount           REAL    NOT NULL,
+            reference_no     TEXT,
             description      TEXT,
             balance_after    REAL,
+            linked_transaction_id INTEGER REFERENCES Transactions(transaction_id),
+            internal_transfer_group_id INTEGER,
+            is_internal_transfer INTEGER NOT NULL DEFAULT 0,
             source           TEXT    NOT NULL DEFAULT 'Manual',
             created_at       TEXT    NOT NULL DEFAULT (datetime('now'))
         )
@@ -225,7 +335,7 @@ def initialise_database() -> None:
             account_id        INTEGER NOT NULL REFERENCES BankAccount(account_id),
             person_id         INTEGER NOT NULL REFERENCES Person(person_id),
             principal_amount  REAL    NOT NULL,
-            start_date        TEXT    NOT NULL,
+            start_date        TEXT,
             fd_reference_no   TEXT,
             tenure_years      INTEGER DEFAULT 0,
             tenure_months     INTEGER,
@@ -253,6 +363,9 @@ def initialise_database() -> None:
             record_id       INTEGER PRIMARY KEY AUTOINCREMENT,
             fd_id           INTEGER NOT NULL REFERENCES FixedDeposit(fd_id),
             financial_year  TEXT    NOT NULL,
+            quarter         TEXT,
+            period_start    TEXT,
+            period_end      TEXT,
             interest_earned REAL    NOT NULL,
             assessment_year TEXT    NOT NULL
         )
@@ -334,6 +447,7 @@ def initialise_database() -> None:
         CREATE TABLE IF NOT EXISTS Bank (
             bank_id INTEGER PRIMARY KEY AUTOINCREMENT,
             bank_name TEXT NOT NULL UNIQUE,
+            nickname TEXT,
             tan_code TEXT,
             created_at TEXT DEFAULT (datetime('now'))
         )
@@ -341,6 +455,8 @@ def initialise_database() -> None:
 
     # Bank table migration for older DBs
     bank_cols = {row[1] for row in cur.execute("PRAGMA table_info(Bank)").fetchall()}
+    if "nickname" not in bank_cols:
+        cur.execute("ALTER TABLE Bank ADD COLUMN nickname TEXT")
     if "tan_code" not in bank_cols:
         cur.execute("ALTER TABLE Bank ADD COLUMN tan_code TEXT")
     cur.execute(
@@ -369,7 +485,10 @@ def initialise_database() -> None:
         )
     """)
 
+    _migrate_bank_account_schema_if_needed(cur)
+    _migrate_transactions_schema_if_needed(cur)
     _migrate_fixed_deposit_schema_if_needed(conn, cur)
+    _migrate_fd_interest_record_schema_if_needed(cur)
 
     conn.commit()
     conn.close()

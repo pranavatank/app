@@ -7,12 +7,15 @@ from PyQt6.QtWidgets import (
     QPushButton, QComboBox, QLineEdit, QTableWidget,
     QTableWidgetItem, QHeaderView, QDialog, QDialogButtonBox,
     QFormLayout, QDateEdit, QDoubleSpinBox, QTextEdit,
-    QMessageBox, QFrame, QAbstractItemView
+    QMessageBox, QFrame, QAbstractItemView, QCheckBox
 )
 from PyQt6.QtCore import Qt, QDate
 from PyQt6.QtGui import QFont, QColor
 
+from ui.widgets.excel_table import ExcelTableWithStats
+
 from ui.theme import Theme
+from ui.date_utils import format_display_date
 from core.session import session
 from config import (
     INCOME_CATEGORIES, EXPENSE_CATEGORIES,
@@ -21,11 +24,26 @@ from config import (
 from models.person import get_all_persons
 from models.bank_account import get_accounts_for_person, get_all_accounts
 from models.transaction import (
-    get_transactions, add_transaction, update_transaction, delete_transaction
+    get_transactions, add_transaction, update_transaction, delete_transaction,
+    reprocess_internal_transfers
 )
 
-_COL_DATE=0; _COL_TYPE=1; _COL_CAT=2; _COL_MODE=3; _COL_DESC=4
-_COL_AMOUNT=5; _COL_BAL=6; _COL_ACCT=7; _COL_PERSON=8; _COL_ID=9
+_COL_DATE=0; _COL_TYPE=1; _COL_CAT=2; _COL_MODE=3; _COL_REF=4; _COL_DESC=5
+_COL_AMOUNT=6; _COL_BAL=7; _COL_ACCT=8; _COL_PERSON=9; _COL_ID=10
+
+
+class _DateSortItem(QTableWidgetItem):
+    def __lt__(self, other):
+        if not isinstance(other, QTableWidgetItem):
+            return super().__lt__(other)
+        left_iso = self.data(Qt.ItemDataRole.UserRole)
+        right_iso = other.data(Qt.ItemDataRole.UserRole)
+        if left_iso and right_iso:
+            left_date = QDate.fromString(str(left_iso), "yyyy-MM-dd")
+            right_date = QDate.fromString(str(right_iso), "yyyy-MM-dd")
+            if left_date.isValid() and right_date.isValid():
+                return left_date < right_date
+        return super().__lt__(other)
 
 
 class TransactionsScreen(QWidget):
@@ -79,6 +97,12 @@ class TransactionsScreen(QWidget):
         self.btn_delete.setEnabled(False)
         self.btn_delete.clicked.connect(self._delete_transaction)
         layout.addWidget(self.btn_delete)
+
+        self.btn_reprocess = QPushButton("Reprocess Data")
+        self.btn_reprocess.setObjectName("secondaryBtn")
+        self.btn_reprocess.setFixedHeight(40)
+        self.btn_reprocess.clicked.connect(self._reprocess_data)
+        layout.addWidget(self.btn_reprocess)
 
         layout.addStretch()
 
@@ -166,26 +190,24 @@ class TransactionsScreen(QWidget):
 
         return bar
 
-    def _build_table(self) -> QTableWidget:
-        headers = ["Date","Type","Category","Mode","Description","Amount (₹)","Balance After (₹)","Account","Person","ID"]
-        self.table = QTableWidget(0, len(headers))
-        self.table.setHorizontalHeaderLabels(headers)
-        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        self.table.setAlternatingRowColors(True)
-        self.table.verticalHeader().setVisible(False)
-        self.table.setShowGrid(False)
+    def _build_table(self) -> QWidget:
+        headers = ["Date","Type","Category","Mode","Reference No","Description","Amount (₹)","Balance After (₹)","Account","Person","ID"]
+        self.table_widget = ExcelTableWithStats(show_checkboxes=True)
+        self.table = self.table_widget.table
+        self.table.editable = True  # Enable editing for certain columns
+        self.table.setHeaders(headers)
+        self.table.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked | QAbstractItemView.EditTrigger.EditKeyPressed)
         self.table.setSortingEnabled(True)
+        self.table.cellDataChanged.connect(self._on_table_data_changed)
 
         hdr = self.table.horizontalHeader()
         hdr.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
-        for i, w in enumerate([90,80,130,100,220,110,130,160,120,0]):
+        for i, w in enumerate([40,90,80,130,100,150,210,110,130,160,120,0]):
             self.table.setColumnWidth(i, w)
-        self.table.setColumnHidden(_COL_ID, True)
+        self.table.setColumnHidden(_COL_ID+1, True)
         self.table.itemSelectionChanged.connect(self._on_selection_changed)
         self.table.doubleClicked.connect(self._edit_transaction)
-        return self.table
+        return self.table_widget
 
     def refresh(self):
         self._reload_filter_persons()
@@ -213,12 +235,12 @@ class TransactionsScreen(QWidget):
             self._all_accounts = get_all_accounts()
             self.f_account.addItem("All Accounts", userData=None)
             for a in self._all_accounts:
-                self.f_account.addItem(f"{a['person_name']} — {a['bank_name']} ({a['account_type']})", userData=a["account_id"])
+                self.f_account.addItem(f"{a['person_name']} — {a.get('bank_display_name', a['bank_name'])} ({a['account_type']})", userData=a["account_id"])
         else:
             self._all_accounts = get_accounts_for_person(pid)
             self.f_account.addItem("All Accounts", userData=None)
             for a in self._all_accounts:
-                self.f_account.addItem(f"{a['bank_name']} ({a['account_type']})", userData=a["account_id"])
+                self.f_account.addItem(f"{a.get('bank_display_name', a['bank_name'])} ({a['account_type']})", userData=a["account_id"])
         self.f_account.blockSignals(False)
 
     def _fetch_and_display(self):
@@ -232,7 +254,8 @@ class TransactionsScreen(QWidget):
         rows = get_transactions(account_id=aid, person_id=pid, financial_year=fy, transaction_type=typ)
         if term:
             rows = [r for r in rows if term in (r.get("description") or "").lower()
-                    or term in (r.get("category") or "").lower()]
+                    or term in (r.get("category") or "").lower()
+                    or term in (r.get("reference_no") or "").lower()]
 
         self._current_rows = rows
         self._populate_table(rows)
@@ -241,6 +264,8 @@ class TransactionsScreen(QWidget):
         self.btn_delete.setEnabled(False)
 
     def _populate_table(self, rows):
+        # Block signals during refresh
+        self.table.blockSignals(True)
         self.table.setSortingEnabled(False)
         self.table.setRowCount(0)
 
@@ -253,6 +278,17 @@ class TransactionsScreen(QWidget):
         for row in rows:
             r = self.table.rowCount()
             self.table.insertRow(r)
+            
+            # Add checkbox widget in column 0
+            cb = QCheckBox()
+            cb.setChecked(False)
+            cb_widget = QWidget()
+            cb_layout = QHBoxLayout(cb_widget)
+            cb_layout.addWidget(cb)
+            cb_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            cb_layout.setContentsMargins(0, 0, 0, 0)
+            self.table.setCellWidget(r, 0, cb_widget)
+            
             txn_type = row.get("transaction_type", "")
             color    = type_colors.get(txn_type, QColor(Theme.TEXT_PRIMARY))
 
@@ -268,30 +304,92 @@ class TransactionsScreen(QWidget):
                 it.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 return it
 
-            self.table.setItem(r, _COL_DATE,   item(row.get("transaction_date","")))
-            self.table.setItem(r, _COL_TYPE,   item(txn_type))
-            self.table.setItem(r, _COL_CAT,    item(row.get("category","")))
-            self.table.setItem(r, _COL_MODE,   item(row.get("mode","")))
-            self.table.setItem(r, _COL_DESC,   item(row.get("description","")))
-            self.table.setItem(r, _COL_AMOUNT, amt_item(row.get("amount")))
-            self.table.setItem(r, _COL_BAL,    amt_item(row.get("balance_after")))
-            self.table.setItem(r, _COL_ACCT,   item(row.get("bank_name","")))
-            self.table.setItem(r, _COL_PERSON, item(row.get("person_name","")))
-            self.table.setItem(r, _COL_ID,     QTableWidgetItem(str(row["transaction_id"])))
+            date_display = format_display_date(row.get("transaction_date"))
+            date_item = _DateSortItem(date_display)
+            date_item.setForeground(color)
+            date_item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            date_item.setData(Qt.ItemDataRole.UserRole, row.get("transaction_date"))
+            self.table.setItem(r, _COL_DATE+1, date_item)
+            
+            type_item = item(txn_type)
+            self.table.setItem(r, _COL_TYPE+1, type_item)
+            
+            # Category - editable
+            cat_item = item(row.get("category",""))
+            cat_item.setFlags(cat_item.flags() | Qt.ItemFlag.ItemIsEditable)
+            self.table.setItem(r, _COL_CAT+1, cat_item)
+            
+            # Mode - editable
+            mode_item = item(row.get("mode",""))
+            mode_item.setFlags(mode_item.flags() | Qt.ItemFlag.ItemIsEditable)
+            self.table.setItem(r, _COL_MODE+1, mode_item)
+            
+            # Reference - editable
+            ref_item = item(row.get("reference_no") or "—")
+            ref_item.setFlags(ref_item.flags() | Qt.ItemFlag.ItemIsEditable)
+            self.table.setItem(r, _COL_REF+1, ref_item)
+            
+            # Description - editable
+            desc_item = item(row.get("description",""))
+            desc_item.setFlags(desc_item.flags() | Qt.ItemFlag.ItemIsEditable)
+            self.table.setItem(r, _COL_DESC+1, desc_item)
+            
+            # Amount - editable
+            amt_item_val = amt_item(row.get("amount"))
+            amt_item_val.setFlags(amt_item_val.flags() | Qt.ItemFlag.ItemIsEditable)
+            self.table.setItem(r, _COL_AMOUNT+1, amt_item_val)
+            
+            # Balance - editable
+            bal_item_val = amt_item(row.get("balance_after"))
+            bal_item_val.setFlags(bal_item_val.flags() | Qt.ItemFlag.ItemIsEditable)
+            self.table.setItem(r, _COL_BAL+1, bal_item_val)
+            
+            self.table.setItem(r, _COL_ACCT+1,   item(row.get("bank_display_name") or row.get("bank_name", "")))
+            self.table.setItem(r, _COL_PERSON+1, item(row.get("person_name","")))
+            self.table.setItem(r, _COL_ID+1,     QTableWidgetItem(str(row["transaction_id"])))
             self.table.setRowHeight(r, 32)
 
         self.table.setSortingEnabled(True)
+        self.table.blockSignals(False)  # Re-enable signals
         count = self.table.rowCount()
         self.status_label.setText(f"Showing {count} transaction{'s' if count!=1 else ''}.")
 
     def _update_pills(self, rows):
-        income  = sum(r["amount"] for r in rows if r.get("transaction_type")=="Income")
-        expense = sum(r["amount"] for r in rows if r.get("transaction_type")=="Expense")
+        income  = sum(
+            r["amount"] for r in rows
+            if r.get("transaction_type") == "Income" and not r.get("is_internal_transfer")
+        )
+        expense = sum(
+            r["amount"] for r in rows
+            if r.get("transaction_type") == "Expense" and not r.get("is_internal_transfer")
+        )
         net = income - expense
         self.lbl_income_sum.setText(f"Income: ₹ {income:,.2f}")
         self.lbl_expense_sum.setText(f"Expense: ₹ {expense:,.2f}")
         sign = "+" if net >= 0 else ""
         self.lbl_net_sum.setText(f"Net: {sign}₹ {net:,.2f}")
+
+    def _reprocess_data(self):
+        reply = QMessageBox.question(
+            self,
+            "Reprocess Internal Transfers",
+            "This will scan bank-transfer-like entries across all accounts "
+            "and relink internal transfers. Continue?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        pairs, marked = reprocess_internal_transfers()
+        self._fetch_and_display()
+        if self._parent_window:
+            self._parent_window.refresh_overview()
+        QMessageBox.information(
+            self,
+            "Reprocess Completed",
+            f"Linked pairs: {pairs}\nTransactions marked as Internal Transfer: {marked}",
+        )
 
     def _add_transaction(self):
         persons  = get_all_persons()
@@ -319,7 +417,7 @@ class TransactionsScreen(QWidget):
             data = dlg.get_data()
             update_transaction(txn["transaction_id"], data["transaction_date"],
                                data["transaction_type"], data["amount"],
-                               data.get("category"), data.get("mode"), data.get("description"))
+                               data.get("category"), data.get("mode"), data.get("description"), data.get("reference_no"))
             self._fetch_and_display()
             if self._parent_window: self._parent_window.refresh_overview()
 
@@ -338,7 +436,7 @@ class TransactionsScreen(QWidget):
 
     def _selected_transaction(self):
         if not self.table.selectedItems(): return None
-        id_item = self.table.item(self.table.currentRow(), _COL_ID)
+        id_item = self.table.item(self.table.currentRow(), _COL_ID+1)
         if id_item is None: return None
         txn_id = int(id_item.text())
         return next((r for r in self._current_rows if r["transaction_id"] == txn_id), None)
@@ -347,6 +445,12 @@ class TransactionsScreen(QWidget):
         has = bool(self.table.selectedItems())
         self.btn_edit.setEnabled(has)
         self.btn_delete.setEnabled(has)
+
+    def _on_table_data_changed(self):
+        """Handle data changes in table (after paste or edit)."""
+        # Note: Auto-save not implemented to avoid accidental overwrites
+        # Users should use Edit button to save changes
+        pass
 
     def _on_filter_person_changed(self): self._reload_filter_accounts()
 
@@ -404,7 +508,7 @@ class TransactionDialog(QDialog):
         self.date_edit = QDateEdit()
         self.date_edit.setCalendarPopup(True)
         self.date_edit.setDate(QDate.currentDate())
-        self.date_edit.setDisplayFormat("dd-MM-yyyy")
+        self.date_edit.setDisplayFormat("dd/MM/yy")
         form.addRow("Date *", self.date_edit)
 
         self.cmb_type = QComboBox()
@@ -419,6 +523,10 @@ class TransactionDialog(QDialog):
         self.cmb_mode = QComboBox()
         self.cmb_mode.addItems([""]+TRANSACTION_MODES)
         form.addRow("Mode", self.cmb_mode)
+
+        self.ref_input = QLineEdit()
+        self.ref_input.setPlaceholderText("Optional reference no. (UTR/IB/SCREF/...)")
+        form.addRow("Reference No", self.ref_input)
 
         self.amount_spin = QDoubleSpinBox()
         self.amount_spin.setRange(0.01, 99_999_999.99)
@@ -454,7 +562,7 @@ class TransactionDialog(QDialog):
         pid = self.cmb_person.currentData()
         for a in self._accounts:
             if pid is None or a.get("person_id") == pid:
-                self.cmb_account.addItem(f"{a['bank_name']} ({a['account_type']})", userData=a["account_id"])
+                self.cmb_account.addItem(f"{a.get('bank_display_name', a['bank_name'])} ({a['account_type']})", userData=a["account_id"])
 
     def _populate_categories(self, txn_type):
         self.cmb_category.clear()
@@ -482,6 +590,7 @@ class TransactionDialog(QDialog):
         if idx >= 0: self.cmb_category.setCurrentIndex(idx)
         idx = self.cmb_mode.findText(txn.get("mode") or "")
         if idx >= 0: self.cmb_mode.setCurrentIndex(idx)
+        self.ref_input.setText(txn.get("reference_no") or "")
         self.amount_spin.setValue(txn.get("amount",0.0))
         bal = txn.get("balance_after")
         if bal is not None: self.bal_spin.setValue(bal)
@@ -507,6 +616,7 @@ class TransactionDialog(QDialog):
             "transaction_type": self.cmb_type.currentText(),
             "category":         self.cmb_category.currentText().strip() or None,
             "mode":             self.cmb_mode.currentText().strip() or None,
+            "reference_no":     self.ref_input.text().strip().upper() or None,
             "amount":           self.amount_spin.value(),
             "description":      self.desc_edit.toPlainText().strip() or None,
             "balance_after":    bal,

@@ -14,6 +14,7 @@ from PyQt6.QtCore import qInstallMessageHandler
 from core.database import initialise_database
 from core.auth import is_first_run
 from config import APP_NAME, APP_VERSION, DATA_DIR, BACKUP_DIR
+from ui.messagebox_utils import install_copyable_error_dialogs
 
 
 def bootstrap():
@@ -32,6 +33,7 @@ def _qt_message_handler(msg_type, context, message):
 def launch_app():
     qInstallMessageHandler(_qt_message_handler)
     app = QApplication(sys.argv)
+    install_copyable_error_dialogs()
     app.setApplicationName(APP_NAME)
     app.setApplicationVersion(APP_VERSION)
 

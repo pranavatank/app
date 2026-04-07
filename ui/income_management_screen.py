@@ -11,6 +11,7 @@ from PyQt6.QtCore import Qt, QDate
 from PyQt6.QtGui import QFont, QColor
 
 from ui.theme import Theme
+from ui.date_utils import format_display_date
 from core.session import session
 from config import get_current_financial_year, get_all_financial_years
 from models.person import get_all_persons
@@ -311,11 +312,11 @@ class IncomeManagementScreen(QWidget):
             self.table.setItem(r, 1, item(row["income_type"]))
             self.table.setItem(r, 2, item(row["frequency"]))
             # Display day-only as "Day X" for recurring frequencies
-            exp_display = row["expected_date"] if "-" in row["expected_date"] else f"Day {row['expected_date']}"
+            exp_display = format_display_date(row["expected_date"]) if "-" in row["expected_date"] else f"Day {row['expected_date']}"
             self.table.setItem(r, 3, item(exp_display))
             self.table.setItem(r, 4, amt_item(row["expected_amount"]))
             
-            actual_date = row.get("actual_date") or "—"
+            actual_date = format_display_date(row.get("actual_date"))
             self.table.setItem(r, 5, item(actual_date))
             
             actual_amt = row.get("actual_amount")
@@ -348,7 +349,7 @@ class IncomeManagementScreen(QWidget):
             status_item.setForeground(QColor(status_color))
             self.table.setItem(r, 8, status_item)
 
-            self.table.setItem(r, 9, item(f"{row['bank_name']} ({row['account_type']})"))
+            self.table.setItem(r, 9, item(f"{row.get('bank_display_name', row['bank_name'])} ({row['account_type']})"))
             self.table.setItem(r, 10, QTableWidgetItem(str(row["expectation_id"])))
             self.table.setRowHeight(r, 32)
 
@@ -587,7 +588,7 @@ class IncomeExpectationDialog(QDialog):
         self.date_edit = QDateEdit()
         self.date_edit.setCalendarPopup(True)
         self.date_edit.setDate(QDate.currentDate())
-        self.date_edit.setDisplayFormat("dd-MM-yyyy")
+        self.date_edit.setDisplayFormat("dd/MM/yy")
         self.date_layout.addWidget(self.date_edit)
         self.date_edit.hide()
         
@@ -635,7 +636,7 @@ class IncomeExpectationDialog(QDialog):
         accounts = get_accounts_for_person(pid) if pid else []
         for a in accounts:
             self.cmb_account.addItem(
-                f"{a['bank_name']} ({a['account_type']})",
+                f"{a.get('bank_display_name', a['bank_name'])} ({a['account_type']})",
                 userData=a["account_id"]
             )
 
@@ -773,7 +774,7 @@ class LinkActualDialog(QDialog):
             r = self.table.rowCount()
             self.table.insertRow(r)
             
-            self.table.setItem(r, 0, QTableWidgetItem(txn["transaction_date"]))
+            self.table.setItem(r, 0, QTableWidgetItem(format_display_date(txn.get("transaction_date"))))
             self.table.setItem(r, 1, QTableWidgetItem(txn.get("category") or "—"))
             self.table.setItem(r, 2, QTableWidgetItem(f"₹ {txn['amount']:,.2f}"))
             self.table.setItem(r, 3, QTableWidgetItem(txn.get("description") or "—"))

@@ -16,6 +16,31 @@ import pandas as pd
 from models.transaction import check_duplicate
 
 
+_REF_PATTERNS = [
+    r"\b(?:IB|SCREF|CHBATCH|MB|UTR|RRN|NEFT|IMPS)[A-Z0-9]{6,}\b",
+    r"\b[A-Z0-9]{10,}/\d+\b",
+    r"\b[A-F0-9]{16,}\b",
+    r"\b[A-Z0-9]{12,}\b",
+]
+
+
+def _extract_reference_no(text: str) -> Optional[str]:
+    value = (text or "").upper().strip()
+    if not value:
+        return None
+
+    matches = []
+    for pattern in _REF_PATTERNS:
+        matches.extend(re.findall(pattern, value))
+    if not matches:
+        return None
+
+    ref = matches[-1].strip()
+    if len(ref) < 8:
+        return None
+    return ref[:80]
+
+
 def _append_issue(debug: Optional[Dict], message: str, limit: int = 200) -> None:
     """Collect parse issues without allowing unbounded memory growth."""
     if debug is None:
@@ -41,10 +66,10 @@ class BankTemplate:
 
 class GenericPDFParser(BankTemplate):
     """Generic fallback parser for PDF statements."""
-    
+
     def parse_pdf(self, file_path: str, debug: Optional[Dict] = None) -> List[Dict]:
         transactions = []
-        
+
         try:
             with pdfplumber.open(file_path) as pdf:
                 for page_no, page in enumerate(pdf.pages, start=1):
@@ -52,64 +77,88 @@ class GenericPDFParser(BankTemplate):
                     if not text:
                         _append_issue(debug, f"PDF page {page_no}: no extractable text")
                         continue
-                    
-                    # Try to extract transactions using common patterns
-                    lines = text.split('\n')
+
+                    lines = self._normalize_pdf_lines(text)
                     for line_no, line in enumerate(lines, start=1):
-                        debug and debug.__setitem__("rows_scanned", debug.get("rows_scanned", 0) + 1)
-                        txn, reason = self._parse_line(line)
-                        if txn:
-                            transactions.append(txn)
-                        elif line.strip() and self._looks_like_transaction_line(line):
-                            preview = line.strip()[:110]
-                            _append_issue(
-                                debug,
-                                f"PDF page {page_no}, line {line_no}: {reason}; text='{preview}'"
-                            )
+                        candidate_lines = self._split_compound_transaction_line(line)
+                        for candidate in candidate_lines:
+                            debug and debug.__setitem__("rows_scanned", debug.get("rows_scanned", 0) + 1)
+                            txn, reason = self._parse_line(candidate)
+                            if txn:
+                                transactions.append(txn)
+                            elif candidate.strip() and self._looks_like_transaction_line(candidate):
+                                preview = candidate.strip()[:110]
+                                _append_issue(
+                                    debug,
+                                    f"PDF page {page_no}, line {line_no}: {reason}; text='{preview}'"
+                                )
         except Exception as e:
             _append_issue(debug, f"PDF parsing error: {e}")
             print(f"PDF parsing error: {e}")
 
-        # Improve type detection when running balances are available.
-        prev_balance = None
-        for txn in transactions:
-            balance = txn.get("balance_after")
-            amount = txn.get("amount")
-            if balance is not None and prev_balance is not None and amount is not None:
-                delta = balance - prev_balance
-                if abs(abs(delta) - amount) <= 1.0:
-                    txn_type = "Income" if delta > 0 else "Expense"
-                    txn["transaction_type"] = txn_type
-                    txn["category"] = self._guess_category(txn.get("description", ""), txn_type)
-            if balance is not None:
-                prev_balance = balance
-        
         if debug is not None:
             debug["rows_extracted"] = len(transactions)
         return transactions
+
+    def _normalize_pdf_lines(self, text: str) -> List[str]:
+        """Merge wrapped narration/reference lines into logical rows."""
+        date_re = re.compile(r"\d{2}[/-](?:\d{2}|[A-Za-z]{3})[/-]\d{4}|\d{4}-\d{2}-\d{2}")
+        raw_lines = [ln.strip() for ln in (text or "").split("\n") if ln and ln.strip()]
+        logical: List[str] = []
+
+        for ln in raw_lines:
+            if date_re.search(ln):
+                if logical and not date_re.search(logical[-1]):
+                    logical[-1] = f"{logical[-1]} {ln}".strip()
+                else:
+                    logical.append(ln)
+            else:
+                if logical:
+                    logical[-1] = f"{logical[-1]} {ln}".strip()
+                else:
+                    logical.append(ln)
+        return logical
+
+    def _split_compound_transaction_line(self, line: str) -> List[str]:
+        """Split lines that contain multiple serial/date transactions in one text row."""
+        text = (line or "").strip()
+        if not text:
+            return []
+
+        # Unity-like PDFs may extract multiple rows into one line:
+        # ... 14 '2025-02-28 ... 15 '2025-03-01 ...
+        start_re = re.compile(r"(?:^|\s)(\d+\s+'?\d{4}-\d{2}-\d{2})")
+        starts = list(start_re.finditer(text))
+        if not starts:
+            return [text]
+
+        parts: List[str] = []
+        for idx, m in enumerate(starts):
+            begin = m.start(1)
+            end = starts[idx + 1].start(1) if (idx + 1) < len(starts) else len(text)
+            part = text[begin:end].strip()
+            if part:
+                parts.append(part)
+
+        return parts or [text]
 
     def _looks_like_transaction_line(self, line: str) -> bool:
         text = line.strip()
         if not text:
             return False
 
-        # Prefer logging lines that resemble transaction rows.
         if text.upper().startswith("OPENING BALANCE"):
             return False
-        if re.match(r"^\(?\d[\d,]*\.\d{2}\)?(?:\s+\(?\d[\d,]*\.\d{2}\)?){2,}$", text):
+        if re.match(r"^\(?\d[\d,]*\.\d{1,2}\)?(?:\s+\(?\d[\d,]*\.\d{1,2}\)?){2,}$", text):
             return False
 
-        # A valid transaction row should generally have both a date and an amount.
-        starts_with_date = re.match(r"^\d{2}[-/](?:\d{2}|[A-Za-z]{3})[-/]\d{4}", text) is not None
-        has_amount = re.search(r"\(?\d[\d,]*\.\d{2}\)?|\(?\.\d{2}\)?", text) is not None
+        starts_with_date = re.match(r"^(?:\d+\s+)?'?\d{4}-\d{2}-\d{2}|^\d{2}[-/](?:\d{2}|[A-Za-z]{3})[-/]\d{4}", text) is not None
+        has_amount = re.search(r"\(?\d[\d,]*\.\d{1,2}\)?|\(?\.\d{1,2}\)?", text) is not None
         if starts_with_date and has_amount:
             return True
 
-        # Fallback: lines with explicit payment channels and amount are likely transaction rows.
         has_channel = any(k in text.upper() for k in ["UPI", "IMPS", "NEFT", "IFT", "ATM", "DEBIT", "CREDIT"])
-        if has_channel and has_amount:
-            return True
-        return False
+        return has_channel and has_amount
 
     def _parse_amount_token(self, token: str) -> Optional[float]:
         raw = token.strip()
@@ -130,7 +179,7 @@ class GenericPDFParser(BankTemplate):
 
     def _parse_date(self, text: str) -> Optional[str]:
         value = text.strip().replace("/", "-")
-        for fmt in ["%d-%m-%Y", "%d-%b-%Y", "%d-%B-%Y"]:
+        for fmt in ["%d-%m-%Y", "%d-%b-%Y", "%d-%B-%Y", "%Y-%m-%d"]:
             try:
                 return datetime.strptime(value, fmt).strftime("%Y-%m-%d")
             except ValueError:
@@ -146,18 +195,22 @@ class GenericPDFParser(BankTemplate):
         if "CARD" in upper or "POS" in upper:
             return "Debit Card"
         return "Bank Transfer"
-    
+
     def _parse_line(self, line: str) -> tuple[Optional[Dict], str]:
         """Try to extract transaction from a line."""
         text = line.strip()
         if not text:
             return None, "empty line"
 
-        # IDFC and similar banks often render as:
-        # 01-Apr-2024 01-Apr-2024 <particulars> 1,025.00 (17,992.00)
+        # Strip leading serial no. and optional quote before ISO date.
+        text = re.sub(r"^\d+\s+'(?=\d{4}-\d{2}-\d{2}\b)", "", text)
+        text = re.sub(r"^\d+\s+(?=\d{4}-\d{2}-\d{2}\b)", "", text)
+        text = re.sub(r"^'(?=\d{4}-\d{2}-\d{2}\b)", "", text)
+
+        # Pattern with two dates near the front.
         row_match = re.match(
-            r"^(\d{2}[-/](?:\d{2}|[A-Za-z]{3})[-/]\d{4})\s+"
-            r"(\d{2}[-/](?:\d{2}|[A-Za-z]{3})[-/]\d{4})\s+(.+)$",
+            r"^((?:\d{2}[-/](?:\d{2}|[A-Za-z]{3})[-/]\d{4})|(?:\d{4}-\d{2}-\d{2}))\s+"
+            r"((?:\d{2}[-/](?:\d{2}|[A-Za-z]{3})[-/]\d{4})|(?:\d{4}-\d{2}-\d{2}))\s+(.+)$",
             text,
         )
 
@@ -167,19 +220,18 @@ class GenericPDFParser(BankTemplate):
                 return None, "invalid date value"
 
             remainder = row_match.group(3).strip()
-            amount_tokens = re.findall(r"\(?\d[\d,]*\.\d{2}\)?|\(?\.\d{2}\)?", remainder)
+            amount_tokens = re.findall(r"\(?\d[\d,]*\.\d{1,2}\)?|\(?\.\d{1,2}\)?", remainder)
             if len(amount_tokens) < 2:
                 return None, "expected amount and balance"
 
             amount_token = amount_tokens[-2]
             balance_token = amount_tokens[-1]
-
             amount = self._parse_amount_token(amount_token)
-            if amount is None or amount <= 0:
+            if amount is None or amount == 0:
                 return None, "invalid amount format"
+            amount = abs(amount)
 
             balance_after = self._parse_amount_token(balance_token)
-
             amount_pos = remainder.rfind(amount_token)
             description = remainder[:amount_pos].strip() if amount_pos > 0 else "Transaction"
             if not description:
@@ -187,7 +239,7 @@ class GenericPDFParser(BankTemplate):
 
             txn_type = "Expense"
             upper = description.upper()
-            if any(word in upper for word in ["CREDIT", "CR", "DEPOSIT", "SALARY", "IMPS-MOB/FUND TRF", "NEFT/"]):
+            if any(word in upper for word in ["CREDIT", "CR", "DEPOSIT", "SALARY", "INTEREST", "REDEEM", "REFUND"]):
                 txn_type = "Income"
 
             return {
@@ -197,14 +249,12 @@ class GenericPDFParser(BankTemplate):
                 "transaction_type": txn_type,
                 "category": self._guess_category(description, txn_type),
                 "mode": self._guess_mode(description),
+                "reference_no": _extract_reference_no(text),
                 "balance_after": balance_after,
             }, "ok"
 
-        # Fallback pattern for simpler one-date rows.
-        date_pattern = r'(\d{2}[/-]\d{2}[/-]\d{4})'
-        amount_pattern = r'(\(?[\d,]*\.\d{2}\)?)'
-
-        date_match = re.search(date_pattern, text)
+        # One-date row (date may appear after narration in some layouts).
+        date_match = re.search(r"((?:\d{2}[/-]\d{2}[/-]\d{4})|(?:\d{4}-\d{2}-\d{2}))", text)
         if not date_match:
             return None, "missing transaction date at line start"
 
@@ -212,21 +262,62 @@ class GenericPDFParser(BankTemplate):
         if not txn_date:
             return None, "invalid date value"
 
-        amounts = re.findall(amount_pattern, text)
+        amount_pattern = r"(\(?[\d,]*\.\d{1,2}\)?)"
+        amount_matches = list(re.finditer(amount_pattern, text))
+        amounts = [m.group(1) for m in amount_matches]
         if not amounts:
             return None, "missing amount"
 
-        amount = self._parse_amount_token(amounts[0])
-        if amount is None or amount <= 0:
+        parsed_amounts = [self._parse_amount_token(tok) for tok in amounts]
+        if all(v is None for v in parsed_amounts):
             return None, "invalid amount format"
+        parsed_abs = [abs(v) if isinstance(v, float) else None for v in parsed_amounts]
 
+        desc_prefix = text[:date_match.start()].strip()
         desc_start = date_match.end()
-        desc_end = text.find(amounts[0])
-        description = text[desc_start:desc_end].strip() if desc_end > desc_start else "Transaction"
+        first_amount_match = amount_matches[0]
+        desc_end = first_amount_match.start()
+        desc_suffix = text[desc_start:desc_end].strip() if desc_end > desc_start else ""
+        tail_start = amount_matches[-1].end() if amount_matches else len(text)
+        desc_tail = text[tail_start:].strip(" -") if tail_start < len(text) else ""
+        description = f"{desc_prefix} {desc_suffix} {desc_tail}".strip() or "Transaction"
+        desc_upper = description.upper()
 
-        txn_type = "Expense"
-        if any(word in text.upper() for word in ["CREDIT", "CR", "DEPOSIT", "SALARY"]):
-            txn_type = "Income"
+        amount = None
+        txn_type = None
+        balance_after = None
+
+        if len(parsed_abs) >= 3 and all(isinstance(v, float) for v in parsed_abs[-3:]):
+            first_val, second_val, third_val = parsed_abs[-3], parsed_abs[-2], parsed_abs[-1]
+            # Typical 3-column statements: Deposit, Withdrawal, Balance.
+            if first_val > 0 and second_val == 0:
+                amount = first_val
+                balance_after = third_val if third_val > 0 else None
+            elif second_val > 0 and first_val == 0:
+                amount = second_val
+                balance_after = third_val if third_val > 0 else None
+
+        if amount is None:
+            positive = [v for v in parsed_abs if isinstance(v, float) and v > 0]
+            if not positive:
+                return None, "invalid amount format"
+            amount = positive[0]
+
+        if txn_type is None:
+            expense_hint = any(k in desc_upper for k in ["DEBIT", " DR ", "WITHDRAW", "CHARGES", "GST", "TAX", "PAYIN"])
+            income_hint = any(k in desc_upper for k in [
+                "CREDIT", " CR ", " CR.", "INT CR", "INTEREST", " DEPOSIT", "SALARY",
+                "REDEEM", "REFUND", "PAT CR", "FD CR"
+            ])
+            if expense_hint and not income_hint:
+                txn_type = "Expense"
+            elif income_hint:
+                txn_type = "Income"
+            else:
+                txn_type = "Expense"
+
+        if balance_after is None and len(parsed_amounts) >= 1 and isinstance(parsed_amounts[-1], float):
+            balance_after = parsed_amounts[-1]
 
         return {
             "transaction_date": txn_date,
@@ -235,6 +326,8 @@ class GenericPDFParser(BankTemplate):
             "transaction_type": txn_type,
             "category": self._guess_category(description, txn_type),
             "mode": self._guess_mode(description),
+            "reference_no": _extract_reference_no(text),
+            "balance_after": balance_after,
         }, "ok"
     
     def _guess_category(self, description: str, txn_type: str) -> str:
@@ -242,6 +335,10 @@ class GenericPDFParser(BankTemplate):
         desc_upper = description.upper()
         
         if txn_type == "Income":
+            if any(word in desc_upper for word in ["PRINC AND INT AUTO REDEEM", "AUTO REDEEM", "FD CR", "PAT CR"]):
+                return "FD Maturity"
+            if any(word in desc_upper for word in ["INT AUTO REDEEM", "FD INTEREST"]):
+                return "FD Interest"
             if any(word in desc_upper for word in ["SALARY", "SAL"]):
                 return "Salary"
             elif any(word in desc_upper for word in ["INTEREST", "INT"]):
@@ -252,6 +349,8 @@ class GenericPDFParser(BankTemplate):
         else:
             if any(word in desc_upper for word in ["ATM", "CASH"]):
                 return "Cash"
+            elif any(word in desc_upper for word in ["TD. GENERIC PAYIN DEBIT", "PAYIN DEBIT", "FIXED DEPOSIT", "TERM DEPOSIT"]):
+                return "FD Principal"
             elif any(word in desc_upper for word in ["FOOD", "RESTAURANT", "ZOMATO", "SWIGGY"]):
                 return "Food & Dining"
             elif any(word in desc_upper for word in ["FUEL", "PETROL", "DIESEL"]):
@@ -309,6 +408,11 @@ class GenericExcelParser(BankTemplate):
             ]
             amount_cols = ['Amount', 'Txn Amount', 'Transaction Amount']
             drcr_cols = ['Dr Cr', 'CR DR', 'Debit Credit', 'Type', 'Txn Type']
+            ref_cols = [
+                'Reference', 'Reference No', 'Reference Number',
+                'Ref', 'Ref No', 'Ref No.', 'Transaction Reference',
+                'UTR', 'UTR No', 'Cheque No', 'Chq No'
+            ]
 
             df = self._prepare_dataframe(df, file_path, date_cols, desc_cols, debug)
             
@@ -320,6 +424,7 @@ class GenericExcelParser(BankTemplate):
             balance_col = self._find_column(df, balance_cols)
             amount_col = self._find_column(df, amount_cols)
             drcr_col = self._find_column(df, drcr_cols)
+            ref_col = self._find_column(df, ref_cols)
 
             inferred = self._infer_columns_by_content(
                 df,
@@ -331,6 +436,7 @@ class GenericExcelParser(BankTemplate):
                     "balance_col": balance_col,
                     "amount_col": amount_col,
                     "drcr_col": drcr_col,
+                    "ref_col": ref_col,
                 },
                 debug,
             )
@@ -341,6 +447,7 @@ class GenericExcelParser(BankTemplate):
             balance_col = inferred["balance_col"]
             amount_col = inferred["amount_col"]
             drcr_col = inferred["drcr_col"]
+            ref_col = inferred.get("ref_col")
             
             if not date_col or not desc_col:
                 _append_issue(
@@ -377,6 +484,14 @@ class GenericExcelParser(BankTemplate):
                     # Get description
                     description = str(row[desc_col]) if not pd.isna(row[desc_col]) else "Transaction"
                     description = description.strip() or "Transaction"
+
+                    reference_no = None
+                    if ref_col and ref_col in row and not pd.isna(row[ref_col]):
+                        ref_raw = str(row[ref_col]).strip()
+                        if ref_raw and ref_raw.lower() != "nan":
+                            reference_no = re.sub(r"\s+", "", ref_raw).upper()[:80]
+                    if not reference_no:
+                        reference_no = _extract_reference_no(description)
                     
                     # Determine amount and type
                     debit = self._to_number(row[debit_col]) if debit_col and not pd.isna(row[debit_col]) else 0.0
@@ -419,6 +534,7 @@ class GenericExcelParser(BankTemplate):
                         "transaction_type": txn_type,
                         "category": self._guess_category(description, txn_type),
                         "mode": "Bank Transfer",
+                        "reference_no": reference_no,
                         "balance_after": balance_after
                     })
                     
@@ -562,6 +678,9 @@ class GenericExcelParser(BankTemplate):
         cols = [c for c in cols if usable_column(c)]
         if not cols:
             cols = list(sample.columns)
+
+        if "ref_col" not in inferred:
+            inferred["ref_col"] = resolved.get("ref_col")
 
         if inferred.get("date_col") is None:
             best_col = None

@@ -256,6 +256,134 @@ Dark theme with Catppuccin-inspired colors:
 - Warning: `#fab387` (orange)
 - Danger: `#f38ba8` (red)
 
+# Keyboard Shortcuts Guide
+
+## Excel-Like Table Shortcuts
+
+All table screens in the Financial App now support the following keyboard shortcuts:
+
+### Selection Shortcuts
+
+| Shortcut | Action | Description |
+|----------|--------|-------------|
+| **Ctrl+A** | Select All | Selects all cells in the table |
+| **Click** | Select Cell | Click on a cell to select it |
+| **Shift+Click** | Range Selection | Hold Shift and click to select a range of cells |
+| **Ctrl+Click** | Multi-Selection | Hold Ctrl and click to select multiple non-contiguous cells |
+| **Drag** | Drag Selection | Click and drag to select multiple cells |
+
+### Clipboard Shortcuts
+
+| Shortcut | Action | Description |
+|----------|--------|-------------|
+| **Ctrl+C** | Copy | Copy selected cells to clipboard (TSV format) |
+| **Ctrl+V** | Paste | Paste clipboard content to selected cells |
+| **Ctrl+X** | Cut | Copy selected cells and clear their content |
+
+### Editing Shortcuts
+
+| Shortcut | Action | Description |
+|----------|--------|-------------|
+| **Double-Click** | Edit Cell | Double-click on an editable cell to edit it |
+| **F2** | Edit Mode | Press F2 to enter edit mode for selected cell |
+| **Enter** | Confirm Edit | Press Enter to save changes and move to next row |
+| **Esc** | Cancel Edit | Press Esc to cancel editing |
+| **Delete** | Delete Rows | Delete selected rows (with confirmation) |
+
+### Navigation Shortcuts
+
+| Shortcut | Action | Description |
+|----------|--------|-------------|
+| **Arrow Keys** | Navigate | Move between cells using arrow keys |
+| **Tab** | Next Cell | Move to next cell (right) |
+| **Shift+Tab** | Previous Cell | Move to previous cell (left) |
+| **Home** | First Column | Jump to first column in current row |
+| **End** | Last Column | Jump to last column in current row |
+| **Ctrl+Home** | First Cell | Jump to first cell in table |
+| **Ctrl+End** | Last Cell | Jump to last cell in table |
+| **Page Up** | Scroll Up | Scroll one page up |
+| **Page Down** | Scroll Down | Scroll one page down |
+
+## Screen-Specific Features
+
+### Transactions Screen
+- **Editable Columns**: Category, Mode, Reference No, Description, Amount, Balance After
+- **Read-Only Columns**: Date, Type, Account, Person
+- **Checkbox**: Select transactions for bulk operations
+- **Stats Bar**: Shows sum and average of selected amounts
+
+### Fixed Deposits Screen
+- **Editable Columns**: FD No, Principal, Rate %, Tenure, Compounding, Start Date, Actual Interest
+- **Read-Only Columns**: Person, Bank, Maturity Date, Maturity Amount, Expected Interest, Method, Status
+- **Recalculate Button**: Click "📊 Recalculate Selected" to auto-calculate maturity for checked FDs
+- **Auto-Calculation**: After pasting values, select FDs and click Recalculate to update maturity amounts
+- **Checkbox**: Select FDs for recalculation or bulk operations
+
+### AIS/TIS Import Screen
+- **Comparison Table**: All columns are copyable (read-only)
+- **Breakdown Table**: All columns are copyable (read-only)
+- **No Checkboxes**: These are view-only tables
+- **Stats Bar**: Shows sum and average of selected amounts
+
+### Statement Import Screen
+- **Preview Table**: All columns are copyable (read-only)
+- **Checkbox**: Select transactions to import
+- **Stats Bar**: Shows sum and average of selected amounts
+
+## Advanced Features
+
+### Multi-Cell Paste
+- Copy a range from Excel (e.g., 10 rows × 5 columns)
+- Click on starting cell in app
+- Press Ctrl+V
+- All cells will be pasted maintaining structure
+
+### Selective Column Paste
+- Copy single column from Excel
+- Click on first cell of target column
+- Press Ctrl+V
+- Only that column will be filled
+
+### Cross-Table Copy
+- Copy cells from one table screen
+- Navigate to another table screen
+- Paste cells
+- Works across all table screens
+
+## Keyboard Shortcut Summary
+
+```
+Selection:
+  Ctrl+A     - Select All
+  Shift+Click - Range Selection
+  Ctrl+Click  - Multi-Selection
+
+Clipboard:
+  Ctrl+C     - Copy
+  Ctrl+V     - Paste
+  Ctrl+X     - Cut
+
+Editing:
+  Double-Click - Edit Cell
+  F2          - Edit Mode
+  Enter       - Confirm
+  Esc         - Cancel
+  Delete      - Delete Rows
+
+Navigation:
+  Arrow Keys  - Move
+  Tab         - Next Cell
+  Shift+Tab   - Previous Cell
+  Home/End    - First/Last Column
+  Ctrl+Home   - First Cell
+  Ctrl+End    - Last Cell
+  Page Up/Down - Scroll
+```
+
+---
+
+**Note**: All shortcuts work across Windows, macOS, and Linux. On macOS, use Cmd instead of Ctrl.
+
 ## 🔧 Configuration
 
 Edit `config.py` to customize:
