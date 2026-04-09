@@ -36,7 +36,7 @@ class AccountsScreen(QWidget):
         header = QHBoxLayout()
         title = QLabel("🏛️  Bank Accounts")
         title.setFont(QFont("Segoe UI", 18, QFont.Weight.Bold))
-        title.setStyleSheet(f"color: {Theme.TEXT_PRIMARY}; background: transparent;")
+        title.setStyleSheet(Theme.title_style(18))
         header.addWidget(title)
         header.addStretch()
 
@@ -100,7 +100,7 @@ class AccountsScreen(QWidget):
             QFrame#accountCard:hover {{
                 border: 1px solid {accent};
                 border-left: 4px solid {accent};
-                background-color: #FAFBFF;
+                background-color: {Theme.SURFACE_ALT};
             }}
         """)
         card.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -115,7 +115,7 @@ class AccountsScreen(QWidget):
         header = QHBoxLayout()
         bank_label = QLabel(f"🏦  {account.get('bank_display_name', account['bank_name'])}")
         bank_label.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
-        bank_label.setStyleSheet(f"color: {Theme.TEXT_PRIMARY}; background: transparent;")
+        bank_label.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=14, weight=700))
         header.addWidget(bank_label)
         header.addStretch()
 
@@ -137,12 +137,12 @@ class AccountsScreen(QWidget):
 
         # Type + person
         info = QLabel(f"{account['account_type']}  ·  {account.get('person_name','—')}")
-        info.setStyleSheet(f"color: {Theme.TEXT_SECONDARY}; font-size: 13px; background: transparent;")
+        info.setStyleSheet(Theme.text_style(color=Theme.TEXT_SECONDARY, size=13))
         layout.addWidget(info)
 
         if account.get("account_number_masked"):
             acc_lbl = QLabel(f"Account: {account['account_number_masked']}")
-            acc_lbl.setStyleSheet(f"color: {Theme.TEXT_MUTED}; font-size: 12px; background: transparent;")
+            acc_lbl.setStyleSheet(Theme.text_style(color=Theme.TEXT_MUTED, size=12))
             layout.addWidget(acc_lbl)
 
         # Divider
@@ -154,12 +154,12 @@ class AccountsScreen(QWidget):
         # Balance
         bal_row = QHBoxLayout()
         bal_lbl = QLabel("Current Balance")
-        bal_lbl.setStyleSheet(f"color: {Theme.TEXT_MUTED}; font-size: 11px; background: transparent;")
+        bal_lbl.setStyleSheet(Theme.text_style(color=Theme.TEXT_MUTED, size=11))
         bal_row.addWidget(bal_lbl)
         bal_row.addStretch()
         bal_val = QLabel(f"₹ {account['current_balance']:,.2f}")
         bal_val.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
-        bal_val.setStyleSheet(f"color: {Theme.SUCCESS}; background: transparent;")
+        bal_val.setStyleSheet(Theme.text_style(color=Theme.SUCCESS, size=16, weight=700))
         bal_row.addWidget(bal_val)
         layout.addLayout(bal_row)
 
@@ -169,13 +169,13 @@ class AccountsScreen(QWidget):
         if account.get("branch_name"):  parts.append(account["branch_name"])
         if parts:
             det = QLabel("  ·  ".join(parts))
-            det.setStyleSheet(f"color: {Theme.TEXT_MUTED}; font-size: 11px; background: transparent;")
+            det.setStyleSheet(Theme.text_style(color=Theme.TEXT_MUTED, size=11))
             det.setWordWrap(True)
             layout.addWidget(det)
 
         if account.get("debit_card_enabled"):
             dc = QLabel(f"💳  Debit Card — ₹{account.get('debit_card_charges',0):.0f}/yr")
-            dc.setStyleSheet(f"color: {Theme.WARNING}; font-size: 11px; font-weight: 600; background: transparent;")
+            dc.setStyleSheet(Theme.text_style(color=Theme.WARNING, size=11, weight=600))
             layout.addWidget(dc)
 
         layout.addStretch()
@@ -269,7 +269,7 @@ class AccountDetailsDialog(QDialog):
         hl.setContentsMargins(28, 0, 28, 0)
         title = QLabel(f"🏦  {self.account.get('bank_display_name', self.account['bank_name'])}")
         title.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
-        title.setStyleSheet("color: white; background: transparent;")
+        title.setStyleSheet(Theme.text_style(color=Theme.PRIMARY_TEXT, size=16, weight=700))
         hl.addWidget(title)
         hl.addStretch()
         status = self.account.get("account_status", "Active")
@@ -295,7 +295,7 @@ class AccountDetailsDialog(QDialog):
         fl.setContentsMargins(28, 14, 28, 14)
         fl.addStretch()
 
-        btn_edit = Theme.btn("✏️  Edit", "primary", height=40, min_width=110)
+        btn_edit = Theme.btn("✏️  Edit", "edit", height=40, min_width=110)
         btn_edit.clicked.connect(self._on_edit)
         fl.addWidget(btn_edit)
 
@@ -392,7 +392,7 @@ class AccountDetailsDialog(QDialog):
 
         t = QLabel(title)
         t.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
-        t.setStyleSheet(f"color: {Theme.TEXT_PRIMARY}; background: transparent;")
+        t.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=13, weight=700))
         sl.addWidget(t)
 
         div = QFrame()
@@ -405,9 +405,9 @@ class AccountDetailsDialog(QDialog):
         form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         for field in fields:
             lbl = QLabel(f"{field[0]}:")
-            lbl.setStyleSheet(f"color: {Theme.TEXT_SECONDARY}; font-size: 12px; font-weight: 600; background: transparent;")
+            lbl.setStyleSheet(Theme.section_label_style())
             val = QLabel(field[1])
-            val.setStyleSheet(f"color: {Theme.TEXT_PRIMARY}; font-size: 13px; background: transparent;")
+            val.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=13))
             if len(field) == 3 and field[2]:
                 val.setWordWrap(True)
             form.addRow(lbl, val)

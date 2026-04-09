@@ -4,7 +4,7 @@ ui/login_screen.py — Login screen. All buttons use Theme.btn() for guaranteed 
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QLineEdit, QFrame, QPushButton
+    QLineEdit, QFrame, QSizePolicy
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
@@ -12,6 +12,7 @@ from PyQt6.QtGui import QFont
 from core.auth import verify_login, is_totp_enabled
 from core.session import session
 from config import APP_NAME
+from ui.logo import logo_pixmap, set_window_icon
 from ui.theme import Theme
 
 
@@ -19,98 +20,123 @@ class LoginScreen(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(APP_NAME)
-        self.setFixedSize(480, 530)
+        set_window_icon(self)
+        self.setFixedSize(560, 650)
         self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowCloseButtonHint)
-        self.setStyleSheet(f"background-color: {Theme.BG};")
+        self.setObjectName("LoginRoot")
+        self.setStyleSheet(f"""
+            QWidget#LoginRoot {{
+                background: {Theme.gradient(Theme.PRIMARY_GRADIENT_START, Theme.HERO_GRADIENT_END, diagonal=True)};
+            }}
+        """)
         self._totp_required = is_totp_enabled()
         self._build_ui()
+        self._center_on_screen()
 
     def _build_ui(self):
         root = QVBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
+        root.setContentsMargins(24, 24, 24, 24)
         root.setSpacing(0)
-
-        # Background with gradient
-        self.setStyleSheet(f"""
-            QWidget {{
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                    stop:0 {Theme.PRIMARY}, stop:0.5 {Theme.INFO}, stop:1 {Theme.PURPLE});
-            }}
-        """)
 
         # Center container
         center_layout = QVBoxLayout()
         center_layout.addStretch(1)
 
-        # Main card with modern glassmorphism effect
+        # Main card shell
         card = QFrame()
+        card.setObjectName("LoginCard")
         card.setStyleSheet(f"""
-            QFrame {{
-                background-color: rgba(255, 255, 255, 0.95);
-                border: none;
-                border-radius: 24px;
+            QFrame#LoginCard {{
+                background-color: rgba(255, 255, 255, 0.96);
+                border: 1px solid rgba(255, 255, 255, 0.55);
+                border-radius: 26px;
             }}
         """)
-        card.setFixedWidth(440)
+        card.setFixedWidth(500)
         card.setGraphicsEffect(self._create_shadow())
 
         layout = QVBoxLayout(card)
-        layout.setContentsMargins(48, 44, 48, 44)
-        layout.setSpacing(0)
+        layout.setContentsMargins(28, 28, 28, 24)
+        layout.setSpacing(14)
 
-        # Logo with modern styling
-        logo_container = QFrame()
-        logo_container.setFixedSize(80, 80)
-        logo_container.setStyleSheet(f"""
-            QFrame {{
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                    stop:0 {Theme.PRIMARY}, stop:1 {Theme.INFO});
-                border-radius: 40px;
+        # Hero header
+        hero = QFrame()
+        hero.setObjectName("LoginHero")
+        hero.setStyleSheet(f"""
+            QFrame#LoginHero {{
+                background: {Theme.gradient(Theme.PRIMARY_GRADIENT_START, Theme.HERO_GRADIENT_END)};
+                border-radius: 18px;
                 border: none;
             }}
         """)
+
+        hero_layout = QHBoxLayout(hero)
+        hero_layout.setContentsMargins(18, 14, 18, 14)
+        hero_layout.setSpacing(14)
+
+        logo_container = QFrame()
+        logo_container.setFixedSize(86, 86)
+        logo_container.setStyleSheet("background: rgba(255,255,255,0.22); border-radius: 32px;")
+
         logo_layout = QVBoxLayout(logo_container)
         logo_layout.setContentsMargins(0, 0, 0, 0)
-        logo = QLabel("💰")
-        logo.setFont(QFont("Segoe UI Emoji", 36))
+        logo = QLabel()
+        logo_pix = logo_pixmap(66)
+        if not logo_pix.isNull():
+            logo.setPixmap(logo_pix)
+        else:
+            logo.setText("PF")
+            logo.setStyleSheet("color: white; font-size: 18px; font-weight: 700;")
         logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
         logo_layout.addWidget(logo)
-        
-        logo_h = QHBoxLayout()
-        logo_h.addStretch()
-        logo_h.addWidget(logo_container)
-        logo_h.addStretch()
-        layout.addLayout(logo_h)
-        layout.addSpacing(20)
 
-        # Title
+        hero_layout.addWidget(logo_container)
+
+        hero_text_col = QVBoxLayout()
+        hero_text_col.setSpacing(2)
         title = QLabel(APP_NAME)
-        title.setFont(QFont("Segoe UI", 24, QFont.Weight.Bold))
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setStyleSheet(f"color: {Theme.TEXT_PRIMARY}; background: transparent; border: none;")
-        layout.addWidget(title)
-        layout.addSpacing(6)
+        title.setFont(QFont("Segoe UI", 20, QFont.Weight.Bold))
+        title.setStyleSheet("color: white; background: transparent;")
+        hero_text_col.addWidget(title)
 
-        subtitle = QLabel("Secure  •  Offline  •  Encrypted")
-        subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        subtitle.setStyleSheet(f"""
-            color: {Theme.TEXT_SECONDARY}; 
-            font-size: 13px; 
-            letter-spacing: 1px;
-            background: transparent;
-            border: none;
-        """)
-        layout.addWidget(subtitle)
-        layout.addSpacing(36)
+        subtitle = QLabel("Offline-first financial vault")
+        subtitle.setStyleSheet("color: rgba(255,255,255,0.9); font-size: 12px; background: transparent;")
+        hero_text_col.addWidget(subtitle)
 
-        # Password field with icon
+        hero_layout.addLayout(hero_text_col)
+        hero_layout.addStretch()
+        layout.addWidget(hero)
+
+        # Capability badges
+        badges_row = QHBoxLayout()
+        badges_row.setSpacing(8)
+        for txt, bg, fg in [
+            ("Encrypted", Theme.PRIMARY_LIGHT, Theme.PRIMARY_DARK),
+            ("Offline", Theme.INFO_LIGHT, Theme.INFO_DARK),
+            ("2FA On" if self._totp_required else "2FA Optional", Theme.SUCCESS_LIGHT, Theme.SUCCESS_DARK),
+        ]:
+            badge = QLabel(txt)
+            badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            badge.setStyleSheet(Theme.badge_style(bg, fg, radius=10, padding="4px 10px", size=11, weight=600))
+            badges_row.addWidget(badge)
+        badges_row.addStretch()
+        layout.addLayout(badges_row)
+
+        # Form container
+        form_card = QFrame()
+        form_card.setObjectName("LoginFormCard")
+        form_card.setStyleSheet(
+            Theme.tinted_surface_style(radius=14, border_color=Theme.BORDER, selector="QFrame#LoginFormCard")
+        )
+        form_layout = QVBoxLayout(form_card)
+        form_layout.setContentsMargins(18, 16, 18, 16)
+        form_layout.setSpacing(10)
+
         pwd_label = self._lbl("🔑  Master Password")
-        layout.addWidget(pwd_label)
-        layout.addSpacing(8)
+        form_layout.addWidget(pwd_label)
         self.pwd_input = self._field("Enter your master password", password=True)
         self.pwd_input.returnPressed.connect(self._on_login)
-        layout.addWidget(self.pwd_input)
-        layout.addSpacing(18)
+        form_layout.addWidget(self.pwd_input)
 
         # OTP (conditional)
         self.lbl_otp = self._lbl("🔐  One-Time Password")
@@ -118,68 +144,33 @@ class LoginScreen(QWidget):
         self.otp_input.setMaxLength(6)
         self.otp_input.returnPressed.connect(self._on_login)
         if self._totp_required:
-            layout.addWidget(self.lbl_otp)
-            layout.addSpacing(8)
-            layout.addWidget(self.otp_input)
-            layout.addSpacing(18)
+            form_layout.addWidget(self.lbl_otp)
+            form_layout.addWidget(self.otp_input)
+
+        layout.addWidget(form_card)
 
         # Error message
         self.error_label = QLabel("")
-        self.error_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.error_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.error_label.setWordWrap(True)
-        self.error_label.setStyleSheet(f"""
-            color: {Theme.DANGER_DARK}; 
-            font-size: 13px;
-            background: {Theme.DANGER_LIGHT};
-            border-radius: 8px; 
-            padding: 12px 16px;
-            border: 1px solid {Theme.DANGER};
-        """)
+        self.error_label.setStyleSheet(
+            Theme.text_style(color=Theme.DANGER_DARK, size=13) +
+            f" background: {Theme.DANGER_LIGHT}; border-radius: 8px; padding: 12px 16px; border: 1px solid {Theme.DANGER};"
+        )
         self.error_label.hide()
         layout.addWidget(self.error_label)
-        layout.addSpacing(10)
 
-        # Unlock button with modern gradient
-        self.btn_login = QPushButton("🔓  Unlock")
-        self.btn_login.setFixedHeight(50)
-        self.btn_login.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
+        # Unlock button
+        self.btn_login = Theme.btn("🔓  Unlock", "hero", height=52, min_width=280)
+        self.btn_login.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.btn_login.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_login.setStyleSheet(f"""
-            QPushButton {{
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 {Theme.PRIMARY}, stop:1 {Theme.INFO});
-                color: #FFFFFF;
-                border: none;
-                border-radius: 12px;
-                font-size: 14px;
-                font-weight: 700;
-                letter-spacing: 0.5px;
-            }}
-            QPushButton:hover {{
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 {Theme.PRIMARY_DARK}, stop:1 {Theme.PRIMARY});
-            }}
-            QPushButton:pressed {{
-                background: {Theme.PRIMARY_DARK};
-            }}
-            QPushButton:disabled {{
-                background: {Theme.SURFACE_ALT};
-                color: {Theme.TEXT_MUTED};
-            }}
-        """)
         self.btn_login.clicked.connect(self._on_login)
         layout.addWidget(self.btn_login)
-        layout.addSpacing(20)
 
         # Security note
         note = QLabel("🔒  Device-bound encryption")
         note.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        note.setStyleSheet(f"""
-            color: {Theme.TEXT_MUTED}; 
-            font-size: 12px;
-            background: transparent;
-            border: none;
-        """)
+        note.setStyleSheet(Theme.text_style(color=Theme.TEXT_MUTED, size=12) + " border: none;")
         layout.addWidget(note)
 
         # Add card to center layout
@@ -197,39 +188,32 @@ class LoginScreen(QWidget):
         from PyQt6.QtWidgets import QGraphicsDropShadowEffect
         from PyQt6.QtGui import QColor
         shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(40)
+        shadow.setBlurRadius(46)
         shadow.setXOffset(0)
-        shadow.setYOffset(10)
-        shadow.setColor(QColor(0, 0, 0, 60))
+        shadow.setYOffset(12)
+        shadow.setColor(QColor(0, 0, 0, 72))
         return shadow
 
     def _lbl(self, text: str) -> QLabel:
         l = QLabel(text)
-        l.setStyleSheet(f"""
-            font-weight: 600; 
-            font-size: 13px; 
-            color: {Theme.TEXT_PRIMARY};
-            background: transparent;
-            border: none;
-        """)
+        l.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=13, weight=600) + " border: none;")
         return l
 
     def _field(self, placeholder: str, password: bool = False) -> QLineEdit:
         e = QLineEdit()
         e.setPlaceholderText(placeholder)
-        e.setFixedHeight(48)
+        e.setFixedHeight(46)
         e.setStyleSheet(f"""
             QLineEdit {{
-                background-color: {Theme.SURFACE_ALT};
+                background-color: {Theme.SURFACE};
                 color: {Theme.TEXT_PRIMARY};
-                border: 2px solid {Theme.BORDER};
+                border: 1.5px solid {Theme.BORDER};
                 border-radius: 10px;
                 padding: 0 16px;
                 font-size: 14px;
             }}
             QLineEdit:focus {{
                 border: 2px solid {Theme.PRIMARY};
-                background-color: {Theme.SURFACE};
             }}
             QLineEdit:hover {{
                 border-color: {Theme.INFO};
@@ -265,3 +249,12 @@ class LoginScreen(QWidget):
     def _show_error(self, msg: str):
         self.error_label.setText(msg)
         self.error_label.show()
+
+    def _center_on_screen(self):
+        """Center the window on the screen."""
+        from PyQt6.QtGui import QGuiApplication
+        screen = QGuiApplication.primaryScreen().geometry()
+        window_geometry = self.frameGeometry()
+        center_point = screen.center()
+        window_geometry.moveCenter(center_point)
+        self.move(window_geometry.topLeft())

@@ -103,17 +103,11 @@ class AccountDialog(QDialog):
         layout.setContentsMargins(28, 15, 28, 15)
         layout.addStretch()
 
-        btn_cancel = QPushButton("Cancel")
-        btn_cancel.setObjectName("secondaryBtn")
-        btn_cancel.setFixedHeight(40)
-        btn_cancel.setFixedWidth(110)
+        btn_cancel = Theme.btn("Cancel", "secondary", height=40, min_width=110)
         btn_cancel.clicked.connect(self.reject)
         layout.addWidget(btn_cancel)
 
-        btn_save = QPushButton("💾 Save")
-        btn_save.setObjectName("primaryBtn")
-        btn_save.setFixedHeight(40)
-        btn_save.setFixedWidth(110)
+        btn_save = Theme.btn("💾 Save", "primary", height=40, min_width=110)
         btn_save.clicked.connect(self._on_save)
         layout.addWidget(btn_save)
 

@@ -1,92 +1,118 @@
 """
-ui/theme.py — Complete modern theme system.
-Added: Theme.btn() factory method so ALL buttons across all screens/dialogs
-have guaranteed visible inline styles — no dependency on objectName cascade.
+Complete modern theme system.
+Includes Theme.btn() factory so buttons have guaranteed inline styles.
 """
 
-from PyQt6.QtWidgets import QPushButton
 from PyQt6.QtGui import QFont
+from PyQt6.QtWidgets import QPushButton
+
+from . import components as tc
+from . import constants as c
 
 
 class Theme:
-    # ── Color Tokens ─────────────────────────────────────────────────────────
-    PRIMARY        = "#2563EB"
-    PRIMARY_DARK   = "#1E40AF"
-    PRIMARY_LIGHT  = "#DBEAFE"
-    PRIMARY_TEXT   = "#FFFFFF"
+    # Color tokens
+    PRIMARY = c.PRIMARY
+    PRIMARY_DARK = c.PRIMARY_DARK
+    PRIMARY_LIGHT = c.PRIMARY_LIGHT
+    PRIMARY_TEXT = c.PRIMARY_TEXT
+    PRIMARY_GRADIENT_START = c.PRIMARY_GRADIENT_START
+    PRIMARY_GRADIENT_END = c.PRIMARY_GRADIENT_END
+    PRIMARY_GRADIENT_HOVER_START = c.PRIMARY_GRADIENT_HOVER_START
+    PRIMARY_GRADIENT_HOVER_END = c.PRIMARY_GRADIENT_HOVER_END
 
-    SUCCESS        = "#10B981"
-    SUCCESS_DARK   = "#059669"
-    SUCCESS_LIGHT  = "#D1FAE5"
+    SUCCESS = c.SUCCESS
+    SUCCESS_DARK = c.SUCCESS_DARK
+    SUCCESS_LIGHT = c.SUCCESS_LIGHT
+    SUCCESS_GRADIENT_START = c.SUCCESS_GRADIENT_START
+    SUCCESS_GRADIENT_END = c.SUCCESS_GRADIENT_END
 
-    DANGER         = "#EF4444"
-    DANGER_DARK    = "#DC2626"
-    DANGER_LIGHT   = "#FEE2E2"
+    DANGER = c.DANGER
+    DANGER_DARK = c.DANGER_DARK
+    DANGER_LIGHT = c.DANGER_LIGHT
+    DANGER_GRADIENT_START = c.DANGER_GRADIENT_START
+    DANGER_GRADIENT_END = c.DANGER_GRADIENT_END
 
-    WARNING        = "#F59E0B"
-    WARNING_DARK   = "#D97706"
-    WARNING_LIGHT  = "#FEF3C7"
+    WARNING = c.WARNING
+    WARNING_DARK = c.WARNING_DARK
+    WARNING_LIGHT = c.WARNING_LIGHT
+    WARNING_GRADIENT_START = c.WARNING_GRADIENT_START
+    WARNING_GRADIENT_END = c.WARNING_GRADIENT_END
 
-    INFO           = "#3B82F6"
-    INFO_DARK      = "#2563EB"
-    INFO_LIGHT     = "#DBEAFE"
+    INFO = c.INFO
+    INFO_DARK = c.INFO_DARK
+    INFO_LIGHT = c.INFO_LIGHT
+    INFO_GRADIENT_START = c.INFO_GRADIENT_START
+    INFO_GRADIENT_END = c.INFO_GRADIENT_END
 
-    PURPLE         = "#8B5CF6"
-    PURPLE_LIGHT   = "#EDE9FE"
+    EDIT = c.EDIT
+    EDIT_DARK = c.EDIT_DARK
+    EDIT_LIGHT = c.EDIT_LIGHT
+    EDIT_GRADIENT_START = c.EDIT_GRADIENT_START
+    EDIT_GRADIENT_END = c.EDIT_GRADIENT_END
 
-    TEAL           = "#06B6D4"
-    TEAL_LIGHT     = "#CFFAFE"
+    HERO_GRADIENT_START = c.HERO_GRADIENT_START
+    HERO_GRADIENT_END = c.HERO_GRADIENT_END
+    HERO_GRADIENT_HOVER_START = c.HERO_GRADIENT_HOVER_START
+    HERO_GRADIENT_HOVER_END = c.HERO_GRADIENT_HOVER_END
 
-    BG             = "#F8FAFC"
-    SURFACE        = "#FFFFFF"
-    SURFACE_ALT    = "#F1F5F9"
+    PURPLE = c.PURPLE
+    PURPLE_LIGHT = c.PURPLE_LIGHT
 
-    SIDEBAR_BG     = "#1E293B"
-    SIDEBAR_TEXT   = "#94A3B8"
-    SIDEBAR_ACTIVE = "#2563EB"
-    SIDEBAR_ACTIVE_TEXT = "#FFFFFF"
-    SIDEBAR_HOVER  = "#334155"
+    TEAL = c.TEAL
+    TEAL_LIGHT = c.TEAL_LIGHT
 
-    TOPBAR_BG      = "#FFFFFF"
-    TOPBAR_BORDER  = "#E2E8F0"
+    BG = c.BG
+    SURFACE = c.SURFACE
+    SURFACE_ALT = c.SURFACE_ALT
+    SURFACE_TINT_START = c.SURFACE_TINT_START
+    SURFACE_TINT_END = c.SURFACE_TINT_END
 
-    TEXT_PRIMARY   = "#0F172A"
-    TEXT_SECONDARY = "#64748B"
-    TEXT_MUTED     = "#94A3B8"
-    TEXT_ON_PRIMARY= "#FFFFFF"
+    SIDEBAR_BG = c.SIDEBAR_BG
+    SIDEBAR_TEXT = c.SIDEBAR_TEXT
+    SIDEBAR_ACTIVE = c.SIDEBAR_ACTIVE
+    SIDEBAR_ACTIVE_TEXT = c.SIDEBAR_ACTIVE_TEXT
+    SIDEBAR_HOVER = c.SIDEBAR_HOVER
 
-    BORDER         = "#E2E8F0"
-    DIVIDER        = "#F1F5F9"
+    TOPBAR_BG = c.TOPBAR_BG
+    TOPBAR_BORDER = c.TOPBAR_BORDER
 
-    CHART_COLORS   = ["#2563EB","#10B981","#F59E0B","#EF4444",
-                      "#8B5CF6","#06B6D4","#EC4899","#F97316"]
+    TEXT_PRIMARY = c.TEXT_PRIMARY
+    TEXT_SECONDARY = c.TEXT_SECONDARY
+    TEXT_MUTED = c.TEXT_MUTED
+    TEXT_ON_PRIMARY = c.TEXT_ON_PRIMARY
 
-    # ── Button factory ───────────────────────────────────────────────────────
-    # Use Theme.btn() in EVERY screen and dialog so buttons are always visible
-    # regardless of whether the global stylesheet cascade reaches them.
+    BORDER = c.BORDER
+    DIVIDER = c.DIVIDER
+
+    CHART_COLORS = c.CHART_COLORS
 
     @staticmethod
-    def btn(text: str, variant: str = "primary",
-            height: int = 38, min_width: int = 110) -> QPushButton:
+    def gradient(start: str, end: str, diagonal: bool = False) -> str:
+        return tc.gradient(start, end, diagonal=diagonal)
+
+    @staticmethod
+    def btn(text: str, variant: str = "primary", height: int = 40, min_width: int = 116) -> QPushButton:
         """
         Create a fully styled QPushButton with inline stylesheet.
-        variant: "primary" | "secondary" | "success" | "danger" | "warning" | "ghost"
+        variant: primary | secondary | success | danger | warning | info | edit | hero | ghost
         """
         b = QPushButton(text)
-        b.setFixedHeight(height)
-        b.setMinimumWidth(min_width)
+        final_height = max(height, 36)
+        final_min_width = max(min_width, 96)
+        b.setFixedHeight(final_height)
+        b.setMinimumWidth(final_min_width)
         b.setFont(QFont("Segoe UI", 13, QFont.Weight.DemiBold))
 
         t = Theme
         styles = {
             "primary": f"""
                 QPushButton {{
-                    background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
-                        stop:0 {t.PRIMARY}, stop:1 {t.PRIMARY_DARK});
+                    background: {t.gradient(t.PRIMARY_GRADIENT_START, t.PRIMARY_GRADIENT_END)};
                     color: #FFFFFF; border: none; border-radius: 8px;
-                    padding: 0 18px; font-size: 13px; font-weight: 700;
+                    padding: 2px 20px; font-size: 13px; font-weight: 700;
                 }}
-                QPushButton:hover  {{ background: {t.PRIMARY_DARK}; }}
+                QPushButton:hover  {{ background: {t.gradient(t.PRIMARY_GRADIENT_HOVER_START, t.PRIMARY_GRADIENT_HOVER_END)}; }}
                 QPushButton:pressed{{ background: {t.PRIMARY_DARK}; }}
                 QPushButton:disabled{{ background: {t.SURFACE_ALT}; color: {t.TEXT_MUTED}; }}
             """,
@@ -94,7 +120,7 @@ class Theme:
                 QPushButton {{
                     background: {t.SURFACE}; color: {t.TEXT_PRIMARY};
                     border: 1.5px solid {t.BORDER}; border-radius: 8px;
-                    padding: 0 18px; font-size: 13px; font-weight: 600;
+                    padding: 2px 20px; font-size: 13px; font-weight: 600;
                 }}
                 QPushButton:hover  {{ background: {t.PRIMARY_LIGHT};
                                        border-color: {t.PRIMARY}; color: {t.PRIMARY_DARK}; }}
@@ -103,39 +129,64 @@ class Theme:
             """,
             "success": f"""
                 QPushButton {{
-                    background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
-                        stop:0 {t.SUCCESS}, stop:1 {t.SUCCESS_DARK});
+                    background: {t.gradient(t.SUCCESS_GRADIENT_START, t.SUCCESS_GRADIENT_END)};
                     color: #FFFFFF; border: none; border-radius: 8px;
-                    padding: 0 18px; font-size: 13px; font-weight: 700;
+                    padding: 2px 20px; font-size: 13px; font-weight: 700;
                 }}
                 QPushButton:hover  {{ background: {t.SUCCESS_DARK}; }}
                 QPushButton:disabled{{ background: {t.SURFACE_ALT}; color: {t.TEXT_MUTED}; }}
             """,
             "danger": f"""
                 QPushButton {{
-                    background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
-                        stop:0 {t.DANGER}, stop:1 {t.DANGER_DARK});
+                    background: {t.gradient(t.DANGER_GRADIENT_START, t.DANGER_GRADIENT_END)};
                     color: #FFFFFF; border: none; border-radius: 8px;
-                    padding: 0 18px; font-size: 13px; font-weight: 700;
+                    padding: 2px 20px; font-size: 13px; font-weight: 700;
                 }}
                 QPushButton:hover  {{ background: {t.DANGER_DARK}; }}
                 QPushButton:disabled{{ background: {t.SURFACE_ALT}; color: {t.TEXT_MUTED}; }}
             """,
             "warning": f"""
                 QPushButton {{
-                    background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
-                        stop:0 {t.WARNING}, stop:1 {t.WARNING_DARK});
+                    background: {t.gradient(t.WARNING_GRADIENT_START, t.WARNING_GRADIENT_END)};
                     color: #FFFFFF; border: none; border-radius: 8px;
-                    padding: 0 18px; font-size: 13px; font-weight: 700;
+                    padding: 2px 20px; font-size: 13px; font-weight: 700;
                 }}
                 QPushButton:hover  {{ background: {t.WARNING_DARK}; }}
+                QPushButton:disabled{{ background: {t.SURFACE_ALT}; color: {t.TEXT_MUTED}; }}
+            """,
+            "info": f"""
+                QPushButton {{
+                    background: {t.gradient(t.INFO_GRADIENT_START, t.INFO_GRADIENT_END)};
+                    color: #FFFFFF; border: none; border-radius: 8px;
+                    padding: 2px 20px; font-size: 13px; font-weight: 700;
+                }}
+                QPushButton:hover  {{ background: {t.INFO_DARK}; }}
+                QPushButton:disabled{{ background: {t.SURFACE_ALT}; color: {t.TEXT_MUTED}; }}
+            """,
+            "edit": f"""
+                QPushButton {{
+                    background: {t.gradient(t.EDIT_GRADIENT_START, t.EDIT_GRADIENT_END)};
+                    color: #FFFFFF; border: none; border-radius: 8px;
+                    padding: 2px 20px; font-size: 13px; font-weight: 700;
+                }}
+                QPushButton:hover  {{ background: {t.EDIT_DARK}; }}
+                QPushButton:disabled{{ background: {t.SURFACE_ALT}; color: {t.TEXT_MUTED}; }}
+            """,
+            "hero": f"""
+                QPushButton {{
+                    background: {t.gradient(t.HERO_GRADIENT_START, t.HERO_GRADIENT_END)};
+                    color: #FFFFFF; border: none; border-radius: 12px;
+                    padding: 2px 22px; font-size: 14px; font-weight: 700;
+                }}
+                QPushButton:hover  {{ background: {t.gradient(t.HERO_GRADIENT_HOVER_START, t.HERO_GRADIENT_HOVER_END)}; }}
+                QPushButton:pressed{{ background: {t.PRIMARY_DARK}; }}
                 QPushButton:disabled{{ background: {t.SURFACE_ALT}; color: {t.TEXT_MUTED}; }}
             """,
             "ghost": f"""
                 QPushButton {{
                     background: transparent; color: {t.PRIMARY};
                     border: none; border-radius: 8px;
-                    padding: 0 18px; font-size: 13px; font-weight: 600;
+                    padding: 2px 18px; font-size: 13px; font-weight: 600;
                 }}
                 QPushButton:hover  {{ background: {t.PRIMARY_LIGHT}; }}
                 QPushButton:disabled{{ color: {t.TEXT_MUTED}; }}
@@ -145,26 +196,167 @@ class Theme:
         return b
 
     @staticmethod
+    def style_button(
+        button: QPushButton,
+        variant: str = "primary",
+        height: int | None = None,
+        min_width: int | None = None,
+    ) -> QPushButton:
+        """Apply Theme button style to an existing QPushButton instance."""
+        themed = Theme.btn(
+            button.text(),
+            variant,
+            height=height or button.height() or 38,
+            min_width=min_width or button.minimumWidth() or 110,
+        )
+        button.setFont(themed.font())
+        button.setStyleSheet(themed.styleSheet())
+        if height is not None:
+            button.setFixedHeight(height)
+        if min_width is not None:
+            button.setMinimumWidth(min_width)
+        return button
+
+    @staticmethod
+    def text_style(
+        color: str | None = None,
+        size: int = 14,
+        weight: int = 400,
+        background: str = "transparent",
+    ) -> str:
+        return tc.text_style(Theme, color=color, size=size, weight=weight, background=background)
+
+    @staticmethod
+    def title_style(size: int = 15) -> str:
+        return tc.title_style(Theme, size=size)
+
+    @staticmethod
+    def muted_style(size: int = 12) -> str:
+        return tc.muted_style(Theme, size=size)
+
+    @staticmethod
+    def section_label_style(size: int = 12) -> str:
+        return tc.section_label_style(Theme, size=size)
+
+    @staticmethod
+    def badge_style(
+        bg: str,
+        fg: str,
+        radius: int = 12,
+        padding: str = "5px 14px",
+        size: int = 12,
+        weight: int = 600,
+    ) -> str:
+        return tc.badge_style(
+            Theme, bg=bg, fg=fg, radius=radius, padding=padding, size=size, weight=weight
+        )
+
+    @staticmethod
+    def card_style(
+        bg: str | None = None,
+        border_color: str | None = None,
+        radius: int = 12,
+        padding: int = 14,
+        left_accent: str | None = None,
+        selector: str = "QFrame",
+    ) -> str:
+        return tc.card_style(
+            Theme,
+            bg=bg,
+            border_color=border_color,
+            radius=radius,
+            padding=padding,
+            left_accent=left_accent,
+            selector=selector,
+        )
+
+    @staticmethod
+    def filter_bar_style(radius: int = 10) -> str:
+        return tc.filter_bar_style(Theme, radius=radius)
+
+    @staticmethod
+    def group_box_style() -> str:
+        return tc.group_box_style(Theme)
+
+    @staticmethod
+    def panel_strip_style(start: str | None = None, end: str | None = None, radius: int = 2) -> str:
+        return tc.panel_strip_style(Theme, start=start, end=end, radius=radius)
+
+    @staticmethod
+    def tinted_surface_style(
+        radius: int = 12,
+        border_color: str | None = None,
+        selector: str = "QFrame",
+    ) -> str:
+        return tc.tinted_surface_style(
+            Theme,
+            radius=radius,
+            border_color=border_color,
+            selector=selector,
+        )
+
+    @staticmethod
     def get_colors(theme_name=None) -> dict:
         t = Theme
         return {
-            "primary": t.PRIMARY, "primary_dark": t.PRIMARY_DARK, "primary_light": t.PRIMARY_LIGHT,
-            "success": t.SUCCESS, "success_dark": t.SUCCESS_DARK, "success_light": t.SUCCESS_LIGHT,
-            "danger":  t.DANGER,  "danger_dark":  t.DANGER_DARK,  "danger_light":  t.DANGER_LIGHT,
-            "warning": t.WARNING, "warning_dark": t.WARNING_DARK, "warning_light": t.WARNING_LIGHT,
-            "info": t.INFO, "info_light": t.INFO_LIGHT,
-            "purple": t.PURPLE, "purple_light": t.PURPLE_LIGHT,
-            "teal": t.TEAL, "teal_light": t.TEAL_LIGHT,
-            "bg": t.BG, "bg_primary": t.SURFACE, "bg_secondary": t.SURFACE_ALT,
-            "surface": t.SURFACE, "surface_alt": t.SURFACE_ALT,
-            "sidebar_bg": t.SIDEBAR_BG, "sidebar_text": t.SIDEBAR_TEXT,
-            "text_primary": t.TEXT_PRIMARY, "text_secondary": t.TEXT_SECONDARY, "text_muted": t.TEXT_MUTED,
-            "border": t.BORDER, "divider": t.DIVIDER,
+            "primary": t.PRIMARY,
+            "primary_dark": t.PRIMARY_DARK,
+            "primary_light": t.PRIMARY_LIGHT,
+            "primary_gradient_start": t.PRIMARY_GRADIENT_START,
+            "primary_gradient_end": t.PRIMARY_GRADIENT_END,
+            "success": t.SUCCESS,
+            "success_dark": t.SUCCESS_DARK,
+            "success_light": t.SUCCESS_LIGHT,
+            "success_gradient_start": t.SUCCESS_GRADIENT_START,
+            "success_gradient_end": t.SUCCESS_GRADIENT_END,
+            "danger": t.DANGER,
+            "danger_dark": t.DANGER_DARK,
+            "danger_light": t.DANGER_LIGHT,
+            "danger_gradient_start": t.DANGER_GRADIENT_START,
+            "danger_gradient_end": t.DANGER_GRADIENT_END,
+            "warning": t.WARNING,
+            "warning_dark": t.WARNING_DARK,
+            "warning_light": t.WARNING_LIGHT,
+            "warning_gradient_start": t.WARNING_GRADIENT_START,
+            "warning_gradient_end": t.WARNING_GRADIENT_END,
+            "info": t.INFO,
+            "info_light": t.INFO_LIGHT,
+            "info_gradient_start": t.INFO_GRADIENT_START,
+            "info_gradient_end": t.INFO_GRADIENT_END,
+            "edit": t.EDIT,
+            "edit_dark": t.EDIT_DARK,
+            "edit_light": t.EDIT_LIGHT,
+            "edit_gradient_start": t.EDIT_GRADIENT_START,
+            "edit_gradient_end": t.EDIT_GRADIENT_END,
+            "hero_gradient_start": t.HERO_GRADIENT_START,
+            "hero_gradient_end": t.HERO_GRADIENT_END,
+            "purple": t.PURPLE,
+            "purple_light": t.PURPLE_LIGHT,
+            "teal": t.TEAL,
+            "teal_light": t.TEAL_LIGHT,
+            "bg": t.BG,
+            "bg_primary": t.SURFACE,
+            "bg_secondary": t.SURFACE_ALT,
+            "surface": t.SURFACE,
+            "surface_alt": t.SURFACE_ALT,
+            "surface_tint_start": t.SURFACE_TINT_START,
+            "surface_tint_end": t.SURFACE_TINT_END,
+            "sidebar_bg": t.SIDEBAR_BG,
+            "sidebar_text": t.SIDEBAR_TEXT,
+            "text_primary": t.TEXT_PRIMARY,
+            "text_secondary": t.TEXT_SECONDARY,
+            "text_muted": t.TEXT_MUTED,
+            "border": t.BORDER,
+            "divider": t.DIVIDER,
             "chart_colors": t.CHART_COLORS,
-            "chart_1": t.CHART_COLORS[0], "chart_2": t.CHART_COLORS[1],
-            "chart_3": t.CHART_COLORS[2], "chart_4": t.CHART_COLORS[3],
-            "chart_5": t.CHART_COLORS[4], "chart_6": t.CHART_COLORS[5],
-            "chart_7": t.CHART_COLORS[6], "chart_8": t.CHART_COLORS[7],
+            "chart_1": t.CHART_COLORS[0],
+            "chart_2": t.CHART_COLORS[1],
+            "chart_3": t.CHART_COLORS[2],
+            "chart_4": t.CHART_COLORS[3],
+            "chart_5": t.CHART_COLORS[4],
+            "chart_6": t.CHART_COLORS[5],
+            "chart_7": t.CHART_COLORS[6],
+            "chart_8": t.CHART_COLORS[7],
         }
 
     @staticmethod
@@ -274,27 +466,27 @@ QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {{
 }}
 QDateEdit::drop-down {{ border: none; width: 28px; }}
 
-/* BUTTONS — global fallback; prefer Theme.btn() for guaranteed styling */
+/* BUTTONS - global fallback; prefer Theme.btn() for guaranteed styling */
 QPushButton {{
-    background-color: {t.PRIMARY};
+    background: {t.gradient(t.PRIMARY_GRADIENT_START, t.PRIMARY_GRADIENT_END)};
     color: #FFFFFF;
     border: none;
     border-radius: 8px;
-    padding: 8px 16px;
+    padding: 10px 18px;
     font-size: 14px;
     font-weight: 600;
-    min-height: 18px;
+    min-height: 22px;
 }}
-QPushButton:hover   {{ background-color: {t.PRIMARY_DARK}; }}
+QPushButton:hover   {{ background: {t.gradient(t.PRIMARY_GRADIENT_HOVER_START, t.PRIMARY_GRADIENT_HOVER_END)}; }}
 QPushButton:pressed {{ background-color: {t.PRIMARY_DARK}; }}
 QPushButton:disabled {{ background-color: {t.SURFACE_ALT}; color: {t.TEXT_MUTED}; }}
 
 QPushButton#primaryBtn {{
-    background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 {t.PRIMARY},stop:1 {t.PRIMARY_DARK});
+    background: {t.gradient(t.PRIMARY_GRADIENT_START, t.PRIMARY_GRADIENT_END)};
     color: #FFFFFF;
 }}
 QPushButton#primaryBtn:hover {{
-    background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 {t.PRIMARY_DARK},stop:1 {t.PRIMARY});
+    background: {t.gradient(t.PRIMARY_GRADIENT_HOVER_START, t.PRIMARY_GRADIENT_HOVER_END)};
 }}
 QPushButton#secondaryBtn {{
     background-color: {t.SURFACE}; color: {t.TEXT_PRIMARY};
@@ -304,15 +496,15 @@ QPushButton#secondaryBtn:hover {{
     background-color: {t.PRIMARY_LIGHT}; border-color: {t.PRIMARY}; color: {t.PRIMARY_DARK};
 }}
 QPushButton#successBtn {{
-    background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 {t.SUCCESS},stop:1 {t.SUCCESS_DARK});
+    background: {t.gradient(t.SUCCESS_GRADIENT_START, t.SUCCESS_GRADIENT_END)};
     color: #FFFFFF;
 }}
 QPushButton#dangerBtn {{
-    background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 {t.DANGER},stop:1 {t.DANGER_DARK});
+    background: {t.gradient(t.DANGER_GRADIENT_START, t.DANGER_GRADIENT_END)};
     color: #FFFFFF;
 }}
 QPushButton#warningBtn {{
-    background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 {t.WARNING},stop:1 {t.WARNING_DARK});
+    background: {t.gradient(t.WARNING_GRADIENT_START, t.WARNING_GRADIENT_END)};
     color: #FFFFFF;
 }}
 
@@ -398,7 +590,7 @@ QProgressBar {{
     text-align: center; color: {t.TEXT_PRIMARY}; font-weight: 600; height: 22px;
 }}
 QProgressBar::chunk {{
-    background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 {t.PRIMARY},stop:1 {t.SUCCESS});
+    background: {t.gradient(t.PRIMARY_GRADIENT_START, t.SUCCESS_GRADIENT_END)};
     border-radius: 6px;
 }}
 
@@ -429,7 +621,7 @@ QWidget#sidebar {{
     border-right: 1px solid rgba(255,255,255,0.06);
 }}
 QWidget#topBar {{
-    background-color: {t.TOPBAR_BG};
+    background: {t.gradient(t.SURFACE, t.SURFACE_TINT_END)};
     border-bottom: 1px solid {t.TOPBAR_BORDER};
 }}
 QWidget#topBar QComboBox {{ font-size: 13px; padding: 6px 10px; }}

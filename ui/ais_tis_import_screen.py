@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView, QFileDialog,
     QMessageBox, QFrame, QComboBox, QTextEdit, QGroupBox,
     QDialog, QLineEdit, QFormLayout, QCheckBox, QScrollArea,
-    QRadioButton, QButtonGroup
+    QRadioButton, QButtonGroup, QSplitter
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QColor
@@ -51,7 +51,7 @@ class ImportTypeDialog(QDialog):
         layout.setSpacing(12)
 
         title = QLabel("Choose which statement you want to import")
-        title.setStyleSheet(f"color: {Theme.TEXT_PRIMARY}; font-size: 12px; font-weight: 600;")
+        title.setStyleSheet(Theme.section_label_style())
         layout.addWidget(title)
 
         self.group = QButtonGroup(self)
@@ -101,7 +101,7 @@ class SourceAccountLinkDialog(QDialog):
             "When TAN is available, it will be attached to the selected bank."
         )
         info.setWordWrap(True)
-        info.setStyleSheet(f"color: {Theme.TEXT_SECONDARY}; font-size: 12px;")
+        info.setStyleSheet(Theme.muted_style(12))
         layout.addWidget(info)
 
         self.table = QTableWidget()
@@ -190,80 +190,89 @@ class AISTISImportScreen(QWidget):
 
     def _build_ui(self):
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(0)
+        main_layout.setContentsMargins(16, 12, 16, 12)
+        main_layout.setSpacing(12)
 
-        # ── Fixed header ──────────────────────────────────────────────────────
-        header_widget = QWidget()
-        header_widget.setStyleSheet(f"background-color: {Theme.SURFACE};")
-        header_layout = QVBoxLayout(header_widget)
-        header_layout.setContentsMargins(24, 16, 24, 16)
-        header_layout.setSpacing(12)
-
-        title_bar = QHBoxLayout()
-        title = QLabel("📊  AIS / TIS Import")
-        title.setFont(QFont("Segoe UI", 15, QFont.Weight.Bold))
-        title.setStyleSheet(f"color: {Theme.TEXT_PRIMARY};")
-        title_bar.addWidget(title)
-        title_bar.addStretch()
-
-        btn_import = Theme.btn("📄  Import PDF", "primary", height=36, min_width=130)
-        btn_import.clicked.connect(self._on_import_pdf)
-        title_bar.addWidget(btn_import)
-
-        btn_refresh = Theme.btn("🔄  Refresh", "secondary", height=36, min_width=100)
-        btn_refresh.clicked.connect(self.refresh)
-        title_bar.addWidget(btn_refresh)
-
-        header_layout.addLayout(title_bar)
-
-        # Info card
-        info_card = QFrame()
-        info_card.setStyleSheet(f"""
-            QFrame {{
-                background-color: {Theme.PRIMARY_LIGHT};
-                border: 1px solid {Theme.INFO};
-                border-left: 4px solid {Theme.PRIMARY};
-                border-radius: 10px;
+        # Header card
+        header_card = QFrame()
+        header_card.setObjectName("AisHeaderCard")
+        header_card.setStyleSheet(f"""
+            QFrame#AisHeaderCard {{
+                background-color: {Theme.SURFACE};
+                border: none;
+                border-radius: 12px;
             }}
         """)
-        info_layout = QVBoxLayout(info_card)
-        info_layout.setContentsMargins(14, 10, 14, 10)
-        info_layout.setSpacing(4)
+        header_layout = QVBoxLayout(header_card)
+        header_layout.setContentsMargins(16, 14, 16, 14)
+        header_layout.setSpacing(10)
 
-        info_title = QLabel("📋  Annual Information Statement (AIS) / Tax Information Statement (TIS)")
-        info_title.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
-        info_title.setStyleSheet(f"color: {Theme.PRIMARY_DARK}; background: transparent;")
-        info_layout.addWidget(info_title)
+        title_row = QHBoxLayout()
+        title_col = QVBoxLayout()
+        title_col.setSpacing(2)
+        title = QLabel("AIS / TIS Import")
+        title.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
+        title.setStyleSheet(Theme.title_style(16))
+        title_col.addWidget(title)
 
-        info_text = QLabel(
-            "Import your AIS/TIS PDF from the Income Tax portal (password-protected). "
-            "The system compares portal totals with your app data."
+        self.header_meta = QLabel("Select a person to view import insights")
+        self.header_meta.setStyleSheet(Theme.muted_style(12))
+        title_col.addWidget(self.header_meta)
+        title_row.addLayout(title_col)
+        title_row.addStretch()
+
+        btn_import = Theme.btn("📄  Import PDF", "primary", height=40, min_width=136)
+        btn_import.clicked.connect(self._on_import_pdf)
+        title_row.addWidget(btn_import)
+
+        btn_refresh = Theme.btn("🔄  Refresh", "secondary", height=40, min_width=112)
+        btn_refresh.clicked.connect(self.refresh)
+        title_row.addWidget(btn_refresh)
+        header_layout.addLayout(title_row)
+
+        info = QLabel(
+            "Import password-protected AIS/TIS PDFs and compare portal income with your app data. "
+            "Use breakdown filters to inspect source-level records and TDS details."
         )
-        info_text.setWordWrap(True)
-        info_text.setStyleSheet(f"color: {Theme.TEXT_SECONDARY}; font-size: 12px; background: transparent;")
-        info_layout.addWidget(info_text)
+        info.setWordWrap(True)
+        info.setStyleSheet(Theme.text_style(color=Theme.INFO_DARK, size=12) + f" background: {Theme.INFO_LIGHT}; border: 1px solid {Theme.INFO}; border-radius: 8px; padding: 10px 12px;")
+        header_layout.addWidget(info)
 
-        header_layout.addWidget(info_card)
-        main_layout.addWidget(header_widget)
+        chips = QHBoxLayout(); chips.setSpacing(8)
+        self.chip_source = QLabel("Source: —")
+        self.chip_fy = QLabel("FY: —")
+        self.chip_rows = QLabel("Rows: 0")
+        self.chip_tds = QLabel("TDS: ₹0.00")
+        for chip in [self.chip_source, self.chip_fy, self.chip_rows, self.chip_tds]:
+            chip.setStyleSheet(Theme.badge_style(Theme.SURFACE_ALT, Theme.TEXT_SECONDARY, radius=10, padding="4px 10px", size=11, weight=600))
+            chips.addWidget(chip)
+        chips.addStretch()
+        header_layout.addLayout(chips)
+        main_layout.addWidget(header_card)
 
-        # ── Scrollable content ────────────────────────────────────────────────
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        # Split workspace
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.setChildrenCollapsible(False)
+        splitter.setHandleWidth(8)
 
-        content_widget = QWidget()
-        content_widget.setStyleSheet(f"background: {Theme.BG};")
-        content_layout = QVBoxLayout(content_widget)
-        content_layout.setContentsMargins(24, 16, 24, 16)
-        content_layout.setSpacing(16)
+        # Left: comparison + summary
+        left_card = QFrame()
+        left_card.setObjectName("AisLeftCard")
+        left_card.setStyleSheet(f"""
+            QFrame#AisLeftCard {{
+                background-color: {Theme.SURFACE};
+                border: none;
+                border-radius: 12px;
+            }}
+        """)
+        left_layout = QVBoxLayout(left_card)
+        left_layout.setContentsMargins(14, 12, 14, 12)
+        left_layout.setSpacing(10)
 
-        # Comparison table
         comp_label = QLabel("Income Comparison: AIS/TIS vs App Data")
         comp_label.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
-        comp_label.setStyleSheet(f"color: {Theme.TEXT_PRIMARY};")
-        content_layout.addWidget(comp_label)
+        comp_label.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=12, weight=700))
+        left_layout.addWidget(comp_label)
 
         self.table_widget = ExcelTableWithStats(show_checkboxes=False)
         self.table = self.table_widget.table
@@ -272,46 +281,101 @@ class AISTISImportScreen(QWidget):
         ])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.table.setMaximumHeight(280)
-        content_layout.addWidget(self.table_widget)
-
-        # Details group
-        details_group = QGroupBox("Transaction Breakdown")
-        details_group.setStyleSheet(f"""
-            QGroupBox {{
-                border: 1px solid {Theme.BORDER}; border-radius: 10px;
-                margin-top: 18px; padding: 14px;
-                background: {Theme.SURFACE};
-                font-weight: 700; font-size: 13px; color: {Theme.PRIMARY};
+        self.table.setMinimumHeight(280)
+        self.table.setStyleSheet(f"""
+            QTableWidget {{
+                background: {Theme.SURFACE_ALT};
+                border: none;
+                border-radius: 10px;
+                gridline-color: {Theme.DIVIDER};
             }}
-            QGroupBox::title {{
-                subcontrol-origin: margin; left: 14px; padding: 0 6px;
-                background: {Theme.SURFACE}; color: {Theme.PRIMARY};
+            QHeaderView::section {{
+                background: {Theme.SURFACE};
+                color: {Theme.TEXT_SECONDARY};
+                border: none;
+                padding: 9px 8px;
+                font-weight: 700;
+                border-bottom: 1px solid {Theme.DIVIDER};
             }}
         """)
-        details_layout = QVBoxLayout(details_group)
-        details_layout.setSpacing(10)
+        left_layout.addWidget(self.table_widget, 1)
 
-        # Breakdown controls
+        summary_lbl = QLabel("Import Summary")
+        summary_lbl.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+        summary_lbl.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=10, weight=700))
+        left_layout.addWidget(summary_lbl)
+
+        self.details_text = QTextEdit()
+        self.details_text.setReadOnly(True)
+        self.details_text.setMaximumHeight(150)
+        self.details_text.setStyleSheet(f"""
+            background-color: {Theme.SURFACE_ALT};
+            color: {Theme.TEXT_PRIMARY};
+            border: none;
+            border-radius: 8px;
+            padding: 8px;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 11px;
+        """)
+        left_layout.addWidget(self.details_text)
+        splitter.addWidget(left_card)
+
+        # Right: breakdown panel
+        right_card = QFrame()
+        right_card.setObjectName("AisRightCard")
+        right_card.setStyleSheet(f"""
+            QFrame#AisRightCard {{
+                background-color: {Theme.SURFACE};
+                border: none;
+                border-radius: 12px;
+            }}
+        """)
+        right_layout = QVBoxLayout(right_card)
+        right_layout.setContentsMargins(14, 12, 14, 12)
+        right_layout.setSpacing(10)
+
+        breakdown_title = QLabel("Transaction Breakdown")
+        breakdown_title.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
+        breakdown_title.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=12, weight=700))
+        right_layout.addWidget(breakdown_title)
+
         controls_row = QHBoxLayout()
-        controls_row.setSpacing(10)
-        controls_row.addWidget(self._lbl("Bank/Source:"))
+        controls_row.setSpacing(8)
+        controls_row.addWidget(self._lbl("Source"))
         self.source_combo = QComboBox()
-        self.source_combo.setMinimumWidth(240)
-        self.source_combo.setFixedHeight(34)
+        self.source_combo.setMinimumWidth(220)
+        self.source_combo.setFixedHeight(36)
         self.source_combo.currentIndexChanged.connect(self._update_breakdown_table)
+        self.source_combo.setStyleSheet(f"""
+            QComboBox {{
+                background: {Theme.SURFACE_ALT};
+                border: none;
+                border-radius: 8px;
+                padding: 6px 10px;
+            }}
+        """)
         controls_row.addWidget(self.source_combo)
-        controls_row.addWidget(self._lbl("Quarter:"))
+
+        controls_row.addWidget(self._lbl("Quarter"))
         self.quarter_combo = QComboBox()
         self.quarter_combo.setMinimumWidth(110)
-        self.quarter_combo.setFixedHeight(34)
+        self.quarter_combo.setFixedHeight(36)
         self.quarter_combo.currentIndexChanged.connect(self._update_breakdown_table)
+        self.quarter_combo.setStyleSheet(f"""
+            QComboBox {{
+                background: {Theme.SURFACE_ALT};
+                border: none;
+                border-radius: 8px;
+                padding: 6px 10px;
+            }}
+        """)
         controls_row.addWidget(self.quarter_combo)
         controls_row.addStretch()
+        right_layout.addLayout(controls_row)
+
         self.unique_label = QLabel("")
-        self.unique_label.setStyleSheet(f"color: {Theme.TEXT_MUTED}; font-size: 11px;")
-        controls_row.addWidget(self.unique_label)
-        details_layout.addLayout(controls_row)
+        self.unique_label.setStyleSheet(Theme.text_style(color=Theme.TEXT_MUTED, size=11))
+        right_layout.addWidget(self.unique_label)
 
         self.breakdown_table_widget = ExcelTableWithStats(show_checkboxes=False)
         self.breakdown_table = self.breakdown_table_widget.table
@@ -320,52 +384,77 @@ class AISTISImportScreen(QWidget):
         ])
         self.breakdown_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.breakdown_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.breakdown_table.setMinimumHeight(180)
-        self.breakdown_table.setMaximumHeight(320)
-        details_layout.addWidget(self.breakdown_table_widget)
-
-        # Summary text
-        summary_lbl = QLabel("Import Summary")
-        summary_lbl.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
-        summary_lbl.setStyleSheet(f"color: {Theme.TEXT_PRIMARY};")
-        details_layout.addWidget(summary_lbl)
-
-        self.details_text = QTextEdit()
-        self.details_text.setReadOnly(True)
-        self.details_text.setMaximumHeight(120)
-        self.details_text.setStyleSheet(f"""
-            background-color: {Theme.SURFACE_ALT};
-            color: {Theme.TEXT_PRIMARY};
-            border: 1px solid {Theme.BORDER};
-            border-radius: 6px;
-            padding: 8px;
-            font-family: 'Consolas', 'Courier New', monospace;
-            font-size: 11px;
+        self.breakdown_table.setMinimumHeight(380)
+        self.breakdown_table.setStyleSheet(f"""
+            QTableWidget {{
+                background: {Theme.SURFACE_ALT};
+                border: none;
+                border-radius: 10px;
+                gridline-color: {Theme.DIVIDER};
+            }}
+            QHeaderView::section {{
+                background: {Theme.SURFACE};
+                color: {Theme.TEXT_SECONDARY};
+                border: none;
+                padding: 9px 8px;
+                font-weight: 700;
+                border-bottom: 1px solid {Theme.DIVIDER};
+            }}
         """)
-        details_layout.addWidget(self.details_text)
-        content_layout.addWidget(details_group)
+        right_layout.addWidget(self.breakdown_table_widget, 1)
 
+        status_frame = QFrame()
+        status_frame.setObjectName("AisStatusFrame")
+        status_frame.setStyleSheet(f"""
+            QFrame#AisStatusFrame {{
+                background: {Theme.SURFACE_ALT};
+                border: none;
+                border-radius: 10px;
+            }}
+        """)
+        status_layout = QHBoxLayout(status_frame)
+        status_layout.setContentsMargins(10, 8, 10, 8)
+        status_layout.setSpacing(8)
+        status_icon = QLabel("ℹ️")
+        status_icon.setFont(QFont("Segoe UI Emoji", 14))
+        status_layout.addWidget(status_icon)
         self.status_label = QLabel("No data imported yet. Click '📄 Import PDF' to begin.")
-        self.status_label.setStyleSheet(f"color: {Theme.TEXT_MUTED}; font-size: 11px; padding: 6px 0;")
-        content_layout.addWidget(self.status_label)
-        content_layout.addStretch()
+        self.status_label.setStyleSheet(Theme.text_style(color=Theme.TEXT_SECONDARY, size=11))
+        status_layout.addWidget(self.status_label, 1)
+        right_layout.addWidget(status_frame)
 
-        scroll.setWidget(content_widget)
-        main_layout.addWidget(scroll)
+        splitter.addWidget(right_card)
+        splitter.setStretchFactor(0, 3)
+        splitter.setStretchFactor(1, 4)
+        main_layout.addWidget(splitter, 1)
 
     def _lbl(self, text: str) -> QLabel:
         l = QLabel(text)
-        l.setStyleSheet(f"color: {Theme.TEXT_SECONDARY}; font-size: 12px; font-weight: 600;")
+        l.setStyleSheet(Theme.section_label_style())
         return l
+
+    def _update_header_chips(self, source_text: str = "—", fy: str = "—", rows: int = 0, tds: float = 0.0):
+        self.chip_source.setText(f"Source: {source_text}")
+        self.chip_fy.setText(f"FY: {fy}")
+        self.chip_rows.setText(f"Rows: {rows}")
+        self.chip_tds.setText(f"TDS: ₹ {tds:,.2f}")
+
+        self.chip_source.setStyleSheet(Theme.badge_style(Theme.INFO_LIGHT, Theme.INFO_DARK, radius=10, padding="4px 10px", size=11, weight=600))
+        self.chip_fy.setStyleSheet(Theme.badge_style(Theme.PRIMARY_LIGHT, Theme.PRIMARY_DARK, radius=10, padding="4px 10px", size=11, weight=600))
+        self.chip_rows.setStyleSheet(Theme.badge_style(Theme.SURFACE_ALT, Theme.TEXT_SECONDARY, radius=10, padding="4px 10px", size=11, weight=600))
+        self.chip_tds.setStyleSheet(Theme.badge_style(Theme.SUCCESS_LIGHT, Theme.SUCCESS_DARK, radius=10, padding="4px 10px", size=11, weight=600))
 
     def refresh(self):
         person_id = session.selected_person_id
         fy = session.selected_fy
 
+        self.header_meta.setText(f"FY {fy} • {'Person selected' if person_id else 'Select a person to continue'}")
+
         if not person_id:
             self.table.setRowCount(0)
             self.details_text.clear()
             self.status_label.setText("Please select a person from the top bar.")
+            self._update_header_chips(source_text="—", fy=fy or "—", rows=0, tds=0.0)
             return
 
         ais_data = get_ais_tis_data(person_id, fy)
@@ -378,6 +467,7 @@ class AISTISImportScreen(QWidget):
             self.unique_label.setText("")
             self.status_label.setText(
                 f"No AIS/TIS data imported for FY {fy}. Click '📄 Import PDF' to import.")
+            self._update_header_chips(source_text="Not imported", fy=fy or "—", rows=0, tds=0.0)
             return
 
         try:
@@ -467,6 +557,12 @@ class AISTISImportScreen(QWidget):
         count = self.table.rowCount()
         self.status_label.setText(
             f"Showing {count} income type{'s' if count != 1 else ''} comparison.")
+        self._update_header_chips(
+            source_text=(ais_data.get("source_type") or "Unknown").upper(),
+            fy=fy or "—",
+            rows=len(self._current_records or []),
+            tds=float(ais_data.get("tds_deducted") or 0.0),
+        )
 
     def _on_import_pdf(self):
         person_id = session.selected_person_id
@@ -885,7 +981,7 @@ class PasswordDialog(QDialog):
         form.addRow("Password:", self.password_input)
 
         self.show_check = QCheckBox("Show password")
-        self.show_check.setStyleSheet(f"color: {Theme.TEXT_PRIMARY}; font-size: 13px;")
+        self.show_check.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=13))
         self.show_check.stateChanged.connect(self._toggle_visibility)
         form.addRow("", self.show_check)
         layout.addLayout(form)

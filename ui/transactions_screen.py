@@ -25,7 +25,7 @@ from models.person import get_all_persons
 from models.bank_account import get_accounts_for_person, get_all_accounts
 from models.transaction import (
     get_transactions, add_transaction, update_transaction, delete_transaction,
-    reprocess_internal_transfers
+    reprocess_internal_transfers, display_transaction_type, normalize_transaction_type
 )
 
 _COL_DATE=0; _COL_TYPE=1; _COL_CAT=2; _COL_MODE=3; _COL_REF=4; _COL_DESC=5
@@ -78,37 +78,29 @@ class TransactionsScreen(QWidget):
         layout.setContentsMargins(12, 8, 12, 8)
         layout.setSpacing(10)
 
-        self.btn_add = QPushButton("＋  Add Transaction")
-        self.btn_add.setObjectName("primaryBtn")
-        self.btn_add.setFixedHeight(40)
+        self.btn_add = Theme.btn("＋  Add Transaction", "primary", height=40, min_width=140)
         self.btn_add.clicked.connect(self._add_transaction)
         layout.addWidget(self.btn_add)
 
-        self.btn_edit = QPushButton("✏  Edit")
-        self.btn_edit.setObjectName("secondaryBtn")
-        self.btn_edit.setFixedHeight(40)
+        self.btn_edit = Theme.btn("✏  Edit", "edit", height=40, min_width=96)
         self.btn_edit.setEnabled(False)
         self.btn_edit.clicked.connect(self._edit_transaction)
         layout.addWidget(self.btn_edit)
 
-        self.btn_delete = QPushButton("🗑  Delete")
-        self.btn_delete.setObjectName("dangerBtn")
-        self.btn_delete.setFixedHeight(40)
+        self.btn_delete = Theme.btn("🗑  Delete", "danger", height=40, min_width=105)
         self.btn_delete.setEnabled(False)
         self.btn_delete.clicked.connect(self._delete_transaction)
         layout.addWidget(self.btn_delete)
 
-        self.btn_reprocess = QPushButton("Reprocess Data")
-        self.btn_reprocess.setObjectName("secondaryBtn")
-        self.btn_reprocess.setFixedHeight(40)
+        self.btn_reprocess = Theme.btn("Reprocess Data", "secondary", height=40, min_width=130)
         self.btn_reprocess.clicked.connect(self._reprocess_data)
         layout.addWidget(self.btn_reprocess)
 
         layout.addStretch()
 
         # Pill badges
-        self.lbl_income_sum  = self._badge("Income: —",  Theme.SUCCESS_LIGHT, Theme.SUCCESS_DARK)
-        self.lbl_expense_sum = self._badge("Expense: —", Theme.DANGER_LIGHT,  Theme.DANGER_DARK)
+        self.lbl_income_sum  = self._badge("Credit: —",  Theme.SUCCESS_LIGHT, Theme.SUCCESS_DARK)
+        self.lbl_expense_sum = self._badge("Debit: —", Theme.DANGER_LIGHT,  Theme.DANGER_DARK)
         self.lbl_net_sum     = self._badge("Net: —",     Theme.PRIMARY_LIGHT, Theme.PRIMARY_DARK)
         layout.addWidget(self.lbl_income_sum)
         layout.addWidget(self.lbl_expense_sum)
@@ -118,33 +110,20 @@ class TransactionsScreen(QWidget):
 
     def _badge(self, text, bg, fg) -> QLabel:
         lbl = QLabel(text)
-        lbl.setStyleSheet(f"""
-            background-color: {bg};
-            color: {fg};
-            border-radius: 12px;
-            padding: 5px 14px;
-            font-size: 12px;
-            font-weight: 600;
-        """)
+        lbl.setStyleSheet(Theme.badge_style(bg, fg))
         return lbl
 
     def _build_filter_bar(self) -> QWidget:
         bar = QFrame()
         bar.setObjectName("filterBar")
-        bar.setStyleSheet(f"""
-            QFrame#filterBar {{
-                background-color: {Theme.SURFACE};
-                border: 1px solid {Theme.BORDER};
-                border-radius: 10px;
-            }}
-        """)
+        bar.setStyleSheet(Theme.filter_bar_style())
         layout = QHBoxLayout(bar)
         layout.setContentsMargins(16, 10, 16, 10)
         layout.setSpacing(12)
 
         def lbl(t):
             l = QLabel(t)
-            l.setStyleSheet(f"font-size: 12px; font-weight: 600; color: {Theme.TEXT_SECONDARY};")
+            l.setStyleSheet(Theme.section_label_style())
             return l
 
         layout.addWidget(lbl("Person"))
@@ -167,7 +146,7 @@ class TransactionsScreen(QWidget):
 
         layout.addWidget(lbl("Type"))
         self.f_type = QComboBox(); self.f_type.setFixedWidth(110); self.f_type.setFixedHeight(32)
-        self.f_type.addItems(["All Types", "Income", "Expense", "Transfer"])
+        self.f_type.addItems(["All Types", "Credit", "Debit", "Transfer"])
         layout.addWidget(self.f_type)
 
         layout.addWidget(lbl("Search"))
@@ -177,14 +156,11 @@ class TransactionsScreen(QWidget):
 
         layout.addStretch()
 
-        btn_filter = QPushButton("Apply")
-        btn_filter.setFixedHeight(32); btn_filter.setFixedWidth(80)
+        btn_filter = Theme.btn("Apply", "primary", height=32, min_width=80)
         btn_filter.clicked.connect(self.refresh)
         layout.addWidget(btn_filter)
 
-        btn_clear = QPushButton("Clear")
-        btn_clear.setObjectName("secondaryBtn")
-        btn_clear.setFixedHeight(32); btn_clear.setFixedWidth(70)
+        btn_clear = Theme.btn("Clear", "secondary", height=32, min_width=70)
         btn_clear.clicked.connect(self._clear_filters)
         layout.addWidget(btn_clear)
 
@@ -247,8 +223,8 @@ class TransactionsScreen(QWidget):
         pid  = self.f_person.currentData()
         aid  = self.f_account.currentData()
         fy   = self.f_fy.currentText() or None
-        typ  = self.f_type.currentText()
-        typ  = None if typ == "All Types" else typ
+        typ_text = self.f_type.currentText()
+        typ = None if typ_text == "All Types" else normalize_transaction_type(typ_text)
         term = self.f_search.text().strip().lower()
 
         rows = get_transactions(account_id=aid, person_id=pid, financial_year=fy, transaction_type=typ)
@@ -290,7 +266,8 @@ class TransactionsScreen(QWidget):
             self.table.setCellWidget(r, 0, cb_widget)
             
             txn_type = row.get("transaction_type", "")
-            color    = type_colors.get(txn_type, QColor(Theme.TEXT_PRIMARY))
+            display_type = display_transaction_type(txn_type)
+            color    = type_colors.get(normalize_transaction_type(txn_type), QColor(Theme.TEXT_PRIMARY))
 
             def item(text, align=Qt.AlignmentFlag.AlignLeft):
                 it = QTableWidgetItem(str(text) if text is not None else "—")
@@ -311,7 +288,7 @@ class TransactionsScreen(QWidget):
             date_item.setData(Qt.ItemDataRole.UserRole, row.get("transaction_date"))
             self.table.setItem(r, _COL_DATE+1, date_item)
             
-            type_item = item(txn_type)
+            type_item = item(display_type)
             self.table.setItem(r, _COL_TYPE+1, type_item)
             
             # Category - editable
@@ -364,8 +341,8 @@ class TransactionsScreen(QWidget):
             if r.get("transaction_type") == "Expense" and not r.get("is_internal_transfer")
         )
         net = income - expense
-        self.lbl_income_sum.setText(f"Income: ₹ {income:,.2f}")
-        self.lbl_expense_sum.setText(f"Expense: ₹ {expense:,.2f}")
+        self.lbl_income_sum.setText(f"Credit: ₹ {income:,.2f}")
+        self.lbl_expense_sum.setText(f"Debit: ₹ {expense:,.2f}")
         sign = "+" if net >= 0 else ""
         self.lbl_net_sum.setText(f"Net: {sign}₹ {net:,.2f}")
 
@@ -512,12 +489,12 @@ class TransactionDialog(QDialog):
         form.addRow("Date *", self.date_edit)
 
         self.cmb_type = QComboBox()
-        self.cmb_type.addItems(["Income","Expense","Transfer"])
+        self.cmb_type.addItems(["Credit","Debit","Transfer"])
         self.cmb_type.currentTextChanged.connect(self._on_type_changed)
         form.addRow("Type *", self.cmb_type)
 
         self.cmb_category = QComboBox()
-        self._populate_categories("Income")
+        self._populate_categories("Credit")
         form.addRow("Category", self.cmb_category)
 
         self.cmb_mode = QComboBox()
@@ -567,8 +544,9 @@ class TransactionDialog(QDialog):
     def _populate_categories(self, txn_type):
         self.cmb_category.clear()
         self.cmb_category.addItem("", userData=None)
-        if txn_type == "Income": self.cmb_category.addItems(INCOME_CATEGORIES)
-        elif txn_type == "Expense": self.cmb_category.addItems(EXPENSE_CATEGORIES)
+        norm = normalize_transaction_type(txn_type)
+        if norm == "Income": self.cmb_category.addItems(INCOME_CATEGORIES)
+        elif norm == "Expense": self.cmb_category.addItems(EXPENSE_CATEGORIES)
         else: self.cmb_category.addItem("Transfer")
 
     def _prefill(self, txn):
@@ -583,7 +561,7 @@ class TransactionDialog(QDialog):
         if d:
             qd = QDate.fromString(d,"yyyy-MM-dd")
             if qd.isValid(): self.date_edit.setDate(qd)
-        typ = txn.get("transaction_type","Income")
+        typ = display_transaction_type(txn.get("transaction_type", "Income"))
         self.cmb_type.setCurrentText(typ)
         self._populate_categories(typ)
         idx = self.cmb_category.findText(txn.get("category") or "")
@@ -613,7 +591,7 @@ class TransactionDialog(QDialog):
             "account_id":       self.cmb_account.currentData(),
             "person_id":        self.cmb_person.currentData(),
             "transaction_date": self.date_edit.date().toString("yyyy-MM-dd"),
-            "transaction_type": self.cmb_type.currentText(),
+            "transaction_type": normalize_transaction_type(self.cmb_type.currentText()),
             "category":         self.cmb_category.currentText().strip() or None,
             "mode":             self.cmb_mode.currentText().strip() or None,
             "reference_no":     self.ref_input.text().strip().upper() or None,

@@ -16,48 +16,7 @@ from models.person import add_person, get_all_persons, get_person, update_person
 
 
 def _btn(text: str, style: str = "primary") -> QPushButton:
-    """Create a consistently styled button."""
-    b = QPushButton(text)
-    styles = {
-        "primary": (Theme.PRIMARY, Theme.PRIMARY_DARK),
-        "success": (Theme.SUCCESS, Theme.SUCCESS_DARK),
-        "danger":  (Theme.DANGER,  Theme.DANGER_DARK),
-        "secondary": None,
-    }
-    if style == "secondary":
-        b.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {Theme.SURFACE};
-                color: {Theme.TEXT_PRIMARY};
-                border: 1.5px solid {Theme.BORDER};
-                border-radius: 8px;
-                padding: 8px 18px;
-                font-size: 13px;
-                font-weight: 600;
-                min-height: 32px;
-            }}
-            QPushButton:hover {{
-                background-color: {Theme.PRIMARY_LIGHT};
-                border-color: {Theme.PRIMARY};
-                color: {Theme.PRIMARY_DARK};
-            }}
-        """)
-    else:
-        c1, c2 = styles[style]
-        b.setStyleSheet(f"""
-            QPushButton {{
-                background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 {c1},stop:1 {c2});
-                color: white;
-                border: none;
-                border-radius: 8px;
-                padding: 8px 18px;
-                font-size: 13px;
-                font-weight: 700;
-                min-height: 32px;
-            }}
-            QPushButton:hover {{ background-color: {c2}; }}
-        """)
-    return b
+    return Theme.btn(text, style, height=36, min_width=100)
 
 
 class PersonManagementDialog(QDialog):
@@ -102,7 +61,7 @@ class PersonManagementDialog(QDialog):
         # Actions
         actions = QHBoxLayout()
         actions.addStretch()
-        btn_edit = _btn("✏  Edit", "secondary")
+        btn_edit = _btn("✏  Edit", "edit")
         btn_edit.clicked.connect(self._on_edit)
         actions.addWidget(btn_edit)
         btn_del = _btn("🗑  Delete", "danger")

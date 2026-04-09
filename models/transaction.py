@@ -11,6 +11,30 @@ from config import fy_date_range
 
 INTERNAL_TRANSFER_CATEGORY = "Internal Transfer"
 
+_TYPE_ALIAS_TO_CANON = {
+    "income": "Income",
+    "credit": "Income",
+    "expense": "Expense",
+    "debit": "Expense",
+    "transfer": "Transfer",
+}
+
+
+def normalize_transaction_type(value: str | None) -> str:
+    """Normalize UI/db aliases to canonical DB values."""
+    raw = (value or "").strip().lower()
+    return _TYPE_ALIAS_TO_CANON.get(raw, value or "")
+
+
+def display_transaction_type(value: str | None) -> str:
+    """Convert canonical DB values to user-facing labels."""
+    canon = normalize_transaction_type(value)
+    if canon == "Income":
+        return "Credit"
+    if canon == "Expense":
+        return "Debit"
+    return canon
+
 
 def _norm_text(value: str | None) -> str:
     return (value or "").strip().lower()
@@ -168,7 +192,7 @@ def reprocess_internal_transfers(account_id: int = None, person_id: int = None,
     ]
     credits = [
         t for t in txns
-        if t.get("transaction_type") == "Income" and _transfer_like(t)
+        if t.get("transaction_type") == "Income"
     ]
 
     used = set()
@@ -176,6 +200,8 @@ def reprocess_internal_transfers(account_id: int = None, person_id: int = None,
     for d in debits:
         best = None
         best_score = -1
+        candidate_count = 0
+        best_has_clue = False
         for c in credits:
             if c["transaction_id"] in used:
                 continue
@@ -186,17 +212,21 @@ def reprocess_internal_transfers(account_id: int = None, person_id: int = None,
             day_gap = _date_diff_days(d["transaction_date"], c["transaction_date"])
             if day_gap > 2:
                 continue
+            candidate_count += 1
 
             score = 3 if day_gap == 0 else 2 if day_gap == 1 else 1
             clue_score, has_clue = _counterparty_signal(d, c)
             score += clue_score
-            if not has_clue:
-                continue
             if score > best_score:
                 best_score = score
                 best = c
+                best_has_clue = has_clue
 
-        if best is not None and best_score >= 5:
+        # Accept either a high-confidence clue-based match, or a unique exact-day amount match.
+        if best is not None and (
+            (best_has_clue and best_score >= 5)
+            or (not best_has_clue and candidate_count == 1 and best_score >= 3)
+        ):
             used.add(best["transaction_id"])
             pairs.append((d, best))
 
@@ -242,13 +272,14 @@ def add_transaction(account_id: int, person_id: int, transaction_date: str,
                     reference_no: str = None,
                     source: str = "Manual") -> int:
     """Insert a transaction. Returns new transaction_id."""
+    txn_type = normalize_transaction_type(transaction_type)
     conn = get_connection()
     cur = conn.execute("""
         INSERT INTO Transactions
             (account_id, person_id, transaction_date, transaction_type,
                          category, mode, amount, reference_no, description, balance_after, source)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (account_id, person_id, transaction_date, transaction_type,
+    """, (account_id, person_id, transaction_date, txn_type,
                     category, mode, amount, reference_no, description, balance_after, source))
     conn.commit()
     txn_id = cur.lastrowid
@@ -289,6 +320,7 @@ def get_transactions(account_id: int = None, person_id: int = None,
         params.extend([start.isoformat(), end.isoformat()])
 
     if transaction_type:
+        transaction_type = normalize_transaction_type(transaction_type)
         query += " AND t.transaction_type = ?"
         params.append(transaction_type)
 
@@ -314,6 +346,7 @@ def update_transaction(transaction_id: int, transaction_date: str,
                        category: str = None, mode: str = None,
                        description: str = None,
                        reference_no: str = None) -> None:
+    txn_type = normalize_transaction_type(transaction_type)
     conn = get_connection()
     conn.execute("""
         UPDATE Transactions
@@ -321,7 +354,7 @@ def update_transaction(transaction_id: int, transaction_date: str,
                         category = ?, mode = ?, description = ?,
                         reference_no = COALESCE(?, reference_no)
         WHERE transaction_id = ?
-    """, (transaction_date, transaction_type, amount,
+    """, (transaction_date, txn_type, amount,
                     category, mode, description, reference_no, transaction_id))
     conn.commit()
     conn.close()

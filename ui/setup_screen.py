@@ -11,6 +11,7 @@ from PyQt6.QtGui import QFont
 
 from core.auth import setup_master_password
 from config import APP_NAME
+from ui.logo import logo_pixmap, set_window_icon
 from ui.theme import Theme
 
 
@@ -18,10 +19,12 @@ class SetupScreen(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(f"{APP_NAME} — Setup")
+        set_window_icon(self)
         self.setFixedSize(480, 600)
         self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowCloseButtonHint)
         self.setStyleSheet(f"background-color: {Theme.BG};")
         self._build_ui()
+        self._center_on_screen()
 
     def _build_ui(self):
         root = QVBoxLayout(self)
@@ -29,13 +32,8 @@ class SetupScreen(QWidget):
         root.addStretch(1)
 
         card = QFrame()
-        card.setStyleSheet(f"""
-            QFrame {{
-                background-color: {Theme.SURFACE};
-                border: 1px solid {Theme.BORDER};
-                border-radius: 16px;
-            }}
-        """)
+        card.setObjectName("SetupCard")
+        card.setStyleSheet(Theme.tinted_surface_style(radius=16, selector="QFrame#SetupCard"))
         card.setFixedWidth(400)
 
         cl = QVBoxLayout(card)
@@ -43,31 +41,32 @@ class SetupScreen(QWidget):
         cl.setSpacing(0)
 
         # Logo + gradient bar
-        logo = QLabel("💰")
-        logo.setFont(QFont("Segoe UI Emoji", 28))
+        logo = QLabel()
+        logo_pm = logo_pixmap(88)
+        if not logo_pm.isNull():
+            logo.setPixmap(logo_pm)
+        else:
+            logo.setText("PF")
+            logo.setFont(QFont("Segoe UI", 20, QFont.Weight.Bold))
         logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
         cl.addWidget(logo)
         cl.addSpacing(8)
 
         strip = QFrame()
         strip.setFixedHeight(4)
-        strip.setStyleSheet(f"""
-            background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
-                stop:0 {Theme.PRIMARY}, stop:1 {Theme.SUCCESS});
-            border-radius: 2px;
-        """)
+        strip.setStyleSheet(Theme.panel_strip_style(radius=2))
         cl.addWidget(strip)
         cl.addSpacing(14)
 
         title = QLabel("Welcome")
         title.setFont(QFont("Segoe UI", 22, QFont.Weight.Bold))
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setStyleSheet(f"color: {Theme.TEXT_PRIMARY};")
+        title.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=22, weight=700))
         cl.addWidget(title)
 
         subtitle = QLabel("Set a master password to secure your data")
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        subtitle.setStyleSheet(f"color: {Theme.TEXT_SECONDARY}; font-size: 13px;")
+        subtitle.setStyleSheet(Theme.text_style(color=Theme.TEXT_SECONDARY, size=13))
         cl.addWidget(subtitle)
         cl.addSpacing(26)
 
@@ -81,11 +80,11 @@ class SetupScreen(QWidget):
 
         self.strength_bar = QFrame()
         self.strength_bar.setFixedHeight(4)
-        self.strength_bar.setStyleSheet(f"background:{Theme.BORDER}; border-radius:2px;")
+        self.strength_bar.setStyleSheet(f"background: {Theme.BORDER}; border-radius: 2px;")
         cl.addWidget(self.strength_bar)
 
         self.strength_label = QLabel("")
-        self.strength_label.setStyleSheet(f"font-size: 11px; color: {Theme.TEXT_MUTED};")
+        self.strength_label.setStyleSheet(Theme.text_style(color=Theme.TEXT_MUTED, size=11))
         cl.addWidget(self.strength_label)
         cl.addSpacing(14)
 
@@ -98,7 +97,7 @@ class SetupScreen(QWidget):
 
         # TOTP
         self.totp_check = QCheckBox("Enable two-factor authentication (TOTP)")
-        self.totp_check.setStyleSheet(f"color: {Theme.TEXT_SECONDARY}; font-size: 12px;")
+        self.totp_check.setStyleSheet(Theme.muted_style(12))
         cl.addWidget(self.totp_check)
         cl.addSpacing(24)
 
@@ -111,7 +110,7 @@ class SetupScreen(QWidget):
 
         note = QLabel("⚠  Your password cannot be recovered. Keep it safe.")
         note.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        note.setStyleSheet(f"color: {Theme.WARNING}; font-size: 11px;")
+        note.setStyleSheet(Theme.text_style(color=Theme.WARNING, size=11))
         cl.addWidget(note)
 
         h = QHBoxLayout()
@@ -123,7 +122,7 @@ class SetupScreen(QWidget):
 
     def _lbl(self, text: str) -> QLabel:
         l = QLabel(text)
-        l.setStyleSheet(f"font-weight: 600; font-size: 13px; color: {Theme.TEXT_PRIMARY};")
+        l.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=13, weight=600))
         return l
 
     def _field(self, placeholder: str, password: bool = False) -> QLineEdit:
@@ -137,20 +136,20 @@ class SetupScreen(QWidget):
     def _update_strength(self, text: str):
         n = len(text)
         if n == 0:
-            self.strength_bar.setStyleSheet(f"background:{Theme.BORDER}; border-radius:2px;")
+            self.strength_bar.setStyleSheet(f"background: {Theme.BORDER}; border-radius: 2px;")
             self.strength_label.setText("")
         elif n < 8:
-            self.strength_bar.setStyleSheet(f"background:{Theme.DANGER}; border-radius:2px;")
+            self.strength_bar.setStyleSheet(Theme.panel_strip_style(Theme.DANGER_GRADIENT_START, Theme.DANGER_GRADIENT_END, radius=2))
             self.strength_label.setText("Weak — use at least 8 characters")
-            self.strength_label.setStyleSheet(f"font-size:11px; color:{Theme.DANGER};")
+            self.strength_label.setStyleSheet(Theme.text_style(color=Theme.DANGER, size=11))
         elif n < 12:
-            self.strength_bar.setStyleSheet(f"background:{Theme.WARNING}; border-radius:2px;")
+            self.strength_bar.setStyleSheet(Theme.panel_strip_style(Theme.WARNING_GRADIENT_START, Theme.WARNING_GRADIENT_END, radius=2))
             self.strength_label.setText("Moderate")
-            self.strength_label.setStyleSheet(f"font-size:11px; color:{Theme.WARNING};")
+            self.strength_label.setStyleSheet(Theme.text_style(color=Theme.WARNING, size=11))
         else:
-            self.strength_bar.setStyleSheet(f"background:{Theme.SUCCESS}; border-radius:2px;")
+            self.strength_bar.setStyleSheet(Theme.panel_strip_style(Theme.SUCCESS_GRADIENT_START, Theme.SUCCESS_GRADIENT_END, radius=2))
             self.strength_label.setText("Strong ✓")
-            self.strength_label.setStyleSheet(f"font-size:11px; color:{Theme.SUCCESS};")
+            self.strength_label.setStyleSheet(Theme.text_style(color=Theme.SUCCESS, size=11))
 
     def _on_setup(self):
         pwd     = self.pwd_input.text()
@@ -170,3 +169,12 @@ class SetupScreen(QWidget):
         self.login = LoginScreen()
         self.login.show()
         self.close()
+
+    def _center_on_screen(self):
+        """Center the window on the screen."""
+        from PyQt6.QtGui import QGuiApplication
+        screen = QGuiApplication.primaryScreen().geometry()
+        window_geometry = self.frameGeometry()
+        center_point = screen.center()
+        window_geometry.moveCenter(center_point)
+        self.move(window_geometry.topLeft())

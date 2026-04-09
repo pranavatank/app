@@ -21,6 +21,7 @@ from models.transaction import get_income_total, get_expense_total
 from models.fd_interest_record import get_total_fd_interest
 from models.savings_interest import get_total_savings_interest
 from models.tax_profile import get_tax_profile
+from ui.logo import logo_pixmap, set_window_icon
 from ui.theme import Theme
 from ui.widgets.summary_panel import SummaryPanel
 
@@ -42,6 +43,7 @@ class DashboardScreen(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(APP_NAME)
+        set_window_icon(self)
         self.setMinimumSize(1200, 720)
         self._persons: list[dict] = []
         self._accounts: list[dict] = []
@@ -87,15 +89,21 @@ class DashboardScreen(QMainWindow):
         # Brand header
         brand = QWidget()
         brand.setStyleSheet(f"""
-            background: qlineargradient(x1:0,y1:0,x2:1,y2:1,
-                stop:0 {Theme.PRIMARY}, stop:1 {Theme.PRIMARY_DARK});
+            background: {Theme.gradient(Theme.PRIMARY_GRADIENT_START, Theme.PRIMARY_DARK, diagonal=True)};
         """)
         brand.setFixedHeight(64)
         brand_layout = QHBoxLayout(brand)
         brand_layout.setContentsMargins(20, 0, 20, 0)
 
-        brand_icon = QLabel("💰")
-        brand_icon.setFont(QFont("Segoe UI Emoji", 20))
+        brand_icon = QLabel()
+        brand_icon.setFixedSize(44, 44)
+        brand_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        brand_pm = logo_pixmap(38)
+        if not brand_pm.isNull():
+            brand_icon.setPixmap(brand_pm)
+        else:
+            brand_icon.setText("PF")
+            brand_icon.setStyleSheet("color: white; font-size: 14px; font-weight: 700; background: transparent;")
         brand_layout.addWidget(brand_icon)
 
         brand_text = QLabel("FinManager")
@@ -110,7 +118,7 @@ class DashboardScreen(QMainWindow):
         # Nav section label
         nav_lbl = QLabel("  NAVIGATION")
         nav_lbl.setStyleSheet(f"""
-            color: rgba(148,163,184,0.6);
+            color: {Theme.TEXT_MUTED};
             font-size: 10px;
             font-weight: 700;
             letter-spacing: 1.5px;
@@ -133,12 +141,7 @@ class DashboardScreen(QMainWindow):
         # Version badge
         ver_lbl = QLabel("v1.0.0  ·  Offline")
         ver_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        ver_lbl.setStyleSheet(f"""
-            color: rgba(148,163,184,0.5);
-            font-size: 10px;
-            background: transparent;
-            padding-bottom: 12px;
-        """)
+        ver_lbl.setStyleSheet(Theme.text_style(color=Theme.TEXT_MUTED, size=10) + " padding-bottom: 12px;")
         layout.addWidget(ver_lbl)
 
         self._nav_buttons[0].setProperty("active", True)
@@ -200,10 +203,21 @@ class DashboardScreen(QMainWindow):
         layout.setContentsMargins(24, 0, 24, 0)
         layout.setSpacing(10)
 
+        logo_chip = QLabel()
+        logo_chip.setFixedSize(40, 40)
+        logo_chip.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        topbar_pm = logo_pixmap(30)
+        if not topbar_pm.isNull():
+            logo_chip.setPixmap(topbar_pm)
+        else:
+            logo_chip.setText("PF")
+            logo_chip.setStyleSheet(Theme.text_style(color=Theme.PRIMARY_DARK, size=11, weight=700))
+        layout.addWidget(logo_chip)
+
         # Page title (updated on navigate)
         self.page_title_lbl = QLabel("Overview")
         self.page_title_lbl.setFont(QFont("Segoe UI", 15, QFont.Weight.Bold))
-        self.page_title_lbl.setStyleSheet(f"color: {Theme.TEXT_PRIMARY};")
+        self.page_title_lbl.setStyleSheet(Theme.title_style(15))
         layout.addWidget(self.page_title_lbl)
 
         layout.addStretch()
@@ -218,7 +232,7 @@ class DashboardScreen(QMainWindow):
 
         def _combo_lbl(text):
             l = QLabel(text)
-            l.setStyleSheet(f"color: {Theme.TEXT_SECONDARY}; font-size: 12px; font-weight: 600;")
+            l.setStyleSheet(Theme.section_label_style())
             return l
 
         layout.addWidget(_combo_lbl("Person"))
@@ -248,10 +262,7 @@ class DashboardScreen(QMainWindow):
 
         layout.addSpacing(8)
 
-        btn_logout = QPushButton("Logout")
-        btn_logout.setObjectName("secondaryBtn")
-        btn_logout.setFixedHeight(34)
-        btn_logout.setFixedWidth(102)
+        btn_logout = Theme.btn("Logout", "secondary", height=34, min_width=102)
         btn_logout.clicked.connect(self._on_logout)
         layout.addWidget(btn_logout)
 
@@ -329,8 +340,7 @@ class DashboardScreen(QMainWindow):
         banner = QFrame()
         banner.setStyleSheet(f"""
             QFrame {{
-                background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
-                    stop:0 {Theme.PRIMARY}, stop:1 {Theme.PRIMARY_DARK});
+                background: {Theme.gradient(Theme.PRIMARY_GRADIENT_START, Theme.PRIMARY_DARK)};
                 border-radius: 14px;
             }}
         """)
@@ -345,7 +355,7 @@ class DashboardScreen(QMainWindow):
         b_layout.addStretch()
 
         self.banner_fy_lbl = QLabel("")
-        self.banner_fy_lbl.setStyleSheet("color: rgba(255,255,255,0.75); font-size: 13px; background: transparent;")
+        self.banner_fy_lbl.setStyleSheet("color: rgba(255,255,255,0.82); font-size: 13px; background: transparent;")
         b_layout.addWidget(self.banner_fy_lbl)
 
         outer.addWidget(banner)
@@ -356,8 +366,8 @@ class DashboardScreen(QMainWindow):
 
         self.panel_financial = SummaryPanel("Financial Summary", "💰", accent=Theme.PRIMARY)
         self.panel_financial.add_stat("balance",  "Total Balance",      "₹ —", value_size=16)
-        self.panel_financial.add_stat("income",   "Total Income (FY)",  "₹ —", value_color=Theme.SUCCESS)
-        self.panel_financial.add_stat("expense",  "Total Expenses (FY)","₹ —", value_color=Theme.DANGER)
+        self.panel_financial.add_stat("income",   "Total Credit (FY)",  "₹ —", value_color=Theme.SUCCESS)
+        self.panel_financial.add_stat("expense",  "Total Debit (FY)","₹ —", value_color=Theme.DANGER)
         self.panel_financial.add_divider()
         self.panel_financial.add_stat("savings",  "Net Savings",        "₹ —", value_size=14, bold=True)
         grid.addWidget(self.panel_financial, 0, 0)

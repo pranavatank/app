@@ -439,6 +439,6 @@ For issues or questions, please refer to the documentation in the `docs/` folder
 
 ---
 
-**Version**: 1.0.0  
+**Version**: 2.0.0  
 **Status**: Production Ready ✅  
-**Last Updated**: 2024
+**Last Updated**: 2026

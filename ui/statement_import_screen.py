@@ -25,6 +25,7 @@ from models.person import get_all_persons
 from models.bank_account import get_accounts_for_person, get_account, update_account
 from models.bank import get_or_create_bank, update_bank_tan_code_if_exists
 from models.transaction import add_transaction, check_duplicate
+from models.transaction import display_transaction_type
 from models.fixed_deposit import add_fd_from_statement, apply_statement_redemption_event
 from models.statement_import_log import log_import
 from engines.statement_parser import parse_statement_with_debug, filter_duplicates, validate_transactions
@@ -113,7 +114,7 @@ class StatementImportScreen(QWidget):
         # Header
         title = QLabel("📄  Statement Import Wizard")
         title.setFont(QFont("Segoe UI", 15, QFont.Weight.Bold))
-        title.setStyleSheet(f"color: {Theme.TEXT_PRIMARY};")
+        title.setStyleSheet(Theme.title_style(15))
         layout.addWidget(title)
 
         # Step progress bar
@@ -141,13 +142,15 @@ class StatementImportScreen(QWidget):
         # Content card
         self.content_frame = QFrame()
         self.content_frame.setObjectName("stepCard")
-        self.content_frame.setStyleSheet(f"""
-            QFrame#stepCard {{
-                background-color: {Theme.SURFACE};
-                border: 1px solid {Theme.BORDER};
-                border-radius: 12px;
-            }}
-        """)
+        self.content_frame.setStyleSheet(
+            Theme.card_style(
+                bg=Theme.SURFACE,
+                border_color=Theme.BORDER,
+                radius=12,
+                padding=0,
+                selector="QFrame#stepCard",
+            )
+        )
         card_layout = QVBoxLayout(self.content_frame)
         card_layout.setContentsMargins(0, 0, 0, 0)
 
@@ -169,15 +172,11 @@ class StatementImportScreen(QWidget):
         # Nav buttons
         nav = QHBoxLayout()
         nav.addStretch()
-        self.btn_back = QPushButton("← Back")
-        self.btn_back.setObjectName("secondaryBtn")
-        self.btn_back.setFixedHeight(38); self.btn_back.setFixedWidth(100)
+        self.btn_back = Theme.btn("← Back", "secondary", height=38, min_width=100)
         self.btn_back.setEnabled(False)
         self.btn_back.clicked.connect(self._go_back)
         nav.addWidget(self.btn_back)
-        self.btn_next = QPushButton("Next →")
-        self.btn_next.setObjectName("primaryBtn")
-        self.btn_next.setFixedHeight(38); self.btn_next.setFixedWidth(120)
+        self.btn_next = Theme.btn("Next →", "primary", height=38, min_width=120)
         self.btn_next.clicked.connect(self._go_next)
         nav.addWidget(self.btn_next)
         layout.addLayout(nav)
@@ -226,12 +225,12 @@ class StatementImportScreen(QWidget):
     def _step_title(self, text: str) -> QLabel:
         lbl = QLabel(text)
         lbl.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
-        lbl.setStyleSheet(f"color: {Theme.TEXT_PRIMARY};")
+        lbl.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=13, weight=700))
         return lbl
 
     def _step_subtitle(self, text: str) -> QLabel:
         lbl = QLabel(text)
-        lbl.setStyleSheet(f"color: {Theme.TEXT_SECONDARY}; font-size: 12px;")
+        lbl.setStyleSheet(Theme.muted_style(12))
         return lbl
 
     def _build_step1(self):
@@ -275,14 +274,13 @@ class StatementImportScreen(QWidget):
             padding: 8px 12px; font-size: 12px;
         """)
         file_row.addWidget(self.file_label, stretch=1)
-        btn = QPushButton("Browse…")
-        btn.setObjectName("secondaryBtn"); btn.setFixedHeight(38)
+        btn = Theme.btn("Browse…", "secondary", height=38, min_width=100)
         btn.clicked.connect(self._browse_file)
         file_row.addWidget(btn)
         self.content_layout.addLayout(file_row)
 
         type_lbl = QLabel("File Type")
-        type_lbl.setStyleSheet(f"font-weight: 600; color: {Theme.TEXT_SECONDARY}; font-size: 12px;")
+        type_lbl.setStyleSheet(Theme.section_label_style())
         self.content_layout.addWidget(type_lbl)
         self.file_type_combo = QComboBox()
         self.file_type_combo.addItems(["PDF", "Excel"])
@@ -302,30 +300,22 @@ class StatementImportScreen(QWidget):
         else:
             info_text = "No transactions extracted. Review Import Debug Panel below for details."
         info = QLabel(info_text)
-        info.setStyleSheet(f"color: {Theme.TEXT_SECONDARY}; font-size: 12px;")
+        info.setStyleSheet(Theme.muted_style(12))
         self.content_layout.addWidget(info)
 
         summary_row = QHBoxLayout()
         self.preview_summary_label = QLabel(
             f"Total: {total_preview}   |   Importable: {importable}   |   Selected: {selected_default}"
         )
-        self.preview_summary_label.setStyleSheet(
-            f"color: {Theme.TEXT_PRIMARY}; font-size: 12px; font-weight: 600;"
-        )
+        self.preview_summary_label.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=12, weight=600))
         summary_row.addWidget(self.preview_summary_label)
         summary_row.addStretch()
 
-        btn_select_all = QPushButton("Select All New")
-        btn_select_all.setObjectName("secondaryBtn")
-        btn_select_all.setFixedHeight(32)
-        btn_select_all.setFixedWidth(120)
+        btn_select_all = Theme.btn("Select All New", "secondary", height=32, min_width=120)
         btn_select_all.clicked.connect(lambda: self._set_preview_selection(True))
         summary_row.addWidget(btn_select_all)
 
-        btn_clear_all = QPushButton("Clear Selection")
-        btn_clear_all.setObjectName("secondaryBtn")
-        btn_clear_all.setFixedHeight(32)
-        btn_clear_all.setFixedWidth(120)
+        btn_clear_all = Theme.btn("Clear Selection", "secondary", height=32, min_width=120)
         btn_clear_all.clicked.connect(lambda: self._set_preview_selection(False))
         summary_row.addWidget(btn_clear_all)
 
@@ -374,7 +364,7 @@ class StatementImportScreen(QWidget):
             self.preview_table.setCellWidget(idx, 0, cb_widget)
             
             date_item = QTableWidgetItem(format_display_date(txn.get("transaction_date")))
-            type_item = QTableWidgetItem(txn["transaction_type"])
+            type_item = QTableWidgetItem(display_transaction_type(txn["transaction_type"]))
             mode_item = QTableWidgetItem(txn.get("mode", "") or "")
             cat_item = QTableWidgetItem(txn.get("category","") or "")
             amt_item = QTableWidgetItem(f"₹ {txn['amount']:,.2f}")
@@ -404,7 +394,7 @@ class StatementImportScreen(QWidget):
 
         debug_title = QLabel("Import Debug Panel")
         debug_title.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
-        debug_title.setStyleSheet(f"color: {Theme.TEXT_PRIMARY};")
+        debug_title.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=11, weight=700))
         self.content_layout.addWidget(debug_title)
 
         self.debug_output = QPlainTextEdit()
@@ -424,17 +414,11 @@ class StatementImportScreen(QWidget):
         actions_row = QHBoxLayout()
         actions_row.addStretch()
 
-        self.copy_debug_btn = QPushButton("Copy Report")
-        self.copy_debug_btn.setObjectName("secondaryBtn")
-        self.copy_debug_btn.setFixedHeight(34)
-        self.copy_debug_btn.setFixedWidth(120)
+        self.copy_debug_btn = Theme.btn("Copy Report", "secondary", height=34, min_width=120)
         self.copy_debug_btn.clicked.connect(self._copy_debug_report)
         actions_row.addWidget(self.copy_debug_btn)
 
-        self.export_debug_btn = QPushButton("Export Report")
-        self.export_debug_btn.setObjectName("secondaryBtn")
-        self.export_debug_btn.setFixedHeight(34)
-        self.export_debug_btn.setFixedWidth(130)
+        self.export_debug_btn = Theme.btn("Export Report", "secondary", height=34, min_width=130)
         self.export_debug_btn.clicked.connect(self._export_debug_report)
         actions_row.addWidget(self.export_debug_btn)
 
@@ -450,7 +434,7 @@ class StatementImportScreen(QWidget):
         success = QLabel("Import Complete!")
         success.setFont(QFont("Segoe UI", 18, QFont.Weight.Bold))
         success.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        success.setStyleSheet(f"color: {Theme.SUCCESS};")
+        success.setStyleSheet(Theme.text_style(color=Theme.SUCCESS, size=18, weight=700))
         self.content_layout.addWidget(success)
 
         stats_text = f"Imported {len(self.parsed_transactions)} transactions\nAccount: {self.bank_name}"
@@ -458,7 +442,7 @@ class StatementImportScreen(QWidget):
             stats_text += f"\nFD records auto-created: {self.fds_created_last_import}"
         stats = QLabel(stats_text)
         stats.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        stats.setStyleSheet(f"color: {Theme.TEXT_SECONDARY}; font-size: 13px;")
+        stats.setStyleSheet(Theme.text_style(color=Theme.TEXT_SECONDARY, size=13))
         self.content_layout.addWidget(stats)
         self.content_layout.addStretch()
 

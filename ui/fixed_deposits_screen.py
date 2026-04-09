@@ -22,6 +22,7 @@ from core.session import session
 from config import COMPOUNDING_TYPES, fy_date_range, get_assessment_year, get_current_financial_year
 from models.person import get_all_persons
 from models.bank_account import get_accounts_for_person
+from models.transaction import display_transaction_type
 from models.fixed_deposit import (
     add_fd,
     get_all_fds,
@@ -64,33 +65,27 @@ class FixedDepositsScreen(QWidget):
         header.addWidget(subtitle)
         header.addStretch()
 
-        btn_add = QPushButton("＋  Add FD")
-        btn_add.setObjectName("primaryBtn"); btn_add.setFixedHeight(38)
+        btn_add = Theme.btn("＋  Add FD", "primary", height=38, min_width=110)
         btn_add.clicked.connect(self._on_add_fd)
         header.addWidget(btn_add)
 
-        btn_del = QPushButton("🗑  Delete Selected")
-        btn_del.setObjectName("dangerBtn"); btn_del.setFixedHeight(38)
+        btn_del = Theme.btn("🗑  Delete Selected", "danger", height=38, min_width=145)
         btn_del.clicked.connect(self._on_delete_fd)
         header.addWidget(btn_del)
 
-        btn_link = QPushButton("🔗  Link Txn")
-        btn_link.setObjectName("successBtn"); btn_link.setFixedHeight(38)
+        btn_link = Theme.btn("🔗  Link Txn", "success", height=38, min_width=108)
         btn_link.clicked.connect(self._on_link_fd_transaction)
         header.addWidget(btn_link)
 
-        btn_auto = QPushButton("⚡  Auto-Link")
-        btn_auto.setObjectName("successBtn"); btn_auto.setFixedHeight(38)
+        btn_auto = Theme.btn("⚡  Auto-Link", "success", height=38, min_width=108)
         btn_auto.clicked.connect(self._on_auto_link)
         header.addWidget(btn_auto)
 
-        btn_recalc = QPushButton("📊  Recalculate Selected")
-        btn_recalc.setObjectName("primaryBtn"); btn_recalc.setFixedHeight(38)
+        btn_recalc = Theme.btn("📊  Recalculate Selected", "primary", height=38, min_width=165)
         btn_recalc.clicked.connect(self._on_recalculate_selected)
         header.addWidget(btn_recalc)
 
-        btn_save = QPushButton("💾  Save Changes")
-        btn_save.setObjectName("successBtn"); btn_save.setFixedHeight(38)
+        btn_save = Theme.btn("💾  Save Changes", "success", height=38, min_width=125)
         btn_save.clicked.connect(self._on_save_changes)
         header.addWidget(btn_save)
 
@@ -676,14 +671,14 @@ class FDDialog(QDialog):
         layout.addWidget(scroll, 1)
 
         btns = QHBoxLayout(); btns.addStretch()
-        btn_show = QPushButton("Show Calculations")
-        btn_show.setObjectName("secondaryBtn"); btn_show.clicked.connect(self._on_show_calculations)
+        btn_show = Theme.btn("Show Calculations", "secondary", height=36, min_width=130)
+        btn_show.clicked.connect(self._on_show_calculations)
         btns.addWidget(btn_show)
-        btn_cancel = QPushButton("Cancel")
-        btn_cancel.setObjectName("secondaryBtn"); btn_cancel.clicked.connect(self.reject)
+        btn_cancel = Theme.btn("Cancel", "secondary", height=36, min_width=95)
+        btn_cancel.clicked.connect(self.reject)
         btns.addWidget(btn_cancel)
-        btn_save = QPushButton("Save FD")
-        btn_save.setObjectName("primaryBtn"); btn_save.clicked.connect(self._on_save)
+        btn_save = Theme.btn("Save FD", "primary", height=36, min_width=100)
+        btn_save.clicked.connect(self._on_save)
         btns.addWidget(btn_save)
         layout.addLayout(btns)
 
@@ -917,8 +912,7 @@ class FDDialog(QDialog):
 
         btn_row = QHBoxLayout()
         btn_row.addStretch()
-        btn_close = QPushButton("Close")
-        btn_close.setObjectName("primaryBtn")
+        btn_close = Theme.btn("Close", "primary", height=36, min_width=95)
         btn_close.clicked.connect(dlg.accept)
         btn_row.addWidget(btn_close)
         v.addLayout(btn_row)
@@ -1070,18 +1064,15 @@ class LinkFDTransactionDialog(QDialog):
         btns = QHBoxLayout()
         btns.addStretch()
 
-        btn_unlink = QPushButton("Unlink")
-        btn_unlink.setObjectName("dangerBtn")
+        btn_unlink = Theme.btn("Unlink", "danger", height=36, min_width=90)
         btn_unlink.clicked.connect(self._on_unlink)
         btns.addWidget(btn_unlink)
 
-        btn_cancel = QPushButton("Cancel")
-        btn_cancel.setObjectName("secondaryBtn")
+        btn_cancel = Theme.btn("Cancel", "secondary", height=36, min_width=90)
         btn_cancel.clicked.connect(self.reject)
         btns.addWidget(btn_cancel)
 
-        btn_link = QPushButton("Link Selected")
-        btn_link.setObjectName("primaryBtn")
+        btn_link = Theme.btn("Link Selected", "primary", height=36, min_width=120)
         btn_link.clicked.connect(self._on_link)
         btns.addWidget(btn_link)
 
@@ -1094,7 +1085,7 @@ class LinkFDTransactionDialog(QDialog):
             r = self.table.rowCount()
             self.table.insertRow(r)
             self.table.setItem(r, 0, QTableWidgetItem(format_display_date(row.get("transaction_date"))))
-            self.table.setItem(r, 1, QTableWidgetItem(row.get("transaction_type") or "—"))
+            self.table.setItem(r, 1, QTableWidgetItem(display_transaction_type(row.get("transaction_type") or "—")))
             self.table.setItem(r, 2, QTableWidgetItem(f"₹ {float(row.get('amount') or 0):,.2f}"))
             self.table.setItem(r, 3, QTableWidgetItem(row.get("category") or "—"))
             self.table.setItem(r, 4, QTableWidgetItem(row.get("mode") or "—"))

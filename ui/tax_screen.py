@@ -6,7 +6,7 @@ FIX: btn_calc now uses Theme.btn() for guaranteed visibility.
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QGroupBox, QFormLayout, QFrame, QScrollArea,
-    QMessageBox, QDoubleSpinBox, QComboBox
+    QMessageBox, QDoubleSpinBox, QComboBox, QSplitter
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
@@ -31,122 +31,192 @@ class TaxScreen(QWidget):
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(28, 22, 28, 20)
-        layout.setSpacing(16)
+        layout.setContentsMargins(20, 16, 20, 14)
+        layout.setSpacing(12)
 
-        # Header
-        header = QHBoxLayout()
+        # Header card
+        header_card = QFrame()
+        header_card.setObjectName("TaxHeaderCard")
+        header_card.setStyleSheet(
+            Theme.card_style(
+                bg=Theme.SURFACE,
+                border_color=Theme.BORDER,
+                radius=12,
+                padding=0,
+                selector="QFrame#TaxHeaderCard",
+            )
+        )
+        header_layout = QHBoxLayout(header_card)
+        header_layout.setContentsMargins(16, 12, 16, 12)
+        header_layout.setSpacing(12)
+
+        head_left = QVBoxLayout()
+        title = QLabel("Tax Planner")
+        title.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
+        title.setStyleSheet(Theme.title_style(16))
+        head_left.addWidget(title)
+
         self.person_label = QLabel("Select a person from the top bar")
-        self.person_label.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
-        self.person_label.setStyleSheet(f"color: {Theme.TEXT_SECONDARY};")
-        header.addWidget(self.person_label)
-        header.addStretch()
+        self.person_label.setFont(QFont("Segoe UI", 12, QFont.Weight.DemiBold))
+        self.person_label.setStyleSheet(Theme.text_style(color=Theme.TEXT_SECONDARY, size=12, weight=600))
+        head_left.addWidget(self.person_label)
+        header_layout.addLayout(head_left)
+        header_layout.addStretch()
 
-        source_label = QLabel("Data Source:")
-        source_label.setStyleSheet(f"color: {Theme.TEXT_SECONDARY}; font-size: 12px;")
-        header.addWidget(source_label)
+        source_label = QLabel("Data Source")
+        source_label.setStyleSheet(Theme.section_label_style())
+        header_layout.addWidget(source_label)
 
         self.source_combo = QComboBox()
         self.source_combo.addItems(["AIS/TIS Data", "App Actual Data"])
-        self.source_combo.setFixedWidth(160)
-        self.source_combo.setFixedHeight(38)
+        self.source_combo.setFixedWidth(170)
+        self.source_combo.setFixedHeight(40)
         self.source_combo.currentIndexChanged.connect(self._on_source_changed)
-        header.addWidget(self.source_combo)
+        header_layout.addWidget(self.source_combo)
 
-        # ── KEY FIX: Theme.btn() instead of objectName ──────────────────────
-        btn_calc = Theme.btn("⚡  Estimate Tax", "primary", height=38, min_width=150)
-        btn_calc.clicked.connect(self._on_calculate)
-        header.addWidget(btn_calc)
-        layout.addLayout(header)
+        self.btn_calc = Theme.btn("⚡  Estimate Tax", "primary", height=40, min_width=158)
+        self.btn_calc.clicked.connect(self._on_calculate)
+        header_layout.addWidget(self.btn_calc)
+        layout.addWidget(header_card)
 
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setStyleSheet("background: transparent; border: none;")
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.setChildrenCollapsible(False)
+        splitter.setHandleWidth(8)
 
-        content = QWidget()
-        content.setStyleSheet("background: transparent;")
-        cl = QVBoxLayout(content)
-        cl.setSpacing(16)
-        cl.setContentsMargins(0, 0, 0, 0)
+        # Left rail: forms
+        left_scroll = QScrollArea()
+        left_scroll.setWidgetResizable(True)
+        left_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        left_scroll.setStyleSheet("background: transparent; border: none;")
 
-        cl.addWidget(self._build_basic_info_section())
-        cl.addWidget(self._build_salary_section())
-        cl.addWidget(self._build_house_property_section())
-        cl.addWidget(self._build_capital_gains_section())
-        cl.addWidget(self._build_business_section())
-        cl.addWidget(self._build_other_sources_section())
-        cl.addWidget(self._build_deductions_section())
-        cl.addWidget(self._build_tds_section())
-        cl.addWidget(self._build_results_section())
-        cl.addStretch()
+        left_content = QWidget()
+        left_content.setStyleSheet("background: transparent;")
+        left_layout = QVBoxLayout(left_content)
+        left_layout.setSpacing(14)
+        left_layout.setContentsMargins(0, 0, 8, 0)
 
-        scroll.setWidget(content)
-        layout.addWidget(scroll)
+        left_layout.addWidget(self._build_basic_info_section())
+        left_layout.addWidget(self._build_salary_section())
+        left_layout.addWidget(self._build_house_property_section())
+        left_layout.addWidget(self._build_capital_gains_section())
+        left_layout.addWidget(self._build_business_section())
+        left_layout.addWidget(self._build_other_sources_section())
+        left_layout.addWidget(self._build_deductions_section())
+        left_layout.addWidget(self._build_tds_section())
+        left_layout.addStretch()
+
+        left_scroll.setWidget(left_content)
+        splitter.addWidget(left_scroll)
+
+        # Right rail: context + results
+        right_scroll = QScrollArea()
+        right_scroll.setWidgetResizable(True)
+        right_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        right_scroll.setStyleSheet("background: transparent; border: none;")
+
+        right_content = QWidget()
+        right_content.setStyleSheet("background: transparent;")
+        right_layout = QVBoxLayout(right_content)
+        right_layout.setSpacing(12)
+        right_layout.setContentsMargins(8, 0, 0, 0)
+
+        right_layout.addWidget(self._build_context_panel())
+        right_layout.addWidget(self._build_results_section())
+        right_layout.addStretch()
+
+        right_scroll.setWidget(right_content)
+        splitter.addWidget(right_scroll)
+
+        splitter.setStretchFactor(0, 4)
+        splitter.setStretchFactor(1, 3)
+        layout.addWidget(splitter, 1)
         self._connect_signals()
+        self._update_context_panel()
+
+    def _build_context_panel(self) -> QFrame:
+        panel = QFrame()
+        panel.setObjectName("TaxContextPanel")
+        panel.setStyleSheet(
+            Theme.tinted_surface_style(
+                radius=12,
+                border_color=Theme.BORDER,
+                selector="QFrame#TaxContextPanel",
+            )
+        )
+
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(8)
+
+        title = QLabel("Current Context")
+        title.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=12, weight=700))
+        layout.addWidget(title)
+
+        row1 = QHBoxLayout(); row1.setSpacing(8)
+        self.ctx_person = QLabel("Person: —")
+        self.ctx_person.setStyleSheet(Theme.badge_style(Theme.PRIMARY_LIGHT, Theme.PRIMARY_DARK, radius=10, padding="4px 10px", size=11, weight=600))
+        row1.addWidget(self.ctx_person)
+        row1.addStretch()
+        layout.addLayout(row1)
+
+        row2 = QHBoxLayout(); row2.setSpacing(8)
+        self.ctx_fy = QLabel("FY: —")
+        self.ctx_fy.setStyleSheet(Theme.badge_style(Theme.SURFACE_ALT, Theme.TEXT_SECONDARY, radius=10, padding="4px 10px", size=11, weight=600))
+        row2.addWidget(self.ctx_fy)
+
+        self.ctx_source = QLabel("Source: AIS/TIS")
+        self.ctx_source.setStyleSheet(Theme.badge_style(Theme.INFO_LIGHT, Theme.INFO_DARK, radius=10, padding="4px 10px", size=11, weight=600))
+        row2.addWidget(self.ctx_source)
+        row2.addStretch()
+        layout.addLayout(row2)
+
+        return panel
+
+    def _update_context_panel(self):
+        pid = session.selected_person_id
+        person_name = "All / Not selected"
+        if pid:
+            p = get_person(pid)
+            if p:
+                person_name = p.get("full_name") or person_name
+
+        self.ctx_person.setText(f"Person: {person_name}")
+        self.ctx_fy.setText(f"FY: {session.selected_fy or '—'}")
+        self.ctx_source.setText(f"Source: {'AIS/TIS' if self.data_source == 'ais' else 'App Actual'}")
 
     # ── Section builders ──────────────────────────────────────────────────────
 
+    def _section_group(self, title: str) -> QGroupBox:
+        group = QGroupBox(title)
+        group.setStyleSheet(
+            Theme.group_box_style() +
+            "\nQLabel { border: none; background: transparent; }\n"
+        )
+        return group
+
+    def _recommendation_style(self, bg: str, fg: str, emphasize: bool = False) -> str:
+        border = f"2px solid {fg}" if emphasize else f"1px solid {Theme.BORDER}"
+        weight = 700 if emphasize else 600
+        return (
+            f"background-color: {bg}; color: {fg}; "
+            f"border: {border}; border-radius: 10px; "
+            f"padding: 20px; font-weight: {weight};"
+        )
+
     def _build_basic_info_section(self) -> QGroupBox:
-        group = QGroupBox("📋  Basic Information")
-        group.setStyleSheet(f"""
-            QGroupBox {{
-                border: 1px solid {Theme.BORDER};
-                border-radius: 10px;
-                margin-top: 18px;
-                padding: 16px 16px 12px 16px;
-                background-color: {Theme.SURFACE};
-                font-weight: 700;
-                font-size: 14px;
-                color: {Theme.PRIMARY};
-            }}
-            QGroupBox::title {{
-                subcontrol-origin: margin;
-                left: 14px;
-                padding: 0 6px;
-                background-color: {Theme.SURFACE};
-                color: {Theme.PRIMARY};
-            }}
-            QLabel {{
-                border: none;
-                background: transparent;
-            }}
-        """)
+        group = self._section_group("📋  Basic Information")
         layout = QFormLayout(group); layout.setSpacing(12)
         self.pan_label       = QLabel("—"); layout.addRow("PAN:", self.pan_label)
         self.taxpayer_label  = QLabel("—"); layout.addRow("Name of Taxpayer:", self.taxpayer_label)
         self.ay_label        = QLabel("—")
-        self.ay_label.setStyleSheet(f"color: {Theme.PRIMARY}; font-weight: 600; border: none; background: transparent;")
+        self.ay_label.setStyleSheet(Theme.text_style(color=Theme.PRIMARY, weight=600))
         layout.addRow("Assessment Year:", self.ay_label)
         self.category_label  = QLabel("Individual"); layout.addRow("Taxpayer Category:", self.category_label)
         self.age_label       = QLabel("Below 60 years"); layout.addRow("Your Age:", self.age_label)
         return group
 
     def _build_salary_section(self) -> QGroupBox:
-        group = QGroupBox("💼  Income under the head Salaries")
-        group.setStyleSheet(f"""
-            QGroupBox {{
-                border: 1px solid {Theme.BORDER};
-                border-radius: 10px;
-                margin-top: 18px;
-                padding: 16px 16px 12px 16px;
-                background-color: {Theme.SURFACE};
-                font-weight: 700;
-                font-size: 14px;
-                color: {Theme.PRIMARY};
-            }}
-            QGroupBox::title {{
-                subcontrol-origin: margin;
-                left: 14px;
-                padding: 0 6px;
-                background-color: {Theme.SURFACE};
-                color: {Theme.PRIMARY};
-            }}
-            QLabel {{
-                border: none;
-                background: transparent;
-            }}
-        """)
+        group = self._section_group("💼  Income under the head Salaries")
         layout = QFormLayout(group); layout.setSpacing(12)
         self.gross_salary    = self._spin(); layout.addRow("Gross Salary:", self.gross_salary)
         self.exemption_10    = self._spin(); layout.addRow("Exemption claimed u/s 10:", self.exemption_10)
@@ -158,30 +228,7 @@ class TaxScreen(QWidget):
         return group
 
     def _build_house_property_section(self) -> QGroupBox:
-        group = QGroupBox("🏠  Income under the head House Property")
-        group.setStyleSheet(f"""
-            QGroupBox {{
-                border: 1px solid {Theme.BORDER};
-                border-radius: 10px;
-                margin-top: 18px;
-                padding: 16px 16px 12px 16px;
-                background-color: {Theme.SURFACE};
-                font-weight: 700;
-                font-size: 14px;
-                color: {Theme.PRIMARY};
-            }}
-            QGroupBox::title {{
-                subcontrol-origin: margin;
-                left: 14px;
-                padding: 0 6px;
-                background-color: {Theme.SURFACE};
-                color: {Theme.PRIMARY};
-            }}
-            QLabel {{
-                border: none;
-                background: transparent;
-            }}
-        """)
+        group = self._section_group("🏠  Income under the head House Property")
         layout = QFormLayout(group); layout.setSpacing(12)
         self.self_occupied_interest = self._spin()
         layout.addRow("Self-occupied — Interest on Borrowed Capital:", self.self_occupied_interest)
@@ -192,30 +239,7 @@ class TaxScreen(QWidget):
         return group
 
     def _build_capital_gains_section(self) -> QGroupBox:
-        group = QGroupBox("📈  Income under the head Capital Gains")
-        group.setStyleSheet(f"""
-            QGroupBox {{
-                border: 1px solid {Theme.BORDER};
-                border-radius: 10px;
-                margin-top: 18px;
-                padding: 16px 16px 12px 16px;
-                background-color: {Theme.SURFACE};
-                font-weight: 700;
-                font-size: 14px;
-                color: {Theme.PRIMARY};
-            }}
-            QGroupBox::title {{
-                subcontrol-origin: margin;
-                left: 14px;
-                padding: 0 6px;
-                background-color: {Theme.SURFACE};
-                color: {Theme.PRIMARY};
-            }}
-            QLabel {{
-                border: none;
-                background: transparent;
-            }}
-        """)
+        group = self._section_group("📈  Income under the head Capital Gains")
         layout = QFormLayout(group); layout.setSpacing(12)
         self.stcg_normal = self._spin(); layout.addRow("Short Term Capital Gains (Normal rates):", self.stcg_normal)
         self.stcg_111a   = self._spin(); layout.addRow("STCG u/s 111A (@ 20%):", self.stcg_111a)
@@ -225,30 +249,7 @@ class TaxScreen(QWidget):
         return group
 
     def _build_business_section(self) -> QGroupBox:
-        group = QGroupBox("🏢  Income under the head Business or Profession")
-        group.setStyleSheet(f"""
-            QGroupBox {{
-                border: 1px solid {Theme.BORDER};
-                border-radius: 10px;
-                margin-top: 18px;
-                padding: 16px 16px 12px 16px;
-                background-color: {Theme.SURFACE};
-                font-weight: 700;
-                font-size: 14px;
-                color: {Theme.PRIMARY};
-            }}
-            QGroupBox::title {{
-                subcontrol-origin: margin;
-                left: 14px;
-                padding: 0 6px;
-                background-color: {Theme.SURFACE};
-                color: {Theme.PRIMARY};
-            }}
-            QLabel {{
-                border: none;
-                background: transparent;
-            }}
-        """)
+        group = self._section_group("🏢  Income under the head Business or Profession")
         layout = QFormLayout(group); layout.setSpacing(12)
         self.presumptive_income      = self._spin(); layout.addRow("Presumptive Income u/s 44AD/44ADA:", self.presumptive_income)
         self.manufacturing_income    = self._spin(); layout.addRow("Manufacturing Business Income:", self.manufacturing_income)
@@ -256,30 +257,7 @@ class TaxScreen(QWidget):
         return group
 
     def _build_other_sources_section(self) -> QGroupBox:
-        group = QGroupBox("💰  Income under the head Other Sources")
-        group.setStyleSheet(f"""
-            QGroupBox {{
-                border: 1px solid {Theme.BORDER};
-                border-radius: 10px;
-                margin-top: 18px;
-                padding: 16px 16px 12px 16px;
-                background-color: {Theme.SURFACE};
-                font-weight: 700;
-                font-size: 14px;
-                color: {Theme.PRIMARY};
-            }}
-            QGroupBox::title {{
-                subcontrol-origin: margin;
-                left: 14px;
-                padding: 0 6px;
-                background-color: {Theme.SURFACE};
-                color: {Theme.PRIMARY};
-            }}
-            QLabel {{
-                border: none;
-                background: transparent;
-            }}
-        """)
+        group = self._section_group("💰  Income under the head Other Sources")
         layout = QFormLayout(group); layout.setSpacing(12)
         self.savings_interest_input  = self._spin(readonly=True)
         layout.addRow("Interest from Savings Bank Account:", self.savings_interest_input)
@@ -293,35 +271,12 @@ class TaxScreen(QWidget):
         self.other_income_input      = self._spin(); layout.addRow("Any Other Income:", self.other_income_input)
         self.gross_income_label = QLabel("₹ 0.00")
         self.gross_income_label.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
-        self.gross_income_label.setStyleSheet(f"color: {Theme.PRIMARY}; border: none; background: transparent;")
+        self.gross_income_label.setStyleSheet(Theme.text_style(color=Theme.PRIMARY, size=14, weight=700))
         layout.addRow("Gross Total Income:", self.gross_income_label)
         return group
 
     def _build_deductions_section(self) -> QGroupBox:
-        group = QGroupBox("📤  Deductions (Old Regime Only)")
-        group.setStyleSheet(f"""
-            QGroupBox {{
-                border: 1px solid {Theme.BORDER};
-                border-radius: 10px;
-                margin-top: 18px;
-                padding: 16px 16px 12px 16px;
-                background-color: {Theme.SURFACE};
-                font-weight: 700;
-                font-size: 14px;
-                color: {Theme.PRIMARY};
-            }}
-            QGroupBox::title {{
-                subcontrol-origin: margin;
-                left: 14px;
-                padding: 0 6px;
-                background-color: {Theme.SURFACE};
-                color: {Theme.PRIMARY};
-            }}
-            QLabel {{
-                border: none;
-                background: transparent;
-            }}
-        """)
+        group = self._section_group("📤  Deductions (Old Regime Only)")
         layout = QFormLayout(group); layout.setSpacing(12)
         self.deduction_80c    = self._spin(); layout.addRow("80C — LIC, PF, PPF, NSC (max ₹1.5L):", self.deduction_80c)
         self.deduction_80ccc  = self._spin(); layout.addRow("80CCC — Pension Fund:", self.deduction_80ccc)
@@ -337,35 +292,12 @@ class TaxScreen(QWidget):
         self.home_loan_interest = self._spin(); layout.addRow("Home Loan Interest u/s 24(b):", self.home_loan_interest)
         self.hra_exemption    = self._spin(); layout.addRow("HRA Exemption:", self.hra_exemption)
         note = QLabel("Standard deduction of ₹50,000 is applied automatically in salary section.")
-        note.setStyleSheet(f"color: {Theme.TEXT_MUTED}; font-size: 12px; border: none; background: transparent;")
+        note.setStyleSheet(Theme.text_style(color=Theme.TEXT_MUTED, size=12))
         layout.addRow("", note)
         return group
 
     def _build_tds_section(self) -> QGroupBox:
-        group = QGroupBox("💳  TDS / TCS & Tax Payments")
-        group.setStyleSheet(f"""
-            QGroupBox {{
-                border: 1px solid {Theme.BORDER};
-                border-radius: 10px;
-                margin-top: 18px;
-                padding: 16px 16px 12px 16px;
-                background-color: {Theme.SURFACE};
-                font-weight: 700;
-                font-size: 14px;
-                color: {Theme.PRIMARY};
-            }}
-            QGroupBox::title {{
-                subcontrol-origin: margin;
-                left: 14px;
-                padding: 0 6px;
-                background-color: {Theme.SURFACE};
-                color: {Theme.PRIMARY};
-            }}
-            QLabel {{
-                border: none;
-                background: transparent;
-            }}
-        """)
+        group = self._section_group("💳  TDS / TCS & Tax Payments")
         layout = QFormLayout(group); layout.setSpacing(12)
         self.tds_salary          = self._spin(); layout.addRow("TDS on Salary:", self.tds_salary)
         self.tds_other           = self._spin(); layout.addRow("TDS on Other Income:", self.tds_other)
@@ -375,11 +307,12 @@ class TaxScreen(QWidget):
         return group
 
     def _build_results_section(self) -> QGroupBox:
-        group = QGroupBox("📊  Tax Calculation Results")
-        layout = QHBoxLayout(group); layout.setSpacing(16)
+        group = self._section_group("📊  Tax Calculation Results")
+        layout = QVBoxLayout(group)
+        layout.setSpacing(10)
 
         old_card = self._regime_card("Old Regime", Theme.WARNING, Theme.WARNING_LIGHT)
-        old_form = QFormLayout(); old_form.setSpacing(8)
+        old_form = QFormLayout(); old_form.setSpacing(6)
         self.old_taxable = self._result_lbl(); self.old_tax = self._result_lbl()
         self.old_cess    = self._result_lbl(); self.old_total = self._result_lbl(bold=True)
         old_form.addRow("Taxable Income:", self.old_taxable)
@@ -390,7 +323,7 @@ class TaxScreen(QWidget):
         layout.addWidget(old_card)
 
         new_card = self._regime_card("New Regime", Theme.INFO, Theme.INFO_LIGHT)
-        new_form = QFormLayout(); new_form.setSpacing(8)
+        new_form = QFormLayout(); new_form.setSpacing(6)
         self.new_taxable = self._result_lbl(); self.new_tax = self._result_lbl()
         self.new_cess    = self._result_lbl(); self.new_total = self._result_lbl(bold=True)
         new_form.addRow("Taxable Income:", self.new_taxable)
@@ -400,37 +333,42 @@ class TaxScreen(QWidget):
         new_card.layout().addLayout(new_form)
         layout.addWidget(new_card)
 
-        rec_col = QVBoxLayout()
         rec_label = QLabel("Recommendation")
-        rec_label.setStyleSheet(f"color: {Theme.TEXT_SECONDARY}; font-size: 12px; font-weight: 600;")
-        rec_col.addWidget(rec_label)
-        rec_col.addSpacing(8)
+        rec_label.setStyleSheet(Theme.section_label_style())
+        layout.addWidget(rec_label)
+
         self.recommendation_label = QLabel("Calculate to\nsee recommendation")
         self.recommendation_label.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
         self.recommendation_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.recommendation_label.setStyleSheet(f"""
-            background-color: {Theme.SURFACE_ALT}; color: {Theme.TEXT_SECONDARY};
-            border: 1px solid {Theme.BORDER}; border-radius: 10px; padding: 20px;
-        """)
-        rec_col.addWidget(self.recommendation_label)
-        layout.addLayout(rec_col)
+        self.recommendation_label.setStyleSheet(
+            self._recommendation_style(Theme.SURFACE_ALT, Theme.TEXT_SECONDARY, emphasize=False)
+        )
+        layout.addWidget(self.recommendation_label)
+
+        helper = QLabel("Tip: Use App Actual Data when AIS/TIS is outdated.")
+        helper.setWordWrap(True)
+        helper.setStyleSheet(Theme.muted_style(11))
+        layout.addWidget(helper)
         return group
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
     def _regime_card(self, title: str, accent: str, bg: str) -> QFrame:
         card = QFrame()
-        card.setStyleSheet(f"""
-            QFrame {{
-                background-color: {Theme.SURFACE};
-                border: 1px solid {Theme.BORDER};
-                border-top: 3px solid {accent};
-                border-radius: 10px;
-            }}
-        """)
+        card.setObjectName("TaxRegimeCard")
+        card.setStyleSheet(
+            Theme.card_style(
+                bg=bg,
+                border_color=accent,
+                radius=10,
+                padding=0,
+                left_accent=accent,
+                selector="QFrame#TaxRegimeCard",
+            )
+        )
         vl = QVBoxLayout(card); vl.setContentsMargins(16,12,16,12); vl.setSpacing(8)
         t = QLabel(title); t.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
-        t.setStyleSheet(f"color: {accent}; background: transparent; border: none;")
+        t.setStyleSheet(Theme.text_style(color=accent, size=13, weight=700))
         vl.addWidget(t)
         div = QFrame(); div.setFixedHeight(1)
         div.setStyleSheet(f"background: {accent}44; border: none;")
@@ -448,9 +386,10 @@ class TaxScreen(QWidget):
 
     def _result_lbl(self, bold=False) -> QLabel:
         l = QLabel("—")
-        s = f"font-size: 13px; color: {Theme.TEXT_PRIMARY}; background: transparent; border: none;"
-        if bold: s += f" font-weight: 700; font-size: 14px;"
-        l.setStyleSheet(s)
+        if bold:
+            l.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=14, weight=700))
+        else:
+            l.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=13, weight=400))
         return l
 
     def _connect_signals(self):
@@ -465,6 +404,7 @@ class TaxScreen(QWidget):
 
     def _on_source_changed(self):
         self.data_source = "ais" if self.source_combo.currentIndex() == 0 else "app"
+        self._update_context_panel()
         self.refresh()
 
     def _update_gross(self):
@@ -485,16 +425,17 @@ class TaxScreen(QWidget):
     def refresh(self):
         pid = session.selected_person_id
         fy  = session.selected_fy
+        self._update_context_panel()
         if not pid:
             self.person_label.setText("⚠  Please select a person from the top bar")
-            self.person_label.setStyleSheet(f"color: {Theme.WARNING}; font-size: 13px;")
+            self.person_label.setStyleSheet(Theme.text_style(color=Theme.WARNING, size=13, weight=600))
             self._clear_inputs()
             return
         person = get_person(pid)
         if person:
             ay = get_assessment_year(fy)
             self.person_label.setText(f"Tax Estimator for {person['full_name']}  ·  FY {fy}")
-            self.person_label.setStyleSheet(f"color: {Theme.TEXT_PRIMARY}; font-size: 13px; font-weight: 700;")
+            self.person_label.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=13, weight=700))
             self.taxpayer_label.setText(person["full_name"])
             self.pan_label.setText(person.get("pan_number","—"))
             self.ay_label.setText(ay)
@@ -555,10 +496,9 @@ class TaxScreen(QWidget):
                   self.new_taxable, self.new_tax, self.new_cess, self.new_total]:
             l.setText("—")
         self.recommendation_label.setText("Calculate to\nsee recommendation")
-        self.recommendation_label.setStyleSheet(f"""
-            background-color: {Theme.SURFACE_ALT}; color: {Theme.TEXT_SECONDARY};
-            border: 1px solid {Theme.BORDER}; border-radius: 10px; padding: 20px;
-        """)
+        self.recommendation_label.setStyleSheet(
+            self._recommendation_style(Theme.SURFACE_ALT, Theme.TEXT_SECONDARY, emphasize=False)
+        )
 
     def _on_calculate(self):
         pid = session.selected_person_id
@@ -604,11 +544,7 @@ class TaxScreen(QWidget):
         bg      = Theme.WARNING_LIGHT if is_old else Theme.INFO_LIGHT
         self.recommendation_label.setText(
             f"{'🏆 Old Regime' if is_old else '🏆 New Regime'}\nSave ₹ {savings:,.2f}")
-        self.recommendation_label.setStyleSheet(f"""
-            background-color: {bg}; color: {color};
-            border: 2px solid {color}; border-radius: 10px;
-            padding: 20px; font-weight: 700;
-        """)
+        self.recommendation_label.setStyleSheet(self._recommendation_style(bg, color, emphasize=True))
 
     def _display_results_from_summary(self, summary, profile):
         self.old_taxable.setText(f"₹ {profile.get('taxable_income_old_regime',0):,.2f}")
@@ -624,8 +560,4 @@ class TaxScreen(QWidget):
         bg     = Theme.WARNING_LIGHT if is_old else Theme.INFO_LIGHT
         self.recommendation_label.setText(
             f"{'🏆 Old Regime' if is_old else '🏆 New Regime'}\nSave ₹ {summary['savings']:,.2f}")
-        self.recommendation_label.setStyleSheet(f"""
-            background-color: {bg}; color: {color};
-            border: 2px solid {color}; border-radius: 10px;
-            padding: 20px; font-weight: 700;
-        """)
+        self.recommendation_label.setStyleSheet(self._recommendation_style(bg, color, emphasize=True))

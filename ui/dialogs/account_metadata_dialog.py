@@ -3,7 +3,7 @@ ui/dialogs/account_metadata_dialog.py — Confirm account metadata from statemen
 """
 
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QLineEdit, QTextEdit, QCheckBox, QFrame, QScrollArea, QWidget, QGridLayout
 )
 from PyQt6.QtCore import Qt
@@ -21,7 +21,7 @@ class AccountMetadataDialog(QDialog):
         self.account_id = account_id
         self.metadata = metadata
         self.setWindowTitle(f"Update Account Details - {account_name}")
-        self.setMinimumSize(800, 600)
+        self.setMinimumSize(920, 680)
         self._build_ui()
 
     def _build_ui(self):
@@ -33,12 +33,11 @@ class AccountMetadataDialog(QDialog):
         header_frame = QFrame()
         header_frame.setStyleSheet(f"""
             QFrame {{
-                background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
-                    stop:0 {Theme.SUCCESS}, stop:1 {Theme.SUCCESS_DARK});
+                background: {Theme.gradient(Theme.SUCCESS_GRADIENT_START, Theme.SUCCESS_GRADIENT_END)};
                 border-radius: 0;
             }}
         """)
-        header_frame.setFixedHeight(90)
+        header_frame.setFixedHeight(104)
         
         header_layout = QVBoxLayout(header_frame)
         header_layout.setContentsMargins(28, 0, 28, 0)
@@ -52,6 +51,11 @@ class AccountMetadataDialog(QDialog):
         subtitle = QLabel("Review and confirm the information extracted from your bank statement")
         subtitle.setStyleSheet("color: rgba(255,255,255,0.85); font-size: 13px; background: transparent;")
         header_layout.addWidget(subtitle)
+
+        total_detected = sum(1 for v in self.metadata.values() if str(v or "").strip())
+        helper = QLabel(f"Detected {total_detected} fields. You can edit before saving.")
+        helper.setStyleSheet("color: rgba(255,255,255,0.8); font-size: 12px; background: transparent;")
+        header_layout.addWidget(helper)
         
         layout.addWidget(header_frame)
 
@@ -62,34 +66,59 @@ class AccountMetadataDialog(QDialog):
         content_layout.setSpacing(20)
         content_layout.setContentsMargins(28, 24, 28, 24)
 
-        # Info message
+        # Top summary row
+        top_row = QHBoxLayout()
+        top_row.setSpacing(12)
+
         info_frame = QFrame()
-        info_frame.setStyleSheet(f"""
-            QFrame {{
-                background: {Theme.INFO_LIGHT};
-                border: 1px solid {Theme.INFO};
-                border-left: 4px solid {Theme.INFO};
-                border-radius: 8px;
-                padding: 12px 16px;
-            }}
-        """)
+        info_frame.setObjectName("MetaInfoCard")
+        info_frame.setStyleSheet(
+            Theme.card_style(
+                bg=Theme.INFO_LIGHT,
+                border_color=Theme.INFO,
+                radius=10,
+                padding=0,
+                left_accent=Theme.INFO,
+                selector="QFrame#MetaInfoCard",
+            )
+        )
         info_layout = QHBoxLayout(info_frame)
-        info_layout.setSpacing(12)
-        
+        info_layout.setContentsMargins(14, 12, 14, 12)
+        info_layout.setSpacing(10)
+
         info_icon = QLabel("ℹ️")
         info_icon.setFont(QFont("Segoe UI Emoji", 16))
         info_icon.setStyleSheet("background: transparent; border: none;")
         info_layout.addWidget(info_icon)
-        
+
         info_text = QLabel(
             "You can edit any field before updating. "
-            "Uncheck the box below if you don't want to update the account."
+            "Use the checkbox below if you want to skip updates."
         )
         info_text.setWordWrap(True)
-        info_text.setStyleSheet(f"color: {Theme.INFO_DARK}; font-size: 13px; background: transparent; border: none;")
+        info_text.setStyleSheet(Theme.text_style(color=Theme.INFO_DARK, size=13) + " border: none;")
         info_layout.addWidget(info_text, stretch=1)
-        
-        content_layout.addWidget(info_frame)
+        top_row.addWidget(info_frame, 2)
+
+        stats_frame = QFrame()
+        stats_frame.setObjectName("MetaStatsCard")
+        stats_frame.setStyleSheet(
+            Theme.tinted_surface_style(radius=10, border_color=Theme.BORDER, selector="QFrame#MetaStatsCard")
+        )
+        stats_layout = QVBoxLayout(stats_frame)
+        stats_layout.setContentsMargins(12, 10, 12, 10)
+        stats_layout.setSpacing(6)
+
+        stats_title = QLabel("Quick Summary")
+        stats_title.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=12, weight=700))
+        stats_layout.addWidget(stats_title)
+
+        stats_values = QLabel(f"Fields detected: {total_detected}")
+        stats_values.setStyleSheet(Theme.text_style(color=Theme.TEXT_SECONDARY, size=12))
+        stats_layout.addWidget(stats_values)
+
+        top_row.addWidget(stats_frame, 1)
+        content_layout.addLayout(top_row)
 
         # Scroll area for fields
         scroll = QScrollArea()
@@ -100,7 +129,7 @@ class AccountMetadataDialog(QDialog):
         fields_container = QWidget()
         fields_container.setStyleSheet(f"background: {Theme.BG};")
         fields_layout = QVBoxLayout(fields_container)
-        fields_layout.setSpacing(16)
+        fields_layout.setSpacing(14)
         fields_layout.setContentsMargins(0, 0, 0, 0)
 
         # Create fields for each metadata item
@@ -143,23 +172,25 @@ class AccountMetadataDialog(QDialog):
 
             # Section card
             section_frame = QFrame()
-            section_frame.setStyleSheet(f"""
-                QFrame {{
-                    background: {Theme.SURFACE};
-                    border: 1px solid {Theme.BORDER};
-                    border-radius: 12px;
-                    padding: 0;
-                }}
-            """)
+            section_frame.setObjectName("MetadataSectionCard")
+            section_frame.setStyleSheet(
+                Theme.card_style(
+                    bg=Theme.SURFACE,
+                    border_color=Theme.BORDER,
+                    radius=12,
+                    padding=0,
+                    selector="QFrame#MetadataSectionCard",
+                )
+            )
             
             section_layout = QVBoxLayout(section_frame)
-            section_layout.setSpacing(14)
-            section_layout.setContentsMargins(20, 16, 20, 16)
+            section_layout.setSpacing(12)
+            section_layout.setContentsMargins(18, 14, 18, 14)
 
             # Section title
             section_label = QLabel(section_title)
             section_label.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
-            section_label.setStyleSheet(f"color: {Theme.TEXT_PRIMARY}; background: transparent;")
+            section_label.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=13, weight=700))
             section_layout.addWidget(section_label)
 
             # Divider
@@ -170,7 +201,8 @@ class AccountMetadataDialog(QDialog):
 
             # Fields grid
             grid = QGridLayout()
-            grid.setSpacing(12)
+            grid.setHorizontalSpacing(14)
+            grid.setVerticalSpacing(10)
             grid.setColumnStretch(1, 1)
 
             row = 0
@@ -181,7 +213,7 @@ class AccountMetadataDialog(QDialog):
 
                 # Label
                 field_label = QLabel(f"{label}:")
-                field_label.setStyleSheet(f"color: {Theme.TEXT_SECONDARY}; font-size: 12px; font-weight: 600; background: transparent;")
+                field_label.setStyleSheet(Theme.section_label_style())
                 field_label.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
                 grid.addWidget(field_label, row, 0)
 
@@ -189,7 +221,7 @@ class AccountMetadataDialog(QDialog):
                 if key in multiline_fields:
                     widget = QTextEdit()
                     widget.setPlainText(value)
-                    widget.setMaximumHeight(70)
+                    widget.setMaximumHeight(82)
                 else:
                     widget = QLineEdit(value)
                 
@@ -215,30 +247,24 @@ class AccountMetadataDialog(QDialog):
             }}
         """)
         footer_layout = QVBoxLayout(footer_frame)
-        footer_layout.setContentsMargins(28, 16, 28, 16)
+        footer_layout.setContentsMargins(24, 14, 24, 14)
         footer_layout.setSpacing(12)
 
         # Update checkbox
         self.update_check = QCheckBox("✓ Update account with these details")
         self.update_check.setChecked(True)
-        self.update_check.setStyleSheet(f"color: {Theme.TEXT_PRIMARY}; font-size: 13px; font-weight: 600;")
+        self.update_check.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=13, weight=600))
         footer_layout.addWidget(self.update_check)
 
         # Buttons
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
 
-        btn_skip = QPushButton("Skip")
-        btn_skip.setObjectName("secondaryBtn")
-        btn_skip.setFixedHeight(38)
-        btn_skip.setFixedWidth(100)
+        btn_skip = Theme.btn("Skip", "secondary", height=40, min_width=104)
         btn_skip.clicked.connect(self.reject)
         btn_layout.addWidget(btn_skip)
 
-        btn_confirm = QPushButton("Confirm & Update")
-        btn_confirm.setObjectName("primaryBtn")
-        btn_confirm.setFixedHeight(38)
-        btn_confirm.setFixedWidth(160)
+        btn_confirm = Theme.btn("Confirm & Update", "primary", height=40, min_width=168)
         btn_confirm.clicked.connect(self._on_confirm)
         btn_layout.addWidget(btn_confirm)
 

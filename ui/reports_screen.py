@@ -34,12 +34,12 @@ class ReportsScreen(QWidget):
         header = QHBoxLayout()
         title = QLabel("Reports & Analytics")
         title.setFont(QFont("Segoe UI", 15, QFont.Weight.Bold))
-        title.setStyleSheet(f"color: {Theme.TEXT_PRIMARY};")
+        title.setStyleSheet(Theme.title_style(15))
         header.addWidget(title)
         header.addStretch()
 
         fy_lbl = QLabel("FY:")
-        fy_lbl.setStyleSheet(f"font-size: 12px; font-weight: 600; color: {Theme.TEXT_SECONDARY};")
+        fy_lbl.setStyleSheet(Theme.section_label_style())
         header.addWidget(fy_lbl)
         self.fy_combo = QComboBox()
         self.fy_combo.setFixedWidth(100); self.fy_combo.setFixedHeight(34)
@@ -49,8 +49,7 @@ class ReportsScreen(QWidget):
         self.fy_combo.currentTextChanged.connect(lambda _: self.refresh())
         header.addWidget(self.fy_combo)
 
-        btn = QPushButton("🔄  Refresh")
-        btn.setObjectName("primaryBtn"); btn.setFixedHeight(34)
+        btn = Theme.btn("🔄  Refresh", "primary", height=34, min_width=105)
         btn.clicked.connect(self.refresh)
         header.addWidget(btn)
         layout.addLayout(header)
@@ -68,8 +67,8 @@ class ReportsScreen(QWidget):
         layout = QVBoxLayout(w); layout.setSpacing(16); layout.setContentsMargins(16,16,16,16)
 
         cards_row = QHBoxLayout(); cards_row.setSpacing(14)
-        self.income_card  = self._metric_card("Total Income",  "₹ 0", Theme.SUCCESS, Theme.SUCCESS_LIGHT)
-        self.expense_card = self._metric_card("Total Expense", "₹ 0", Theme.DANGER,  Theme.DANGER_LIGHT)
+        self.income_card  = self._metric_card("Total Credit",  "₹ 0", Theme.SUCCESS, Theme.SUCCESS_LIGHT)
+        self.expense_card = self._metric_card("Total Debit", "₹ 0", Theme.DANGER,  Theme.DANGER_LIGHT)
         self.net_card     = self._metric_card("Net Savings",   "₹ 0", Theme.PRIMARY, Theme.PRIMARY_LIGHT)
         cards_row.addWidget(self.income_card)
         cards_row.addWidget(self.expense_card)
@@ -83,8 +82,8 @@ class ReportsScreen(QWidget):
     def _build_category_tab(self) -> QWidget:
         w = QWidget(); w.setStyleSheet(f"background: {Theme.BG};")
         layout = QVBoxLayout(w); layout.setContentsMargins(16,16,16,16)
-        lbl = QLabel("Expense breakdown by category")
-        lbl.setStyleSheet(f"color: {Theme.TEXT_SECONDARY}; font-size: 12px; margin-bottom: 8px;")
+        lbl = QLabel("Debit breakdown by category")
+        lbl.setStyleSheet(Theme.muted_style(12) + " margin-bottom: 8px;")
         layout.addWidget(lbl)
         self.category_chart = ChartWidget()
         layout.addWidget(self.category_chart)
@@ -94,7 +93,7 @@ class ReportsScreen(QWidget):
         w = QWidget(); w.setStyleSheet(f"background: {Theme.BG};")
         layout = QVBoxLayout(w); layout.setContentsMargins(16,16,16,16)
         lbl = QLabel("Balance distribution across bank accounts")
-        lbl.setStyleSheet(f"color: {Theme.TEXT_SECONDARY}; font-size: 12px; margin-bottom: 8px;")
+        lbl.setStyleSheet(Theme.muted_style(12) + " margin-bottom: 8px;")
         layout.addWidget(lbl)
         self.bank_chart = ChartWidget()
         layout.addWidget(self.bank_chart)
@@ -104,7 +103,7 @@ class ReportsScreen(QWidget):
         w = QWidget(); w.setStyleSheet(f"background: {Theme.BG};")
         layout = QVBoxLayout(w); layout.setContentsMargins(16,16,16,16)
         lbl = QLabel("Interest income over financial years")
-        lbl.setStyleSheet(f"color: {Theme.TEXT_SECONDARY}; font-size: 12px; margin-bottom: 8px;")
+        lbl.setStyleSheet(Theme.muted_style(12) + " margin-bottom: 8px;")
         layout.addWidget(lbl)
         self.interest_chart = ChartWidget()
         layout.addWidget(self.interest_chart)
@@ -112,25 +111,17 @@ class ReportsScreen(QWidget):
 
     def _metric_card(self, title: str, value: str, accent: str, bg: str) -> QFrame:
         card = QFrame()
-        card.setStyleSheet(f"""
-            QFrame {{
-                background-color: {bg};
-                border: 1.5px solid {accent};
-                border-left: 4px solid {accent};
-                border-radius: 12px;
-                padding: 16px;
-            }}
-        """)
+        card.setStyleSheet(Theme.card_style(bg=bg, border_color=accent, left_accent=accent, padding=16))
         layout = QVBoxLayout(card); layout.setContentsMargins(16,14,16,14); layout.setSpacing(6)
 
         t = QLabel(title)
-        t.setStyleSheet(f"font-size: 12px; font-weight: 600; color: {accent}; background: transparent; border: none;")
+        t.setStyleSheet(Theme.text_style(color=accent, size=12, weight=600))
         layout.addWidget(t)
 
         v = QLabel(value)
         v.setObjectName("value")
         v.setFont(QFont("Segoe UI", 20, QFont.Weight.Bold))
-        v.setStyleSheet(f"color: {accent}; background: transparent; border: none;")
+        v.setStyleSheet(Theme.text_style(color=accent, size=20, weight=700))
         layout.addWidget(v)
         return card
 
@@ -154,10 +145,10 @@ class ReportsScreen(QWidget):
         self._update_card(self.expense_card, f"₹ {expense:,.2f}")
         self._update_card(self.net_card,     f"₹ {net:,.2f}")
         self.overview_chart.plot_comparison(
-            categories=["Income","Expense"],
+            categories=["Credit","Debit"],
             values1=[income, 0], values2=[0, expense],
-            label1="Income", label2="Expense",
-            title=f"Income vs Expense — FY {fy}", ylabel="Amount (₹)")
+            label1="Credit", label2="Debit",
+            title=f"Credit vs Debit — FY {fy}", ylabel="Amount (₹)")
 
     def _refresh_category(self, pid, fy):
         cats = get_category_summary(pid, fy)
@@ -165,7 +156,7 @@ class ReportsScreen(QWidget):
         self.category_chart.plot_pie(
             labels=[c["category"] for c in cats[:10]],
             values=[c["total"]    for c in cats[:10]],
-            title=f"Expense by Category — FY {fy}")
+            title=f"Debit by Category — FY {fy}")
 
     def _refresh_bank(self, pid):
         accounts = get_accounts_for_person(pid) if pid else get_all_accounts()

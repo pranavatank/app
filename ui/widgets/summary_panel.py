@@ -32,14 +32,15 @@ class SummaryPanel(QFrame):
 
         self.setObjectName("SummaryPanel")
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self.setStyleSheet(f"""
-            QFrame#SummaryPanel {{
-                background-color: {Theme.SURFACE};
-                border: 1px solid {Theme.BORDER};
-                border-left: 4px solid {self._accent};
-                border-radius: 12px;
-            }}
-        """)
+        self.setStyleSheet(
+            Theme.card_style(
+                border_color=Theme.BORDER,
+                left_accent=self._accent,
+                radius=12,
+                padding=0,
+                selector="QFrame#SummaryPanel",
+            )
+        )
 
         outer = QVBoxLayout(self)
         outer.setSpacing(0)
@@ -63,7 +64,7 @@ class SummaryPanel(QFrame):
 
         title_lbl = QLabel(title)
         title_lbl.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
-        title_lbl.setStyleSheet(f"color: {Theme.TEXT_PRIMARY}; background: transparent; border: none;")
+        title_lbl.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=12, weight=700))
         header_row.addWidget(title_lbl)
         header_row.addStretch()
         outer.addLayout(header_row)
@@ -73,7 +74,7 @@ class SummaryPanel(QFrame):
         # ── Thin divider ──────────────────────────────────────────────────────
         div = QFrame()
         div.setFixedHeight(1)
-        div.setStyleSheet(f"background: {Theme.DIVIDER}; border: none;")
+        div.setStyleSheet(f"background: {Theme.DIVIDER};")
         outer.addWidget(div)
         outer.addSpacing(12)
 
@@ -110,7 +111,7 @@ class SummaryPanel(QFrame):
         row.setSpacing(6)
 
         lbl = QLabel(label)
-        lbl.setStyleSheet(f"font-size: 12px; color: {Theme.TEXT_SECONDARY}; background: transparent; border: none;")
+        lbl.setStyleSheet(Theme.text_style(color=Theme.TEXT_SECONDARY, size=12))
         lbl.setWordWrap(False)
 
         color = value_color or Theme.TEXT_PRIMARY
@@ -134,7 +135,7 @@ class SummaryPanel(QFrame):
     def add_divider(self) -> None:
         line = QFrame()
         line.setFixedHeight(1)
-        line.setStyleSheet(f"background: {Theme.DIVIDER}; border: none;")
+        line.setStyleSheet(f"background: {Theme.DIVIDER};")
         self._insert_widget(line)
 
     def _insert_widget(self, widget: QWidget):

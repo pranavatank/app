@@ -15,6 +15,7 @@ from core.database import initialise_database
 from core.auth import is_first_run
 from config import APP_NAME, APP_VERSION, DATA_DIR, BACKUP_DIR
 from ui.messagebox_utils import install_copyable_error_dialogs
+from ui.logo import set_app_icon, set_windows_app_user_model_id
 
 
 def bootstrap():
@@ -31,11 +32,22 @@ def _qt_message_handler(msg_type, context, message):
 
 
 def launch_app():
+    # CRITICAL: Set Windows App User Model ID BEFORE creating QApplication
+    # This must be done first to prevent Windows from grouping with Python
+    set_windows_app_user_model_id()
+    
+    # Ensure icon assets exist before creating QApplication
+    from ui.logo import ensure_logo_assets
+    ensure_logo_assets()
+    
     qInstallMessageHandler(_qt_message_handler)
     app = QApplication(sys.argv)
     install_copyable_error_dialogs()
     app.setApplicationName(APP_NAME)
     app.setApplicationVersion(APP_VERSION)
+    
+    # Set app icon immediately
+    set_app_icon(app)
 
     app.setFont(QFont("Segoe UI", 10))
 

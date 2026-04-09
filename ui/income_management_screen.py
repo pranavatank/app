@@ -42,37 +42,27 @@ class IncomeManagementScreen(QWidget):
         header = QHBoxLayout()
         title = QLabel("Income Management")
         title.setFont(QFont("Segoe UI", 15, QFont.Weight.Bold))
-        title.setStyleSheet(f"color: {Theme.TEXT_PRIMARY};")
+        title.setStyleSheet(Theme.title_style(15))
         header.addWidget(title)
         header.addStretch()
 
-        btn_add = QPushButton("＋  Add Expected Income")
-        btn_add.setObjectName("primaryBtn")
-        btn_add.setFixedHeight(38)
+        btn_add = Theme.btn("＋  Add Expected Income", "primary", height=38, min_width=170)
         btn_add.clicked.connect(self._add_expectation)
         header.addWidget(btn_add)
 
-        btn_auto_link = QPushButton("⚡  Auto-Link All")
-        btn_auto_link.setObjectName("successBtn")
-        btn_auto_link.setFixedHeight(38)
+        btn_auto_link = Theme.btn("⚡  Auto-Link All", "success", height=38, min_width=130)
         btn_auto_link.clicked.connect(self._auto_link_all)
         header.addWidget(btn_auto_link)
 
-        btn_link = QPushButton("🔗  Link Actual")
-        btn_link.setObjectName("successBtn")
-        btn_link.setFixedHeight(38)
+        btn_link = Theme.btn("🔗  Link Actual", "success", height=38, min_width=115)
         btn_link.clicked.connect(self._link_actual)
         header.addWidget(btn_link)
 
-        btn_edit = QPushButton("✏  Edit")
-        btn_edit.setObjectName("secondaryBtn")
-        btn_edit.setFixedHeight(38)
+        btn_edit = Theme.btn("✏  Edit", "edit", height=38, min_width=90)
         btn_edit.clicked.connect(self._edit_expectation)
         header.addWidget(btn_edit)
 
-        btn_delete = QPushButton("🗑  Delete")
-        btn_delete.setObjectName("dangerBtn")
-        btn_delete.setFixedHeight(38)
+        btn_delete = Theme.btn("🗑  Delete", "danger", height=38, min_width=95)
         btn_delete.clicked.connect(self._delete_expectation)
         header.addWidget(btn_delete)
 
@@ -113,20 +103,14 @@ class IncomeManagementScreen(QWidget):
     def _build_filter_bar(self) -> QWidget:
         bar = QFrame()
         bar.setObjectName("filterBar")
-        bar.setStyleSheet(f"""
-            QFrame#filterBar {{
-                background-color: {Theme.SURFACE};
-                border: 1px solid {Theme.BORDER};
-                border-radius: 10px;
-            }}
-        """)
+        bar.setStyleSheet(Theme.filter_bar_style())
         layout = QHBoxLayout(bar)
         layout.setContentsMargins(16, 10, 16, 10)
         layout.setSpacing(12)
 
         def lbl(t):
             l = QLabel(t)
-            l.setStyleSheet(f"font-size: 12px; font-weight: 600; color: {Theme.TEXT_SECONDARY};")
+            l.setStyleSheet(Theme.section_label_style())
             return l
 
         layout.addWidget(lbl("Person"))
@@ -163,16 +147,11 @@ class IncomeManagementScreen(QWidget):
 
         layout.addStretch()
 
-        btn_filter = QPushButton("Apply")
-        btn_filter.setFixedHeight(32)
-        btn_filter.setFixedWidth(80)
+        btn_filter = Theme.btn("Apply", "primary", height=32, min_width=80)
         btn_filter.clicked.connect(self.refresh)
         layout.addWidget(btn_filter)
 
-        btn_clear = QPushButton("Clear")
-        btn_clear.setObjectName("secondaryBtn")
-        btn_clear.setFixedHeight(32)
-        btn_clear.setFixedWidth(70)
+        btn_clear = Theme.btn("Clear", "secondary", height=32, min_width=70)
         btn_clear.clicked.connect(self._clear_filters)
         layout.addWidget(btn_clear)
 
@@ -207,12 +186,12 @@ class IncomeManagementScreen(QWidget):
         layout.setSpacing(6)
 
         lbl_title = QLabel(title)
-        lbl_title.setStyleSheet(f"color: {Theme.TEXT_SECONDARY}; font-size: 12px; font-weight: 600;")
+        lbl_title.setStyleSheet(Theme.section_label_style())
         layout.addWidget(lbl_title)
 
         lbl_value = QLabel(value)
         lbl_value.setObjectName("cardValue")
-        lbl_value.setStyleSheet(f"color: {color}; font-size: 20px; font-weight: 700;")
+        lbl_value.setStyleSheet(Theme.text_style(color=color, size=20, weight=700))
         layout.addWidget(lbl_value)
 
         layout.addStretch()

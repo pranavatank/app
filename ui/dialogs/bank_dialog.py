@@ -15,46 +15,7 @@ from models.bank import add_bank, get_all_banks, get_bank, update_bank, delete_b
 
 
 def _btn(text: str, style: str = "primary") -> QPushButton:
-    b = QPushButton(text)
-    if style == "secondary":
-        b.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {Theme.SURFACE};
-                color: {Theme.TEXT_PRIMARY};
-                border: 1.5px solid {Theme.BORDER};
-                border-radius: 8px;
-                padding: 8px 18px;
-                font-size: 13px;
-                font-weight: 600;
-                min-height: 32px;
-            }}
-            QPushButton:hover {{
-                background-color: {Theme.PRIMARY_LIGHT};
-                border-color: {Theme.PRIMARY};
-                color: {Theme.PRIMARY_DARK};
-            }}
-        """)
-    elif style == "danger":
-        b.setStyleSheet(f"""
-            QPushButton {{
-                background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
-                    stop:0 {Theme.DANGER},stop:1 {Theme.DANGER_DARK});
-                color: white; border: none; border-radius: 8px;
-                padding: 8px 18px; font-size: 13px; font-weight: 700; min-height: 32px;
-            }}
-            QPushButton:hover {{ background-color: {Theme.DANGER_DARK}; }}
-        """)
-    else:
-        b.setStyleSheet(f"""
-            QPushButton {{
-                background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
-                    stop:0 {Theme.PRIMARY},stop:1 {Theme.PRIMARY_DARK});
-                color: white; border: none; border-radius: 8px;
-                padding: 8px 18px; font-size: 13px; font-weight: 700; min-height: 32px;
-            }}
-            QPushButton:hover {{ background-color: {Theme.PRIMARY_DARK}; }}
-        """)
-    return b
+    return Theme.btn(text, style, height=36, min_width=100)
 
 
 class BankManagementDialog(QDialog):
@@ -96,7 +57,7 @@ class BankManagementDialog(QDialog):
 
         actions = QHBoxLayout()
         actions.addStretch()
-        btn_edit = _btn("✏  Edit", "secondary")
+        btn_edit = _btn("✏  Edit", "edit")
         btn_edit.clicked.connect(self._on_edit)
         actions.addWidget(btn_edit)
         btn_del = _btn("🗑  Delete", "danger")
