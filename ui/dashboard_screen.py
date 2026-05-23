@@ -549,6 +549,8 @@ class DashboardScreen(QMainWindow):
     # ═══════════════════════════════════════════════════════════════════════
 
     def _navigate(self, index: int):
+        if not self._confirm_unsaved_transactions("switch pages"):
+            return
         for i, btn in enumerate(self._nav_buttons):
             btn.setStyleSheet(self._nav_active_style() if i == index else self._nav_normal_style())
         self.stack.setCurrentIndex(index)
@@ -599,6 +601,8 @@ class DashboardScreen(QMainWindow):
         self._refresh_overview()
 
     def _on_logout(self):
+        if not self._confirm_unsaved_transactions("logout"):
+            return
         reply = QMessageBox.question(self, "Logout", "Are you sure you want to log out?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No)
@@ -608,3 +612,14 @@ class DashboardScreen(QMainWindow):
             self.login = LoginScreen()
             self.login.show()
             self.close()
+
+    def closeEvent(self, event):
+        if not self._confirm_unsaved_transactions("close the app"):
+            event.ignore()
+            return
+        super().closeEvent(event)
+
+    def _confirm_unsaved_transactions(self, action_label: str) -> bool:
+        if hasattr(self, "transactions_page") and hasattr(self.transactions_page, "_confirm_unsaved"):
+            return self.transactions_page._confirm_unsaved(action_label)
+        return True

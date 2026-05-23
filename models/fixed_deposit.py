@@ -393,7 +393,9 @@ def apply_statement_redemption_event(account_id: int, person_id: int,
     if not text:
         return 0
 
-    is_auto_redeem = any(k in text for k in ["AUTO REDEEM", "FD CR", "PAT CR"])
+    is_auto_redeem = any(k in text for k in [
+        "AUTO REDEEM", "FD CR", "PAT CR", "REDEMPTION", "REDEEMED", "MATURITY", "MATURED"
+    ])
     if not is_auto_redeem:
         return 0
 
@@ -412,7 +414,9 @@ def apply_statement_redemption_event(account_id: int, person_id: int,
     if fd_no:
         chosen = conn.execute(
             """
-            SELECT fd_id, principal_amount, fd_reference_no, status
+            SELECT fd_id, principal_amount, fd_reference_no, status,
+                   start_date, actual_interest_amount,
+                   source_transaction_id, linked_transaction_id
             FROM FixedDeposit
             WHERE account_id = ?
               AND person_id = ?
@@ -423,6 +427,65 @@ def apply_statement_redemption_event(account_id: int, person_id: int,
             """,
             (account_id, person_id, fd_no),
         ).fetchone()
+
+    if fd_no and chosen is not None and is_principal_redemption and not chosen["start_date"]:
+        placeholder = chosen
+        candidates = conn.execute(
+            """
+            SELECT fd_id, principal_amount, start_date, status,
+                   fd_reference_no, actual_interest_amount,
+                   source_transaction_id, linked_transaction_id
+            FROM FixedDeposit
+            WHERE account_id = ?
+              AND person_id = ?
+              AND status IN ('Active', 'Pending Details')
+              AND start_date IS NOT NULL
+              AND (fd_reference_no IS NULL OR UPPER(fd_reference_no) != ?)
+            ORDER BY fd_id DESC
+            """,
+            (account_id, person_id, fd_no),
+        ).fetchall()
+
+        if candidates:
+            def _score(row):
+                principal = float(row["principal_amount"] or 0)
+                diff = abs(principal - float(amount or 0))
+                return (diff, row["start_date"], row["fd_id"])
+
+            best = min(candidates, key=_score)
+            principal = float(best["principal_amount"] or 0)
+            diff = abs(principal - float(amount or 0))
+            if principal > 0 and diff <= max(1000.0, 0.2 * principal):
+                # Merge placeholder interest data into the real FD and remove placeholder if safe.
+                updates = ["fd_reference_no = ?", "status = 'Matured'", "maturity_date = COALESCE(maturity_date, ?)"]
+                params = [fd_no, transaction_date]
+
+                if placeholder["actual_interest_amount"] and not best["actual_interest_amount"]:
+                    updates.append("actual_interest_amount = ?")
+                    params.append(placeholder["actual_interest_amount"])
+
+                if not best["source_transaction_id"] and placeholder["source_transaction_id"]:
+                    updates.append("source_transaction_id = ?")
+                    params.append(placeholder["source_transaction_id"])
+
+                if not best["linked_transaction_id"] and placeholder["linked_transaction_id"]:
+                    updates.append("linked_transaction_id = ?")
+                    params.append(placeholder["linked_transaction_id"])
+
+                params.append(best["fd_id"])
+                conn.execute(
+                    f"UPDATE FixedDeposit SET {', '.join(updates)} WHERE fd_id = ?",
+                    params,
+                )
+
+                ref_row = conn.execute(
+                    "SELECT 1 FROM FDInterestRecord WHERE fd_id = ?",
+                    (placeholder["fd_id"],),
+                ).fetchone()
+                if not ref_row:
+                    conn.execute("DELETE FROM FixedDeposit WHERE fd_id = ?", (placeholder["fd_id"],))
+                conn.commit()
+                chosen = best
 
     if chosen is None and is_principal_redemption:
         rows = conn.execute(

@@ -727,6 +727,9 @@ class StatementImportScreen(QWidget):
                         row["transaction_date"],
                         row["amount"],
                         row["description"],
+                        row.get("transaction_type"),
+                        row.get("reference_no"),
+                        row.get("balance_after"),
                     )
                     for row in valid
                 ]

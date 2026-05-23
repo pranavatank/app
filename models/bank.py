@@ -92,9 +92,26 @@ def update_bank_tan_code_if_exists(bank_name: str, tan_code: str) -> bool:
 
     create_bank_table()
     conn = get_connection()
+    row = conn.execute(
+        "SELECT bank_id FROM Bank WHERE lower(bank_name) = lower(?) ORDER BY bank_id LIMIT 1",
+        (name,),
+    ).fetchone()
+    if not row:
+        conn.close()
+        return False
+
+    # Avoid clashing with a TAN already assigned to another bank.
+    existing = conn.execute(
+        "SELECT bank_id FROM Bank WHERE tan_code = ?",
+        (tan,),
+    ).fetchone()
+    if existing and existing["bank_id"] != row["bank_id"]:
+        conn.close()
+        return False
+
     cur = conn.execute(
-        "UPDATE Bank SET tan_code = ? WHERE bank_name = ?",
-        (tan, name),
+        "UPDATE Bank SET tan_code = ? WHERE bank_id = ?",
+        (tan, row["bank_id"]),
     )
     conn.commit()
     return (cur.rowcount or 0) > 0
@@ -129,7 +146,10 @@ def get_or_create_bank(bank_name: str) -> int:
         return None
     create_bank_table()
     conn = get_connection()
-    row = conn.execute("SELECT bank_id FROM Bank WHERE bank_name = ?", (bank_name,)).fetchone()
+    row = conn.execute(
+        "SELECT bank_id FROM Bank WHERE lower(bank_name) = lower(?) ORDER BY bank_id LIMIT 1",
+        (bank_name,),
+    ).fetchone()
     if row:
         return row["bank_id"]
     return add_bank(bank_name)

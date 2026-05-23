@@ -345,17 +345,18 @@ def update_transaction(transaction_id: int, transaction_date: str,
                        transaction_type: str, amount: float,
                        category: str = None, mode: str = None,
                        description: str = None,
-                       reference_no: str = None) -> None:
+                       reference_no: str = None,
+                       balance_after: float | None = None) -> None:
     txn_type = normalize_transaction_type(transaction_type)
     conn = get_connection()
     conn.execute("""
         UPDATE Transactions
         SET transaction_date = ?, transaction_type = ?, amount = ?,
                         category = ?, mode = ?, description = ?,
-                        reference_no = COALESCE(?, reference_no)
+                        reference_no = ?, balance_after = ?
         WHERE transaction_id = ?
     """, (transaction_date, txn_type, amount,
-                    category, mode, description, reference_no, transaction_id))
+                    category, mode, description, reference_no, balance_after, transaction_id))
     conn.commit()
     conn.close()
 
@@ -456,13 +457,34 @@ def get_transactions_by_account(account_id: int, start_date: str = None,
 
 
 def check_duplicate(account_id: int, transaction_date: str,
-                    amount: float, description: str) -> bool:
-    """Simple duplicate check for statement imports."""
+                    amount: float, description: str,
+                    transaction_type: str | None = None,
+                    reference_no: str | None = None,
+                    balance_after: float | None = None) -> bool:
+    """Duplicate check for statement imports."""
+    filters = ["account_id = ?", "transaction_date = ?", "amount = ?"]
+    params = [account_id, transaction_date, amount]
+
+    if description is not None:
+        filters.append("description = ?")
+        params.append(description)
+
+    if transaction_type:
+        filters.append("transaction_type = ?")
+        params.append(normalize_transaction_type(transaction_type))
+
+    if reference_no:
+        filters.append("reference_no = ?")
+        params.append(reference_no)
+
+    if balance_after is not None:
+        filters.append("balance_after = ?")
+        params.append(balance_after)
+
     conn = get_connection()
-    row = conn.execute("""
-        SELECT COUNT(*) AS cnt FROM Transactions
-        WHERE account_id = ? AND transaction_date = ?
-          AND amount = ? AND description = ?
-    """, (account_id, transaction_date, amount, description)).fetchone()
+    row = conn.execute(
+        f"SELECT COUNT(*) AS cnt FROM Transactions WHERE {' AND '.join(filters)}",
+        params,
+    ).fetchone()
     conn.close()
     return row["cnt"] > 0

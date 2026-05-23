@@ -169,7 +169,9 @@ class ReconciliationScreen(QWidget):
         form26as_records = get_form26as_records(form26as_import["import_id"])
         
         # Load AIS data
-        ais_import = get_ais_tis_data(pid, fy)
+        ais_import = get_ais_tis_data(pid, fy, source_type="AIS")
+        if not ais_import:
+            ais_import = get_ais_tis_data(pid, fy, source_type="TIS")
         if not ais_import:
             QMessageBox.information(self, "No Data", "No AIS/TIS data found for selected person and FY.")
             return

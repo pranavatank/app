@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (
     QFormLayout, QDateEdit, QDoubleSpinBox, QTextEdit,
     QMessageBox, QFrame, QAbstractItemView, QCheckBox
 )
-from PyQt6.QtCore import Qt, QDate
+from PyQt6.QtCore import Qt, QDate, QTimer
 from PyQt6.QtGui import QFont, QColor
 
 from ui.widgets.excel_table import ExcelTableWithStats
@@ -53,6 +53,11 @@ class TransactionsScreen(QWidget):
         self._all_persons: list[dict] = []
         self._all_accounts: list[dict] = []
         self._current_rows: list[dict] = []
+        self._dirty = False
+        self._dirty_reminder_shown = False
+        self._dirty_timer = QTimer(self)
+        self._dirty_timer.setSingleShot(True)
+        self._dirty_timer.timeout.connect(self._show_dirty_reminder)
         self._build_ui()
 
     def _build_ui(self):
@@ -62,6 +67,8 @@ class TransactionsScreen(QWidget):
 
         # Action bar
         layout.addWidget(self._build_action_bar())
+        # Unsaved banner
+        layout.addWidget(self._build_unsaved_bar())
         # Filter bar
         layout.addWidget(self._build_filter_bar())
         # Table
@@ -106,6 +113,39 @@ class TransactionsScreen(QWidget):
         layout.addWidget(self.lbl_expense_sum)
         layout.addWidget(self.lbl_net_sum)
 
+        return bar
+
+    def _build_unsaved_bar(self) -> QWidget:
+        bar = QFrame()
+        bar.setObjectName("unsavedBar")
+        bar.setStyleSheet(f"""
+            QFrame#unsavedBar {{
+                background: {Theme.SURFACE_ALT};
+                border: 1px solid {Theme.BORDER};
+                border-radius: 10px;
+            }}
+        """)
+        layout = QHBoxLayout(bar)
+        layout.setContentsMargins(12, 6, 12, 6)
+        layout.setSpacing(10)
+
+        self.unsaved_label = QLabel("Unsaved changes. Save to keep edits.")
+        self.unsaved_label.setStyleSheet(Theme.text_style(color=Theme.TEXT_SECONDARY, size=12, weight=600))
+        layout.addWidget(self.unsaved_label)
+        layout.addStretch()
+
+        self.btn_save = Theme.btn("Save Changes", "primary", height=32, min_width=120)
+        self.btn_save.clicked.connect(self._save_table_changes)
+        layout.addWidget(self.btn_save)
+
+        self.btn_discard = Theme.btn("Discard", "secondary", height=32, min_width=90)
+        self.btn_discard.clicked.connect(lambda: self._discard_changes(confirm=True))
+        layout.addWidget(self.btn_discard)
+
+        bar.hide()
+        self.btn_save.setEnabled(False)
+        self.btn_discard.setEnabled(False)
+        self._unsaved_bar = bar
         return bar
 
     def _badge(self, text, bg, fg) -> QLabel:
@@ -175,6 +215,9 @@ class TransactionsScreen(QWidget):
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked | QAbstractItemView.EditTrigger.EditKeyPressed)
         self.table.setSortingEnabled(True)
         self.table.cellDataChanged.connect(self._on_table_data_changed)
+        self.table.itemChanged.connect(lambda _: self._mark_dirty())
+        # Override delete to ensure DB stays in sync when using Delete key.
+        self.table.deleteSelectedRows = self._delete_selected_rows
 
         hdr = self.table.horizontalHeader()
         hdr.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
@@ -186,6 +229,8 @@ class TransactionsScreen(QWidget):
         return self.table_widget
 
     def refresh(self):
+        if not self._confirm_unsaved("refresh transactions"):
+            return
         self._reload_filter_persons()
         self._fetch_and_display()
 
@@ -394,7 +439,8 @@ class TransactionsScreen(QWidget):
             data = dlg.get_data()
             update_transaction(txn["transaction_id"], data["transaction_date"],
                                data["transaction_type"], data["amount"],
-                               data.get("category"), data.get("mode"), data.get("description"), data.get("reference_no"))
+                               data.get("category"), data.get("mode"), data.get("description"), data.get("reference_no"),
+                               data.get("balance_after"))
             self._fetch_and_display()
             if self._parent_window: self._parent_window.refresh_overview()
 
@@ -411,6 +457,40 @@ class TransactionsScreen(QWidget):
             self._fetch_and_display()
             if self._parent_window: self._parent_window.refresh_overview()
 
+    def _delete_selected_rows(self):
+        selected_rows = {item.row() for item in self.table.selectedItems()}
+        if not selected_rows:
+            return
+
+        txn_ids = []
+        for row in selected_rows:
+            id_item = self.table.item(row, _COL_ID+1)
+            if id_item is not None:
+                try:
+                    txn_ids.append(int(id_item.text()))
+                except ValueError:
+                    continue
+
+        if not txn_ids:
+            return
+
+        reply = QMessageBox.question(
+            self,
+            "Confirm Delete",
+            f"Delete {len(txn_ids)} selected transaction(s)?\nThis cannot be undone.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        for txn_id in txn_ids:
+            delete_transaction(txn_id)
+
+        self._fetch_and_display()
+        if self._parent_window:
+            self._parent_window.refresh_overview()
+
     def _selected_transaction(self):
         if not self.table.selectedItems(): return None
         id_item = self.table.item(self.table.currentRow(), _COL_ID+1)
@@ -425,13 +505,193 @@ class TransactionsScreen(QWidget):
 
     def _on_table_data_changed(self):
         """Handle data changes in table (after paste or edit)."""
-        # Note: Auto-save not implemented to avoid accidental overwrites
-        # Users should use Edit button to save changes
-        pass
+        self._mark_dirty()
+
+    def _mark_dirty(self):
+        if self._dirty:
+            return
+        self._dirty = True
+        self._dirty_reminder_shown = False
+        self._unsaved_bar.show()
+        self.btn_save.setEnabled(True)
+        self.btn_discard.setEnabled(True)
+        self._dirty_timer.start(45000)
+
+    def _clear_dirty(self):
+        self._dirty = False
+        self._dirty_reminder_shown = False
+        self._dirty_timer.stop()
+        self._unsaved_bar.hide()
+        self.btn_save.setEnabled(False)
+        self.btn_discard.setEnabled(False)
+
+    def _show_dirty_reminder(self):
+        if not self._dirty or self._dirty_reminder_shown:
+            return
+        self._dirty_reminder_shown = True
+        QMessageBox.information(
+            self,
+            "Unsaved Changes",
+            "You have unsaved changes in Transactions. Click 'Save Changes' to keep them.",
+        )
+
+    def has_unsaved_changes(self) -> bool:
+        return self._dirty
+
+    def _confirm_unsaved(self, action_label: str) -> bool:
+        if not self._dirty:
+            return True
+        reply = QMessageBox(self)
+        reply.setWindowTitle("Unsaved Changes")
+        reply.setText(f"You have unsaved changes. Save before you {action_label}?")
+        reply.setStandardButtons(QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel)
+        reply.setDefaultButton(QMessageBox.StandardButton.Save)
+        choice = reply.exec()
+        if choice == QMessageBox.StandardButton.Save:
+            return self._save_table_changes()
+        if choice == QMessageBox.StandardButton.Discard:
+            self._discard_changes(confirm=False)
+            return True
+        return False
+
+    def _parse_money(self, text: str) -> float | None:
+        raw = (text or "").replace("₹", "").replace(",", "").strip()
+        if raw in ("", "—"):
+            return None
+        try:
+            return float(raw)
+        except ValueError:
+            return None
+
+    def _collect_row_values(self, row_index: int) -> dict | None:
+        id_item = self.table.item(row_index, _COL_ID+1)
+        if id_item is None:
+            return None
+        try:
+            txn_id = int(id_item.text())
+        except ValueError:
+            return None
+
+        def _text(col):
+            item = self.table.item(row_index, col)
+            return item.text().strip() if item else ""
+
+        category = _text(_COL_CAT+1)
+        mode = _text(_COL_MODE+1)
+        reference = _text(_COL_REF+1)
+        description = _text(_COL_DESC+1)
+        amount = self._parse_money(_text(_COL_AMOUNT+1))
+        balance = self._parse_money(_text(_COL_BAL+1))
+
+        if category in ("—", ""):
+            category = None
+        if mode in ("—", ""):
+            mode = None
+        if reference in ("—", ""):
+            reference = None
+        if description in ("—", ""):
+            description = None
+        if reference is not None:
+            reference = reference.strip().upper()
+
+        return {
+            "transaction_id": txn_id,
+            "category": category,
+            "mode": mode,
+            "reference_no": reference,
+            "description": description,
+            "amount": amount,
+            "balance_after": balance,
+        }
+
+    def _save_table_changes(self) -> bool:
+        if not self._dirty:
+            return True
+
+        originals = {r["transaction_id"]: r for r in self._current_rows}
+        updates = []
+
+        for row in range(self.table.rowCount()):
+            data = self._collect_row_values(row)
+            if not data:
+                continue
+            orig = originals.get(data["transaction_id"])
+            if not orig:
+                continue
+
+            if data["amount"] is None or data["amount"] <= 0:
+                QMessageBox.warning(self, "Invalid Amount", f"Row {row+1}: Amount must be > 0.")
+                return False
+
+            changed = False
+            def _norm(v):
+                return (v or "").strip()
+
+            if _norm(orig.get("category")) != _norm(data["category"]):
+                changed = True
+            if _norm(orig.get("mode")) != _norm(data["mode"]):
+                changed = True
+            if _norm(orig.get("description")) != _norm(data["description"]):
+                changed = True
+            if _norm(orig.get("reference_no")) != _norm(data["reference_no"]):
+                changed = True
+
+            if abs(float(orig.get("amount") or 0) - float(data["amount"] or 0)) > 0.005:
+                changed = True
+
+            orig_bal = orig.get("balance_after")
+            if orig_bal is None and data["balance_after"] is None:
+                pass
+            else:
+                if abs(float(orig_bal or 0) - float(data["balance_after"] or 0)) > 0.005:
+                    changed = True
+
+            if changed:
+                updates.append((orig, data))
+
+        if not updates:
+            self._clear_dirty()
+            return True
+
+        for orig, data in updates:
+            update_transaction(
+                data["transaction_id"],
+                orig.get("transaction_date"),
+                orig.get("transaction_type"),
+                data["amount"],
+                data.get("category"),
+                data.get("mode"),
+                data.get("description"),
+                data.get("reference_no"),
+                data.get("balance_after"),
+            )
+
+        self._clear_dirty()
+        self._fetch_and_display()
+        if self._parent_window:
+            self._parent_window.refresh_overview()
+        QMessageBox.information(self, "Saved", f"Saved {len(updates)} change(s).")
+        return True
+
+    def _discard_changes(self, confirm: bool = True):
+        if confirm:
+            reply = QMessageBox.question(
+                self,
+                "Discard Changes",
+                "Discard all unsaved changes?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+        self._clear_dirty()
+        self._fetch_and_display()
 
     def _on_filter_person_changed(self): self._reload_filter_accounts()
 
     def _clear_filters(self):
+        if not self._confirm_unsaved("clear filters"):
+            return
         self.f_person.setCurrentIndex(0)
         self.f_account.setCurrentIndex(0)
         self.f_fy.setCurrentText(get_current_financial_year())

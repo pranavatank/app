@@ -4,7 +4,8 @@ ui/accounts_screen.py — Account management with card/list view toggle.
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QScrollArea, QFrame, QGridLayout, QDialog, QMessageBox
+    QScrollArea, QFrame, QGridLayout, QDialog, QMessageBox,
+    QTabWidget, QFormLayout
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
@@ -157,8 +158,8 @@ class AccountsScreen(QWidget):
         account_fds = [fd for fd in fds if fd["account_id"] == account["account_id"] and fd["status"] == "Active"]
         fd_value = sum(fd["principal_amount"] for fd in account_fds)
         
-        fd_interest = get_total_fd_interest(self.selected_fy, account["person_id"])
-        savings_interest = get_total_savings_interest(self.selected_fy, account["person_id"])
+        fd_interest = get_total_fd_interest(self.selected_fy, account_id=account["account_id"])
+        savings_interest = get_total_savings_interest(self.selected_fy, account_id=account["account_id"])
 
         item = QFrame()
         item.setObjectName("listItem")

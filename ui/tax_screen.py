@@ -454,7 +454,9 @@ class TaxScreen(QWidget):
         self._update_advance_tax_banner()
 
     def _load_ais_data(self, pid, fy):
-        ais = get_ais_tis_data(pid, fy)
+        ais = get_ais_tis_data(pid, fy, source_type="AIS")
+        if not ais:
+            ais = get_ais_tis_data(pid, fy, source_type="TIS")
         if ais:
             self.gross_salary.setValue(ais.get("salary_income",0))
             self.fd_interest_input.setValue(ais.get("fd_interest",0))

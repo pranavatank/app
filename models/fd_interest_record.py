@@ -56,8 +56,9 @@ def get_fd_interest_by_fy(financial_year: str,
 
 
 def get_total_fd_interest(financial_year: str,
-                          person_id: int = None) -> float:
-    """Sum of FD interest for a FY."""
+                          person_id: int = None,
+                          account_id: int = None) -> float:
+    """Sum of FD interest for a FY, optionally filtered by person or account."""
     query  = """
         SELECT SUM(fir.interest_earned) AS total
         FROM FDInterestRecord fir
@@ -68,6 +69,9 @@ def get_total_fd_interest(financial_year: str,
     if person_id:
         query += " AND fd.person_id = ?"
         params.append(person_id)
+    if account_id:
+        query += " AND fd.account_id = ?"
+        params.append(account_id)
 
     conn = get_connection()
     row = conn.execute(query, params).fetchone()

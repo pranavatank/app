@@ -1102,7 +1102,10 @@ def filter_duplicates(transactions: List[Dict], account_id: int) -> tuple[List[D
             account_id,
             txn["transaction_date"],
             txn["amount"],
-            txn["description"]
+            txn["description"],
+            txn.get("transaction_type"),
+            txn.get("reference_no"),
+            txn.get("balance_after"),
         )
         
         if not is_dup:

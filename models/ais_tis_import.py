@@ -211,17 +211,23 @@ def get_ais_tis_records(import_id: int) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def get_ais_tis_data(person_id: int, financial_year: str):
-    """Get AIS/TIS data for person and FY."""
+def get_ais_tis_data(person_id: int, financial_year: str, source_type: str | None = None):
+    """Get AIS/TIS data for person and FY, optionally filtered by source_type."""
     create_ais_tis_table()
     conn = get_connection()
     cur = conn.cursor()
-    
-    row = cur.execute("""
+
+    where = "WHERE person_id = ? AND financial_year = ?"
+    params = [person_id, financial_year]
+    if source_type:
+        where += " AND UPPER(source_type) = UPPER(?)"
+        params.append(source_type)
+
+    row = cur.execute(f"""
         SELECT * FROM AISTISImport
-        WHERE person_id = ? AND financial_year = ?
+        {where}
         ORDER BY import_date DESC LIMIT 1
-    """, (person_id, financial_year)).fetchone()
+    """, params).fetchone()
     
     conn.close()
     return dict(row) if row else None

@@ -17,14 +17,20 @@ from ui.theme import Theme
 from core.session import session
 from models.person import get_person
 from models.form26as import save_form26as_import, get_form26as_import, get_form26as_records
-from models.ais_tis_import import save_ais_tis_data, get_ais_tis_data, save_ais_tis_records, get_ais_tis_records
+from models.ais_tis_import import (
+    save_ais_tis_data, get_ais_tis_data, save_ais_tis_records,
+    get_ais_tis_records, save_ais_tis_pdf_lines,
+)
 from models.income_source import (
     get_income_source_by_tan, save_income_source, get_all_income_sources,
     SOURCE_TYPES, SOURCE_TYPE_EMPLOYER, SOURCE_TYPE_BANK
 )
 from engines.form26as_parser import parse_form26as_pdf, parse_form26as_text_simple, extract_financial_year_from_ay
-from engines.ais_tis_parser import parse_ais_json, parse_tis_json
-from engines.pdf_extractor import extract_pdf_text
+from engines.ais_tis_parser import (
+    parse_ais_json, parse_tis_json, parse_ais_pdf_text, parse_tis_pdf_text,
+)
+from engines.pdf_extractor import extract_pdf_text, PDFExtractionError
+from ui.ais_tis_import_screen import PasswordDialog
 import json
 
 
@@ -149,11 +155,14 @@ class AISTISImportScreenV2(QWidget):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(12)
 
-        # Import button
+        # Import buttons
         btn_layout = QHBoxLayout()
-        btn_import = Theme.btn("📤 Import AIS JSON", "success", height=36, min_width=180)
-        btn_import.clicked.connect(self._import_ais)
-        btn_layout.addWidget(btn_import)
+        btn_import_pdf = Theme.btn("📄 Import AIS PDF", "primary", height=36, min_width=170)
+        btn_import_pdf.clicked.connect(self._import_ais_pdf)
+        btn_layout.addWidget(btn_import_pdf)
+        btn_import_json = Theme.btn("📤 Import AIS JSON", "success", height=36, min_width=180)
+        btn_import_json.clicked.connect(self._import_ais)
+        btn_layout.addWidget(btn_import_json)
         btn_layout.addStretch()
         layout.addLayout(btn_layout)
 
@@ -165,7 +174,7 @@ class AISTISImportScreenV2(QWidget):
         table_container = QWidget()
         table_layout = QVBoxLayout(table_container)
         table_layout.setContentsMargins(0, 0, 0, 0)
-        
+
         self.table_ais = QTableWidget()
         self.table_ais.setColumnCount(6)
         self.table_ais.setHorizontalHeaderLabels([
@@ -186,11 +195,14 @@ class AISTISImportScreenV2(QWidget):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(12)
 
-        # Import button
+        # Import buttons
         btn_layout = QHBoxLayout()
-        btn_import = Theme.btn("📤 Import TIS JSON", "info", height=36, min_width=180)
-        btn_import.clicked.connect(self._import_tis)
-        btn_layout.addWidget(btn_import)
+        btn_import_pdf = Theme.btn("📄 Import TIS PDF", "primary", height=36, min_width=170)
+        btn_import_pdf.clicked.connect(self._import_tis_pdf)
+        btn_layout.addWidget(btn_import_pdf)
+        btn_import_json = Theme.btn("📤 Import TIS JSON", "info", height=36, min_width=180)
+        btn_import_json.clicked.connect(self._import_tis)
+        btn_layout.addWidget(btn_import_json)
         btn_layout.addStretch()
         layout.addLayout(btn_layout)
 
@@ -300,22 +312,12 @@ class AISTISImportScreenV2(QWidget):
         if not pid:
             self.table_tis.setRowCount(0)
             return
-        
-        # Get TIS import (source_type = 'TIS')
-        from core.database import get_connection
-        conn = get_connection()
-        row = conn.execute("""
-            SELECT * FROM AISTISImport
-            WHERE person_id = ? AND financial_year = ? AND source_type = 'TIS'
-            ORDER BY import_date DESC LIMIT 1
-        """, (pid, fy)).fetchone()
-        conn.close()
-        
-        if not row:
+
+        import_data = get_ais_tis_data(pid, fy, source_type="TIS")
+        if not import_data:
             self.table_tis.setRowCount(0)
             return
-        
-        import_data = dict(row)
+
         records = get_ais_tis_records(import_data["import_id"])
         self.table_tis.setRowCount(len(records))
         
@@ -415,6 +417,93 @@ class AISTISImportScreenV2(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Import Error", f"Failed to import Form 26AS:\n{str(e)}")
 
+    def _import_ais_pdf(self):
+        self._import_ais_tis_pdf("AIS")
+
+    def _import_tis_pdf(self):
+        self._import_ais_tis_pdf("TIS")
+
+    def _import_ais_tis_pdf(self, source_type: str):
+        pid = session.selected_person_id
+        fy = session.selected_fy
+
+        if not pid:
+            QMessageBox.warning(self, "No Person", "Please select a person from the top bar.")
+            return
+
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, f"Select {source_type} PDF", "", "PDF Files (*.pdf)"
+        )
+
+        if not file_path:
+            return
+
+        pwd_dlg = PasswordDialog(self)
+        if pwd_dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        password = pwd_dlg.get_password()
+        if not password:
+            QMessageBox.warning(self, "No Password", "Password is required to open the PDF.")
+            return
+
+        try:
+            result = extract_pdf_text(file_path, password=password)
+        except PDFExtractionError as e:
+            QMessageBox.critical(
+                self, "PDF Extraction Failed",
+                f"Could not extract text. Please check your password.\n\nError: {e}")
+            return
+
+        pdf_text = result.text
+        self.debug_text.setPlainText(pdf_text[:5000])
+        self.debug_frame.show()
+        self.btn_toggle_debug.setText("🐞 Hide Debug")
+
+        parser = parse_ais_pdf_text if source_type == "AIS" else parse_tis_pdf_text
+        try:
+            parsed = parser(pdf_text)
+        except Exception as e:
+            QMessageBox.critical(self, "Parse Failed", f"Could not parse PDF.\n\nError: {e}")
+            return
+
+        existing = get_ais_tis_data(pid, fy, source_type=source_type)
+        if existing:
+            merged = dict(parsed)
+            for key in ["salary_income", "fd_interest", "savings_interest", "other_interest",
+                       "dividend_income", "rental_income", "other_income", "tds_deducted"]:
+                if merged.get(key, 0) == 0 and existing.get(key, 0) not in (None, 0):
+                    merged[key] = existing[key]
+            parsed = merged
+
+        import_id = save_ais_tis_data(
+            person_id=pid,
+            financial_year=fy,
+            source_type=source_type,
+            raw_json=pdf_text,
+            data=parsed
+        )
+        if import_id:
+            save_ais_tis_pdf_lines(import_id, pdf_text)
+            save_ais_tis_records(import_id, parsed.get("details", []))
+
+            new_sources = []
+            for rec in (parsed.get("details") or []):
+                tan = (rec.get("source_tan") or "").strip().upper()
+                if tan and not get_income_source_by_tan(tan):
+                    new_sources.append(rec)
+            if new_sources:
+                self._handle_new_sources_ais(new_sources)
+
+        QMessageBox.information(
+            self, "Import Successful",
+            f"Imported {source_type} PDF data for FY {fy}."
+        )
+
+        if source_type == "AIS":
+            self._load_ais_data()
+        else:
+            self._load_tis_data()
+
     def _import_ais(self):
         pid = session.selected_person_id
         fy = session.selected_fy
@@ -436,11 +525,8 @@ class AISTISImportScreenV2(QWidget):
                 json_data = json.loads(raw_json)
             
             # Parse AIS
-            source_type = "AIS" if "ais" in file_path.lower() else "TIS"
-            if source_type == "AIS":
-                parsed = parse_ais_json(json_data)
-            else:
-                parsed = parse_tis_json(json_data)
+            source_type = "AIS"
+            parsed = parse_ais_json(json_data)
             
             # Show debug
             self.debug_text.setPlainText(raw_json[:5000])  # First 5000 chars
@@ -448,16 +534,16 @@ class AISTISImportScreenV2(QWidget):
             self.btn_toggle_debug.setText("🐞 Hide Debug")
             
             # Check for existing AIS data
-            existing = get_ais_tis_data(pid, fy)
-            
-            # Merge with existing if present
+            existing = get_ais_tis_data(pid, fy, source_type=source_type)
+
+            # Merge with existing if present (keep new details)
             if existing:
-                # Update missing fields only
+                merged = dict(parsed)
                 for key in ["salary_income", "fd_interest", "savings_interest", "other_interest",
                            "dividend_income", "rental_income", "other_income", "tds_deducted"]:
-                    if parsed.get(key, 0) > 0 and existing.get(key, 0) == 0:
-                        existing[key] = parsed[key]
-                parsed = existing
+                    if merged.get(key, 0) == 0 and existing.get(key, 0) not in (None, 0):
+                        merged[key] = existing[key]
+                parsed = merged
             
             # Save to database
             import_id = save_ais_tis_data(
@@ -569,8 +655,8 @@ class AISTISImportScreenV2(QWidget):
         if not pid:
             self.table_ais.setRowCount(0)
             return
-        
-        import_data = get_ais_tis_data(pid, fy)
+
+        import_data = get_ais_tis_data(pid, fy, source_type="AIS")
         if not import_data:
             self.table_ais.setRowCount(0)
             return
@@ -626,9 +712,8 @@ class AISTISImportScreenV2(QWidget):
             
             # Show debug
             self.debug_text.setPlainText(raw_json[:5000])  # First 5000 chars
-            
-            # Check for existing TIS data
-            existing = get_ais_tis_data(pid, fy)
+            self.debug_frame.show()
+            self.btn_toggle_debug.setText("🐞 Hide Debug")
             
             # Save to database with TIS source type
             import_id = save_ais_tis_data(
