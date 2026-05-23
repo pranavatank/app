@@ -12,6 +12,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 
 from ui.theme import Theme
+from ui.widgets.advance_tax_banner import AdvanceTaxBanner
 from core.session import session
 from models.person import get_person
 from models.fd_interest_record import get_total_fd_interest
@@ -19,6 +20,7 @@ from models.savings_interest import get_total_savings_interest
 from models.tax_profile import get_tax_profile
 from models.ais_tis_import import get_ais_tis_data
 from engines.tax_engine import calculate_and_save_tax, get_tax_summary
+from engines.advance_tax_engine import calculate_advance_tax
 from config import get_assessment_year
 
 
@@ -33,6 +35,10 @@ class TaxScreen(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 16, 20, 14)
         layout.setSpacing(12)
+
+        # Advance tax reminder banner
+        self.advance_tax_banner = AdvanceTaxBanner(self)
+        layout.addWidget(self.advance_tax_banner)
 
         # Header card
         header_card = QFrame()
@@ -430,6 +436,7 @@ class TaxScreen(QWidget):
             self.person_label.setText("⚠  Please select a person from the top bar")
             self.person_label.setStyleSheet(Theme.text_style(color=Theme.WARNING, size=13, weight=600))
             self._clear_inputs()
+            self.advance_tax_banner.clear()
             return
         person = get_person(pid)
         if person:
@@ -444,6 +451,7 @@ class TaxScreen(QWidget):
         else:
             self._load_app_data(pid, fy)
         self._update_gross()
+        self._update_advance_tax_banner()
 
     def _load_ais_data(self, pid, fy):
         ais = get_ais_tis_data(pid, fy)
@@ -561,3 +569,36 @@ class TaxScreen(QWidget):
         self.recommendation_label.setText(
             f"{'🏆 Old Regime' if is_old else '🏆 New Regime'}\nSave ₹ {summary['savings']:,.2f}")
         self.recommendation_label.setStyleSheet(self._recommendation_style(bg, color, emphasize=True))
+
+    def _update_advance_tax_banner(self):
+        """Calculate and display advance tax reminder."""
+        pid = session.selected_person_id
+        fy = session.selected_fy
+        
+        if not pid:
+            self.advance_tax_banner.clear()
+            return
+        
+        profile = get_tax_profile(pid, fy)
+        if not profile:
+            self.advance_tax_banner.clear()
+            return
+        
+        # Use the better regime's tax
+        tax_old = profile.get("total_tax_old", 0)
+        tax_new = profile.get("total_tax_new", 0)
+        annual_tax = min(tax_old, tax_new) if tax_old > 0 and tax_new > 0 else max(tax_old, tax_new)
+        
+        gross_income = profile.get("gross_total_income", 0)
+        tds = profile.get("tds_deducted", 0)
+        advance_paid = profile.get("advance_tax_paid", 0)
+        
+        result = calculate_advance_tax(
+            financial_year=fy,
+            gross_income=gross_income,
+            annual_tax=annual_tax,
+            tds_deducted=tds,
+            advance_tax_paid=advance_paid,
+        )
+        
+        self.advance_tax_banner.update_reminder(result)

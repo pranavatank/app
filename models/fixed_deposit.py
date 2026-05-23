@@ -55,9 +55,25 @@ def add_fd(account_id: int, person_id: int, principal_amount: float,
 
 def fd_exists_for_statement(account_id: int, person_id: int,
                             principal_amount: float, start_date: str,
-                            fd_reference_no: str | None = None) -> bool:
+                            fd_reference_no: str | None = None,
+                            source_transaction_id: int | None = None) -> bool:
     """Best-effort duplicate check for statement-created FD entries."""
     conn = get_connection()
+    if source_transaction_id is not None:
+        row = conn.execute(
+            """
+            SELECT COUNT(*) AS cnt
+            FROM FixedDeposit
+            WHERE account_id = ?
+              AND person_id = ?
+              AND source_transaction_id = ?
+            """,
+            (account_id, person_id, source_transaction_id),
+        ).fetchone()
+        if row["cnt"] > 0:
+            conn.close()
+            return True
+
     if fd_reference_no:
         row = conn.execute("""
             SELECT COUNT(*) AS cnt
@@ -67,7 +83,7 @@ def fd_exists_for_statement(account_id: int, person_id: int,
               AND fd_reference_no = ?
               AND status IN ('Active', 'Pending Details')
         """, (account_id, person_id, fd_reference_no)).fetchone()
-    else:
+    elif source_transaction_id is None:
         row = conn.execute("""
             SELECT COUNT(*) AS cnt
             FROM FixedDeposit
@@ -105,7 +121,14 @@ def add_fd_from_statement(account_id: int, person_id: int, principal_amount: flo
     Unknown details remain NULL by design and can be filled later.
     Returns fd_id, or 0 if a likely duplicate already exists.
     """
-    if fd_exists_for_statement(account_id, person_id, principal_amount, start_date, fd_reference_no):
+    if fd_exists_for_statement(
+        account_id,
+        person_id,
+        principal_amount,
+        start_date,
+        fd_reference_no,
+        source_transaction_id,
+    ):
         return 0
 
     conn = get_connection()
@@ -422,6 +445,9 @@ def apply_statement_redemption_event(account_id: int, person_id: int,
             chosen = scored[0]
 
     if chosen is None:
+        if is_interest_only and not fd_no:
+            conn.close()
+            return 0
         principal = 0.0 if is_interest_only else float(amount or 0)
         interest = float(amount or 0) if is_interest_only else None
         cur = conn.execute(
@@ -479,6 +505,9 @@ def apply_statement_redemption_event(account_id: int, person_id: int,
         if current_principal <= 0 and float(amount or 0) > 0:
             updates.append("principal_amount = ?")
             params.append(float(amount or 0))
+        if current_principal > 0 and float(amount or 0) > current_principal:
+            updates.append("actual_interest_amount = COALESCE(?, actual_interest_amount)")
+            params.append(float(amount or 0) - current_principal)
 
     params.append(fd_id)
     conn.execute(f"UPDATE FixedDeposit SET {', '.join(updates)} WHERE fd_id = ?", params)

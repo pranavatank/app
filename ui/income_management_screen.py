@@ -525,7 +525,6 @@ class IncomeExpectationDialog(QDialog):
         self.cmb_person = QComboBox()
         for p in self._persons:
             self.cmb_person.addItem(p["full_name"], userData=p["person_id"])
-        self.cmb_person.currentIndexChanged.connect(self._on_person_changed)
         if self._preselect_pid:
             for i in range(self.cmb_person.count()):
                 if self.cmb_person.itemData(i) == self._preselect_pid:
@@ -536,6 +535,9 @@ class IncomeExpectationDialog(QDialog):
         self.cmb_account = QComboBox()
         self._populate_accounts()
         form.addRow("Account *", self.cmb_account)
+        
+        # Connect signal AFTER both widgets are created
+        self.cmb_person.currentIndexChanged.connect(self._on_person_changed)
 
         self.cmb_type = QComboBox()
         self.cmb_type.addItems(INCOME_TYPES)

@@ -1,5 +1,7 @@
 """
 ui/dashboard_screen.py — Main application window with beautiful sidebar + top bar.
+FIX: _nav_active_style now uses Theme.SIDEBAR_ACTIVE/HOVER tokens (no hardcoded rgba).
+FIX: Brand header uses Theme.gradient() so all themes look correct.
 """
 
 from PyQt6.QtWidgets import (
@@ -26,16 +28,17 @@ from ui.theme import Theme
 from ui.widgets.summary_panel import SummaryPanel
 
 _NAV_ITEMS = [
-    ("Overview",         "🏠"),
-    ("Accounts",         "🏛️"),
-    ("Transactions",     "💸"),
+    ("Overview",          "🏠"),
+    ("Accounts",          "🏛️"),
+    ("Transactions",      "💸"),
     ("Income Management", "💰"),
-    ("Fixed Deposits",   "🏦"),
-    ("Statement Import", "📄"),
-    ("AIS/TIS Import",   "📑"),
-    ("Tax",              "📋"),
-    ("Reports",          "📊"),
-    ("Settings",         "⚙️"),
+    ("Fixed Deposits",    "🏦"),
+    ("Statement Import",  "📄"),
+    ("AIS/TIS Import",    "📑"),
+    ("Tax",               "📋"),
+    ("26AS vs AIS",       "⚖️"),
+    ("Reports",           "📊"),
+    ("Settings",          "⚙️"),
 ]
 
 
@@ -64,7 +67,6 @@ class DashboardScreen(QMainWindow):
 
         root_layout.addWidget(self._build_sidebar())
 
-        # Right side: topbar + content
         right = QWidget()
         right.setObjectName("contentArea")
         right_layout = QVBoxLayout(right)
@@ -86,10 +88,10 @@ class DashboardScreen(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        # Brand header
+        # Brand header — uses hero gradient from active theme
         brand = QWidget()
         brand.setStyleSheet(f"""
-            background: {Theme.gradient(Theme.PRIMARY_GRADIENT_START, Theme.PRIMARY_DARK, diagonal=True)};
+            background: {Theme.gradient(Theme.HERO_GRADIENT_START, Theme.HERO_GRADIENT_END, diagonal=True)};
         """)
         brand.setFixedHeight(64)
         brand_layout = QHBoxLayout(brand)
@@ -115,16 +117,12 @@ class DashboardScreen(QMainWindow):
         layout.addWidget(brand)
         layout.addSpacing(12)
 
-        # Nav section label
+        # Nav label
         nav_lbl = QLabel("  NAVIGATION")
-        nav_lbl.setStyleSheet(f"""
-            color: {Theme.TEXT_MUTED};
-            font-size: 10px;
-            font-weight: 700;
-            letter-spacing: 1.5px;
-            background: transparent;
-            padding-left: 20px;
-        """)
+        nav_lbl.setStyleSheet(
+            Theme.text_style(color=Theme.TEXT_MUTED, size=10, weight=700) +
+            " letter-spacing: 1.5px; padding-left: 20px;"
+        )
         layout.addWidget(nav_lbl)
         layout.addSpacing(6)
 
@@ -138,13 +136,11 @@ class DashboardScreen(QMainWindow):
 
         layout.addStretch()
 
-        # Version badge
         ver_lbl = QLabel("v1.0.0  ·  Offline")
         ver_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         ver_lbl.setStyleSheet(Theme.text_style(color=Theme.TEXT_MUTED, size=10) + " padding-bottom: 12px;")
         layout.addWidget(ver_lbl)
 
-        self._nav_buttons[0].setProperty("active", True)
         self._nav_buttons[0].setStyleSheet(self._nav_active_style())
         return sidebar
 
@@ -171,17 +167,19 @@ class DashboardScreen(QMainWindow):
             }}
             QPushButton:hover {{
                 background-color: {Theme.SIDEBAR_HOVER};
-                color: white;
+                color: {Theme.SIDEBAR_ACTIVE_TEXT};
             }}
         """
 
     @staticmethod
     def _nav_active_style() -> str:
+        """Active nav — fully theme-token driven, no hardcoded rgba."""
         return f"""
             QPushButton {{
                 background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
-                    stop:0 {Theme.PRIMARY}, stop:1 rgba(37,99,235,0.4));
-                color: white;
+                    stop:0 {Theme.SIDEBAR_ACTIVE},
+                    stop:1 {Theme.SIDEBAR_HOVER});
+                color: {Theme.SIDEBAR_ACTIVE_TEXT};
                 border: none;
                 border-left: 3px solid {Theme.PRIMARY_LIGHT};
                 border-radius: 0;
@@ -214,7 +212,6 @@ class DashboardScreen(QMainWindow):
             logo_chip.setStyleSheet(Theme.text_style(color=Theme.PRIMARY_DARK, size=11, weight=700))
         layout.addWidget(logo_chip)
 
-        # Page title (updated on navigate)
         self.page_title_lbl = QLabel("Overview")
         self.page_title_lbl.setFont(QFont("Segoe UI", 15, QFont.Weight.Bold))
         self.page_title_lbl.setStyleSheet(Theme.title_style(15))
@@ -222,7 +219,6 @@ class DashboardScreen(QMainWindow):
 
         layout.addStretch()
 
-        # ── Selectors ─────────────────────────────────────────────────────
         def _sep():
             s = QFrame()
             s.setFrameShape(QFrame.Shape.VLine)
@@ -243,7 +239,6 @@ class DashboardScreen(QMainWindow):
         layout.addWidget(self.person_combo)
 
         layout.addWidget(_sep())
-
         layout.addWidget(_combo_lbl("Account"))
         self.account_combo = QComboBox()
         self.account_combo.setFixedWidth(200)
@@ -252,7 +247,6 @@ class DashboardScreen(QMainWindow):
         layout.addWidget(self.account_combo)
 
         layout.addWidget(_sep())
-
         layout.addWidget(_combo_lbl("FY"))
         self.fy_combo = QComboBox()
         self.fy_combo.setFixedWidth(95)
@@ -261,7 +255,6 @@ class DashboardScreen(QMainWindow):
         layout.addWidget(self.fy_combo)
 
         layout.addSpacing(8)
-
         btn_logout = Theme.btn("Logout", "secondary", height=34, min_width=102)
         btn_logout.clicked.connect(self._on_logout)
         layout.addWidget(btn_logout)
@@ -277,7 +270,6 @@ class DashboardScreen(QMainWindow):
         layout.setSpacing(0)
 
         self.stack = QStackedWidget()
-
         self.stack.addWidget(self._build_overview_page())
 
         from ui.accounts_screen import AccountsScreen
@@ -300,13 +292,17 @@ class DashboardScreen(QMainWindow):
         self.import_page = StatementImportScreen(self)
         self.stack.addWidget(self.import_page)
 
-        from ui.ais_tis_import_screen import AISTISImportScreen
-        self.ais_tis_page = AISTISImportScreen(self)
+        from ui.ais_tis_import_screen_v2 import AISTISImportScreenV2
+        self.ais_tis_page = AISTISImportScreenV2(self)
         self.stack.addWidget(self.ais_tis_page)
 
         from ui.tax_screen import TaxScreen
         self.tax_page = TaxScreen(self)
         self.stack.addWidget(self.tax_page)
+
+        from ui.reconciliation_screen import ReconciliationScreen
+        self.reconciliation_page = ReconciliationScreen(self)
+        self.stack.addWidget(self.reconciliation_page)
 
         from ui.reports_screen import ReportsScreen
         self.reports_page = ReportsScreen(self)
@@ -336,7 +332,7 @@ class DashboardScreen(QMainWindow):
         outer.setContentsMargins(28, 24, 28, 24)
         outer.setSpacing(20)
 
-        # ── FY banner ─────────────────────────────────────────────────────
+        # FY banner
         banner = QFrame()
         banner.setStyleSheet(f"""
             QFrame {{
@@ -357,19 +353,18 @@ class DashboardScreen(QMainWindow):
         self.banner_fy_lbl = QLabel("")
         self.banner_fy_lbl.setStyleSheet("color: rgba(255,255,255,0.82); font-size: 13px; background: transparent;")
         b_layout.addWidget(self.banner_fy_lbl)
-
         outer.addWidget(banner)
 
-        # ── 2×2 Summary grid ──────────────────────────────────────────────
+        # 2×2 Summary grid
         grid = QGridLayout()
         grid.setSpacing(18)
 
         self.panel_financial = SummaryPanel("Financial Summary", "💰", accent=Theme.PRIMARY)
-        self.panel_financial.add_stat("balance",  "Total Balance",      "₹ —", value_size=16)
-        self.panel_financial.add_stat("income",   "Total Credit (FY)",  "₹ —", value_color=Theme.SUCCESS)
-        self.panel_financial.add_stat("expense",  "Total Debit (FY)","₹ —", value_color=Theme.DANGER)
+        self.panel_financial.add_stat("balance", "Total Balance",      "₹ —", value_size=16)
+        self.panel_financial.add_stat("income",  "Total Credit (FY)",  "₹ —", value_color=Theme.SUCCESS)
+        self.panel_financial.add_stat("expense", "Total Debit (FY)",   "₹ —", value_color=Theme.DANGER)
         self.panel_financial.add_divider()
-        self.panel_financial.add_stat("savings",  "Net Savings",        "₹ —", value_size=14, bold=True)
+        self.panel_financial.add_stat("savings", "Net Savings",        "₹ —", value_size=14, bold=True)
         grid.addWidget(self.panel_financial, 0, 0)
 
         self.panel_bank = SummaryPanel("Bank Accounts", "🏦", accent=Theme.TEAL, scrollable=True)
@@ -384,19 +379,17 @@ class DashboardScreen(QMainWindow):
         grid.addWidget(self.panel_interest, 1, 0)
 
         self.panel_tax = SummaryPanel("Tax Summary", "📋", accent=Theme.WARNING)
-        self.panel_tax.add_stat("gross",      "Gross Total Income",  "₹ —")
-        self.panel_tax.add_stat("deductions", "Total Deductions",    "₹ —")
+        self.panel_tax.add_stat("gross",      "Gross Total Income", "₹ —")
+        self.panel_tax.add_stat("deductions", "Total Deductions",   "₹ —")
         self.panel_tax.add_divider()
-        self.panel_tax.add_stat("tax_old",    "Tax — Old Regime",    "₹ —")
-        self.panel_tax.add_stat("tax_new",    "Tax — New Regime",    "₹ —")
+        self.panel_tax.add_stat("tax_old", "Tax — Old Regime", "₹ —")
+        self.panel_tax.add_stat("tax_new", "Tax — New Regime", "₹ —")
         self.panel_tax.add_divider()
-        self.panel_tax.add_stat("regime",     "Recommended Regime",  "—", bold=True)
+        self.panel_tax.add_stat("regime",  "Recommended Regime", "—", bold=True)
         grid.addWidget(self.panel_tax, 1, 1)
 
-        grid.setColumnStretch(0, 1)
-        grid.setColumnStretch(1, 1)
-        grid.setRowStretch(0, 1)
-        grid.setRowStretch(1, 1)
+        grid.setColumnStretch(0, 1); grid.setColumnStretch(1, 1)
+        grid.setRowStretch(0, 1);    grid.setRowStretch(1, 1)
         outer.addLayout(grid, stretch=1)
 
         scroll.setWidget(inner)
@@ -422,25 +415,18 @@ class DashboardScreen(QMainWindow):
         self._sync_context_selectors()
 
     def _sync_context_selectors(self):
-        """Reload top-bar selectors from DB and keep/choose a sensible active selection."""
         self._reload_persons(select_id=session.selected_person_id)
-
-        # Auto-select first real person only when exactly one person exists.
         if session.selected_person_id is None and self.person_combo.count() == 2:
             self.person_combo.setCurrentIndex(1)
             session.set_person(self.person_combo.currentData())
-
         self._reload_accounts(select_id=session.selected_account_id)
-
-        # Auto-select first real account only when exactly one account exists.
         if session.selected_account_id is None and self.account_combo.count() == 2:
             self.account_combo.setCurrentIndex(1)
             session.set_account(self.account_combo.currentData())
 
     def _reload_persons(self, select_id=None):
-        previous_person = session.selected_person_id
+        previous_person  = session.selected_person_id
         previous_account = session.selected_account_id
-
         self.person_combo.blockSignals(True)
         self.person_combo.clear()
         self._persons = get_all_persons()
@@ -450,17 +436,13 @@ class DashboardScreen(QMainWindow):
         if select_id is not None:
             for i in range(self.person_combo.count()):
                 if self.person_combo.itemData(i) == select_id:
-                    self.person_combo.setCurrentIndex(i)
-                    break
+                    self.person_combo.setCurrentIndex(i); break
         else:
             self.person_combo.setCurrentIndex(0)
-
-        selected_person = self.person_combo.currentData()
-        session.selected_person_id = selected_person
+        session.selected_person_id = self.person_combo.currentData()
         self.person_combo.blockSignals(False)
-
-        preferred_account = previous_account if selected_person == previous_person else None
-        self._reload_accounts(select_id=preferred_account)
+        preferred = previous_account if session.selected_person_id == previous_person else None
+        self._reload_accounts(select_id=preferred)
 
     def _reload_accounts(self, select_id=None):
         self.account_combo.blockSignals(True)
@@ -480,17 +462,13 @@ class DashboardScreen(QMainWindow):
                 self.account_combo.addItem(
                     f"{a.get('bank_display_name', a['bank_name'])} ({a['account_type']})",
                     userData=a["account_id"])
-
         selected = False
         if select_id is not None:
             for i in range(self.account_combo.count()):
                 if self.account_combo.itemData(i) == select_id:
-                    self.account_combo.setCurrentIndex(i)
-                    selected = True
-                    break
+                    self.account_combo.setCurrentIndex(i); selected = True; break
         if not selected:
             self.account_combo.setCurrentIndex(0)
-
         session.set_account(self.account_combo.currentData())
         self.account_combo.blockSignals(False)
 
@@ -515,11 +493,9 @@ class DashboardScreen(QMainWindow):
             balance = acc["current_balance"] if acc else 0.0
         else:
             balance = get_total_balance(person_id=pid)
-
         income  = get_income_total(person_id=pid,  financial_year=fy)
         expense = get_expense_total(person_id=pid, financial_year=fy)
         net     = income - expense
-
         self.panel_financial.update_stat("balance", session.mask(balance))
         self.panel_financial.update_stat("income",  session.mask(income))
         self.panel_financial.update_stat("expense", session.mask(expense))
@@ -529,21 +505,19 @@ class DashboardScreen(QMainWindow):
         self.panel_bank.clear_stats()
         accounts = get_accounts_for_person(pid) if pid else get_all_accounts()
         if not accounts:
-            self.panel_bank.add_stat("_e", "No accounts added yet", "")
-            return
+            self.panel_bank.add_stat("_e", "No accounts added yet", ""); return
         for acc in accounts:
             self.panel_bank.add_stat(
                 f"acc_{acc['account_id']}",
                 f"{acc.get('bank_display_name', acc['bank_name'])}  ·  {acc['account_type']}",
-                session.mask(acc["current_balance"])
-            )
+                session.mask(acc["current_balance"]))
 
     def _refresh_interest_panel(self, fy, pid):
         next_start = int(fy.split("-")[0]) + 1
         next_fy    = f"{next_start}-{str(next_start + 1)[2:]}"
-        fd_curr    = get_total_fd_interest(fy,      person_id=pid)
-        fd_next    = get_total_fd_interest(next_fy, person_id=pid)
-        sav_curr   = get_total_savings_interest(fy, person_id=pid)
+        fd_curr  = get_total_fd_interest(fy,      person_id=pid)
+        fd_next  = get_total_fd_interest(next_fy, person_id=pid)
+        sav_curr = get_total_savings_interest(fy,  person_id=pid)
         self.panel_interest.update_stat("fd_curr",   session.mask(fd_curr))
         self.panel_interest.update_stat("fd_next",   session.mask(fd_next))
         self.panel_interest.update_stat("sav_curr",  session.mask(sav_curr))
@@ -551,17 +525,16 @@ class DashboardScreen(QMainWindow):
 
     def _refresh_tax_panel(self, fy, pid):
         if pid is None:
-            for key in ["gross","deductions","tax_old","tax_new","regime"]:
-                self.panel_tax.update_stat(key, "Select a person" if key=="gross" else "—")
+            for k in ["gross","deductions","tax_old","tax_new","regime"]:
+                self.panel_tax.update_stat(k, "Select a person" if k=="gross" else "—")
             return
         profile = get_tax_profile(pid, fy)
         if not profile:
-            for key in ["gross","deductions","tax_old","tax_new","regime"]:
-                self.panel_tax.update_stat(key, "No data" if key=="gross" else "—")
+            for k in ["gross","deductions","tax_old","tax_new","regime"]:
+                self.panel_tax.update_stat(k, "No data" if k=="gross" else "—")
             return
         ded = sum(profile.get(k,0) for k in [
-            "deductions_80c","deductions_80d","home_loan_interest",
-            "hra_exemption","standard_deduction"])
+            "deductions_80c","deductions_80d","home_loan_interest","hra_exemption","standard_deduction"])
         tax_old = profile.get("total_tax_old", 0)
         tax_new = profile.get("total_tax_new", 0)
         regime  = "🟢 Old Regime" if tax_old < tax_new else ("🟢 New Regime" if tax_new < tax_old else "Either")
@@ -577,9 +550,7 @@ class DashboardScreen(QMainWindow):
 
     def _navigate(self, index: int):
         for i, btn in enumerate(self._nav_buttons):
-            btn.setStyleSheet(
-                self._nav_active_style() if i == index else self._nav_normal_style()
-            )
+            btn.setStyleSheet(self._nav_active_style() if i == index else self._nav_normal_style())
         self.stack.setCurrentIndex(index)
         self.page_title_lbl.setText(_NAV_ITEMS[index][0])
         self._on_refresh_all()
@@ -589,18 +560,25 @@ class DashboardScreen(QMainWindow):
         idx = self.stack.currentIndex()
         pages = [
             lambda: self._refresh_overview(),
-            lambda: self.accounts_page._load_accounts(),
+            lambda: self._refresh_accounts_page(),
             lambda: self.transactions_page.refresh(),
             lambda: self.income_page.refresh(),
             lambda: self.fd_page.refresh(),
             lambda: self.import_page.refresh(),
             lambda: self.ais_tis_page.refresh(),
             lambda: self.tax_page.refresh(),
+            lambda: self.reconciliation_page.refresh(),
             lambda: self.reports_page.refresh(),
             lambda: self.settings_page.refresh(),
         ]
         if 0 <= idx < len(pages):
             pages[idx]()
+
+    def _refresh_accounts_page(self):
+        """Update accounts page with current filters."""
+        self.accounts_page.selected_person_id = session.selected_person_id
+        self.accounts_page.selected_fy = session.selected_fy
+        self.accounts_page._load_accounts()
 
     def _on_person_changed(self):
         session.set_person(self.person_combo.currentData())

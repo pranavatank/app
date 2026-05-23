@@ -51,7 +51,9 @@ def launch_app():
 
     app.setFont(QFont("Segoe UI", 10))
 
-    from ui.theme import Theme
+    # Load saved theme before applying stylesheet
+    from ui.theme import Theme, ThemeManager
+    ThemeManager.load_and_apply()
     app.setStyleSheet(Theme.get_stylesheet())
 
     if is_first_run():

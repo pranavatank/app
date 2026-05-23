@@ -1,28 +1,32 @@
 """
-ui/accounts_screen.py — Card-based account management screen.
-FIX: All dialog and card buttons use Theme.btn() for guaranteed visibility.
+ui/accounts_screen.py — Account management with card/list view toggle.
 """
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QScrollArea, QFrame, QGridLayout, QDialog,
-    QFormLayout, QTabWidget, QMessageBox
+    QScrollArea, QFrame, QGridLayout, QDialog, QMessageBox
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 
-from ui.theme import Theme
+from ui.theme.theme import Theme
 from models.bank_account import get_all_accounts, add_account, update_account, delete_account
 from models.bank import get_or_create_bank, update_bank_tan_code_if_exists
 from models.person import get_all_persons
+from models.fixed_deposit import get_all_fds
+from models.fd_interest_record import get_total_fd_interest
+from models.savings_interest import get_total_savings_interest
 from ui.dialogs.account_dialog import AccountDialog
 
 
 class AccountsScreen(QWidget):
-    """Card-based account management screen."""
+    """Account management with card/list view toggle."""
 
-    def __init__(self):
+    def __init__(self, selected_person_id=None, selected_fy=None):
         super().__init__()
+        self.selected_person_id = selected_person_id
+        self.selected_fy = selected_fy or "2024-25"
+        self.view_mode = "card"  # card or list
         self._build_ui()
         self._load_accounts()
 
@@ -40,44 +44,219 @@ class AccountsScreen(QWidget):
         header.addWidget(title)
         header.addStretch()
 
+        # View toggle button
+        self.btn_toggle = Theme.btn("📋 List View", "secondary", height=38, min_width=120)
+        self.btn_toggle.clicked.connect(self._toggle_view)
+        header.addWidget(self.btn_toggle)
+
         btn_add = Theme.btn("＋  Add Account", "primary", height=38, min_width=140)
         btn_add.clicked.connect(self._on_add_account)
         header.addWidget(btn_add)
         layout.addLayout(header)
 
+        # Container for both views
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setStyleSheet(f"background: {Theme.BG}; border: none;")
 
-        self.cards_container = QWidget()
-        self.cards_container.setStyleSheet(f"background: {Theme.BG};")
-        self.cards_layout = QGridLayout(self.cards_container)
-        self.cards_layout.setSpacing(20)
-        self.cards_layout.setContentsMargins(0, 0, 0, 0)
+        self.container = QWidget()
+        self.container.setStyleSheet(f"background: {Theme.BG};")
+        self.container_layout = QVBoxLayout(self.container)
+        self.container_layout.setSpacing(0)
+        self.container_layout.setContentsMargins(0, 0, 0, 0)
 
-        scroll.setWidget(self.cards_container)
+        scroll.setWidget(self.container)
         layout.addWidget(scroll)
 
+    def _toggle_view(self):
+        self.view_mode = "list" if self.view_mode == "card" else "card"
+        self.btn_toggle.setText("🎴 Card View" if self.view_mode == "list" else "📋 List View")
+        self._load_accounts()
+
     def _load_accounts(self):
-        while self.cards_layout.count():
-            item = self.cards_layout.takeAt(0)
+        while self.container_layout.count():
+            item = self.container_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
 
         accounts = get_all_accounts()
+        if self.selected_person_id:
+            accounts = [a for a in accounts if a["person_id"] == self.selected_person_id]
+
         if not accounts:
             no_data = QLabel("💼  No accounts found.\nClick '＋ Add Account' to get started.")
             no_data.setAlignment(Qt.AlignmentFlag.AlignCenter)
             no_data.setStyleSheet(
                 f"color: {Theme.TEXT_MUTED}; font-size: 15px; padding: 60px; background: transparent;")
-            self.cards_layout.addWidget(no_data, 0, 0, 1, 2)
+            self.container_layout.addWidget(no_data)
             return
+
+        if self.view_mode == "card":
+            self._render_card_view(accounts)
+        else:
+            self._render_list_view(accounts)
+
+    def _render_card_view(self, accounts):
+        grid_widget = QWidget()
+        grid_widget.setStyleSheet(f"background: {Theme.BG};")
+        grid_layout = QGridLayout(grid_widget)
+        grid_layout.setSpacing(20)
+        grid_layout.setContentsMargins(0, 0, 0, 0)
 
         for idx, account in enumerate(accounts):
             card = self._create_card(account)
-            self.cards_layout.addWidget(card, idx // 2, idx % 2)
-        self.cards_layout.setRowStretch(len(accounts) // 2 + 1, 1)
+            grid_layout.addWidget(card, idx // 2, idx % 2)
+        grid_layout.setRowStretch(len(accounts) // 2 + 1, 1)
+        self.container_layout.addWidget(grid_widget)
+
+    def _render_list_view(self, accounts):
+        # Group by bank if all persons selected
+        if self.selected_person_id is None:
+            grouped = {}
+            for acc in accounts:
+                bank = acc.get("bank_display_name", acc["bank_name"])
+                if bank not in grouped:
+                    grouped[bank] = []
+                grouped[bank].append(acc)
+
+            for bank_name in sorted(grouped.keys()):
+                bank_section = self._create_bank_section(bank_name, grouped[bank_name])
+                self.container_layout.addWidget(bank_section)
+        else:
+            # Single person - show all accounts directly
+            for acc in accounts:
+                list_item = self._create_list_item(acc)
+                self.container_layout.addWidget(list_item)
+
+        self.container_layout.addStretch()
+
+    def _create_bank_section(self, bank_name, accounts):
+        section = QFrame()
+        section.setStyleSheet(f"background: transparent; border: none;")
+        layout = QVBoxLayout(section)
+        layout.setSpacing(8)
+        layout.setContentsMargins(0, 0, 0, 16)
+
+        # Bank header
+        header = QLabel(f"🏦  {bank_name}")
+        header.setFont(QFont("Segoe UI", 15, QFont.Weight.Bold))
+        header.setStyleSheet(Theme.text_style(color=Theme.PRIMARY, size=15, weight=700))
+        layout.addWidget(header)
+
+        # Accounts under this bank
+        for acc in accounts:
+            list_item = self._create_list_item(acc)
+            layout.addWidget(list_item)
+
+        return section
+
+    def _create_list_item(self, account):
+        # Get FD and interest data
+        fds = get_all_fds(person_id=account["person_id"])
+        account_fds = [fd for fd in fds if fd["account_id"] == account["account_id"] and fd["status"] == "Active"]
+        fd_value = sum(fd["principal_amount"] for fd in account_fds)
+        
+        fd_interest = get_total_fd_interest(self.selected_fy, account["person_id"])
+        savings_interest = get_total_savings_interest(self.selected_fy, account["person_id"])
+
+        item = QFrame()
+        item.setObjectName("listItem")
+        item.setStyleSheet(f"""
+            QFrame#listItem {{
+                background: {Theme.SURFACE};
+                border: 1px solid {Theme.BORDER};
+                border-radius: 10px;
+                padding: 16px 20px;
+            }}
+            QFrame#listItem:hover {{
+                background: {Theme.SURFACE_ALT};
+                border-color: {Theme.PRIMARY};
+            }}
+        """)
+        item.setCursor(Qt.CursorShape.PointingHandCursor)
+        item.mousePressEvent = lambda e: self._on_card_clicked(account)
+        item.setMinimumHeight(80)
+
+        layout = QHBoxLayout(item)
+        layout.setSpacing(24)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        # Left: Bank + Person info
+        left = QVBoxLayout()
+        left.setSpacing(4)
+        
+        bank_lbl = QLabel(account.get("bank_display_name", account["bank_name"]))
+        bank_lbl.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
+        bank_lbl.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=14, weight=700))
+        left.addWidget(bank_lbl)
+
+        if self.selected_person_id is None:
+            person_lbl = QLabel(f"👤 {account.get('person_name', '—')}")
+            person_lbl.setStyleSheet(Theme.text_style(color=Theme.TEXT_SECONDARY, size=12))
+            left.addWidget(person_lbl)
+
+        type_lbl = QLabel(f"{account['account_type']}  •  {account.get('account_number_masked', '—')}")
+        type_lbl.setStyleSheet(Theme.text_style(color=Theme.TEXT_MUTED, size=12))
+        left.addWidget(type_lbl)
+
+        layout.addLayout(left, 3)
+
+        # Right: Metrics
+        metrics = QHBoxLayout()
+        metrics.setSpacing(32)
+
+        # Current Balance
+        bal_box = QVBoxLayout()
+        bal_box.setSpacing(2)
+        bal_label = QLabel("Current Balance")
+        bal_label.setStyleSheet(Theme.text_style(color=Theme.TEXT_MUTED, size=11))
+        bal_box.addWidget(bal_label)
+        bal_val = QLabel(f"₹ {account['current_balance']:,.0f}")
+        bal_val.setFont(QFont("Segoe UI", 15, QFont.Weight.Bold))
+        bal_val.setStyleSheet(Theme.text_style(color=Theme.SUCCESS, size=15, weight=700))
+        bal_box.addWidget(bal_val)
+        metrics.addLayout(bal_box)
+
+        # FD Value
+        fd_box = QVBoxLayout()
+        fd_box.setSpacing(2)
+        fd_label = QLabel("Open FDs")
+        fd_label.setStyleSheet(Theme.text_style(color=Theme.TEXT_MUTED, size=11))
+        fd_box.addWidget(fd_label)
+        fd_val = QLabel(f"₹ {fd_value:,.0f}")
+        fd_val.setFont(QFont("Segoe UI", 15, QFont.Weight.Bold))
+        fd_val.setStyleSheet(Theme.text_style(color=Theme.WARNING, size=15, weight=700))
+        fd_box.addWidget(fd_val)
+        metrics.addLayout(fd_box)
+
+        # FD Interest (FY)
+        fdi_box = QVBoxLayout()
+        fdi_box.setSpacing(2)
+        fdi_label = QLabel(f"FD Interest ({self.selected_fy})")
+        fdi_label.setStyleSheet(Theme.text_style(color=Theme.TEXT_MUTED, size=11))
+        fdi_box.addWidget(fdi_label)
+        fdi_val = QLabel(f"₹ {fd_interest:,.0f}")
+        fdi_val.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
+        fdi_val.setStyleSheet(Theme.text_style(color=Theme.INFO, size=14, weight=700))
+        fdi_box.addWidget(fdi_val)
+        metrics.addLayout(fdi_box)
+
+        # Savings Interest (FY)
+        si_box = QVBoxLayout()
+        si_box.setSpacing(2)
+        si_label = QLabel(f"Savings Interest ({self.selected_fy})")
+        si_label.setStyleSheet(Theme.text_style(color=Theme.TEXT_MUTED, size=11))
+        si_box.addWidget(si_label)
+        si_val = QLabel(f"₹ {savings_interest:,.0f}")
+        si_val.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
+        si_val.setStyleSheet(Theme.text_style(color=Theme.TEAL, size=14, weight=700))
+        si_box.addWidget(si_val)
+        metrics.addLayout(si_box)
+
+        layout.addLayout(metrics, 5)
+
+        return item
 
     def _create_card(self, account: dict) -> QFrame:
         accent_map = {
@@ -199,6 +378,16 @@ class AccountsScreen(QWidget):
                 if tan_code:
                     update_bank_tan_code_if_exists(payload.get("bank_name") or "", tan_code)
                 self._load_accounts()
+
+    def set_person_filter(self, person_id):
+        """Update person filter and reload."""
+        self.selected_person_id = person_id
+        self._load_accounts()
+
+    def set_fy_filter(self, fy):
+        """Update financial year filter and reload."""
+        self.selected_fy = fy
+        self._load_accounts()
 
     def _on_add_account(self):
         persons = get_all_persons()

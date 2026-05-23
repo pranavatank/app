@@ -450,6 +450,8 @@ class StatementImportScreen(QWidget):
         """Detect FD opening debit from statement narration."""
         if txn.get("transaction_type") != "Expense":
             return False
+        if (txn.get("category") or "").strip().upper() == "FD PRINCIPAL":
+            return True
         desc = (txn.get("description") or "").upper()
 
         # Typical bank narrations: INITIAL PAYIN FD..., ... TD/00091116/..., TERM DEPOSIT

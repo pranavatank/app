@@ -13,7 +13,7 @@ from PyQt6.QtGui import QFont
 import os, shutil
 from datetime import datetime
 
-from ui.theme import Theme
+from ui.theme import Theme, ThemeManager
 from core.session import session
 from core.auth import change_password, is_totp_enabled, enable_totp, disable_totp
 from config import DB_PATH, BACKUP_DIR
@@ -65,9 +65,10 @@ class SettingsScreen(QWidget):
 
         grid.addWidget(self._section_security(), 0, 0)
         grid.addWidget(self._section_data(), 0, 1)
-        grid.addWidget(self._section_privacy(), 1, 0)
-        grid.addWidget(self._section_backup(), 1, 1)
-        grid.addWidget(self._section_device(), 2, 0, 1, 2)
+        grid.addWidget(self._section_theme(), 1, 0)
+        grid.addWidget(self._section_privacy(), 1, 1)
+        grid.addWidget(self._section_backup(), 2, 0, 1, 2)
+        grid.addWidget(self._section_device(), 3, 0, 1, 2)
 
         cl.addLayout(grid)
         cl.addStretch()
@@ -249,6 +250,26 @@ class SettingsScreen(QWidget):
         self.privacy_checkbox.stateChanged.connect(self._on_privacy_toggle)
         cl.addWidget(self.privacy_checkbox)
         cl.addWidget(self._muted("All amounts will display as ₹ ****. Toggle to reveal."))
+        gl.addWidget(card)
+
+        return g
+
+    def _section_theme(self) -> QGroupBox:
+        from PyQt6.QtWidgets import QComboBox
+        g = self._group("🎨  Theme")
+        gl = QVBoxLayout(g)
+
+        card = self._card()
+        cl = QVBoxLayout(card)
+        cl.addWidget(self._card_title("Color Theme"))
+        
+        self.theme_combo = QComboBox()
+        self.theme_combo.addItems(["Ocean Blue", "Midnight Pro", "Forest Light"])
+        self.theme_combo.setCurrentText(ThemeManager.get_active_name())
+        self.theme_combo.setFixedHeight(38)
+        self.theme_combo.currentTextChanged.connect(self._on_theme_change)
+        cl.addWidget(self.theme_combo)
+        cl.addWidget(self._muted("Restart required for full theme application."))
         gl.addWidget(card)
 
         return g
@@ -450,6 +471,12 @@ class SettingsScreen(QWidget):
     def _on_manage_banks(self):
         from ui.dialogs.bank_dialog import BankManagementDialog
         BankManagementDialog(self).exec()
+
+    def _on_theme_change(self, theme_name: str):
+        ThemeManager.apply(theme_name)
+        ThemeManager.save_preference(theme_name)
+        QMessageBox.information(self, "Theme Changed",
+            f"Theme changed to {theme_name}.\nPlease restart the app for full effect.")
 
     def refresh(self):
         self.totp_checkbox.setChecked(is_totp_enabled())

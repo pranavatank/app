@@ -1,5 +1,6 @@
 """
-ui/widgets/summary_panel.py — Beautiful summary card widget for dashboard panels.
+ui/widgets/summary_panel.py — Summary card widget for dashboard panels.
+Enhancement: subtle card shadow via QGraphicsDropShadowEffect.
 """
 
 from PyQt6.QtWidgets import (
@@ -13,7 +14,9 @@ from ui.theme import Theme
 
 class SummaryPanel(QFrame):
     """
-    A styled card with a coloured left-border accent, icon, title, and stat rows.
+    Styled card with coloured left-border accent, icon, title, and stat rows.
+    Includes a subtle drop shadow for card depth.
+
     API:
         add_stat(key, label, value, value_size, value_color, bold)
         add_divider()
@@ -36,29 +39,31 @@ class SummaryPanel(QFrame):
             Theme.card_style(
                 border_color=Theme.BORDER,
                 left_accent=self._accent,
-                radius=12,
+                radius=14,
                 padding=0,
                 selector="QFrame#SummaryPanel",
             )
         )
+        # Subtle card shadow
+        self.setGraphicsEffect(Theme.shadow_card())
 
         outer = QVBoxLayout(self)
         outer.setSpacing(0)
-        outer.setContentsMargins(20, 16, 20, 16)
+        outer.setContentsMargins(20, 18, 20, 18)
 
         # ── Header ───────────────────────────────────────────────────────────
         header_row = QHBoxLayout()
-        header_row.setSpacing(8)
+        header_row.setSpacing(10)
 
         if icon:
             icon_bg = QLabel(icon)
-            icon_bg.setFont(QFont("Segoe UI Emoji", 16))
-            icon_bg.setFixedSize(36, 36)
+            icon_bg.setFont(QFont("Segoe UI Emoji", 15))
+            icon_bg.setFixedSize(38, 38)
             icon_bg.setAlignment(Qt.AlignmentFlag.AlignCenter)
             icon_bg.setStyleSheet(f"""
-                background-color: {self._accent}22;
-                border-radius: 8px;
-                border: none;
+                background-color: {self._accent}1A;
+                border-radius: 10px;
+                border: 1px solid {self._accent}30;
             """)
             header_row.addWidget(icon_bg)
 
@@ -68,10 +73,9 @@ class SummaryPanel(QFrame):
         header_row.addWidget(title_lbl)
         header_row.addStretch()
         outer.addLayout(header_row)
-
         outer.addSpacing(12)
 
-        # ── Thin divider ──────────────────────────────────────────────────────
+        # ── Accent divider ────────────────────────────────────────────────────
         div = QFrame()
         div.setFixedHeight(1)
         div.setStyleSheet(f"background: {Theme.DIVIDER};")
@@ -101,9 +105,15 @@ class SummaryPanel(QFrame):
 
     # ── Public API ────────────────────────────────────────────────────────────
 
-    def add_stat(self, key: str, label: str, value: str = "—",
-                 value_size: int = 13, value_color: str = None,
-                 bold: bool = False) -> None:
+    def add_stat(
+        self,
+        key: str,
+        label: str,
+        value: str = "—",
+        value_size: int = 13,
+        value_color: str = None,
+        bold: bool = False,
+    ) -> None:
         row_w = QWidget()
         row_w.setStyleSheet("background: transparent; border: none;")
         row = QHBoxLayout(row_w)
@@ -128,7 +138,6 @@ class SummaryPanel(QFrame):
 
         row.addWidget(lbl, stretch=1)
         row.addWidget(val, stretch=0)
-
         self._insert_widget(row_w)
         self._rows[key] = val
 
