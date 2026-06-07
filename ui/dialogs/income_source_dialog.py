@@ -50,12 +50,14 @@ class IncomeSourceDialog(QDialog):
         self.type_combo = QComboBox()
         self.type_combo.addItems(SOURCE_TYPES)
         self.type_combo.setFixedHeight(36)
+        self.type_combo.setAccessibleName("Income source type")
         form_layout.addRow("Source Type:", self.type_combo)
         
         # Source Name
         self.name_input = QLineEdit()
         self.name_input.setPlaceholderText("e.g., ABC Company Ltd")
         self.name_input.setFixedHeight(36)
+        self.name_input.setAccessibleName("Income source name")
         form_layout.addRow("Name:*", self.name_input)
         
         # TAN
@@ -63,6 +65,7 @@ class IncomeSourceDialog(QDialog):
         self.tan_input.setPlaceholderText("e.g., ABCD12345E")
         self.tan_input.setFixedHeight(36)
         self.tan_input.setMaxLength(10)
+        self.tan_input.setAccessibleName("Income source TAN")
         form_layout.addRow("TAN:", self.tan_input)
         
         # PAN
@@ -70,36 +73,42 @@ class IncomeSourceDialog(QDialog):
         self.pan_input.setPlaceholderText("e.g., ABCDE1234F")
         self.pan_input.setFixedHeight(36)
         self.pan_input.setMaxLength(10)
+        self.pan_input.setAccessibleName("Income source PAN")
         form_layout.addRow("PAN:", self.pan_input)
         
         # Address
         self.address_input = QTextEdit()
         self.address_input.setPlaceholderText("Full address")
         self.address_input.setMaximumHeight(80)
+        self.address_input.setAccessibleName("Income source address")
         form_layout.addRow("Address:", self.address_input)
         
         # Contact Person
         self.contact_input = QLineEdit()
         self.contact_input.setPlaceholderText("Contact person name")
         self.contact_input.setFixedHeight(36)
+        self.contact_input.setAccessibleName("Contact person")
         form_layout.addRow("Contact Person:", self.contact_input)
         
         # Phone
         self.phone_input = QLineEdit()
         self.phone_input.setPlaceholderText("Phone number")
         self.phone_input.setFixedHeight(36)
+        self.phone_input.setAccessibleName("Phone number")
         form_layout.addRow("Phone:", self.phone_input)
         
         # Email
         self.email_input = QLineEdit()
         self.email_input.setPlaceholderText("Email address")
         self.email_input.setFixedHeight(36)
+        self.email_input.setAccessibleName("Email address")
         form_layout.addRow("Email:", self.email_input)
         
         # Notes
         self.notes_input = QTextEdit()
         self.notes_input.setPlaceholderText("Additional notes")
         self.notes_input.setMaximumHeight(80)
+        self.notes_input.setAccessibleName("Income source notes")
         form_layout.addRow("Notes:", self.notes_input)
         
         layout.addWidget(form_frame)
@@ -109,12 +118,25 @@ class IncomeSourceDialog(QDialog):
         btn_layout.addStretch()
         
         btn_cancel = Theme.btn("Cancel", "secondary", height=38, min_width=100)
+        btn_cancel.setAccessibleName("Cancel income source dialog")
         btn_cancel.clicked.connect(self.reject)
         btn_layout.addWidget(btn_cancel)
         
         btn_save = Theme.btn("Save", "primary", height=38, min_width=100)
+        btn_save.setAccessibleName("Save income source")
         btn_save.clicked.connect(self._save)
         btn_layout.addWidget(btn_save)
+
+        self.setTabOrder(self.type_combo, self.name_input)
+        self.setTabOrder(self.name_input, self.tan_input)
+        self.setTabOrder(self.tan_input, self.pan_input)
+        self.setTabOrder(self.pan_input, self.address_input)
+        self.setTabOrder(self.address_input, self.contact_input)
+        self.setTabOrder(self.contact_input, self.phone_input)
+        self.setTabOrder(self.phone_input, self.email_input)
+        self.setTabOrder(self.email_input, self.notes_input)
+        self.setTabOrder(self.notes_input, btn_cancel)
+        self.setTabOrder(btn_cancel, btn_save)
         
         layout.addLayout(btn_layout)
     

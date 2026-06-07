@@ -1,50 +1,46 @@
 """
 ui/theme/theme_manager.py — Runtime theme switcher.
 
-Loads saved theme preference from a JSON config file,
-applies it to the Theme class by monkey-patching all color
-attributes, then regenerates the QApplication stylesheet.
+To add a new theme: create ui/theme/theme_xxx.py, then add ONE line to _THEME_MODULES.
+No other file needs changing.
 
-Usage:
-    from ui.theme.theme_manager import ThemeManager
-    ThemeManager.apply("Midnight Pro")
-    ThemeManager.current_name()          # -> "Midnight Pro"
-    ThemeManager.available_themes()      # -> [{"name":..., "description":..., "is_dark":...}]
+LIVE SWITCHING (no restart needed):
+  apply() patches Theme class attributes → pushes new QSS to QApplication
+  → recursively polishes every live QWidget → fires registered callbacks.
 """
 
 from __future__ import annotations
 import json
 import os
 
-# ── Config path ───────────────────────────────────────────────────────────────
-_CONFIG_DIR  = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                            "..", "..", "data")
+_CONFIG_DIR  = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "data")
 _CONFIG_FILE = os.path.join(_CONFIG_DIR, "theme_prefs.json")
 
-# ── Available theme modules ── add new themes here only ──────────────────────
+# ── Register themes HERE ONLY ─────────────────────────────────────────────────
+# Order determines display order in Settings.
 _THEME_MODULES: dict[str, str] = {
-    "Ocean Blue":   "ui.theme.theme_ocean_blue",
-    "Midnight Pro": "ui.theme.theme_midnight_pro",
-    "Forest Light": "ui.theme.theme_forest_light",
+    # ── Light themes ──────────────────────────────────────────────────────────
+    "Ocean Blue":     "ui.theme.theme_ocean_blue",
+    "Forest Light":   "ui.theme.theme_forest_light",
+    "Rose Gold Luxe": "ui.theme.theme_rose_gold",
+    "Sunrise Warm":   "ui.theme.theme_sunrise_warm",
+    # ── Dark themes ───────────────────────────────────────────────────────────
+    "Midnight Pro":   "ui.theme.theme_midnight_pro",
+    "Amethyst Dusk":  "ui.theme.theme_amethyst_dusk",
+    "Finance Pro":    "ui.theme.theme_finance_pro",
 }
 
 _DEFAULT_THEME = "Ocean Blue"
 
-# ── All color / shadow attributes patched from theme modules ──────────────────
 _COLOR_ATTRS = [
     "PRIMARY", "PRIMARY_DARK", "PRIMARY_LIGHT", "PRIMARY_TEXT",
     "PRIMARY_GRADIENT_START", "PRIMARY_GRADIENT_END",
     "PRIMARY_GRADIENT_HOVER_START", "PRIMARY_GRADIENT_HOVER_END",
-    "SUCCESS", "SUCCESS_DARK", "SUCCESS_LIGHT",
-    "SUCCESS_GRADIENT_START", "SUCCESS_GRADIENT_END",
-    "DANGER", "DANGER_DARK", "DANGER_LIGHT",
-    "DANGER_GRADIENT_START", "DANGER_GRADIENT_END",
-    "WARNING", "WARNING_DARK", "WARNING_LIGHT",
-    "WARNING_GRADIENT_START", "WARNING_GRADIENT_END",
-    "INFO", "INFO_DARK", "INFO_LIGHT",
-    "INFO_GRADIENT_START", "INFO_GRADIENT_END",
-    "EDIT", "EDIT_DARK", "EDIT_LIGHT",
-    "EDIT_GRADIENT_START", "EDIT_GRADIENT_END",
+    "SUCCESS", "SUCCESS_DARK", "SUCCESS_LIGHT", "SUCCESS_GRADIENT_START", "SUCCESS_GRADIENT_END",
+    "DANGER",  "DANGER_DARK",  "DANGER_LIGHT",  "DANGER_GRADIENT_START",  "DANGER_GRADIENT_END",
+    "WARNING", "WARNING_DARK", "WARNING_LIGHT", "WARNING_GRADIENT_START", "WARNING_GRADIENT_END",
+    "INFO",    "INFO_DARK",    "INFO_LIGHT",    "INFO_GRADIENT_START",    "INFO_GRADIENT_END",
+    "EDIT",    "EDIT_DARK",    "EDIT_LIGHT",    "EDIT_GRADIENT_START",    "EDIT_GRADIENT_END",
     "HERO_GRADIENT_START", "HERO_GRADIENT_END",
     "HERO_GRADIENT_HOVER_START", "HERO_GRADIENT_HOVER_END",
     "PURPLE", "PURPLE_LIGHT", "TEAL", "TEAL_LIGHT",
@@ -60,6 +56,10 @@ _COLOR_ATTRS = [
     "CHART_COLORS", "CHART_COLORS_LIGHT",
 ]
 
+# Callbacks fired after every theme switch — registered by UI screens that
+# need to rebuild inline-styled widgets (e.g. SettingsScreen header).
+_on_change_listeners: list = []
+
 
 class ThemeManager:
     _active: str = _DEFAULT_THEME
@@ -68,31 +68,55 @@ class ThemeManager:
 
     @classmethod
     def load_and_apply(cls) -> None:
-        """Call once at startup — reads saved pref and applies it (no re-save)."""
+        """Call ONCE at startup — reads saved pref and applies without re-saving."""
         name = cls._read_pref()
-        cls.apply(name, save=False)
+        cls.apply(name, save=False, notify=False)
 
-    # kept for backward compat
     @classmethod
     def load_saved(cls) -> None:
+        """Backward-compat alias for load_and_apply()."""
         cls.load_and_apply()
 
     @classmethod
-    def apply(cls, name: str, save: bool = True) -> None:
-        """Switch active theme, patch Theme class, refresh QApplication QSS."""
+    def apply(cls, name: str, save: bool = True, notify: bool = True) -> None:
+        """
+        Switch the active theme — no restart required.
+        Steps:
+          1. Patch all Theme.* class attributes from the new theme module.
+          2. Push regenerated QSS to QApplication.
+          3. Recursively polish + update every live QWidget.
+          4. Fire registered change-listeners (e.g. SettingsScreen).
+          5. Persist the new preference to disk.
+        """
         if name not in _THEME_MODULES:
             name = _DEFAULT_THEME
+
         mod = cls._load_module(name)
         cls._patch_theme(mod)
-        cls._refresh_stylesheet()
+        cls._set_stylesheet()
+        cls._deep_refresh()
         cls._active = name
+
         if save:
             cls._write_pref(name)
+        if notify:
+            cls._fire_listeners(name)
 
     @classmethod
-    def save_preference(cls, name: str) -> None:
-        """Persist preference without re-applying (use after apply())."""
-        cls._write_pref(name)
+    def register_on_change(cls, callback) -> None:
+        """
+        Register callback(theme_name: str).
+        Called on the main thread after every successful theme switch.
+        Use this in screens that build inline-style strings at __init__ time
+        so they can restyle themselves after a theme change.
+        """
+        if callback not in _on_change_listeners:
+            _on_change_listeners.append(callback)
+
+    @classmethod
+    def unregister_on_change(cls, callback) -> None:
+        if callback in _on_change_listeners:
+            _on_change_listeners.remove(callback)
 
     @classmethod
     def current_name(cls) -> str:
@@ -109,6 +133,7 @@ class ThemeManager:
 
     @classmethod
     def available_themes(cls) -> list[dict]:
+        """Returns list of dicts with name, description, is_dark, emoji for each theme."""
         result = []
         for name in _THEME_MODULES:
             mod = cls._load_module(name)
@@ -116,14 +141,23 @@ class ThemeManager:
                 "name":        name,
                 "description": getattr(mod, "DESCRIPTION", ""),
                 "is_dark":     getattr(mod, "IS_DARK", False),
+                "emoji":       getattr(mod, "EMOJI", "🎨"),
             })
         return result
+
+    @classmethod
+    def light_themes(cls) -> list[dict]:
+        return [t for t in cls.available_themes() if not t["is_dark"]]
+
+    @classmethod
+    def dark_themes(cls) -> list[dict]:
+        return [t for t in cls.available_themes() if t["is_dark"]]
 
     @classmethod
     def theme_names(cls) -> list[str]:
         return list(_THEME_MODULES.keys())
 
-    # ── Internals ─────────────────────────────────────────────────────────────
+    # ── Internal helpers ──────────────────────────────────────────────────────
 
     @staticmethod
     def _load_module(name: str):
@@ -133,6 +167,7 @@ class ThemeManager:
 
     @staticmethod
     def _patch_theme(mod) -> None:
+        """Monkey-patch every color token onto the live Theme class."""
         from ui.theme.theme import Theme
         for attr in _COLOR_ATTRS:
             val = getattr(mod, attr, None)
@@ -140,7 +175,8 @@ class ThemeManager:
                 setattr(Theme, attr, val)
 
     @staticmethod
-    def _refresh_stylesheet() -> None:
+    def _set_stylesheet() -> None:
+        """Regenerate and push QSS to QApplication."""
         try:
             from PyQt6.QtWidgets import QApplication
             from ui.theme.theme import Theme
@@ -149,6 +185,39 @@ class ThemeManager:
                 app.setStyleSheet(Theme.get_stylesheet())
         except Exception:
             pass
+
+    @staticmethod
+    def _deep_refresh() -> None:
+        """
+        Recursively call unpolish/polish/update on every live QWidget so the
+        new stylesheet takes immediate visual effect without restarting.
+        """
+        try:
+            from PyQt6.QtWidgets import QApplication, QWidget
+            app = QApplication.instance()
+            if app is None:
+                return
+            style = app.style()
+            for top in app.topLevelWidgets():
+                # Include the top-level window itself
+                for w in [top] + top.findChildren(QWidget):
+                    try:
+                        style.unpolish(w)
+                        style.polish(w)
+                        w.update()
+                    except Exception:
+                        pass
+            app.processEvents()
+        except Exception:
+            pass
+
+    @staticmethod
+    def _fire_listeners(name: str) -> None:
+        for cb in list(_on_change_listeners):
+            try:
+                cb(name)
+            except Exception:
+                pass
 
     @staticmethod
     def _read_pref() -> str:

@@ -3,6 +3,7 @@ models/person.py — CRUD operations for the Person table.
 """
 
 from core.database import get_connection
+from core.encryption import encrypt_field, decrypt_field
 
 
 def add_person(full_name: str, first_name: str = None, middle_name: str = None,
@@ -65,5 +66,39 @@ def delete_person(person_id: int) -> None:
     """Delete a person and all linked data (cascade via FK)."""
     conn = get_connection()
     conn.execute("DELETE FROM Person WHERE person_id = ?", (person_id,))
+    conn.commit()
+    conn.close()
+
+
+def get_ais_tis_password(person_id: int, aes_key: bytes | None) -> str | None:
+    """Return decrypted AIS/TIS password for person, or None."""
+    if not aes_key:
+        return None
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT ais_tis_password_enc FROM Person WHERE person_id = ?",
+        (person_id,),
+    ).fetchone()
+    conn.close()
+    if not row or not row["ais_tis_password_enc"]:
+        return None
+    try:
+        return decrypt_field(row["ais_tis_password_enc"], aes_key)
+    except Exception:
+        return None
+
+
+def set_ais_tis_password(person_id: int, password: str | None, aes_key: bytes | None) -> None:
+    """Encrypt and store AIS/TIS password for person. Use None to clear."""
+    if not aes_key:
+        return
+    enc = None
+    if password:
+        enc = encrypt_field(password, aes_key)
+    conn = get_connection()
+    conn.execute(
+        "UPDATE Person SET ais_tis_password_enc = ? WHERE person_id = ?",
+        (enc, person_id),
+    )
     conn.commit()
     conn.close()

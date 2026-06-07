@@ -5,6 +5,7 @@ FIX: update_account_balance alias added for balance_engine compatibility.
 """
 
 from core.database import get_connection
+from core.encryption import encrypt_field, decrypt_field
 
 
 def add_account(person_id: int, bank_name: str, account_type: str,
@@ -92,6 +93,7 @@ def get_account(account_id: int) -> dict | None:
 _UPDATABLE_FIELDS = [
     "person_id", "bank_name", "account_holder_name", "account_type",
     "account_number_masked", "account_number_full",
+    "statement_password_enc",
     "ifsc_code", "micr_code", "customer_id", "ckyc_id",
     "branch_name", "branch_address", "communication_address",
     "email_id", "phone_no", "account_opening_date",
@@ -172,3 +174,29 @@ def get_total_balance(person_id: int = None) -> float:
         ).fetchone()
     conn.close()
     return row["total"] or 0.0
+
+
+def get_statement_password(account_id: int, aes_key: bytes | None) -> str | None:
+    """Return decrypted statement password for account, or None."""
+    if not aes_key:
+        return None
+    account = get_account(account_id)
+    if not account:
+        return None
+    enc = account.get("statement_password_enc")
+    if not enc:
+        return None
+    try:
+        return decrypt_field(enc, aes_key)
+    except Exception:
+        return None
+
+
+def set_statement_password(account_id: int, password: str | None, aes_key: bytes | None) -> None:
+    """Encrypt and store statement password for account. Use None to clear."""
+    if not aes_key:
+        return
+    enc = None
+    if password:
+        enc = encrypt_field(password, aes_key)
+    update_account(account_id, statement_password_enc=enc)

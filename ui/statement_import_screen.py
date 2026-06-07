@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QComboBox, QFileDialog, QTableWidget, QTableWidgetItem,
     QHeaderView, QMessageBox, QProgressBar, QFrame, QCheckBox,
-    QPlainTextEdit, QApplication, QScrollArea, QProgressDialog
+    QPlainTextEdit, QApplication, QScrollArea, QProgressDialog, QDialog
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QColor
@@ -14,7 +14,6 @@ from datetime import datetime
 import json
 import os
 import re
-import warnings
 
 from ui.widgets.excel_table import ExcelTableWithStats
 
@@ -22,15 +21,23 @@ from ui.theme import Theme
 from ui.date_utils import format_display_date
 from core.session import session
 from models.person import get_all_persons
-from models.bank_account import get_accounts_for_person, get_account, update_account
+from models.bank_account import (
+    get_accounts_for_person, get_account, update_account,
+    get_statement_password, set_statement_password
+)
 from models.bank import get_or_create_bank, update_bank_tan_code_if_exists
 from models.transaction import add_transaction, check_duplicate
 from models.transaction import display_transaction_type
 from models.fixed_deposit import add_fd_from_statement, apply_statement_redemption_event
 from models.statement_import_log import log_import
-from engines.statement_parser import parse_statement_with_debug, filter_duplicates, validate_transactions
+from engines.statement_parser import (
+    parse_statement_with_debug, filter_duplicates, validate_transactions,
+    extract_statement_text, is_pdf_encrypted, is_excel_encrypted,
+    StatementPasswordError, StatementPasswordInvalidError, StatementPasswordRequiredError,
+)
 from engines.statement_metadata_extractor import extract_account_metadata
 from ui.dialogs.account_dialog import AccountDialog
+from ui.dialogs.password_dialog import PasswordDialog
 
 
 class StatementImportScreen(QWidget):
@@ -615,6 +622,45 @@ class StatementImportScreen(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Export Failed", str(e))
 
+    def _get_saved_statement_password(self) -> str | None:
+        if not self.selected_account_id:
+            return None
+        return get_statement_password(self.selected_account_id, session.aes_key)
+
+    def _is_statement_file_encrypted(self, file_path: str, file_type: str) -> bool:
+        if file_type.upper() == "PDF":
+            return is_pdf_encrypted(file_path)
+        if file_type.upper() in ["EXCEL", "XLS", "XLSX"]:
+            return is_excel_encrypted(file_path)
+        return False
+
+    def _prompt_statement_password(self, saved_password: str | None) -> tuple[str | None, bool]:
+        info_text = (
+            "This statement file is password-protected. Enter the password to continue."
+        )
+        hint_text = (
+            "Common formats depend on your bank and may include account number, DOB, "
+            "or a custom bank-provided format."
+        )
+        dlg = PasswordDialog(
+            self,
+            title="Enter Statement Password",
+            info_text=info_text,
+            hint_text=hint_text,
+            placeholder_text="Statement password",
+            prefill_password=saved_password,
+            save_label="Save or update password for this account",
+            save_checked=True,
+            accept_label="Continue",
+        )
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return None, False
+        password = dlg.get_password()
+        if not password:
+            QMessageBox.warning(self, "No Password", "Password is required to open the file.")
+            return None, False
+        return password, dlg.should_save()
+
     def _go_next(self):
         if self.current_step == 1:
             self.selected_person_id = self.person_combo.currentData()
@@ -634,37 +680,71 @@ class StatementImportScreen(QWidget):
             if not self.selected_file:
                 QMessageBox.warning(self, "No File", "Please select a statement file."); return
             self.file_type = self.file_type_combo.currentText()
+            password = None
+            save_password = False
+            saved_password = None
+
+            if self._is_statement_file_encrypted(self.selected_file, self.file_type):
+                saved_password = self._get_saved_statement_password()
+                password, save_password = self._prompt_statement_password(saved_password)
+                if not password:
+                    return
             self._show_loader(
                 "Processing Statement",
                 "Reading statement and extracting transactions..."
             )
             try:
-                # Parse statement
-                txns, debug_info = parse_statement_with_debug(
-                    self.selected_file,
-                    self.file_type,
-                    self.bank_name
-                )
-                self.import_debug_info = debug_info or {}
+                # Parse statement (retry on password errors)
+                while True:
+                    try:
+                        txns, debug_info = parse_statement_with_debug(
+                            self.selected_file,
+                            self.file_type,
+                            self.bank_name,
+                            password=password,
+                        )
+                        self.import_debug_info = debug_info or {}
+                        if save_password and password:
+                            set_statement_password(self.selected_account_id, password, session.aes_key)
+                        break
+                    except StatementPasswordRequiredError:
+                        self._hide_loader()
+                        saved_password = self._get_saved_statement_password()
+                        password, save_password = self._prompt_statement_password(saved_password)
+                        if not password:
+                            return
+                        self._show_loader(
+                            "Processing Statement",
+                            "Reading statement and extracting transactions..."
+                        )
+                    except StatementPasswordInvalidError:
+                        self._hide_loader()
+                        QMessageBox.warning(
+                            self,
+                            "Invalid Password",
+                            "The password did not unlock the file. Please try again."
+                        )
+                        password, save_password = self._prompt_statement_password(password or saved_password)
+                        if not password:
+                            return
+                        self._show_loader(
+                            "Processing Statement",
+                            "Reading statement and extracting transactions..."
+                        )
+                    except StatementPasswordError as e:
+                        self._hide_loader()
+                        QMessageBox.critical(self, "Password Error", str(e))
+                        return
                 
                 # Extract and offer to update account metadata
                 try:
                     self._update_loader("Extracting account metadata from statement...")
                     # Read statement text for metadata extraction
-                    if self.file_type.upper() == "PDF":
-                        import pdfplumber
-                        with pdfplumber.open(self.selected_file) as pdf:
-                            self.statement_text = "\n".join([page.extract_text() or "" for page in pdf.pages])
-                    else:
-                        import pandas as pd
-                        with warnings.catch_warnings():
-                            warnings.filterwarnings(
-                                "ignore",
-                                message="Workbook contains no default style, apply openpyxl's default",
-                                category=UserWarning,
-                            )
-                            df = pd.read_excel(self.selected_file)
-                        self.statement_text = df.to_string()
+                    self.statement_text = extract_statement_text(
+                        self.selected_file,
+                        self.file_type,
+                        password=password,
+                    )
                     
                     metadata = extract_account_metadata(self.statement_text)
                     

@@ -69,12 +69,15 @@ class ReconciliationScreen(QWidget):
         th_layout.addStretch()
         
         btn_export = Theme.btn("Export", "secondary", height=32, min_width=90)
+        btn_export.setAccessibleName("Export reconciliation results")
         btn_export.clicked.connect(self._export_results)
         th_layout.addWidget(btn_export)
         
         table_layout.addWidget(table_header)
 
         self.table = QTableWidget()
+        self.table.setAccessibleName("Reconciliation results table")
+        self.table.setAccessibleDescription("Comparison of Form 26AS and AIS/TIS TDS entries.")
         self.table.setColumnCount(7)
         self.table.setHorizontalHeaderLabels([
             "Status", "Deductor Name", "TAN", "Section",
@@ -100,16 +103,20 @@ class ReconciliationScreen(QWidget):
         left = QVBoxLayout()
         title = QLabel("Form 26AS vs AIS Reconciliation")
         title.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
-        title.setStyleSheet(Theme.title_style(16))
+        title.setStyleSheet(Theme.title_style(16) + " border: none; background: transparent; padding: 0; margin: 0;")
         left.addWidget(title)
 
         self.person_label = QLabel("Select a person from the top bar")
-        self.person_label.setStyleSheet(Theme.text_style(color=Theme.TEXT_SECONDARY, size=12, weight=600))
+        self.person_label.setStyleSheet(
+            Theme.text_style(color=Theme.TEXT_SECONDARY, size=12, weight=600)
+            + " border: none; background: transparent; padding: 0; margin: 0;"
+        )
         left.addWidget(self.person_label)
         h_layout.addLayout(left)
         h_layout.addStretch()
 
         btn_reconcile = Theme.btn("🔄 Reconcile", "primary", height=40, min_width=140)
+        btn_reconcile.setAccessibleName("Run reconciliation")
         btn_reconcile.clicked.connect(self._on_reconcile)
         h_layout.addWidget(btn_reconcile)
 
@@ -131,7 +138,10 @@ class ReconciliationScreen(QWidget):
         val = QLabel(value)
         val.setObjectName("metricValue")
         val.setFont(QFont("Segoe UI", 18, QFont.Weight.Bold))
-        val.setStyleSheet(Theme.text_style(color=accent, size=18, weight=700))
+        val.setStyleSheet(
+            Theme.text_style(color=accent, size=18, weight=700)
+            + " border: none; background: transparent; padding: 0; margin: 0;"
+        )
         layout.addWidget(val)
         layout.addStretch()
 
@@ -327,6 +337,7 @@ class ReconciliationDetailDialog(QDialog):
         
         # Close button
         btn_close = Theme.btn("Close", "secondary", height=36, min_width=100)
+        btn_close.setAccessibleName("Close reconciliation details")
         btn_close.clicked.connect(self.accept)
         layout.addWidget(btn_close, alignment=Qt.AlignmentFlag.AlignRight)
     

@@ -106,7 +106,7 @@ def metric_card_style(theme, accent, bg, radius=14):
     return f"""
         QFrame {{
             background: {gradient_v(theme.SURFACE, bg)};
-            border: 1px solid {accent}40;
+            border: 1px solid {accent}2E;
             border-top: 3px solid {accent};
             border-radius: {radius}px;
         }}

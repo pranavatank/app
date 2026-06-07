@@ -47,10 +47,14 @@ class AccountsScreen(QWidget):
 
         # View toggle button
         self.btn_toggle = Theme.btn("📋 List View", "secondary", height=38, min_width=120)
+        self.btn_toggle.setAccessibleName("Toggle account view")
+        self.btn_toggle.setAccessibleDescription("Switch between card and list view.")
         self.btn_toggle.clicked.connect(self._toggle_view)
         header.addWidget(self.btn_toggle)
 
         btn_add = Theme.btn("＋  Add Account", "primary", height=38, min_width=140)
+        btn_add.setAccessibleName("Add account")
+        btn_add.setAccessibleDescription("Open the dialog to add a new bank account.")
         btn_add.clicked.connect(self._on_add_account)
         header.addWidget(btn_add)
         layout.addLayout(header)
@@ -69,6 +73,9 @@ class AccountsScreen(QWidget):
 
         scroll.setWidget(self.container)
         layout.addWidget(scroll)
+
+        self.setAccessibleName("Accounts screen")
+        self.setAccessibleDescription("Manage bank accounts in card or list view.")
 
     def _toggle_view(self):
         self.view_mode = "list" if self.view_mode == "card" else "card"
@@ -176,6 +183,9 @@ class AccountsScreen(QWidget):
             }}
         """)
         item.setCursor(Qt.CursorShape.PointingHandCursor)
+        item.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        item.setAccessibleName(f"Account card for {account.get('bank_display_name', account['bank_name'])}")
+        item.setAccessibleDescription("Open detailed account information.")
         item.mousePressEvent = lambda e: self._on_card_clicked(account)
         item.setMinimumHeight(80)
 

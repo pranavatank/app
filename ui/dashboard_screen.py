@@ -82,20 +82,22 @@ class DashboardScreen(QMainWindow):
     def _build_sidebar(self) -> QWidget:
         sidebar = QWidget()
         sidebar.setObjectName("sidebar")
-        sidebar.setFixedWidth(210)
+        self.sidebar_expanded = False
+        sidebar.setFixedWidth(70)  # Collapsed width (icons only)
 
         layout = QVBoxLayout(sidebar)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        # Brand header — uses hero gradient from active theme
+        # Brand header
         brand = QWidget()
         brand.setStyleSheet(f"""
             background: {Theme.gradient(Theme.HERO_GRADIENT_START, Theme.HERO_GRADIENT_END, diagonal=True)};
         """)
         brand.setFixedHeight(64)
         brand_layout = QHBoxLayout(brand)
-        brand_layout.setContentsMargins(20, 0, 20, 0)
+        brand_layout.setContentsMargins(12, 0, 12, 0)
+        brand_layout.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
         brand_icon = QLabel()
         brand_icon.setFixedSize(44, 44)
@@ -108,66 +110,142 @@ class DashboardScreen(QMainWindow):
             brand_icon.setStyleSheet("color: white; font-size: 14px; font-weight: 700; background: transparent;")
         brand_layout.addWidget(brand_icon)
 
-        brand_text = QLabel("FinManager")
-        brand_text.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
-        brand_text.setStyleSheet("color: white; background: transparent;")
-        brand_layout.addWidget(brand_text)
+        self.brand_text = QLabel("FinManager")
+        self.brand_text.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
+        self.brand_text.setStyleSheet("color: white; background: transparent;")
+        self.brand_text.setVisible(False)  # Hidden when collapsed
+        brand_layout.addWidget(self.brand_text)
+        # Pin button to persist expanded sidebar
+        from PyQt6.QtWidgets import QToolButton
+        self._pin_btn = QToolButton()
+        self._pin_btn.setCheckable(True)
+        self._pin_btn.setAutoRaise(True)
+        self._pin_btn.setToolTip("Pin sidebar")
+        self._pin_btn.setFixedSize(28, 28)
+        self._pin_btn.clicked.connect(self._on_pin_toggled)
+        brand_layout.addWidget(self._pin_btn)
         brand_layout.addStretch()
 
         layout.addWidget(brand)
         layout.addSpacing(12)
 
-        # Nav label
-        nav_lbl = QLabel("  NAVIGATION")
-        nav_lbl.setStyleSheet(
+        # Nav label (hidden when collapsed)
+        self.nav_lbl = QLabel("  NAVIGATION")
+        self.nav_lbl.setStyleSheet(
             Theme.text_style(color=Theme.TEXT_MUTED, size=10, weight=700) +
             " letter-spacing: 1.5px; padding-left: 20px;"
         )
-        layout.addWidget(nav_lbl)
+        self.nav_lbl.setVisible(False)
+        layout.addWidget(self.nav_lbl)
         layout.addSpacing(6)
 
         # Nav buttons
-        self._nav_buttons: list[QPushButton] = []
+        self._nav_buttons: list[QWidget] = []  # Store container widgets
         for idx, (label, icon) in enumerate(_NAV_ITEMS):
-            btn = self._make_nav_btn(icon, label)
-            btn.clicked.connect(lambda checked, i=idx: self._navigate(i))
-            layout.addWidget(btn)
-            self._nav_buttons.append(btn)
+            btn_container = self._make_nav_btn(icon, label)
+            btn_container.mousePressEvent = lambda e, i=idx: self._navigate(i)
+            layout.addWidget(btn_container)
+            self._nav_buttons.append(btn_container)
 
         layout.addStretch()
 
-        ver_lbl = QLabel("v1.0.0  ·  Offline")
-        ver_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        ver_lbl.setStyleSheet(Theme.text_style(color=Theme.TEXT_MUTED, size=10) + " padding-bottom: 12px;")
-        layout.addWidget(ver_lbl)
+        self.ver_lbl = QLabel("v1.0")
+        self.ver_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.ver_lbl.setStyleSheet(Theme.text_style(color=Theme.TEXT_MUTED, size=10) + " padding-bottom: 12px;")
+        layout.addWidget(self.ver_lbl)
 
-        self._nav_buttons[0].setStyleSheet(self._nav_active_style())
+        self._set_nav_active(0)
+        
+        # Install event filter for hover
+        sidebar.installEventFilter(self)
+        # Apply pinned state from session
+        if session.is_sidebar_pinned():
+            self.sidebar_expanded = True
+            sidebar.setFixedWidth(210)
+            if hasattr(self, 'brand_text'):
+                self.brand_text.setVisible(True)
+            if hasattr(self, 'nav_lbl'):
+                self.nav_lbl.setVisible(True)
+            self._pin_btn.setChecked(True)
         return sidebar
 
-    def _make_nav_btn(self, icon: str, label: str) -> QPushButton:
-        btn = QPushButton(f"   {icon}   {label}")
-        btn.setFixedHeight(44)
-        btn.setFont(QFont("Segoe UI", 12))
-        btn.setCheckable(False)
-        btn.setStyleSheet(self._nav_normal_style())
-        btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        return btn
+    def _make_nav_btn(self, icon: str, label: str) -> QWidget:
+        """Create a nav button with separate icon and label components"""
+        container = QWidget()
+        container.setFixedHeight(44)
+        container.setCursor(Qt.CursorShape.PointingHandCursor)
+        container.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        container.setAccessibleName(f"Navigate to {label}")
+        container.setAccessibleDescription(f"Open the {label} page.")
+        container.setProperty("nav_item", True)
+        container.setProperty("active", False)
+
+        def _key_press(event, idx_label=label, idx_icon=icon):
+            if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space):
+                self._navigate(_NAV_ITEMS.index((idx_label, idx_icon)))
+                event.accept()
+                return
+            QWidget.keyPressEvent(container, event)
+
+        container.keyPressEvent = _key_press
+        
+        layout = QHBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        
+        # Icon label (always visible)
+        icon_label = QLabel(icon)
+        icon_label.setObjectName("nav_icon")
+        icon_label.setFixedWidth(70)
+        icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon_label.setFont(QFont("Segoe UI Emoji", 22))
+        icon_label.setStyleSheet(f"color: {Theme.SIDEBAR_TEXT}; background: transparent;")
+        layout.addWidget(icon_label)
+        
+        # Text label (hidden when collapsed)
+        text_label = QLabel(label)
+        text_label.setObjectName("nav_label")
+        text_label.setFont(QFont("Segoe UI", 12))
+        text_label.setStyleSheet(f"color: {Theme.SIDEBAR_TEXT}; background: transparent; padding-right: 12px;")
+        text_label.setVisible(False)
+        layout.addWidget(text_label)
+        layout.addStretch()
+        
+        container.setStyleSheet(self._nav_normal_style())
+        return container
+
+    def _set_nav_active(self, index: int):
+        """Set active state for navigation item"""
+        for i, container in enumerate(self._nav_buttons):
+            is_active = (i == index)
+            container.setProperty("active", is_active)
+            container.setStyleSheet(self._nav_active_style() if is_active else self._nav_normal_style())
+            
+            # Update colors
+            icon_label = container.findChild(QLabel, "nav_icon")
+            text_label = container.findChild(QLabel, "nav_label")
+            
+            if is_active:
+                if icon_label:
+                    icon_label.setStyleSheet(f"color: {Theme.SIDEBAR_ACTIVE_TEXT}; background: transparent;")
+                if text_label:
+                    text_label.setStyleSheet(f"color: {Theme.SIDEBAR_ACTIVE_TEXT}; background: transparent; padding-right: 12px; font-weight: 700;")
+            else:
+                if icon_label:
+                    icon_label.setStyleSheet(f"color: {Theme.SIDEBAR_TEXT}; background: transparent;")
+                if text_label:
+                    text_label.setStyleSheet(f"color: {Theme.SIDEBAR_TEXT}; background: transparent; padding-right: 12px;")
 
     @staticmethod
     def _nav_normal_style() -> str:
         return f"""
-            QPushButton {{
+            QWidget[nav_item="true"] {{
                 background: transparent;
-                color: {Theme.SIDEBAR_TEXT};
                 border: none;
                 border-radius: 0;
-                text-align: left;
-                padding-left: 8px;
-                font-size: 13px;
             }}
-            QPushButton:hover {{
+            QWidget[nav_item="true"]:hover {{
                 background-color: {Theme.SIDEBAR_HOVER};
-                color: {Theme.SIDEBAR_ACTIVE_TEXT};
             }}
         """
 
@@ -175,18 +253,13 @@ class DashboardScreen(QMainWindow):
     def _nav_active_style() -> str:
         """Active nav — fully theme-token driven, no hardcoded rgba."""
         return f"""
-            QPushButton {{
+            QWidget[nav_item="true"] {{
                 background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
                     stop:0 {Theme.SIDEBAR_ACTIVE},
                     stop:1 {Theme.SIDEBAR_HOVER});
-                color: {Theme.SIDEBAR_ACTIVE_TEXT};
                 border: none;
                 border-left: 3px solid {Theme.PRIMARY_LIGHT};
                 border-radius: 0;
-                text-align: left;
-                padding-left: 8px;
-                font-size: 13px;
-                font-weight: 700;
             }}
         """
 
@@ -235,6 +308,8 @@ class DashboardScreen(QMainWindow):
         self.person_combo = QComboBox()
         self.person_combo.setFixedWidth(155)
         self.person_combo.setFixedHeight(34)
+        self.person_combo.setAccessibleName("Dashboard person selector")
+        self.person_combo.setAccessibleDescription("Filter the dashboard by family member.")
         self.person_combo.currentIndexChanged.connect(self._on_person_changed)
         layout.addWidget(self.person_combo)
 
@@ -243,6 +318,8 @@ class DashboardScreen(QMainWindow):
         self.account_combo = QComboBox()
         self.account_combo.setFixedWidth(200)
         self.account_combo.setFixedHeight(34)
+        self.account_combo.setAccessibleName("Dashboard account selector")
+        self.account_combo.setAccessibleDescription("Switch the dashboard to a specific bank account.")
         self.account_combo.currentIndexChanged.connect(self._on_account_changed)
         layout.addWidget(self.account_combo)
 
@@ -251,11 +328,15 @@ class DashboardScreen(QMainWindow):
         self.fy_combo = QComboBox()
         self.fy_combo.setFixedWidth(95)
         self.fy_combo.setFixedHeight(34)
+        self.fy_combo.setAccessibleName("Dashboard financial year selector")
+        self.fy_combo.setAccessibleDescription("Choose the financial year shown in summaries.")
         self.fy_combo.currentTextChanged.connect(self._on_fy_changed)
         layout.addWidget(self.fy_combo)
 
         layout.addSpacing(8)
         btn_logout = Theme.btn("Logout", "secondary", height=34, min_width=102)
+        btn_logout.setAccessibleName("Logout")
+        btn_logout.setAccessibleDescription("Sign out of the application.")
         btn_logout.clicked.connect(self._on_logout)
         layout.addWidget(btn_logout)
 
@@ -288,7 +369,7 @@ class DashboardScreen(QMainWindow):
         self.fd_page = FixedDepositsScreen(self)
         self.stack.addWidget(self.fd_page)
 
-        from ui.statement_import_screen import StatementImportScreen
+        from ui.statement_import_screen_modern import StatementImportScreen
         self.import_page = StatementImportScreen(self)
         self.stack.addWidget(self.import_page)
 
@@ -551,8 +632,7 @@ class DashboardScreen(QMainWindow):
     def _navigate(self, index: int):
         if not self._confirm_unsaved_transactions("switch pages"):
             return
-        for i, btn in enumerate(self._nav_buttons):
-            btn.setStyleSheet(self._nav_active_style() if i == index else self._nav_normal_style())
+        self._set_nav_active(index)
         self.stack.setCurrentIndex(index)
         self.page_title_lbl.setText(_NAV_ITEMS[index][0])
         self._on_refresh_all()
@@ -623,3 +703,75 @@ class DashboardScreen(QMainWindow):
         if hasattr(self, "transactions_page") and hasattr(self.transactions_page, "_confirm_unsaved"):
             return self.transactions_page._confirm_unsaved(action_label)
         return True
+
+    def eventFilter(self, obj, event):
+        """Handle sidebar hover to expand/collapse"""
+        if obj.objectName() == "sidebar":
+            from PyQt6.QtCore import QEvent
+            if event.type() == QEvent.Type.Enter:
+                self._expand_sidebar()
+            elif event.type() == QEvent.Type.Leave:
+                self._collapse_sidebar()
+        return super().eventFilter(obj, event)
+
+    def _expand_sidebar(self):
+        """Expand sidebar to show labels"""
+        if self.sidebar_expanded:
+            return
+        self.sidebar_expanded = True
+        sidebar = self.findChild(QWidget, "sidebar")
+        if sidebar:
+            sidebar.setFixedWidth(210)
+        
+        # Show text elements
+        if hasattr(self, 'brand_text'):
+            self.brand_text.setVisible(True)
+        if hasattr(self, 'nav_lbl'):
+            self.nav_lbl.setVisible(True)
+        if hasattr(self, 'ver_lbl'):
+            self.ver_lbl.setText("v1.0.0  ·  Offline")
+        
+        # Show all nav labels
+        for container in self._nav_buttons:
+            text_label = container.findChild(QLabel, "nav_label")
+            if text_label:
+                text_label.setVisible(True)
+
+    def _collapse_sidebar(self):
+        """Collapse sidebar to show only icons"""
+        # Do not collapse if pinned by user
+        if session.is_sidebar_pinned():
+            return
+        if not self.sidebar_expanded:
+            return
+        self.sidebar_expanded = False
+        sidebar = self.findChild(QWidget, "sidebar")
+        if sidebar:
+            sidebar.setFixedWidth(70)
+        
+        # Hide text elements
+        if hasattr(self, 'brand_text'):
+            self.brand_text.setVisible(False)
+        if hasattr(self, 'nav_lbl'):
+            self.nav_lbl.setVisible(False)
+        if hasattr(self, 'ver_lbl'):
+            self.ver_lbl.setText("v1.0")
+        
+        # Hide all nav labels
+        for container in self._nav_buttons:
+            text_label = container.findChild(QLabel, "nav_label")
+            if text_label:
+                text_label.setVisible(False)
+
+    def _on_pin_toggled(self, checked: bool):
+        session.set_sidebar_pinned(bool(checked))
+        if checked:
+            self._expand_sidebar()
+        else:
+            # immediately collapse if mouse is not over sidebar
+            from PyQt6.QtCore import QEvent
+            sidebar = self.findChild(QWidget, "sidebar")
+            if sidebar:
+                pos = sidebar.mapFromGlobal(sidebar.cursor().pos())
+                if not sidebar.rect().contains(pos):
+                    self._collapse_sidebar()

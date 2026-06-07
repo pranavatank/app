@@ -77,10 +77,14 @@ class TaxScreen(QWidget):
         self.source_combo.addItems(["AIS/TIS Data", "App Actual Data"])
         self.source_combo.setFixedWidth(170)
         self.source_combo.setFixedHeight(40)
+        self.source_combo.setAccessibleName("Tax data source selector")
+        self.source_combo.setAccessibleDescription("Choose whether the tax estimate uses AIS/TIS data or app data.")
         self.source_combo.currentIndexChanged.connect(self._on_source_changed)
         header_layout.addWidget(self.source_combo)
 
         self.btn_calc = Theme.btn("⚡  Estimate Tax", "primary", height=40, min_width=158)
+        self.btn_calc.setAccessibleName("Estimate tax")
+        self.btn_calc.setAccessibleDescription("Calculate tax from the selected data source.")
         self.btn_calc.clicked.connect(self._on_calculate)
         header_layout.addWidget(self.btn_calc)
         layout.addWidget(header_card)
@@ -393,9 +397,15 @@ class TaxScreen(QWidget):
     def _result_lbl(self, bold=False) -> QLabel:
         l = QLabel("—")
         if bold:
-            l.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=14, weight=700))
+            l.setStyleSheet(
+                Theme.text_style(color=Theme.TEXT_PRIMARY, size=14, weight=700)
+                + " border: none; background: transparent; padding: 0; margin: 0;"
+            )
         else:
-            l.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=13, weight=400))
+            l.setStyleSheet(
+                Theme.text_style(color=Theme.TEXT_PRIMARY, size=13, weight=400)
+                + " border: none; background: transparent; padding: 0; margin: 0;"
+            )
         return l
 
     def _connect_signals(self):

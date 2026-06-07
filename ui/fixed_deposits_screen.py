@@ -66,26 +66,32 @@ class FixedDepositsScreen(QWidget):
         header.addStretch()
 
         btn_add = Theme.btn("＋  Add FD", "primary", height=38, min_width=110)
+        btn_add.setAccessibleName("Add fixed deposit")
         btn_add.clicked.connect(self._on_add_fd)
         header.addWidget(btn_add)
 
         btn_del = Theme.btn("🗑  Delete Selected", "danger", height=38, min_width=145)
+        btn_del.setAccessibleName("Delete selected fixed deposit")
         btn_del.clicked.connect(self._on_delete_fd)
         header.addWidget(btn_del)
 
         btn_link = Theme.btn("🔗  Link Txn", "success", height=38, min_width=108)
+        btn_link.setAccessibleName("Link transaction to fixed deposit")
         btn_link.clicked.connect(self._on_link_fd_transaction)
         header.addWidget(btn_link)
 
         btn_auto = Theme.btn("⚡  Auto-Link", "success", height=38, min_width=108)
+        btn_auto.setAccessibleName("Auto-link fixed deposit transactions")
         btn_auto.clicked.connect(self._on_auto_link)
         header.addWidget(btn_auto)
 
         btn_recalc = Theme.btn("📊  Recalculate Selected", "primary", height=38, min_width=165)
+        btn_recalc.setAccessibleName("Recalculate selected fixed deposits")
         btn_recalc.clicked.connect(self._on_recalculate_selected)
         header.addWidget(btn_recalc)
 
         btn_save = Theme.btn("💾  Save Changes", "success", height=38, min_width=125)
+        btn_save.setAccessibleName("Save fixed deposit changes")
         btn_save.clicked.connect(self._on_save_changes)
         header.addWidget(btn_save)
 
@@ -94,6 +100,8 @@ class FixedDepositsScreen(QWidget):
         # Table
         self.table_widget = ExcelTableWithStats(show_checkboxes=True)
         self.table = self.table_widget.table
+        self.table.setAccessibleName("Fixed deposits table")
+        self.table.setAccessibleDescription("Editable list of fixed deposit records and calculations.")
         self.table.editable = True  # Enable editing
         self.table.setHeaders([
             "Person", "Bank", "FD No", "Principal", "Rate %", "Tenure",

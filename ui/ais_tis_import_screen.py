@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QTableWidget, QTableWidgetItem, QHeaderView, QFileDialog,
     QMessageBox, QFrame, QComboBox, QTextEdit, QGroupBox,
-    QDialog, QLineEdit, QFormLayout, QCheckBox, QScrollArea,
+    QDialog, QScrollArea,
     QRadioButton, QButtonGroup, QSplitter
 )
 from PyQt6.QtCore import Qt
@@ -19,7 +19,7 @@ from ui.widgets.excel_table import ExcelTableWithStats
 from ui.theme import Theme
 from ui.date_utils import format_display_datetime
 from core.session import session
-from models.person import get_all_persons
+from models.person import get_all_persons, get_ais_tis_password, set_ais_tis_password
 from models.bank_account import get_accounts_for_person, add_account
 from models.ais_tis_import import (
     save_ais_tis_data, get_ais_tis_data,
@@ -35,6 +35,7 @@ from models.bank import (
     extract_bank_name_and_tan,
     get_or_create_bank,
 )
+from ui.dialogs.password_dialog import PasswordDialog
 
 
 class ImportTypeDialog(QDialog):
@@ -584,20 +585,36 @@ class AISTISImportScreen(QWidget):
         if not file_path:
             return
 
-        pwd_dlg = PasswordDialog(self)
-        if pwd_dlg.exec() != QDialog.DialogCode.Accepted:
-            return
-        password = pwd_dlg.get_password()
-        if not password:
-            QMessageBox.warning(self, "No Password", "Password is required to open the PDF.")
-            return
+        saved_password = get_ais_tis_password(person_id, session.aes_key)
+        password = None
+        save_password = False
 
-        try:
-            result = extract_pdf_text(file_path, password=password)
-        except PDFExtractionError as e:
-            QMessageBox.critical(self, "PDF Extraction Failed",
-                f"Could not extract text. Please check your password.\n\nError: {e}")
-            return
+        if self._is_pdf_encrypted(file_path):
+            password, save_password = self._prompt_ais_tis_password(saved_password)
+            if not password:
+                return
+
+        while True:
+            try:
+                result = extract_pdf_text(file_path, password=password)
+                break
+            except PDFExtractionError as e:
+                if self._is_password_error(e):
+                    QMessageBox.warning(
+                        self,
+                        "Invalid Password",
+                        "The password did not unlock the PDF. Please try again."
+                    )
+                    password, save_password = self._prompt_ais_tis_password(password or saved_password)
+                    if not password:
+                        return
+                    continue
+                QMessageBox.critical(self, "PDF Extraction Failed",
+                    f"Could not extract text.\n\nError: {e}")
+                return
+
+        if save_password and password:
+            set_ais_tis_password(person_id, password, session.aes_key)
 
         extracted_text = result.text
         try:
@@ -685,6 +702,47 @@ class AISTISImportScreen(QWidget):
                     return fallback_type, parsed_fb
 
         return selected_type, parsed
+
+    def _is_pdf_encrypted(self, file_path: str) -> bool:
+        try:
+            from pypdf import PdfReader
+            reader = PdfReader(file_path)
+            return bool(getattr(reader, "is_encrypted", False))
+        except Exception:
+            return False
+
+    def _is_password_error(self, error: Exception) -> bool:
+        msg = str(error).lower()
+        return "password" in msg or "encrypted" in msg
+
+    def _prompt_ais_tis_password(self, saved_password: str | None) -> tuple[str | None, bool]:
+        info_text = (
+            "This PDF is encrypted. Enter the AIS/TIS password to continue."
+        )
+        hint_text = (
+            "Common formats:\n"
+            "- PAN only (e.g. ABCDE1234F)\n"
+            "- PAN + DOB (e.g. ABCDE1234F01011990)\n"
+            "- DOB in DDMMYYYY format"
+        )
+        dlg = PasswordDialog(
+            self,
+            title="Enter AIS/TIS Password",
+            info_text=info_text,
+            hint_text=hint_text,
+            placeholder_text="PAN or PAN + DOB",
+            prefill_password=saved_password,
+            save_label="Save or update password for this person",
+            save_checked=True,
+            accept_label="Decrypt and Import",
+        )
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return None, False
+        password = dlg.get_password()
+        if not password:
+            QMessageBox.warning(self, "No Password", "Password is required to open the PDF.")
+            return None, False
+        return password, dlg.should_save()
 
     def _prompt_missing_reference_actions(self, person_id: int, details: list[dict]) -> None:
         source_rows = self._collect_source_rows(details)
@@ -939,85 +997,3 @@ class AISTISImportScreen(QWidget):
             self.breakdown_table.setRowHeight(idx, 30)
 
 
-class PasswordDialog(QDialog):
-    """Password entry dialog for encrypted PDF files. Uses Theme.btn() for all buttons."""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Enter PDF Password")
-        self.setModal(True)
-        self.setMinimumWidth(460)
-        self._build_ui()
-
-    def _build_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(28, 24, 28, 20)
-        layout.setSpacing(16)
-
-        # Info
-        info = QLabel(
-            "🔒  This file is encrypted. Please enter the password.\n\n"
-            "The password is typically your PAN number or PAN + Date of Birth."
-        )
-        info.setWordWrap(True)
-        info.setStyleSheet(f"""
-            color: {Theme.TEXT_PRIMARY};
-            background: {Theme.PRIMARY_LIGHT};
-            border: 1px solid {Theme.INFO};
-            border-radius: 8px;
-            padding: 12px;
-            font-size: 13px;
-        """)
-        layout.addWidget(info)
-
-        # Form
-        form = QFormLayout()
-        form.setSpacing(12)
-        self.password_input = QLineEdit()
-        self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self.password_input.setPlaceholderText("e.g. ABCDE1234F or ABCDE1234F01011990")
-        self.password_input.setFixedHeight(40)
-        self.password_input.returnPressed.connect(self.accept)
-        form.addRow("Password:", self.password_input)
-
-        self.show_check = QCheckBox("Show password")
-        self.show_check.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=13))
-        self.show_check.stateChanged.connect(self._toggle_visibility)
-        form.addRow("", self.show_check)
-        layout.addLayout(form)
-
-        # Hint card
-        hint = QLabel(
-            "💡  Common formats:\n"
-            "  •  PAN only  (e.g. ABCDE1234F)\n"
-            "  •  PAN + DOB  (e.g. ABCDE1234F01011990)\n"
-            "  •  DOB in DDMMYYYY format"
-        )
-        hint.setWordWrap(True)
-        hint.setStyleSheet(f"""
-            color: {Theme.TEXT_SECONDARY};
-            background: {Theme.SURFACE_ALT};
-            border: 1px solid {Theme.BORDER};
-            border-radius: 8px;
-            padding: 10px;
-            font-size: 12px;
-        """)
-        layout.addWidget(hint)
-
-        # Buttons — Theme.btn() for guaranteed visibility in QDialog
-        btn_row = QHBoxLayout()
-        btn_row.addStretch()
-        btn_cancel = Theme.btn("Cancel", "secondary", height=38, min_width=100)
-        btn_cancel.clicked.connect(self.reject)
-        btn_row.addWidget(btn_cancel)
-        btn_ok = Theme.btn("🔓  Decrypt & Import", "primary", height=38, min_width=160)
-        btn_ok.clicked.connect(self.accept)
-        btn_row.addWidget(btn_ok)
-        layout.addLayout(btn_row)
-
-    def _toggle_visibility(self, state):
-        mode = QLineEdit.EchoMode.Normal if state else QLineEdit.EchoMode.Password
-        self.password_input.setEchoMode(mode)
-
-    def get_password(self) -> str:
-        return self.password_input.text().strip()

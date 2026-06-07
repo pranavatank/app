@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 
-from core.auth import verify_login, is_totp_enabled
+from core.auth import verify_login, is_totp_enabled, get_privacy_mode
 from core.session import session
 from config import APP_NAME
 from ui.logo import logo_pixmap, set_window_icon
@@ -134,11 +134,15 @@ class LoginScreen(QWidget):
 
         form_layout.addWidget(self._lbl("🔑  Master Password"))
         self.pwd_input = self._field("Enter your master password", password=True)
+        self.pwd_input.setAccessibleName("Master password")
+        self.pwd_input.setAccessibleDescription("Enter the master password used to unlock the app.")
         self.pwd_input.returnPressed.connect(self._on_login)
         form_layout.addWidget(self.pwd_input)
 
         self.lbl_otp = self._lbl("🔐  One-Time Password")
         self.otp_input = self._field("6-digit code from authenticator")
+        self.otp_input.setAccessibleName("One-time password")
+        self.otp_input.setAccessibleDescription("Enter the 6-digit code from your authenticator app.")
         self.otp_input.setMaxLength(6)
         self.otp_input.returnPressed.connect(self._on_login)
         if self._totp_required:
@@ -162,8 +166,14 @@ class LoginScreen(QWidget):
         self.btn_login = Theme.btn("🔓  Unlock", "hero", height=52, min_width=280)
         self.btn_login.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.btn_login.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_login.setAccessibleName("Unlock account")
+        self.btn_login.setAccessibleDescription("Unlock the application after entering your password.")
         self.btn_login.clicked.connect(self._on_login)
         layout.addWidget(self.btn_login)
+
+        self.setTabOrder(self.pwd_input, self.otp_input if self._totp_required else self.btn_login)
+        if self._totp_required:
+            self.setTabOrder(self.otp_input, self.btn_login)
 
         note = QLabel("🔒  Device-bound encryption")
         note.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -214,9 +224,34 @@ class LoginScreen(QWidget):
         success, message, aes_key = verify_login(pwd, otp)
         if success:
             session.login(aes_key)
+            session.set_privacy_mode(get_privacy_mode())
             from ui.dashboard_screen import DashboardScreen
             self.dashboard = DashboardScreen()
             self.dashboard.showMaximized()
+            # Start periodic backups (best-effort) after successful login
+            try:
+                from core.backup_manager import schedule_periodic_backups
+                schedule_periodic_backups(interval_hours=24.0)
+            except Exception:
+                pass
+
+            # Show onboarding once if not shown before
+            try:
+                from config import DATA_DIR
+                import os
+                from ui.onboarding import OnboardingDialog
+                flag = os.path.join(DATA_DIR, "onboarding_shown")
+                if not os.path.exists(flag):
+                    dlg = OnboardingDialog(self)
+                    dlg.exec()
+                    try:
+                        os.makedirs(DATA_DIR, exist_ok=True)
+                        with open(flag, "w") as fh:
+                            fh.write("1")
+                    except Exception:
+                        pass
+            except Exception:
+                pass
             self.close()
         else:
             self._show_error(message)

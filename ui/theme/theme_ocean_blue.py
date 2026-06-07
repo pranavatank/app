@@ -7,6 +7,7 @@ warm card surfaces. Inspired by Linear, Vercel dashboard, and Stripe.
 NAME         = "Ocean Blue"
 DESCRIPTION  = "Modern professional light theme — blue primary, clean white cards"
 IS_DARK      = False
+EMOJI        = "🌊"
 
 # ── Primary — vivid electric blue ─────────────────────────────────────────────
 PRIMARY                   = "#2563EB"
@@ -66,14 +67,14 @@ ORANGE       = "#EA580C";  ORANGE_LIGHT  = "#FFF7ED"
 PINK         = "#DB2777";  PINK_LIGHT    = "#FDF2F8"
 
 # ── Surfaces — cool-white with blue tint ──────────────────────────────────────
-BG                        = "#F5F8FF"   # soft blue-tinted page bg
-SURFACE                   = "#FFFFFF"   # pure white cards
-SURFACE_ALT               = "#F1F5FD"   # alt rows / tinted hover
+BG                        = "#F5F8FF"
+SURFACE                   = "#FFFFFF"
+SURFACE_ALT               = "#F1F5FD"
 SURFACE_TINT_START        = "#FFFFFF"
 SURFACE_TINT_END          = "#F1F5FD"
 
 # ── Sidebar — deep navy ───────────────────────────────────────────────────────
-SIDEBAR_BG                = "#0F172A"   # near-black navy
+SIDEBAR_BG                = "#0F172A"
 SIDEBAR_TEXT              = "#64748B"
 SIDEBAR_ACTIVE            = "#2563EB"
 SIDEBAR_ACTIVE_TEXT       = "#FFFFFF"
@@ -84,11 +85,11 @@ TOPBAR_BG                 = "#FFFFFF"
 TOPBAR_BORDER             = "#E2E8F0"
 
 # ── Text ──────────────────────────────────────────────────────────────────────
-TEXT_PRIMARY              = "#0F172A"   # near-black slate
-TEXT_SECONDARY            = "#475569"   # medium slate
-TEXT_MUTED                = "#94A3B8"   # light slate
+TEXT_PRIMARY              = "#0F172A"
+TEXT_SECONDARY            = "#475569"
+TEXT_MUTED                = "#94A3B8"
 TEXT_ON_PRIMARY           = "#FFFFFF"
-TEXT_HEADING              = "#020617"   # deepest heading
+TEXT_HEADING              = "#020617"
 
 # ── Borders ───────────────────────────────────────────────────────────────────
 BORDER                    = "#E2E8F0"

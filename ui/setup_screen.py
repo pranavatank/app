@@ -74,6 +74,8 @@ class SetupScreen(QWidget):
         cl.addWidget(self._lbl("Master Password"))
         cl.addSpacing(4)
         self.pwd_input = self._field("Enter master password", password=True)
+        self.pwd_input.setAccessibleName("Master password")
+        self.pwd_input.setAccessibleDescription("Create a master password for the new account.")
         self.pwd_input.textChanged.connect(self._update_strength)
         cl.addWidget(self.pwd_input)
         cl.addSpacing(5)
@@ -92,11 +94,15 @@ class SetupScreen(QWidget):
         cl.addWidget(self._lbl("Confirm Password"))
         cl.addSpacing(4)
         self.confirm_input = self._field("Re-enter master password", password=True)
+        self.confirm_input.setAccessibleName("Confirm master password")
+        self.confirm_input.setAccessibleDescription("Re-enter the master password to confirm it.")
         cl.addWidget(self.confirm_input)
         cl.addSpacing(16)
 
         # TOTP
         self.totp_check = QCheckBox("Enable two-factor authentication (TOTP)")
+        self.totp_check.setAccessibleName("Enable two-factor authentication")
+        self.totp_check.setAccessibleDescription("Turn on time-based one-time passwords for login.")
         self.totp_check.setStyleSheet(Theme.muted_style(12))
         cl.addWidget(self.totp_check)
         cl.addSpacing(24)
@@ -104,9 +110,15 @@ class SetupScreen(QWidget):
         # Create button — inline style for guaranteed visibility
         self.btn_setup = Theme.btn("✅  Create Account", "primary", height=46, min_width=320)
         self.btn_setup.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
+        self.btn_setup.setAccessibleName("Create account")
+        self.btn_setup.setAccessibleDescription("Create the encrypted vault using the entered password.")
         self.btn_setup.clicked.connect(self._on_setup)
         cl.addWidget(self.btn_setup)
         cl.addSpacing(12)
+
+        self.setTabOrder(self.pwd_input, self.confirm_input)
+        self.setTabOrder(self.confirm_input, self.totp_check)
+        self.setTabOrder(self.totp_check, self.btn_setup)
 
         note = QLabel("⚠  Your password cannot be recovered. Keep it safe.")
         note.setAlignment(Qt.AlignmentFlag.AlignCenter)

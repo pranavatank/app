@@ -43,6 +43,7 @@ class AccountManagementDialog(QDialog):
         header.addWidget(title)
         header.addStretch()
         btn_add = _btn("＋  Add Account", "primary")
+        btn_add.setAccessibleName("Add account")
         btn_add.clicked.connect(self._on_add)
         header.addWidget(btn_add)
         layout.addLayout(header)
@@ -60,17 +61,22 @@ class AccountManagementDialog(QDialog):
         self.table.setAlternatingRowColors(True)
         self.table.setShowGrid(False)
         self.table.verticalHeader().setVisible(False)
+        self.table.setAccessibleName("Bank accounts table")
+        self.table.setAccessibleDescription("Table of bank accounts with person, bank, account type, and balances.")
         self.table.doubleClicked.connect(self._on_edit)
         layout.addWidget(self.table)
 
         actions = QHBoxLayout(); actions.addStretch()
         btn_edit = _btn("✏  Edit", "edit")
+        btn_edit.setAccessibleName("Edit account")
         btn_edit.clicked.connect(self._on_edit)
         actions.addWidget(btn_edit)
         btn_del = _btn("🗑  Delete", "danger")
+        btn_del.setAccessibleName("Delete account")
         btn_del.clicked.connect(self._on_delete)
         actions.addWidget(btn_del)
         btn_close = _btn("Close", "secondary")
+        btn_close.setAccessibleName("Close account manager")
         btn_close.clicked.connect(self.accept)
         actions.addWidget(btn_close)
         layout.addLayout(actions)
@@ -173,6 +179,7 @@ class AccountDialog(QDialog):
         layout.setContentsMargins(24, 20, 24, 18)
 
         tabs = QTabWidget()
+        tabs.setAccessibleName("Account details tabs")
         tabs.addTab(self._scroll_tab(self._basic_tab()),   "📋 Basic Info")
         tabs.addTab(self._scroll_tab(self._bank_tab()),    "🏦 Bank Details")
         tabs.addTab(self._scroll_tab(self._contact_tab()), "📞 Contact")
@@ -185,20 +192,30 @@ class AccountDialog(QDialog):
 
         btns = QHBoxLayout(); btns.addStretch()
         btn_cancel = _btn("Close" if self.view_only else "Cancel", "secondary")
+        btn_cancel.setAccessibleName("Close account dialog" if self.view_only else "Cancel account dialog")
         btn_cancel.clicked.connect(self.reject)
         btns.addWidget(btn_cancel)
         if self.view_only:
             btn_delete = _btn("Delete", "danger")
+            btn_delete.setAccessibleName("Delete account")
             btn_delete.clicked.connect(self._on_delete_from_view)
             btns.addWidget(btn_delete)
             btn_edit = _btn("Edit", "edit")
+            btn_edit.setAccessibleName("Edit account")
             btn_edit.clicked.connect(self._on_edit_from_view)
             btns.addWidget(btn_edit)
         else:
             btn_save = _btn("Save Account", "primary")
+            btn_save.setAccessibleName("Save account")
             btn_save.clicked.connect(self._on_save)
             btns.addWidget(btn_save)
         layout.addLayout(btns)
+
+        if self.view_only:
+            self.setTabOrder(btn_cancel, btn_delete)
+            self.setTabOrder(btn_delete, btn_edit)
+        else:
+            self.setTabOrder(btn_cancel, btn_save)
 
     def _on_edit_from_view(self):
         self.action = "edit"
@@ -268,6 +285,7 @@ class AccountDialog(QDialog):
 
         self.person_combo = QComboBox()
         self.person_combo.setFixedHeight(40)
+        self.person_combo.setAccessibleName("Person selector")
         for p in self.persons:
             self.person_combo.addItem(p["full_name"], userData=p["person_id"])
         f.addRow("Person *:", self.person_combo)
@@ -276,13 +294,16 @@ class AccountDialog(QDialog):
         self.bank_combo.setEditable(True)
         self.bank_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         self.bank_combo.setFixedHeight(40)
+        self.bank_combo.setAccessibleName("Bank selector")
         self._populate_bank_combo()
         f.addRow("Bank Name *:", self.bank_combo)
 
         self.holder_name_input = self._field("Name as per bank records")
+        self.holder_name_input.setAccessibleName("Account holder name")
         f.addRow("Account Holder Name:", self.holder_name_input)
 
         self.tan_input = self._field("e.g. BLRJ07125G")
+        self.tan_input.setAccessibleName("TAN code")
         self.tan_input.setMaxLength(10)
         self.tan_input.textChanged.connect(
             lambda txt: self.tan_input.setText((txt or "").upper()) if (txt or "") != (txt or "").upper() else None
@@ -290,18 +311,23 @@ class AccountDialog(QDialog):
         f.addRow("TAN No.:", self.tan_input)
 
         self.type_combo = self._combo(ACCOUNT_TYPES)
+        self.type_combo.setAccessibleName("Account type")
         f.addRow("Account Type *:", self.type_combo)
 
         self.account_no_input = self._field("e.g. XXXX1234")
+        self.account_no_input.setAccessibleName("Masked account number")
         f.addRow("Account No. (masked):", self.account_no_input)
 
         self.account_no_full_input = self._field("Optional full account number")
+        self.account_no_full_input.setAccessibleName("Full account number")
         f.addRow("Account No. (full):", self.account_no_full_input)
 
         self.customer_id_input = self._field()
+        self.customer_id_input.setAccessibleName("Customer ID")
         f.addRow("Customer ID:", self.customer_id_input)
 
         self.ckyc_input = self._field()
+        self.ckyc_input.setAccessibleName("CKYC ID")
         f.addRow("CKYC ID:", self.ckyc_input)
 
         self.opening_date = QDateEdit()
@@ -309,30 +335,51 @@ class AccountDialog(QDialog):
         self.opening_date.setDate(QDate.currentDate())
         self.opening_date.setDisplayFormat("dd/MM/yy")
         self.opening_date.setFixedHeight(40)
+        self.opening_date.setAccessibleName("Opening date")
         f.addRow("Opening Date:", self.opening_date)
 
         self.status_combo = self._combo(["Active","Inactive","Closed"])
+        self.status_combo.setAccessibleName("Account status")
         f.addRow("Status:", self.status_combo)
 
         self.currency_combo = self._combo(["INR", "USD", "EUR", "GBP"])
+        self.currency_combo.setAccessibleName("Currency")
         f.addRow("Currency:", self.currency_combo)
 
         self.opening_balance = self._spin()
+        self.opening_balance.setAccessibleName("Opening balance")
         f.addRow("Opening Balance:", self.opening_balance)
 
         self.current_balance_input = self._field()
         self.current_balance_input.setReadOnly(True)
+        self.current_balance_input.setAccessibleName("Current balance")
         f.addRow("Current Balance:", self.current_balance_input)
 
         self.interest_rate = QDoubleSpinBox()
         self.interest_rate.setRange(0, 100); self.interest_rate.setDecimals(2)
         self.interest_rate.setSuffix(" %"); self.interest_rate.setValue(3.5)
         self.interest_rate.setFixedHeight(40)
+        self.interest_rate.setAccessibleName("Interest rate")
         f.addRow("Interest Rate:", self.interest_rate)
 
         self.created_at_input = self._field()
         self.created_at_input.setReadOnly(True)
         f.addRow("Created At:", self.created_at_input)
+
+        self.setTabOrder(self.person_combo, self.bank_combo)
+        self.setTabOrder(self.bank_combo, self.holder_name_input)
+        self.setTabOrder(self.holder_name_input, self.tan_input)
+        self.setTabOrder(self.tan_input, self.type_combo)
+        self.setTabOrder(self.type_combo, self.account_no_input)
+        self.setTabOrder(self.account_no_input, self.account_no_full_input)
+        self.setTabOrder(self.account_no_full_input, self.customer_id_input)
+        self.setTabOrder(self.customer_id_input, self.ckyc_input)
+        self.setTabOrder(self.ckyc_input, self.opening_date)
+        self.setTabOrder(self.opening_date, self.status_combo)
+        self.setTabOrder(self.status_combo, self.currency_combo)
+        self.setTabOrder(self.currency_combo, self.opening_balance)
+        self.setTabOrder(self.opening_balance, self.current_balance_input)
+        self.setTabOrder(self.current_balance_input, self.interest_rate)
 
         return w
 
@@ -340,19 +387,27 @@ class AccountDialog(QDialog):
         w, f = self._form_widget()
 
         self.ifsc_input = self._field("e.g. HDFC0001234")
+        self.ifsc_input.setAccessibleName("IFSC code")
         self.ifsc_input.setMaxLength(11)
         f.addRow("IFSC Code:", self.ifsc_input)
 
         self.micr_input = self._field("e.g. 360240001")
+        self.micr_input.setAccessibleName("MICR code")
         self.micr_input.setMaxLength(9)
         f.addRow("MICR Code:", self.micr_input)
 
         self.branch_name_input = self._field()
+        self.branch_name_input.setAccessibleName("Branch name")
         f.addRow("Branch Name:", self.branch_name_input)
 
         self.branch_address_input = QTextEdit()
         self.branch_address_input.setMaximumHeight(80)
+        self.branch_address_input.setAccessibleName("Branch address")
         f.addRow("Branch Address:", self.branch_address_input)
+
+        self.setTabOrder(self.ifsc_input, self.micr_input)
+        self.setTabOrder(self.micr_input, self.branch_name_input)
+        self.setTabOrder(self.branch_name_input, self.branch_address_input)
 
         return w
 
@@ -360,20 +415,30 @@ class AccountDialog(QDialog):
         w, f = self._form_widget()
 
         self.email_input = self._field("email@example.com")
+        self.email_input.setAccessibleName("Email address")
         f.addRow("Email ID:", self.email_input)
 
         self.phone_input = self._field("e.g. 9876543210")
+        self.phone_input.setAccessibleName("Phone number")
         f.addRow("Phone No:", self.phone_input)
 
         self.comm_address_input = QTextEdit()
         self.comm_address_input.setMaximumHeight(80)
+        self.comm_address_input.setAccessibleName("Communication address")
         f.addRow("Communication Address:", self.comm_address_input)
 
         self.nomination_combo = self._combo(["","Registered","Not Registered"])
+        self.nomination_combo.setAccessibleName("Nomination status")
         f.addRow("Nomination Status:", self.nomination_combo)
 
         self.nominee_input = self._field()
+        self.nominee_input.setAccessibleName("Nominee name")
         f.addRow("Nominee Name:", self.nominee_input)
+
+        self.setTabOrder(self.email_input, self.phone_input)
+        self.setTabOrder(self.phone_input, self.comm_address_input)
+        self.setTabOrder(self.comm_address_input, self.nomination_combo)
+        self.setTabOrder(self.nomination_combo, self.nominee_input)
 
         return w
 
@@ -381,11 +446,13 @@ class AccountDialog(QDialog):
         w, f = self._form_widget()
 
         self.debit_card_check = QCheckBox("Debit Card Enabled")
+        self.debit_card_check.setAccessibleName("Debit card enabled")
         self.debit_card_check.toggled.connect(self._on_card_toggled)
         f.addRow("", self.debit_card_check)
 
         self.debit_charges = self._spin()
         self.debit_charges.setEnabled(False)
+        self.debit_charges.setAccessibleName("Debit card annual charges")
         f.addRow("Annual Charges:", self.debit_charges)
 
         self.debit_effective = QDateEdit()
@@ -394,7 +461,11 @@ class AccountDialog(QDialog):
         self.debit_effective.setDisplayFormat("dd/MM/yy")
         self.debit_effective.setFixedHeight(40)
         self.debit_effective.setEnabled(False)
+        self.debit_effective.setAccessibleName("Debit card effective date")
         f.addRow("Effective From:", self.debit_effective)
+
+        self.setTabOrder(self.debit_card_check, self.debit_charges)
+        self.setTabOrder(self.debit_charges, self.debit_effective)
 
         return w
 

@@ -82,10 +82,10 @@ def verify_login(password: str, totp_code: str = None) -> tuple[bool, str, bytes
     if record["device_id_hash"] != get_device_fingerprint():
         return False, "Unauthorised device.", None
 
-    # ── Password check (MUST NOT be commented out) ────────────────────────────
+    # ── Password check (must be active)
     salt = base64.b64decode(record["password_salt"].encode())
-    # if not verify_password(password, salt, record["password_hash"]):
-    #     return False, "Incorrect password.", None
+    if not verify_password(password, salt, record["password_hash"]):
+        return False, "Incorrect password.", None
 
     # ── TOTP check ────────────────────────────────────────────────────────────
     if record["totp_secret"]:

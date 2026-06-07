@@ -287,6 +287,52 @@ def add_transaction(account_id: int, person_id: int, transaction_date: str,
     return txn_id
 
 
+def add_transactions_batch(account_id: int, person_id: int, transactions: list[dict], source: str = "Statement Import") -> list[int]:
+    """Insert multiple transactions in a single DB transaction. Returns list of new ids.
+
+    Each item in `transactions` should be a dict with keys: transaction_date, transaction_type, amount,
+    category, mode, description, reference_no, balance_after (optional).
+    """
+    conn = get_connection()
+    ids = []
+    try:
+        for txn in transactions:
+            txn_type = normalize_transaction_type(txn.get("transaction_type"))
+            cur = conn.execute(
+                """
+                INSERT INTO Transactions
+                    (account_id, person_id, transaction_date, transaction_type,
+                                 category, mode, amount, reference_no, description, balance_after, source)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    account_id, person_id, txn.get("transaction_date"), txn_type,
+                    txn.get("category"), txn.get("mode"), txn.get("amount"), txn.get("reference_no"),
+                    txn.get("description"), txn.get("balance_after"), source
+                )
+            )
+            ids.append(cur.lastrowid)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    return ids
+
+
+def delete_transactions_by_ids(ids: list[int]) -> None:
+    if not ids:
+        return
+    conn = get_connection()
+    try:
+        q = f"DELETE FROM Transactions WHERE transaction_id IN ({','.join(['?']*len(ids))})"
+        conn.execute(q, ids)
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def get_transactions(account_id: int = None, person_id: int = None,
                      financial_year: str = None,
                      transaction_type: str = None) -> list[dict]:
@@ -372,16 +418,19 @@ def delete_transaction(transaction_id: int) -> None:
 
 # ── Summary Queries ───────────────────────────────────────────────────────────
 
-def get_income_total(person_id: int = None, financial_year: str = None, category: str = None) -> float:
-    return _sum_by_type("Income", person_id, financial_year, category)
+def get_income_total(person_id: int = None, financial_year: str = None,
+                     category: str = None, account_id: int = None) -> float:
+    return _sum_by_type("Income", person_id, financial_year, category, account_id)
 
 
-def get_expense_total(person_id: int = None, financial_year: str = None, category: str = None) -> float:
-    return _sum_by_type("Expense", person_id, financial_year, category)
+def get_expense_total(person_id: int = None, financial_year: str = None,
+                      category: str = None, account_id: int = None) -> float:
+    return _sum_by_type("Expense", person_id, financial_year, category, account_id)
 
 
 def _sum_by_type(txn_type: str, person_id: int = None,
-                 financial_year: str = None, category: str = None) -> float:
+                 financial_year: str = None, category: str = None,
+                 account_id: int = None) -> float:
     query  = (
         "SELECT SUM(amount) AS total FROM Transactions "
         "WHERE transaction_type = ? AND COALESCE(is_internal_transfer, 0) = 0"
@@ -391,6 +440,10 @@ def _sum_by_type(txn_type: str, person_id: int = None,
     if person_id:
         query += " AND person_id = ?"
         params.append(person_id)
+
+    if account_id:
+        query += " AND account_id = ?"
+        params.append(account_id)
 
     if financial_year:
         start, end = fy_date_range(financial_year)
@@ -408,7 +461,8 @@ def _sum_by_type(txn_type: str, person_id: int = None,
 
 
 def get_category_summary(person_id: int = None,
-                         financial_year: str = None) -> list[dict]:
+                         financial_year: str = None,
+                         account_id: int = None) -> list[dict]:
     """Return per-category totals for the Expense type."""
     query  = """
         SELECT category, SUM(amount) AS total
@@ -421,6 +475,10 @@ def get_category_summary(person_id: int = None,
     if person_id:
         query += " AND person_id = ?"
         params.append(person_id)
+
+    if account_id:
+        query += " AND account_id = ?"
+        params.append(account_id)
 
     if financial_year:
         start, end = fy_date_range(financial_year)

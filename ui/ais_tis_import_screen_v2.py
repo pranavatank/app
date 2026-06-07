@@ -15,7 +15,7 @@ from PyQt6.QtGui import QFont
 
 from ui.theme import Theme
 from core.session import session
-from models.person import get_person
+from models.person import get_person, get_ais_tis_password, set_ais_tis_password
 from models.form26as import save_form26as_import, get_form26as_import, get_form26as_records
 from models.ais_tis_import import (
     save_ais_tis_data, get_ais_tis_data, save_ais_tis_records,
@@ -30,7 +30,7 @@ from engines.ais_tis_parser import (
     parse_ais_json, parse_tis_json, parse_ais_pdf_text, parse_tis_pdf_text,
 )
 from engines.pdf_extractor import extract_pdf_text, PDFExtractionError
-from ui.ais_tis_import_screen import PasswordDialog
+from ui.dialogs.password_dialog import PasswordDialog
 import json
 
 
@@ -121,6 +121,7 @@ class AISTISImportScreenV2(QWidget):
         # Import button
         btn_layout = QHBoxLayout()
         btn_import = Theme.btn("📤 Import Form 26AS PDF", "primary", height=36, min_width=200)
+        btn_import.setAccessibleName("Import Form 26AS PDF")
         btn_import.clicked.connect(self._import_26as)
         btn_layout.addWidget(btn_import)
         btn_layout.addStretch()
@@ -136,6 +137,7 @@ class AISTISImportScreenV2(QWidget):
         table_layout.setContentsMargins(0, 0, 0, 0)
         
         self.table_26as = QTableWidget()
+        self.table_26as.setAccessibleName("Form 26AS records table")
         self.table_26as.setColumnCount(7)
         self.table_26as.setHorizontalHeaderLabels([
             "Deductor Name", "TAN", "Section", "Date", "Amount Paid", "TDS Deducted", "Status"
@@ -158,9 +160,11 @@ class AISTISImportScreenV2(QWidget):
         # Import buttons
         btn_layout = QHBoxLayout()
         btn_import_pdf = Theme.btn("📄 Import AIS PDF", "primary", height=36, min_width=170)
+        btn_import_pdf.setAccessibleName("Import AIS PDF")
         btn_import_pdf.clicked.connect(self._import_ais_pdf)
         btn_layout.addWidget(btn_import_pdf)
         btn_import_json = Theme.btn("📤 Import AIS JSON", "success", height=36, min_width=180)
+        btn_import_json.setAccessibleName("Import AIS JSON")
         btn_import_json.clicked.connect(self._import_ais)
         btn_layout.addWidget(btn_import_json)
         btn_layout.addStretch()
@@ -176,6 +180,7 @@ class AISTISImportScreenV2(QWidget):
         table_layout.setContentsMargins(0, 0, 0, 0)
 
         self.table_ais = QTableWidget()
+        self.table_ais.setAccessibleName("AIS records table")
         self.table_ais.setColumnCount(6)
         self.table_ais.setHorizontalHeaderLabels([
             "Source", "TAN", "Type", "Amount", "TDS", "Quarter"
@@ -198,9 +203,11 @@ class AISTISImportScreenV2(QWidget):
         # Import buttons
         btn_layout = QHBoxLayout()
         btn_import_pdf = Theme.btn("📄 Import TIS PDF", "primary", height=36, min_width=170)
+        btn_import_pdf.setAccessibleName("Import TIS PDF")
         btn_import_pdf.clicked.connect(self._import_tis_pdf)
         btn_layout.addWidget(btn_import_pdf)
         btn_import_json = Theme.btn("📤 Import TIS JSON", "info", height=36, min_width=180)
+        btn_import_json.setAccessibleName("Import TIS JSON")
         btn_import_json.clicked.connect(self._import_tis)
         btn_layout.addWidget(btn_import_json)
         btn_layout.addStretch()
@@ -216,6 +223,7 @@ class AISTISImportScreenV2(QWidget):
         table_layout.setContentsMargins(0, 0, 0, 0)
         
         self.table_tis = QTableWidget()
+        self.table_tis.setAccessibleName("TIS records table")
         self.table_tis.setColumnCount(6)
         self.table_tis.setHorizontalHeaderLabels([
             "Source", "TAN", "Type", "Amount", "TDS", "Quarter"
@@ -423,6 +431,47 @@ class AISTISImportScreenV2(QWidget):
     def _import_tis_pdf(self):
         self._import_ais_tis_pdf("TIS")
 
+    def _is_pdf_encrypted(self, file_path: str) -> bool:
+        try:
+            from pypdf import PdfReader
+            reader = PdfReader(file_path)
+            return bool(getattr(reader, "is_encrypted", False))
+        except Exception:
+            return False
+
+    def _is_password_error(self, error: Exception) -> bool:
+        msg = str(error).lower()
+        return "password" in msg or "encrypted" in msg
+
+    def _prompt_ais_tis_password(self, saved_password: str | None) -> tuple[str | None, bool]:
+        info_text = (
+            "This PDF is encrypted. Enter the AIS/TIS password to continue."
+        )
+        hint_text = (
+            "Common formats:\n"
+            "- PAN only (e.g. ABCDE1234F)\n"
+            "- PAN + DOB (e.g. ABCDE1234F01011990)\n"
+            "- DOB in DDMMYYYY format"
+        )
+        dlg = PasswordDialog(
+            self,
+            title="Enter AIS/TIS Password",
+            info_text=info_text,
+            hint_text=hint_text,
+            placeholder_text="PAN or PAN + DOB",
+            prefill_password=saved_password,
+            save_label="Save or update password for this person",
+            save_checked=True,
+            accept_label="Decrypt and Import",
+        )
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return None, False
+        password = dlg.get_password()
+        if not password:
+            QMessageBox.warning(self, "No Password", "Password is required to open the PDF.")
+            return None, False
+        return password, dlg.should_save()
+
     def _import_ais_tis_pdf(self, source_type: str):
         pid = session.selected_person_id
         fy = session.selected_fy
@@ -438,21 +487,37 @@ class AISTISImportScreenV2(QWidget):
         if not file_path:
             return
 
-        pwd_dlg = PasswordDialog(self)
-        if pwd_dlg.exec() != QDialog.DialogCode.Accepted:
-            return
-        password = pwd_dlg.get_password()
-        if not password:
-            QMessageBox.warning(self, "No Password", "Password is required to open the PDF.")
-            return
+        saved_password = get_ais_tis_password(pid, session.aes_key)
+        password = None
+        save_password = False
 
-        try:
-            result = extract_pdf_text(file_path, password=password)
-        except PDFExtractionError as e:
-            QMessageBox.critical(
-                self, "PDF Extraction Failed",
-                f"Could not extract text. Please check your password.\n\nError: {e}")
-            return
+        if self._is_pdf_encrypted(file_path):
+            password, save_password = self._prompt_ais_tis_password(saved_password)
+            if not password:
+                return
+
+        while True:
+            try:
+                result = extract_pdf_text(file_path, password=password)
+                break
+            except PDFExtractionError as e:
+                if self._is_password_error(e):
+                    QMessageBox.warning(
+                        self,
+                        "Invalid Password",
+                        "The password did not unlock the PDF. Please try again."
+                    )
+                    password, save_password = self._prompt_ais_tis_password(password or saved_password)
+                    if not password:
+                        return
+                    continue
+                QMessageBox.critical(
+                    self, "PDF Extraction Failed",
+                    f"Could not extract text.\n\nError: {e}")
+                return
+
+        if save_password and password:
+            set_ais_tis_password(pid, password, session.aes_key)
 
         pdf_text = result.text
         self.debug_text.setPlainText(pdf_text[:5000])

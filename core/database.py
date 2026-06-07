@@ -162,6 +162,7 @@ def _migrate_bank_account_schema_if_needed(cur: sqlite3.Cursor) -> None:
         "account_holder_name": "TEXT",
         "account_number_masked": "TEXT",
         "account_number_full": "TEXT",
+        "statement_password_enc": "TEXT",
         "ifsc_code": "TEXT",
         "micr_code": "TEXT",
         "customer_id": "TEXT",
@@ -226,6 +227,8 @@ def _migrate_person_schema_if_needed(cur: sqlite3.Cursor) -> None:
         cur.execute("ALTER TABLE Person ADD COLUMN middle_name TEXT")
     if "last_name" not in cols:
         cur.execute("ALTER TABLE Person ADD COLUMN last_name TEXT")
+    if "ais_tis_password_enc" not in cols:
+        cur.execute("ALTER TABLE Person ADD COLUMN ais_tis_password_enc TEXT")
 
 
 def get_connection() -> sqlite3.Connection:
@@ -236,6 +239,38 @@ def get_connection() -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL") # better concurrency
     conn.execute("PRAGMA foreign_keys=ON")  # enforce FK constraints
     return conn
+
+
+def backup_database(dest_path: str) -> None:
+    """Create a consistent backup of the live DB using SQLite backup API."""
+    dest_dir = os.path.dirname(dest_path)
+    if dest_dir:
+        os.makedirs(dest_dir, exist_ok=True)
+
+    src = get_connection()
+    try:
+        src.execute("PRAGMA wal_checkpoint(FULL)")
+        with sqlite3.connect(dest_path) as dest:
+            src.backup(dest)
+            dest.commit()
+    finally:
+        src.close()
+
+
+def restore_database(src_path: str) -> None:
+    """Restore the database from a backup file into the live DB path."""
+    if not os.path.exists(src_path):
+        raise FileNotFoundError(f"Backup not found: {src_path}")
+
+    os.makedirs(DATA_DIR, exist_ok=True)
+    with sqlite3.connect(src_path) as src:
+        dest = get_connection()
+        try:
+            src.backup(dest)
+            dest.execute("PRAGMA wal_checkpoint(FULL)")
+            dest.commit()
+        finally:
+            dest.close()
 
 
 def initialise_database() -> None:
@@ -266,6 +301,7 @@ def initialise_database() -> None:
             date_of_birth TEXT,
             pan_number    TEXT,
             contact_notes TEXT,
+            ais_tis_password_enc TEXT,
             created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
         )
     """)
@@ -282,6 +318,7 @@ def initialise_database() -> None:
             account_type        TEXT    NOT NULL,
             account_number_masked TEXT,
             account_number_full TEXT,
+            statement_password_enc TEXT,
             ifsc_code           TEXT,
             micr_code           TEXT,
             customer_id         TEXT,

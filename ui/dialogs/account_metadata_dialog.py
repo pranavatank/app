@@ -254,6 +254,7 @@ class AccountMetadataDialog(QDialog):
         self.update_check = QCheckBox("✓ Update account with these details")
         self.update_check.setChecked(True)
         self.update_check.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=13, weight=600))
+        self.update_check.setAccessibleName("Update account checkbox")
         footer_layout.addWidget(self.update_check)
 
         # Buttons
@@ -261,12 +262,19 @@ class AccountMetadataDialog(QDialog):
         btn_layout.addStretch()
 
         btn_skip = Theme.btn("Skip", "secondary", height=40, min_width=104)
+        btn_skip.setAccessibleName("Skip account metadata update")
         btn_skip.clicked.connect(self.reject)
         btn_layout.addWidget(btn_skip)
 
         btn_confirm = Theme.btn("Confirm & Update", "primary", height=40, min_width=168)
+        btn_confirm.setAccessibleName("Confirm account metadata update")
         btn_confirm.clicked.connect(self._on_confirm)
         btn_layout.addWidget(btn_confirm)
+
+        first_field = next(iter(self.fields.values()), None)
+        if first_field is not None:
+            self.setTabOrder(self.update_check, first_field)
+            self.setTabOrder(btn_skip, btn_confirm)
 
         footer_layout.addLayout(btn_layout)
         layout.addWidget(footer_frame)

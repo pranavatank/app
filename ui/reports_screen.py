@@ -18,11 +18,11 @@ from PyQt6.QtGui import QFont
 
 from ui.theme import Theme
 from core.session import session
-from config import get_all_financial_years, fy_date_range
+from config import get_all_financial_years
 from models.transaction import get_income_total, get_expense_total, get_category_summary
 from models.fd_interest_record import get_total_fd_interest
 from models.savings_interest import get_total_savings_interest
-from models.bank_account import get_accounts_for_person, get_all_accounts
+from models.bank_account import get_account, get_accounts_for_person, get_all_accounts
 from ui.widgets.chart_widget import ChartWidget
 
 
@@ -35,11 +35,9 @@ _MONTHS = [
 ]
 
 
-def _monthly_data(person_id, financial_year: str):
+def _monthly_data(person_id, financial_year: str, account_id: int | None = None):
     """Return (month_labels, income_list, expense_list) for a FY."""
     from core.database import get_connection
-    from config import fy_date_range
-    fy_start, fy_end = fy_date_range(financial_year)
     fy_year = int(financial_year.split("-")[0])
 
     labels, income_vals, expense_vals = [], [], []
@@ -55,11 +53,15 @@ def _monthly_data(person_id, financial_year: str):
             SELECT transaction_type, SUM(amount) AS total
             FROM Transactions
             WHERE transaction_date BETWEEN ? AND ?
+              AND COALESCE(is_internal_transfer, 0) = 0
         """
         params = [m_start, m_end]
         if person_id:
             q += " AND person_id = ?"
             params.append(person_id)
+        if account_id:
+            q += " AND account_id = ?"
+            params.append(account_id)
         q += " GROUP BY transaction_type"
 
         rows = conn.execute(q, params).fetchall()
@@ -99,19 +101,25 @@ class ReportsScreen(QWidget):
         self.fy_combo = QComboBox()
         self.fy_combo.setFixedWidth(100)
         self.fy_combo.setFixedHeight(36)
+        self.fy_combo.setAccessibleName("Reports financial year selector")
+        self.fy_combo.setAccessibleDescription("Choose the financial year for the report tabs.")
         for fy in reversed(get_all_financial_years(since_year=2020)):
             self.fy_combo.addItem(fy)
         self.fy_combo.setCurrentText(session.selected_fy)
-        self.fy_combo.currentTextChanged.connect(lambda _: self.refresh())
+        self.fy_combo.currentTextChanged.connect(self._on_fy_change)
         header.addWidget(self.fy_combo)
 
         btn = Theme.btn("🔄  Refresh", "primary", height=36, min_width=105)
+        btn.setAccessibleName("Refresh reports")
+        btn.setAccessibleDescription("Reload the charts for the selected financial year.")
         btn.clicked.connect(self.refresh)
         header.addWidget(btn)
         layout.addLayout(header)
 
         # ── Tabs ─────────────────────────────────────────────────────────────
         self.tabs = QTabWidget()
+        self.tabs.setAccessibleName("Reports tabs")
+        self.tabs.setAccessibleDescription("Switch between overview, monthly, category, bank-wise, and interest charts.")
         self.tabs.addTab(self._build_overview_tab(),   "📊  Overview")
         self.tabs.addTab(self._build_monthly_tab(),    "📅  Monthly")
         self.tabs.addTab(self._build_category_tab(),   "🥧  Categories")
@@ -195,7 +203,15 @@ class ReportsScreen(QWidget):
 
     def _metric_card(self, title: str, value: str, accent: str, bg: str) -> QFrame:
         card = QFrame()
-        card.setStyleSheet(Theme.metric_card_style(accent=accent, bg=bg, radius=14))
+        card.setStyleSheet(f"""
+            QFrame {{
+                background: qlineargradient(x1:0,y1:0,x2:0,y2:1,
+                    stop:0 {Theme.SURFACE}, stop:1 {bg});
+                border-left: 4px solid {accent};
+                border: 1px solid {accent}2E;
+                border-radius: 14px;
+            }}
+        """)
         card.setGraphicsEffect(Theme.shadow_card())
 
         layout = QVBoxLayout(card)
@@ -203,13 +219,19 @@ class ReportsScreen(QWidget):
         layout.setSpacing(6)
 
         t_lbl = QLabel(title)
-        t_lbl.setStyleSheet(Theme.text_style(color=accent, size=12, weight=600))
+        t_lbl.setStyleSheet(
+            Theme.text_style(color=accent, size=12, weight=600)
+            + " border: none; background: transparent; padding: 0; margin: 0;"
+        )
         layout.addWidget(t_lbl)
 
         v_lbl = QLabel(value)
         v_lbl.setObjectName("value")
         v_lbl.setFont(QFont("Segoe UI", 20, QFont.Weight.Bold))
-        v_lbl.setStyleSheet(Theme.text_style(color=accent, size=20, weight=700))
+        v_lbl.setStyleSheet(
+            Theme.text_style(color=accent, size=20, weight=700)
+            + " border: none; background: transparent; padding: 0; margin: 0;"
+        )
         layout.addWidget(v_lbl)
 
         return card
@@ -219,22 +241,36 @@ class ReportsScreen(QWidget):
         if v:
             v.setText(value)
 
+    def _on_fy_change(self, fy: str):
+        if not fy:
+            return
+        if self.parent_window and hasattr(self.parent_window, "_on_fy_changed"):
+            self.parent_window._on_fy_changed(fy)
+        else:
+            session.set_financial_year(fy)
+            self.refresh()
+
     # ── Refresh ───────────────────────────────────────────────────────────────
 
     def refresh(self):
         pid = session.selected_person_id
-        fy  = self.fy_combo.currentText()
+        aid = session.selected_account_id
+        fy  = session.selected_fy or self.fy_combo.currentText()
+        if fy and self.fy_combo.currentText() != fy:
+            self.fy_combo.blockSignals(True)
+            self.fy_combo.setCurrentText(fy)
+            self.fy_combo.blockSignals(False)
         if not fy:
             return
-        self._refresh_overview(pid, fy)
-        self._refresh_monthly(pid, fy)
-        self._refresh_category(pid, fy)
-        self._refresh_bank(pid)
-        self._refresh_interest(pid)
+        self._refresh_overview(pid, aid, fy)
+        self._refresh_monthly(pid, aid, fy)
+        self._refresh_category(pid, aid, fy)
+        self._refresh_bank(pid, aid)
+        self._refresh_interest(pid, aid)
 
-    def _refresh_overview(self, pid, fy):
-        income  = get_income_total(pid, fy)
-        expense = get_expense_total(pid, fy)
+    def _refresh_overview(self, pid, aid, fy):
+        income  = get_income_total(person_id=pid, financial_year=fy, account_id=aid)
+        expense = get_expense_total(person_id=pid, financial_year=fy, account_id=aid)
         net     = income - expense
 
         self._update_card(self.income_card,  f"₹ {income:,.2f}")
@@ -260,9 +296,9 @@ class ReportsScreen(QWidget):
             ylabel="Amount (₹)",
         )
 
-    def _refresh_monthly(self, pid, fy):
+    def _refresh_monthly(self, pid, aid, fy):
         try:
-            months, income, expense = _monthly_data(pid, fy)
+            months, income, expense = _monthly_data(pid, fy, aid)
             if all(v == 0 for v in income) and all(v == 0 for v in expense):
                 self.monthly_chart.show_empty_state("No monthly data for this period")
                 return
@@ -275,8 +311,8 @@ class ReportsScreen(QWidget):
         except Exception:
             self.monthly_chart.show_empty_state("Could not load monthly data")
 
-    def _refresh_category(self, pid, fy):
-        cats = get_category_summary(pid, fy)
+    def _refresh_category(self, pid, aid, fy):
+        cats = get_category_summary(person_id=pid, financial_year=fy, account_id=aid)
         if not cats:
             self.category_chart.show_empty_state("No category data for this period")
             return
@@ -287,8 +323,12 @@ class ReportsScreen(QWidget):
             title=f"Debit by Category — FY {fy}",
         )
 
-    def _refresh_bank(self, pid):
-        accounts = get_accounts_for_person(pid) if pid else get_all_accounts()
+    def _refresh_bank(self, pid, aid):
+        if aid is not None:
+            acc = get_account(aid)
+            accounts = [acc] if acc else []
+        else:
+            accounts = get_accounts_for_person(pid) if pid else get_all_accounts()
         if not accounts:
             self.bank_chart.show_empty_state("No bank accounts found")
             return
@@ -314,11 +354,11 @@ class ReportsScreen(QWidget):
             color=Theme.TEAL,
         )
 
-    def _refresh_interest(self, pid):
+    def _refresh_interest(self, pid, aid):
         fys = list(reversed(get_all_financial_years(since_year=2020)))
 
-        fd_interests  = [get_total_fd_interest(fy, pid)      for fy in fys]
-        sav_interests = [get_total_savings_interest(fy, pid)  for fy in fys]
+        fd_interests  = [get_total_fd_interest(fy, pid, aid)      for fy in fys]
+        sav_interests = [get_total_savings_interest(fy, pid, aid)  for fy in fys]
 
         if all(v == 0 for v in fd_interests) and all(v == 0 for v in sav_interests):
             self.interest_chart.show_empty_state("No interest records found")

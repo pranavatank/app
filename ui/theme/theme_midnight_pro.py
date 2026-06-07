@@ -7,6 +7,7 @@ gold accents. Inspired by Linear, VS Code Dark+, Raycast.
 NAME         = "Midnight Pro"
 DESCRIPTION  = "Premium dark theme — deep charcoal with indigo & gold accents"
 IS_DARK      = True
+EMOJI        = "🌙"
 
 # ── Primary — bright indigo that pops on dark ─────────────────────────────────
 PRIMARY                   = "#818CF8"   # indigo-400
@@ -33,7 +34,7 @@ DANGER_GRADIENT_START     = "#FCA5A5"
 DANGER_GRADIENT_END       = "#DC2626"
 
 # ── Warning — warm gold ───────────────────────────────────────────────────────
-WARNING                   = "#FCD34D"   # amber-300 — bright on dark
+WARNING                   = "#FCD34D"   # amber-300
 WARNING_DARK              = "#F59E0B"   # amber-500
 WARNING_LIGHT             = "#2D1F00"   # amber-950
 WARNING_GRADIENT_START    = "#FDE68A"
@@ -66,9 +67,9 @@ ORANGE       = "#FB923C";  ORANGE_LIGHT  = "#2C0A00"
 PINK         = "#F472B6";  PINK_LIGHT    = "#2D0020"
 
 # ── Surfaces — true layered dark ─────────────────────────────────────────────
-BG                        = "#0B0D14"   # near-black — window
-SURFACE                   = "#13161F"   # card / panel — dark slate
-SURFACE_ALT               = "#1C2030"   # hover / alt rows
+BG                        = "#0B0D14"
+SURFACE                   = "#13161F"
+SURFACE_ALT               = "#1C2030"
 SURFACE_TINT_START        = "#181C29"
 SURFACE_TINT_END          = "#13161F"
 
@@ -86,7 +87,7 @@ TOPBAR_BORDER             = "#1F2436"
 # ── Text — light on dark ─────────────────────────────────────────────────────
 TEXT_PRIMARY              = "#E2E8F0"   # slate-200
 TEXT_SECONDARY            = "#94A3B8"   # slate-400
-TEXT_MUTED                = "#374151"   # gray-700 — subtle on dark
+TEXT_MUTED                = "#374151"   # gray-700
 TEXT_ON_PRIMARY           = "#FFFFFF"
 TEXT_HEADING              = "#F8FAFC"   # slate-50
 
