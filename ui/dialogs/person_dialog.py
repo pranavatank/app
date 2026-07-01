@@ -11,6 +11,7 @@ from PyQt6.QtCore import Qt, QDate
 from PyQt6.QtGui import QFont
 
 from ui.theme import Theme
+from ui.icons import set_btn_icon
 from ui.date_utils import format_display_date
 from models.person import add_person, get_all_persons, get_person, update_person, delete_person
 

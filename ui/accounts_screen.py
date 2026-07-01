@@ -11,6 +11,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 
 from ui.theme.theme import Theme
+from ui.icons import set_btn_icon, icon_label as app_icon_label, pixmap as app_pixmap, is_available as icons_available, tab_icon
 from models.bank_account import get_all_accounts, add_account, update_account, delete_account
 from models.bank import get_or_create_bank, update_bank_tan_code_if_exists
 from models.person import get_all_persons
@@ -32,27 +33,32 @@ class AccountsScreen(QWidget):
         self._load_accounts()
 
     def _build_ui(self):
-        self.setStyleSheet(f"background-color: {Theme.BG};")
+        # NOTE: no inline background override here — QMainWindow/QWidget base
+        # style already paints Theme.BG via the global stylesheet, and that
+        # rule DOES refresh live on theme switch. An inline setStyleSheet()
+        # here would freeze the colour at build time and break live switching.
         layout = QVBoxLayout(self)
         layout.setSpacing(20)
         layout.setContentsMargins(28, 24, 28, 24)
 
         # Header
         header = QHBoxLayout()
-        title = QLabel("🏛️  Bank Accounts")
+        title = QLabel("Bank Accounts")
         title.setFont(QFont("Segoe UI", 18, QFont.Weight.Bold))
         title.setStyleSheet(Theme.title_style(18))
         header.addWidget(title)
         header.addStretch()
 
         # View toggle button
-        self.btn_toggle = Theme.btn("📋 List View", "secondary", height=38, min_width=120)
+        self.btn_toggle = Theme.btn(" List View", "secondary", height=38, min_width=120)
+        set_btn_icon(self.btn_toggle, "list_view", color="#94A3B8")
         self.btn_toggle.setAccessibleName("Toggle account view")
         self.btn_toggle.setAccessibleDescription("Switch between card and list view.")
         self.btn_toggle.clicked.connect(self._toggle_view)
         header.addWidget(self.btn_toggle)
 
-        btn_add = Theme.btn("＋  Add Account", "primary", height=38, min_width=140)
+        btn_add = Theme.btn(" Add Account", "primary", height=38, min_width=140)
+        set_btn_icon(btn_add, "add")
         btn_add.setAccessibleName("Add account")
         btn_add.setAccessibleDescription("Open the dialog to add a new bank account.")
         btn_add.clicked.connect(self._on_add_account)
@@ -63,10 +69,10 @@ class AccountsScreen(QWidget):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setStyleSheet(f"background: {Theme.BG}; border: none;")
+        scroll.setStyleSheet("background: transparent; border: none;")
 
         self.container = QWidget()
-        self.container.setStyleSheet(f"background: {Theme.BG};")
+        self.container.setStyleSheet("background: transparent;")
         self.container_layout = QVBoxLayout(self.container)
         self.container_layout.setSpacing(0)
         self.container_layout.setContentsMargins(0, 0, 0, 0)
@@ -79,7 +85,8 @@ class AccountsScreen(QWidget):
 
     def _toggle_view(self):
         self.view_mode = "list" if self.view_mode == "card" else "card"
-        self.btn_toggle.setText("🎴 Card View" if self.view_mode == "list" else "📋 List View")
+        self.btn_toggle.setText(" Card View" if self.view_mode == "list" else " List View")
+        set_btn_icon(self.btn_toggle, "card_view" if self.view_mode == "list" else "list_view", color="#94A3B8")
         self._load_accounts()
 
     def _load_accounts(self):
@@ -93,7 +100,7 @@ class AccountsScreen(QWidget):
             accounts = [a for a in accounts if a["person_id"] == self.selected_person_id]
 
         if not accounts:
-            no_data = QLabel("💼  No accounts found.\nClick '＋ Add Account' to get started.")
+            no_data = QLabel("No accounts found.\nClick 'Add Account' to get started.")
             no_data.setAlignment(Qt.AlignmentFlag.AlignCenter)
             no_data.setStyleSheet(
                 f"color: {Theme.TEXT_MUTED}; font-size: 15px; padding: 60px; background: transparent;")
@@ -107,7 +114,7 @@ class AccountsScreen(QWidget):
 
     def _render_card_view(self, accounts):
         grid_widget = QWidget()
-        grid_widget.setStyleSheet(f"background: {Theme.BG};")
+        grid_widget.setStyleSheet("background: transparent;")
         grid_layout = QGridLayout(grid_widget)
         grid_layout.setSpacing(20)
         grid_layout.setContentsMargins(0, 0, 0, 0)
@@ -147,7 +154,7 @@ class AccountsScreen(QWidget):
         layout.setContentsMargins(0, 0, 0, 16)
 
         # Bank header
-        header = QLabel(f"🏦  {bank_name}")
+        header = QLabel(bank_name)
         header.setFont(QFont("Segoe UI", 15, QFont.Weight.Bold))
         header.setStyleSheet(Theme.text_style(color=Theme.PRIMARY, size=15, weight=700))
         layout.addWidget(header)
@@ -203,7 +210,7 @@ class AccountsScreen(QWidget):
         left.addWidget(bank_lbl)
 
         if self.selected_person_id is None:
-            person_lbl = QLabel(f"👤 {account.get('person_name', '—')}")
+            person_lbl = QLabel(account.get('person_name', '—'))
             person_lbl.setStyleSheet(Theme.text_style(color=Theme.TEXT_SECONDARY, size=12))
             left.addWidget(person_lbl)
 
@@ -303,7 +310,7 @@ class AccountsScreen(QWidget):
 
         # Bank + status
         header = QHBoxLayout()
-        bank_label = QLabel(f"🏦  {account.get('bank_display_name', account['bank_name'])}")
+        bank_label = QLabel(account.get('bank_display_name', account['bank_name']))
         bank_label.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
         bank_label.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=14, weight=700))
         header.addWidget(bank_label)
@@ -364,7 +371,7 @@ class AccountsScreen(QWidget):
             layout.addWidget(det)
 
         if account.get("debit_card_enabled"):
-            dc = QLabel(f"💳  Debit Card — ₹{account.get('debit_card_charges',0):.0f}/yr")
+            dc = QLabel(f"Debit Card — ₹{account.get('debit_card_charges',0):.0f}/yr")
             dc.setStyleSheet(Theme.text_style(color=Theme.WARNING, size=11, weight=600))
             layout.addWidget(dc)
 
@@ -398,6 +405,11 @@ class AccountsScreen(QWidget):
     def set_fy_filter(self, fy):
         """Update financial year filter and reload."""
         self.selected_fy = fy
+        self._load_accounts()
+
+    def refresh_theme(self):
+        """Called after a live theme switch — cards are rebuilt fresh on every
+        _load_accounts() call, so simply reloading picks up the new colours."""
         self._load_accounts()
 
     def _on_add_account(self):
@@ -437,19 +449,23 @@ class AccountDetailsDialog(QDialog):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setStyleSheet(f"background: {Theme.BG}; border: none;")
+        scroll.setStyleSheet("background: transparent; border: none;")
 
         content = QWidget()
-        content.setStyleSheet(f"background: {Theme.BG};")
+        content.setStyleSheet("background: transparent;")
         cl = QVBoxLayout(content)
         cl.setContentsMargins(24, 20, 24, 20)
         cl.setSpacing(16)
 
         tabs = QTabWidget()
-        tabs.addTab(self._tab_basic(),   "📋 Basic Info")
-        tabs.addTab(self._tab_bank(),    "🏦 Bank Details")
-        tabs.addTab(self._tab_contact(), "📞 Contact")
-        tabs.addTab(self._tab_card(),    "💳 Debit Card")
+        tabs.addTab(self._tab_basic(),   "Basic Info")
+        tabs.addTab(self._tab_bank(),    "Bank Details")
+        tabs.addTab(self._tab_contact(), "Contact")
+        tabs.addTab(self._tab_card(),    "Debit Card")
+        tabs.setTabIcon(0, tab_icon("basic_info"))
+        tabs.setTabIcon(1, tab_icon("bank_details"))
+        tabs.setTabIcon(2, tab_icon("contact"))
+        tabs.setTabIcon(3, tab_icon("debit_card"))
         cl.addWidget(tabs)
 
         scroll.setWidget(content)
@@ -467,7 +483,7 @@ class AccountDetailsDialog(QDialog):
         h.setFixedHeight(68)
         hl = QHBoxLayout(h)
         hl.setContentsMargins(28, 0, 28, 0)
-        title = QLabel(f"🏦  {self.account.get('bank_display_name', self.account['bank_name'])}")
+        title = QLabel(self.account.get('bank_display_name', self.account['bank_name']))
         title.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
         title.setStyleSheet(Theme.text_style(color=Theme.PRIMARY_TEXT, size=16, weight=700))
         hl.addWidget(title)
@@ -495,11 +511,13 @@ class AccountDetailsDialog(QDialog):
         fl.setContentsMargins(28, 14, 28, 14)
         fl.addStretch()
 
-        btn_edit = Theme.btn("✏️  Edit", "edit", height=40, min_width=110)
+        btn_edit = Theme.btn(" Edit", "edit", height=40, min_width=110)
+        set_btn_icon(btn_edit, "edit")
         btn_edit.clicked.connect(self._on_edit)
         fl.addWidget(btn_edit)
 
-        btn_del = Theme.btn("🗑️  Delete", "danger", height=40, min_width=110)
+        btn_del = Theme.btn(" Delete", "danger", height=40, min_width=110)
+        set_btn_icon(btn_del, "delete")
         btn_del.clicked.connect(self._on_delete)
         fl.addWidget(btn_del)
 
@@ -511,7 +529,7 @@ class AccountDetailsDialog(QDialog):
     # ── Tab builders ──────────────────────────────────────────────────────────
 
     def _tab_basic(self) -> QWidget:
-        w = QWidget(); w.setStyleSheet(f"background: {Theme.BG};")
+        w = QWidget(); w.setStyleSheet("background: transparent;")
         l = QVBoxLayout(w); l.setContentsMargins(10,12,10,12); l.setSpacing(14)
         holder = self.account.get("account_holder_name") or self.account.get("person_name","—")
         l.addWidget(self._section("Account Information", [
@@ -534,7 +552,7 @@ class AccountDetailsDialog(QDialog):
         return w
 
     def _tab_bank(self) -> QWidget:
-        w = QWidget(); w.setStyleSheet(f"background: {Theme.BG};")
+        w = QWidget(); w.setStyleSheet("background: transparent;")
         l = QVBoxLayout(w); l.setContentsMargins(10,12,10,12); l.setSpacing(14)
         l.addWidget(self._section("Bank Details", [
             ("IFSC Code",     self.account.get("ifsc_code","—")),
@@ -546,7 +564,7 @@ class AccountDetailsDialog(QDialog):
         return w
 
     def _tab_contact(self) -> QWidget:
-        w = QWidget(); w.setStyleSheet(f"background: {Theme.BG};")
+        w = QWidget(); w.setStyleSheet("background: transparent;")
         l = QVBoxLayout(w); l.setContentsMargins(10,12,10,12); l.setSpacing(14)
         l.addWidget(self._section("Contact", [
             ("Email",   self.account.get("email_id","—")),
@@ -561,7 +579,7 @@ class AccountDetailsDialog(QDialog):
         return w
 
     def _tab_card(self) -> QWidget:
-        w = QWidget(); w.setStyleSheet(f"background: {Theme.BG};")
+        w = QWidget(); w.setStyleSheet("background: transparent;")
         l = QVBoxLayout(w); l.setContentsMargins(10,12,10,12); l.setSpacing(14)
         if self.account.get("debit_card_enabled"):
             l.addWidget(self._section("Debit Card", [
@@ -570,7 +588,7 @@ class AccountDetailsDialog(QDialog):
                 ("Effective From",  self.account.get("debit_card_effective_from","—")),
             ]))
         else:
-            no = QLabel("💳  No debit card enabled for this account.")
+            no = QLabel("No debit card enabled for this account.")
             no.setAlignment(Qt.AlignmentFlag.AlignCenter)
             no.setStyleSheet(f"color: {Theme.TEXT_MUTED}; font-size: 14px; padding: 40px;")
             l.addWidget(no)

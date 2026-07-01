@@ -13,6 +13,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 
 from ui.theme import Theme
+from ui.icons import set_btn_icon
 from core.session import session
 from models.person import get_person
 from models.form26as import get_form26as_import, get_form26as_records
@@ -41,8 +42,8 @@ class ReconciliationScreen(QWidget):
         summary_row.setSpacing(12)
         
         self.card_total = self._metric_card("Total Records", "0", Theme.PRIMARY)
-        self.card_match = self._metric_card("✓ Match", "0", Theme.SUCCESS)
-        self.card_mismatch = self._metric_card("✗ Mismatch", "0", Theme.DANGER)
+        self.card_match = self._metric_card("Match", "0", Theme.SUCCESS)
+        self.card_mismatch = self._metric_card("Mismatch", "0", Theme.DANGER)
         self.card_diff = self._metric_card("Difference", "₹ 0", Theme.WARNING)
         
         summary_row.addWidget(self.card_total)
@@ -63,7 +64,7 @@ class ReconciliationScreen(QWidget):
         th_layout = QHBoxLayout(table_header)
         th_layout.setContentsMargins(16, 12, 16, 12)
         
-        th_title = QLabel("📊 Reconciliation Results")
+        th_title = QLabel("Reconciliation Results")
         th_title.setStyleSheet(Theme.title_style(14))
         th_layout.addWidget(th_title)
         th_layout.addStretch()
@@ -115,7 +116,8 @@ class ReconciliationScreen(QWidget):
         h_layout.addLayout(left)
         h_layout.addStretch()
 
-        btn_reconcile = Theme.btn("🔄 Reconcile", "primary", height=40, min_width=140)
+        btn_reconcile = Theme.btn(" Reconcile", "primary", height=40, min_width=140)
+        set_btn_icon(btn_reconcile, "reconcile")
         btn_reconcile.setAccessibleName("Run reconciliation")
         btn_reconcile.clicked.connect(self._on_reconcile)
         h_layout.addWidget(btn_reconcile)
@@ -152,7 +154,7 @@ class ReconciliationScreen(QWidget):
         fy = session.selected_fy
         
         if not pid:
-            self.person_label.setText("⚠ Please select a person from the top bar")
+            self.person_label.setText("Please select a person from the top bar")
             self.person_label.setStyleSheet(Theme.text_style(color=Theme.WARNING, size=12, weight=600))
             self._clear_table()
             return
@@ -287,7 +289,7 @@ class ReconciliationDetailDialog(QDialog):
         layout.setSpacing(16)
         
         # Header
-        header = QLabel(f"📋 {self.item.deductor_name}")
+        header = QLabel(self.item.deductor_name)
         header.setFont(QFont("Segoe UI", 15, QFont.Weight.Bold))
         header.setStyleSheet(Theme.title_style(15))
         layout.addWidget(header)
@@ -328,7 +330,7 @@ class ReconciliationDetailDialog(QDialog):
         layout.addWidget(info_frame)
         
         # Action note
-        note = QLabel("💡 Tip: Verify source documents if there's a mismatch.")
+        note = QLabel("Tip: Verify source documents if there's a mismatch.")
         note.setWordWrap(True)
         note.setStyleSheet(Theme.muted_style(11))
         layout.addWidget(note)

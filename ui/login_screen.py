@@ -14,6 +14,7 @@ from core.session import session
 from config import APP_NAME
 from ui.logo import logo_pixmap, set_window_icon
 from ui.theme import Theme, ThemeManager
+from ui.icons import set_btn_icon, icon_label as app_icon_label
 
 
 class LoginScreen(QWidget):
@@ -132,14 +133,14 @@ class LoginScreen(QWidget):
         form_layout.setContentsMargins(18, 16, 18, 16)
         form_layout.setSpacing(10)
 
-        form_layout.addWidget(self._lbl("🔑  Master Password"))
+        form_layout.addWidget(self._lbl("Master Password"))
         self.pwd_input = self._field("Enter your master password", password=True)
         self.pwd_input.setAccessibleName("Master password")
         self.pwd_input.setAccessibleDescription("Enter the master password used to unlock the app.")
         self.pwd_input.returnPressed.connect(self._on_login)
         form_layout.addWidget(self.pwd_input)
 
-        self.lbl_otp = self._lbl("🔐  One-Time Password")
+        self.lbl_otp = self._lbl("One-Time Password")
         self.otp_input = self._field("6-digit code from authenticator")
         self.otp_input.setAccessibleName("One-time password")
         self.otp_input.setAccessibleDescription("Enter the 6-digit code from your authenticator app.")
@@ -163,7 +164,8 @@ class LoginScreen(QWidget):
         layout.addWidget(self.error_label)
 
         # ── Unlock button ─────────────────────────────────────────────────────
-        self.btn_login = Theme.btn("🔓  Unlock", "hero", height=52, min_width=280)
+        self.btn_login = Theme.btn(" Unlock", "hero", height=52, min_width=280)
+        set_btn_icon(self.btn_login, "unlock", color="#FFFFFF", size=18)
         self.btn_login.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.btn_login.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_login.setAccessibleName("Unlock account")
@@ -175,7 +177,7 @@ class LoginScreen(QWidget):
         if self._totp_required:
             self.setTabOrder(self.otp_input, self.btn_login)
 
-        note = QLabel("🔒  Device-bound encryption")
+        note = QLabel("Device-bound encryption")
         note.setAlignment(Qt.AlignmentFlag.AlignCenter)
         note.setStyleSheet(Theme.text_style(color=Theme.TEXT_MUTED, size=12) + " border: none;")
         layout.addWidget(note)
@@ -256,7 +258,7 @@ class LoginScreen(QWidget):
         else:
             self._show_error(message)
             self.btn_login.setEnabled(True)
-            self.btn_login.setText("🔓  Unlock")
+            self.btn_login.setText(" Unlock")
             self.pwd_input.clear()
             self.otp_input.clear()
             self.pwd_input.setFocus()

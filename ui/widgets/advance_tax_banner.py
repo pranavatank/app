@@ -9,6 +9,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 
 from ui.theme import Theme
+from ui.icons import icon as app_icon, is_available as icons_available
 from engines.advance_tax_engine import AdvanceTaxResult
 
 
@@ -28,8 +29,8 @@ class AdvanceTaxBanner(QFrame):
         layout.setSpacing(12)
         
         # Icon
-        self.icon_label = QLabel("🔔")
-        self.icon_label.setFont(QFont("Segoe UI", 18))
+        self.icon_label = QLabel()
+        self.icon_label.setFixedSize(28, 28)
         self.icon_label.setStyleSheet("background: transparent;")
         layout.addWidget(self.icon_label)
         
@@ -55,8 +56,12 @@ class AdvanceTaxBanner(QFrame):
         layout.addWidget(self.btn_view)
         
         # Dismiss button
-        self.btn_dismiss = QPushButton("✕")
+        self.btn_dismiss = QPushButton()
         self.btn_dismiss.setFixedSize(28, 28)
+        if icons_available():
+            self.btn_dismiss.setIcon(app_icon("close", color=Theme.TEXT_SECONDARY, size=14))
+        else:
+            self.btn_dismiss.setText("x")
         self.btn_dismiss.setStyleSheet(f"""
             QPushButton {{
                 background: transparent;
@@ -95,13 +100,19 @@ class AdvanceTaxBanner(QFrame):
         self.setStyleSheet(banner_style(Theme, result.banner_level, radius=10))
         
         # Update icon
-        icon_map = {
-            "success": "✅",
-            "info": "📅",
-            "warning": "🔔",
-            "danger": "⚠️",
+        _ICON_MAP = {
+            "success": ("success_badge", "#4ADE80"),
+            "info":    ("calendar",       "#60A5FA"),
+            "warning": ("notification",   "#FBBF24"),
+            "danger":  ("overdue",        "#F87171"),
         }
-        self.icon_label.setText(icon_map.get(result.banner_level, "🔔"))
+        ic_name, ic_color = _ICON_MAP.get(result.banner_level, ("notification", "#FBBF24"))
+        if icons_available():
+            pm = app_icon(ic_name, color=ic_color, size=22).pixmap(22, 22)
+            self.icon_label.setPixmap(pm)
+        else:
+            _fb = {"success": "ok", "info": "i", "warning": "!", "danger": "!"}
+            self.icon_label.setText(_fb.get(result.banner_level, "!"))
         
         # Update message
         self.message_label.setText(result.banner_message)

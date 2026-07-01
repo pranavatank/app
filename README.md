@@ -186,16 +186,19 @@ The importer now supports a local AI parsing mode through Ollama.
 1. Install Ollama
    - `winget install -e --id Ollama.Ollama --source winget --accept-package-agreements --accept-source-agreements`
 2. Pull a free local model
-   - `"%LOCALAPPDATA%\\Programs\\Ollama\\ollama.exe" pull qwen2.5:3b`
+   - `"%LOCALAPPDATA%\\Programs\\Ollama\\ollama.exe" pull qwen2.5vl:7b`
 3. Enable parser mode (PowerShell)
-   - `$env:STATEMENT_PARSER_MODE = "auto"` (AI first, fallback to rule parser)
-   - Optional: `$env:OLLAMA_MODEL = "qwen2.5:3b"`
+   - `$env:STATEMENT_PARSER_MODE = "auto"` (rule parser first, then AI fallback)
+   - Optional: `$env:OLLAMA_MODEL = "qwen2.5vl:7b"`
    - Optional: `$env:OLLAMA_ENDPOINT = "http://127.0.0.1:11434"`
+   - Optional: `$env:OLLAMA_KEEP_ALIVE = "-1"` keeps the model loaded while the app runs
 
 Modes:
-- `auto`: try local AI parser first, fallback to existing parser if AI is unavailable
+- `auto`: try the existing parser first, then use local AI when rule parsing finds no transactions
 - `ai`: use only local AI parser
 - `rule`: use only existing regex/column parser
+
+The app unloads the configured Ollama model when the desktop window closes.
 
 #### Calculating Tax
 1. Go to Tax screen

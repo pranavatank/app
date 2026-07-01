@@ -13,6 +13,7 @@ from PyQt6.QtGui import QFont, QColor
 
 from ui.widgets.excel_table import ExcelTableWithStats
 from ui.theme import Theme
+from ui.icons import set_btn_icon
 from ui.date_utils import format_display_date
 from core.session import session
 from config import get_current_financial_year, get_all_financial_years
@@ -48,19 +49,23 @@ class IncomeManagementScreen(QWidget):
         header.addWidget(title)
         header.addStretch()
 
-        btn_add = Theme.btn("＋  Add Expected Income", "primary", height=38, min_width=170)
+        btn_add = Theme.btn("  Add Expected Income", "primary", height=38, min_width=170)
+        set_btn_icon(btn_add, "add")
         btn_add.clicked.connect(self._add_expectation)
         header.addWidget(btn_add)
 
-        btn_auto_link = Theme.btn("⚡  Auto-Link All", "success", height=38, min_width=130)
+        btn_auto_link = Theme.btn("  Auto-Link All", "success", height=38, min_width=130)
+        set_btn_icon(btn_auto_link, "auto_link")
         btn_auto_link.clicked.connect(self._auto_link_all)
         header.addWidget(btn_auto_link)
 
-        btn_edit = Theme.btn("✏  Edit", "edit", height=38, min_width=90)
+        btn_edit = Theme.btn("  Edit", "edit", height=38, min_width=90)
+        set_btn_icon(btn_edit, "edit")
         btn_edit.clicked.connect(self._edit_expectation)
         header.addWidget(btn_edit)
 
-        btn_delete = Theme.btn("🗑  Delete", "danger", height=38, min_width=95)
+        btn_delete = Theme.btn("  Delete", "danger", height=38, min_width=95)
+        set_btn_icon(btn_delete, "delete")
         btn_delete.clicked.connect(self._delete_expectation)
         header.addWidget(btn_delete)
 
@@ -634,7 +639,7 @@ class IncomeExpectationDialog(QDialog):
             linked_layout = QVBoxLayout(linked_frame)
             linked_layout.setSpacing(8)
             
-            linked_title = QLabel("🔗  Linked Transaction")
+            linked_title = QLabel("Linked Transaction")
             linked_title.setStyleSheet(f"color: {Theme.SUCCESS_DARK}; font-weight: 600; font-size: 12px;")
             linked_layout.addWidget(linked_title)
             
@@ -646,13 +651,15 @@ class IncomeExpectationDialog(QDialog):
             linked_info.setStyleSheet(f"color: {Theme.TEXT_PRIMARY}; font-size: 11px;")
             linked_layout.addWidget(linked_info)
             
-            btn_unlink = Theme.btn("❌  Unlink Transaction", "danger", height=32, min_width=140)
+            btn_unlink = Theme.btn("Unlink Transaction", "danger", height=32, min_width=140)
+            set_btn_icon(btn_unlink, "unlink")
             btn_unlink.clicked.connect(self._on_unlink)
             linked_layout.addWidget(btn_unlink)
             
             form.addRow("", linked_frame)
         else:
-            btn_link = Theme.btn("🔗  Link to Transaction", "success", height=32, min_width=150)
+            btn_link = Theme.btn("Link to Transaction", "success", height=32, min_width=150)
+            set_btn_icon(btn_link, "link")
             btn_link.clicked.connect(self._on_link_transaction)
             form.addRow("", btn_link)
 

@@ -202,26 +202,74 @@ def banner_style(theme, level="info", radius=10):
 
 
 def sidebar_nav_normal():
-    from . import constants as c
+    from .theme import Theme
     return f"""
         QPushButton {{
-            background: transparent; color: {c.SIDEBAR_TEXT};
+            background: transparent; color: {Theme.SIDEBAR_TEXT};
             border: none; border-radius: 0;
             text-align: left; padding-left: 8px; font-size: 13px;
         }}
-        QPushButton:hover {{ background-color: {c.SIDEBAR_HOVER}; color: white; }}
+        QPushButton:hover {{ background-color: {Theme.SIDEBAR_HOVER}; color: white; }}
     """
 
 
 def sidebar_nav_active():
-    from . import constants as c
+    from .theme import Theme
     return f"""
         QPushButton {{
             background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
-                stop:0 {c.SIDEBAR_ACTIVE}, stop:1 rgba(99,102,241,0.25));
+                stop:0 {Theme.SIDEBAR_ACTIVE}, stop:1 {Theme.SIDEBAR_HOVER});
             color: white; border: none;
-            border-left: 3px solid {c.PRIMARY_LIGHT};
+            border-left: 3px solid {Theme.PRIMARY_LIGHT};
             border-radius: 0; text-align: left;
             padding-left: 8px; font-size: 13px; font-weight: 700;
+        }}
+    """
+
+
+def chat_bubble_user(theme):
+    return f"""
+        QFrame {{
+            background: {gradient(theme.PRIMARY_GRADIENT_START, theme.PRIMARY_GRADIENT_END)};
+            border: none; border-radius: 16px;
+            padding: 12px 16px;
+        }}
+    """
+
+
+def chat_bubble_assistant(theme):
+    return f"""
+        QFrame {{
+            background-color: {theme.SURFACE};
+            border: 1px solid {theme.BORDER};
+            border-radius: 16px;
+            padding: 12px 16px;
+        }}
+    """
+
+
+def chat_input_box(theme):
+    return f"""
+        QPlainTextEdit {{
+            background-color: {theme.SURFACE};
+            color: {theme.TEXT_PRIMARY};
+            border: 2px solid {theme.BORDER};
+            border-radius: 12px;
+            padding: 12px 16px;
+            font-size: 14px;
+        }}
+        QPlainTextEdit:focus {{
+            border: 2px solid {theme.PRIMARY};
+        }}
+    """
+
+
+def attachment_chip(theme):
+    return f"""
+        QFrame {{
+            background-color: {theme.SURFACE_ALT};
+            border: 1px solid {theme.BORDER};
+            border-radius: 8px;
+            padding: 6px 10px;
         }}
     """

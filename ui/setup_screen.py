@@ -1,5 +1,5 @@
 """
-ui/setup_screen.py — First-run password setup. All buttons use Theme.btn().
+ui/setup_screen.py — First-run password setup.
 """
 
 from PyQt6.QtWidgets import (
@@ -13,6 +13,7 @@ from core.auth import setup_master_password
 from config import APP_NAME
 from ui.logo import logo_pixmap, set_window_icon
 from ui.theme import Theme
+from ui.icons import set_btn_icon
 
 
 class SetupScreen(QWidget):
@@ -35,12 +36,13 @@ class SetupScreen(QWidget):
         card.setObjectName("SetupCard")
         card.setStyleSheet(Theme.tinted_surface_style(radius=16, selector="QFrame#SetupCard"))
         card.setFixedWidth(400)
+        card.setGraphicsEffect(Theme.shadow_elevated())
 
         cl = QVBoxLayout(card)
         cl.setContentsMargins(40, 36, 40, 36)
         cl.setSpacing(0)
 
-        # Logo + gradient bar
+        # Logo
         logo = QLabel()
         logo_pm = logo_pixmap(88)
         if not logo_pm.isNull():
@@ -74,8 +76,6 @@ class SetupScreen(QWidget):
         cl.addWidget(self._lbl("Master Password"))
         cl.addSpacing(4)
         self.pwd_input = self._field("Enter master password", password=True)
-        self.pwd_input.setAccessibleName("Master password")
-        self.pwd_input.setAccessibleDescription("Create a master password for the new account.")
         self.pwd_input.textChanged.connect(self._update_strength)
         cl.addWidget(self.pwd_input)
         cl.addSpacing(5)
@@ -94,24 +94,19 @@ class SetupScreen(QWidget):
         cl.addWidget(self._lbl("Confirm Password"))
         cl.addSpacing(4)
         self.confirm_input = self._field("Re-enter master password", password=True)
-        self.confirm_input.setAccessibleName("Confirm master password")
-        self.confirm_input.setAccessibleDescription("Re-enter the master password to confirm it.")
         cl.addWidget(self.confirm_input)
         cl.addSpacing(16)
 
         # TOTP
         self.totp_check = QCheckBox("Enable two-factor authentication (TOTP)")
-        self.totp_check.setAccessibleName("Enable two-factor authentication")
-        self.totp_check.setAccessibleDescription("Turn on time-based one-time passwords for login.")
         self.totp_check.setStyleSheet(Theme.muted_style(12))
         cl.addWidget(self.totp_check)
         cl.addSpacing(24)
 
-        # Create button — inline style for guaranteed visibility
-        self.btn_setup = Theme.btn("✅  Create Account", "primary", height=46, min_width=320)
+        # Create button
+        self.btn_setup = Theme.btn("  Create Account", "primary", height=46, min_width=320)
+        set_btn_icon(self.btn_setup, "create_account", size=16)
         self.btn_setup.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
-        self.btn_setup.setAccessibleName("Create account")
-        self.btn_setup.setAccessibleDescription("Create the encrypted vault using the entered password.")
         self.btn_setup.clicked.connect(self._on_setup)
         cl.addWidget(self.btn_setup)
         cl.addSpacing(12)
@@ -120,7 +115,7 @@ class SetupScreen(QWidget):
         self.setTabOrder(self.confirm_input, self.totp_check)
         self.setTabOrder(self.totp_check, self.btn_setup)
 
-        note = QLabel("⚠  Your password cannot be recovered. Keep it safe.")
+        note = QLabel("Your password cannot be recovered. Keep it safe.")
         note.setAlignment(Qt.AlignmentFlag.AlignCenter)
         note.setStyleSheet(Theme.text_style(color=Theme.WARNING, size=11))
         cl.addWidget(note)
@@ -151,15 +146,18 @@ class SetupScreen(QWidget):
             self.strength_bar.setStyleSheet(f"background: {Theme.BORDER}; border-radius: 2px;")
             self.strength_label.setText("")
         elif n < 8:
-            self.strength_bar.setStyleSheet(Theme.panel_strip_style(Theme.DANGER_GRADIENT_START, Theme.DANGER_GRADIENT_END, radius=2))
+            self.strength_bar.setStyleSheet(
+                Theme.panel_strip_style(Theme.DANGER_GRADIENT_START, Theme.DANGER_GRADIENT_END, radius=2))
             self.strength_label.setText("Weak — use at least 8 characters")
             self.strength_label.setStyleSheet(Theme.text_style(color=Theme.DANGER, size=11))
         elif n < 12:
-            self.strength_bar.setStyleSheet(Theme.panel_strip_style(Theme.WARNING_GRADIENT_START, Theme.WARNING_GRADIENT_END, radius=2))
+            self.strength_bar.setStyleSheet(
+                Theme.panel_strip_style(Theme.WARNING_GRADIENT_START, Theme.WARNING_GRADIENT_END, radius=2))
             self.strength_label.setText("Moderate")
             self.strength_label.setStyleSheet(Theme.text_style(color=Theme.WARNING, size=11))
         else:
-            self.strength_bar.setStyleSheet(Theme.panel_strip_style(Theme.SUCCESS_GRADIENT_START, Theme.SUCCESS_GRADIENT_END, radius=2))
+            self.strength_bar.setStyleSheet(
+                Theme.panel_strip_style(Theme.SUCCESS_GRADIENT_START, Theme.SUCCESS_GRADIENT_END, radius=2))
             self.strength_label.setText("Strong ✓")
             self.strength_label.setStyleSheet(Theme.text_style(color=Theme.SUCCESS, size=11))
 
@@ -183,10 +181,8 @@ class SetupScreen(QWidget):
         self.close()
 
     def _center_on_screen(self):
-        """Center the window on the screen."""
         from PyQt6.QtGui import QGuiApplication
         screen = QGuiApplication.primaryScreen().geometry()
-        window_geometry = self.frameGeometry()
-        center_point = screen.center()
-        window_geometry.moveCenter(center_point)
-        self.move(window_geometry.topLeft())
+        geo = self.frameGeometry()
+        geo.moveCenter(screen.center())
+        self.move(geo.topLeft())

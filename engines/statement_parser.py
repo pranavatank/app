@@ -27,6 +27,11 @@ from engines.statement_passwords import (
 )
 
 
+DEFAULT_OLLAMA_MODEL = "qwen2.5vl:7b"
+DEFAULT_OLLAMA_ENDPOINT = "http://127.0.0.1:11434"
+DEFAULT_OLLAMA_KEEP_ALIVE = "-1"
+_OLLAMA_MODEL_USED = False
+
 _REF_PATTERNS = [
     r"\b(?:IB|SCREF|CHBATCH|MB|UTR|RRN|NEFT|IMPS)[A-Z0-9]{6,}\b",
     r"\b[A-Z0-9]{10,}/\d+\b",
@@ -59,6 +64,27 @@ def _append_issue(debug: Optional[Dict], message: str, limit: int = 200) -> None
     issues = debug.setdefault("issues", [])
     if len(issues) < limit:
         issues.append(message)
+
+
+def mark_ollama_model_used() -> None:
+    global _OLLAMA_MODEL_USED
+    _OLLAMA_MODEL_USED = True
+
+
+def ollama_keep_alive_value(value: str | int | float | None = None) -> str | int | float:
+    raw = DEFAULT_OLLAMA_KEEP_ALIVE if value is None else value
+    if isinstance(raw, (int, float)):
+        return raw
+
+    text = str(raw).strip()
+    if not text:
+        return DEFAULT_OLLAMA_KEEP_ALIVE
+
+    try:
+        number = int(text)
+        return number
+    except ValueError:
+        return text
 
 
 def _is_statement_summary_line(text: str) -> bool:
@@ -1142,8 +1168,9 @@ class LocalAIStatementParser:
     """Offline parser that uses a local Ollama model to extract transactions."""
 
     def __init__(self):
-        self.endpoint = os.getenv("OLLAMA_ENDPOINT", "http://127.0.0.1:11434")
-        self.model = os.getenv("OLLAMA_MODEL", "qwen2.5:3b")
+        self.endpoint = os.getenv("OLLAMA_ENDPOINT", DEFAULT_OLLAMA_ENDPOINT)
+        self.model = os.getenv("OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL)
+        self.keep_alive = ollama_keep_alive_value(os.getenv("OLLAMA_KEEP_ALIVE", DEFAULT_OLLAMA_KEEP_ALIVE))
         self.timeout_seconds = float(os.getenv("OLLAMA_TIMEOUT_SECONDS", "12"))
 
     def parse_statement(self, file_path: str, file_type: str, debug: Optional[Dict] = None,
@@ -1258,7 +1285,8 @@ STATEMENT:
             "model": self.model,
             "prompt": prompt,
             "stream": False,
-            "format": "json"
+            "format": "json",
+            "keep_alive": self.keep_alive,
         }
 
         req = url_request.Request(
@@ -1271,6 +1299,7 @@ STATEMENT:
         try:
             with url_request.urlopen(req, timeout=self.timeout_seconds) as resp:
                 body = json.loads(resp.read().decode("utf-8"))
+            mark_ollama_model_used()
         except (url_error.URLError, TimeoutError, json.JSONDecodeError) as e:
             _append_issue(debug, f"AI parser request failed: {e}")
             return []
@@ -1387,7 +1416,12 @@ STATEMENT:
 
         # Call the Ollama endpoint directly because we expect raw JSON, not a transaction payload.
         try:
-            payload = {"model": self.model, "prompt": tpl, "stream": False}
+            payload = {
+                "model": self.model,
+                "prompt": tpl,
+                "stream": False,
+                "keep_alive": self.keep_alive,
+            }
             req = url_request.Request(
                 url=f"{self.endpoint}/api/generate",
                 data=json.dumps(payload).encode("utf-8"),
@@ -1396,6 +1430,7 @@ STATEMENT:
             )
             with url_request.urlopen(req, timeout=self.timeout_seconds) as resp:
                 body = json.loads(resp.read().decode("utf-8"))
+            mark_ollama_model_used()
         except Exception:
             return {}
 
@@ -1718,12 +1753,48 @@ def validate_transactions(transactions: List[Dict]) -> tuple[List[Dict], List[st
     return valid, errors
 
 
-def is_ollama_available(endpoint: str | None = None, timeout: float = 1.0) -> bool:
-    """Quick check if Ollama endpoint is reachable (best-effort)."""
-    ep = endpoint or os.getenv("OLLAMA_ENDPOINT", "http://127.0.0.1:11434")
+def is_ollama_available(endpoint: str | None = None, timeout: float = 1.0, model: str | None = None) -> bool:
+    """Check whether Ollama is reachable and the configured model is installed."""
+    ep = endpoint or os.getenv("OLLAMA_ENDPOINT", DEFAULT_OLLAMA_ENDPOINT)
+    selected_model = model or os.getenv("OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL)
     try:
-        req = url_request.Request(f"{ep.rstrip('/')}/api/models")
+        req = url_request.Request(f"{ep.rstrip('/')}/api/tags")
         with url_request.urlopen(req, timeout=timeout) as resp:
-            return getattr(resp, 'status', 200) == 200
+            if getattr(resp, "status", 200) != 200:
+                return False
+            body = json.loads(resp.read().decode("utf-8"))
+            models = body.get("models", [])
+            return any(item.get("name") == selected_model for item in models if isinstance(item, dict))
+    except Exception:
+        return False
+
+
+def unload_ollama_model(
+    model: str | None = None,
+    endpoint: str | None = None,
+    timeout: float = 2.0,
+    only_if_used: bool = False,
+) -> bool:
+    """Unload the configured Ollama model when the desktop app exits."""
+    if only_if_used and not _OLLAMA_MODEL_USED:
+        return False
+
+    selected_model = model or os.getenv("OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL)
+    ep = (endpoint or os.getenv("OLLAMA_ENDPOINT", DEFAULT_OLLAMA_ENDPOINT)).rstrip("/")
+    payload = {
+        "model": selected_model,
+        "prompt": "",
+        "stream": False,
+        "keep_alive": 0,
+    }
+    req = url_request.Request(
+        url=f"{ep}/api/generate",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with url_request.urlopen(req, timeout=timeout) as resp:
+            return getattr(resp, "status", 200) == 200
     except Exception:
         return False

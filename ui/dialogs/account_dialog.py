@@ -13,6 +13,7 @@ from PyQt6.QtCore import Qt, QDate
 from PyQt6.QtGui import QFont
 
 from ui.theme import Theme
+from ui.icons import set_btn_icon, tab_icon
 from config import ACCOUNT_TYPES
 from models.person import get_all_persons
 from models.bank_account import add_account, get_all_accounts, update_account, delete_account
@@ -42,7 +43,8 @@ class AccountManagementDialog(QDialog):
         title.setStyleSheet(f"color: {Theme.TEXT_PRIMARY};")
         header.addWidget(title)
         header.addStretch()
-        btn_add = _btn("＋  Add Account", "primary")
+        btn_add = _btn(" Add Account", "primary")
+        set_btn_icon(btn_add, "add")
         btn_add.setAccessibleName("Add account")
         btn_add.clicked.connect(self._on_add)
         header.addWidget(btn_add)
@@ -67,11 +69,13 @@ class AccountManagementDialog(QDialog):
         layout.addWidget(self.table)
 
         actions = QHBoxLayout(); actions.addStretch()
-        btn_edit = _btn("✏  Edit", "edit")
+        btn_edit = _btn(" Edit", "edit")
+        set_btn_icon(btn_edit, "edit")
         btn_edit.setAccessibleName("Edit account")
         btn_edit.clicked.connect(self._on_edit)
         actions.addWidget(btn_edit)
-        btn_del = _btn("🗑  Delete", "danger")
+        btn_del = _btn(" Delete", "danger")
+        set_btn_icon(btn_del, "delete")
         btn_del.setAccessibleName("Delete account")
         btn_del.clicked.connect(self._on_delete)
         actions.addWidget(btn_del)
@@ -180,10 +184,14 @@ class AccountDialog(QDialog):
 
         tabs = QTabWidget()
         tabs.setAccessibleName("Account details tabs")
-        tabs.addTab(self._scroll_tab(self._basic_tab()),   "📋 Basic Info")
-        tabs.addTab(self._scroll_tab(self._bank_tab()),    "🏦 Bank Details")
-        tabs.addTab(self._scroll_tab(self._contact_tab()), "📞 Contact")
-        tabs.addTab(self._scroll_tab(self._card_tab()),    "💳 Debit Card")
+        tabs.addTab(self._scroll_tab(self._basic_tab()),   "Basic Info")
+        tabs.addTab(self._scroll_tab(self._bank_tab()),    "Bank Details")
+        tabs.addTab(self._scroll_tab(self._contact_tab()), "Contact")
+        tabs.addTab(self._scroll_tab(self._card_tab()),    "Debit Card")
+        tabs.setTabIcon(0, tab_icon("basic_info"))
+        tabs.setTabIcon(1, tab_icon("bank_details"))
+        tabs.setTabIcon(2, tab_icon("contact"))
+        tabs.setTabIcon(3, tab_icon("debit_card"))
         layout.addWidget(tabs)
 
         div = QFrame(); div.setFrameShape(QFrame.Shape.HLine)

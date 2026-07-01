@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 from ui.theme import Theme
+from ui.icons import icon_label as app_icon_label
 
 
 class PrivacyPinDialog(QDialog):
@@ -26,7 +27,7 @@ class PrivacyPinDialog(QDialog):
         layout.setSpacing(14)
         layout.setContentsMargins(28, 24, 28, 24)
 
-        title = QLabel("🔒  Privacy Mode Active")
+        title = QLabel("Privacy Mode Active")
         title.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=13, weight=700))

@@ -17,6 +17,7 @@ from dateutil.relativedelta import relativedelta
 from ui.widgets.excel_table import ExcelTableWithStats
 
 from ui.theme import Theme
+from ui.icons import icon as app_icon
 from ui.date_utils import format_display_date
 from core.session import session
 from config import COMPOUNDING_TYPES, fy_date_range, get_assessment_year, get_current_financial_year
@@ -65,32 +66,38 @@ class FixedDepositsScreen(QWidget):
         header.addWidget(subtitle)
         header.addStretch()
 
-        btn_add = Theme.btn("＋  Add FD", "primary", height=38, min_width=110)
+        btn_add = Theme.btn("  Add FD", "primary", height=38, min_width=110)
+        btn_add.setIcon(app_icon("add", color="#FFFFFF", size=14))
         btn_add.setAccessibleName("Add fixed deposit")
         btn_add.clicked.connect(self._on_add_fd)
         header.addWidget(btn_add)
 
-        btn_del = Theme.btn("🗑  Delete Selected", "danger", height=38, min_width=145)
+        btn_del = Theme.btn("  Delete Selected", "danger", height=38, min_width=145)
+        btn_del.setIcon(app_icon("delete", color="#FFFFFF", size=14))
         btn_del.setAccessibleName("Delete selected fixed deposit")
         btn_del.clicked.connect(self._on_delete_fd)
         header.addWidget(btn_del)
 
-        btn_link = Theme.btn("🔗  Link Txn", "success", height=38, min_width=108)
+        btn_link = Theme.btn("  Link Txn", "success", height=38, min_width=108)
+        btn_link.setIcon(app_icon("link", color="#FFFFFF", size=14))
         btn_link.setAccessibleName("Link transaction to fixed deposit")
         btn_link.clicked.connect(self._on_link_fd_transaction)
         header.addWidget(btn_link)
 
-        btn_auto = Theme.btn("⚡  Auto-Link", "success", height=38, min_width=108)
+        btn_auto = Theme.btn("  Auto-Link", "success", height=38, min_width=108)
+        btn_auto.setIcon(app_icon("auto_link", color="#FFFFFF", size=14))
         btn_auto.setAccessibleName("Auto-link fixed deposit transactions")
         btn_auto.clicked.connect(self._on_auto_link)
         header.addWidget(btn_auto)
 
-        btn_recalc = Theme.btn("📊  Recalculate Selected", "primary", height=38, min_width=165)
+        btn_recalc = Theme.btn("  Recalculate Selected", "primary", height=38, min_width=165)
+        btn_recalc.setIcon(app_icon("recalculate", color="#FFFFFF", size=14))
         btn_recalc.setAccessibleName("Recalculate selected fixed deposits")
         btn_recalc.clicked.connect(self._on_recalculate_selected)
         header.addWidget(btn_recalc)
 
-        btn_save = Theme.btn("💾  Save Changes", "success", height=38, min_width=125)
+        btn_save = Theme.btn("  Save Changes", "success", height=38, min_width=125)
+        btn_save.setIcon(app_icon("save", color="#FFFFFF", size=14))
         btn_save.setAccessibleName("Save fixed deposit changes")
         btn_save.clicked.connect(self._on_save_changes)
         header.addWidget(btn_save)
@@ -221,6 +228,12 @@ class FixedDepositsScreen(QWidget):
         count = self.table.rowCount()
         self.status_label.setText(f"Showing {count} fixed deposit{'s' if count!=1 else ''}.")
         self.status_label.setStyleSheet("")  # Reset style
+
+    def refresh_theme(self):
+        """Called after a live theme switch — the table is fully rebuilt on
+        every refresh() call (status colours included), so re-running it
+        picks up the new theme automatically."""
+        self.refresh()
 
     def _format_tenure(self, fd: dict) -> str:
         years = fd.get("tenure_years") or 0

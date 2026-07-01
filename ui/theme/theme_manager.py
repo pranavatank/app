@@ -1,12 +1,12 @@
 """
 ui/theme/theme_manager.py — Runtime theme switcher.
 
-To add a new theme: create ui/theme/theme_xxx.py, then add ONE line to _THEME_MODULES.
-No other file needs changing.
-
-LIVE SWITCHING (no restart needed):
-  apply() patches Theme class attributes → pushes new QSS to QApplication
-  → recursively polishes every live QWidget → fires registered callbacks.
+HOW LIVE SWITCHING WORKS:
+  1. _patch_theme()    — overwrites all Theme.COLOR_TOKEN class attrs
+  2. _set_stylesheet() — pushes regenerated QSS to QApplication
+  3. _fire_listeners() — rebuilds inline setStyleSheet() widgets FIRST
+                         (inline styles can't be updated by polish alone)
+  4. _deep_refresh()   — unpolish/polish/update/repaint every live QWidget
 """
 
 from __future__ import annotations
@@ -16,15 +16,14 @@ import os
 _CONFIG_DIR  = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "data")
 _CONFIG_FILE = os.path.join(_CONFIG_DIR, "theme_prefs.json")
 
-# ── Register themes HERE ONLY ─────────────────────────────────────────────────
-# Order determines display order in Settings.
 _THEME_MODULES: dict[str, str] = {
-    # ── Light themes ──────────────────────────────────────────────────────────
+    # Light
     "Ocean Blue":     "ui.theme.theme_ocean_blue",
+    "Arctic Breeze":  "ui.theme.theme_arctic_breeze",
     "Forest Light":   "ui.theme.theme_forest_light",
     "Rose Gold Luxe": "ui.theme.theme_rose_gold",
     "Sunrise Warm":   "ui.theme.theme_sunrise_warm",
-    # ── Dark themes ───────────────────────────────────────────────────────────
+    # Dark
     "Midnight Pro":   "ui.theme.theme_midnight_pro",
     "Amethyst Dusk":  "ui.theme.theme_amethyst_dusk",
     "Finance Pro":    "ui.theme.theme_finance_pro",
@@ -33,83 +32,65 @@ _THEME_MODULES: dict[str, str] = {
 _DEFAULT_THEME = "Ocean Blue"
 
 _COLOR_ATTRS = [
-    "PRIMARY", "PRIMARY_DARK", "PRIMARY_LIGHT", "PRIMARY_TEXT",
-    "PRIMARY_GRADIENT_START", "PRIMARY_GRADIENT_END",
-    "PRIMARY_GRADIENT_HOVER_START", "PRIMARY_GRADIENT_HOVER_END",
-    "SUCCESS", "SUCCESS_DARK", "SUCCESS_LIGHT", "SUCCESS_GRADIENT_START", "SUCCESS_GRADIENT_END",
-    "DANGER",  "DANGER_DARK",  "DANGER_LIGHT",  "DANGER_GRADIENT_START",  "DANGER_GRADIENT_END",
-    "WARNING", "WARNING_DARK", "WARNING_LIGHT", "WARNING_GRADIENT_START", "WARNING_GRADIENT_END",
-    "INFO",    "INFO_DARK",    "INFO_LIGHT",    "INFO_GRADIENT_START",    "INFO_GRADIENT_END",
-    "EDIT",    "EDIT_DARK",    "EDIT_LIGHT",    "EDIT_GRADIENT_START",    "EDIT_GRADIENT_END",
-    "HERO_GRADIENT_START", "HERO_GRADIENT_END",
-    "HERO_GRADIENT_HOVER_START", "HERO_GRADIENT_HOVER_END",
-    "PURPLE", "PURPLE_LIGHT", "TEAL", "TEAL_LIGHT",
-    "ORANGE", "ORANGE_LIGHT", "PINK", "PINK_LIGHT",
-    "BG", "SURFACE", "SURFACE_ALT", "SURFACE_TINT_START", "SURFACE_TINT_END",
-    "SIDEBAR_BG", "SIDEBAR_TEXT", "SIDEBAR_ACTIVE", "SIDEBAR_ACTIVE_TEXT", "SIDEBAR_HOVER",
-    "TOPBAR_BG", "TOPBAR_BORDER",
-    "TEXT_PRIMARY", "TEXT_SECONDARY", "TEXT_MUTED", "TEXT_ON_PRIMARY", "TEXT_HEADING",
-    "BORDER", "BORDER_FOCUS", "DIVIDER",
-    "SHADOW_BLUR_CARD", "SHADOW_BLUR_ELEVATED",
-    "SHADOW_OFFSET_Y", "SHADOW_OFFSET_Y_ELEVATED",
-    "SHADOW_RGBA_CARD", "SHADOW_RGBA_ELEVATED", "SHADOW_RGBA_PRIMARY",
-    "CHART_COLORS", "CHART_COLORS_LIGHT",
+    "PRIMARY","PRIMARY_DARK","PRIMARY_LIGHT","PRIMARY_TEXT",
+    "PRIMARY_GRADIENT_START","PRIMARY_GRADIENT_END",
+    "PRIMARY_GRADIENT_HOVER_START","PRIMARY_GRADIENT_HOVER_END",
+    "SUCCESS","SUCCESS_DARK","SUCCESS_LIGHT","SUCCESS_GRADIENT_START","SUCCESS_GRADIENT_END",
+    "DANGER","DANGER_DARK","DANGER_LIGHT","DANGER_GRADIENT_START","DANGER_GRADIENT_END",
+    "WARNING","WARNING_DARK","WARNING_LIGHT","WARNING_GRADIENT_START","WARNING_GRADIENT_END",
+    "INFO","INFO_DARK","INFO_LIGHT","INFO_GRADIENT_START","INFO_GRADIENT_END",
+    "EDIT","EDIT_DARK","EDIT_LIGHT","EDIT_GRADIENT_START","EDIT_GRADIENT_END",
+    "HERO_GRADIENT_START","HERO_GRADIENT_END",
+    "HERO_GRADIENT_HOVER_START","HERO_GRADIENT_HOVER_END",
+    "PURPLE","PURPLE_LIGHT","TEAL","TEAL_LIGHT","ORANGE","ORANGE_LIGHT","PINK","PINK_LIGHT",
+    "BG","SURFACE","SURFACE_ALT","SURFACE_TINT_START","SURFACE_TINT_END",
+    "SIDEBAR_BG","SIDEBAR_TEXT","SIDEBAR_ACTIVE","SIDEBAR_ACTIVE_TEXT","SIDEBAR_HOVER",
+    "TOPBAR_BG","TOPBAR_BORDER",
+    "TEXT_PRIMARY","TEXT_SECONDARY","TEXT_MUTED","TEXT_ON_PRIMARY","TEXT_HEADING",
+    "BORDER","BORDER_FOCUS","DIVIDER",
+    "SHADOW_BLUR_CARD","SHADOW_BLUR_ELEVATED",
+    "SHADOW_OFFSET_Y","SHADOW_OFFSET_Y_ELEVATED",
+    "SHADOW_RGBA_CARD","SHADOW_RGBA_ELEVATED","SHADOW_RGBA_PRIMARY",
+    "CHART_COLORS","CHART_COLORS_LIGHT",
 ]
 
-# Callbacks fired after every theme switch — registered by UI screens that
-# need to rebuild inline-styled widgets (e.g. SettingsScreen header).
 _on_change_listeners: list = []
 
 
 class ThemeManager:
     _active: str = _DEFAULT_THEME
 
-    # ── Public API ────────────────────────────────────────────────────────────
-
     @classmethod
     def load_and_apply(cls) -> None:
-        """Call ONCE at startup — reads saved pref and applies without re-saving."""
+        """Call ONCE at startup."""
         name = cls._read_pref()
         cls.apply(name, save=False, notify=False)
 
     @classmethod
     def load_saved(cls) -> None:
-        """Backward-compat alias for load_and_apply()."""
         cls.load_and_apply()
 
     @classmethod
     def apply(cls, name: str, save: bool = True, notify: bool = True) -> None:
         """
-        Switch the active theme — no restart required.
-        Steps:
-          1. Patch all Theme.* class attributes from the new theme module.
-          2. Push regenerated QSS to QApplication.
-          3. Recursively polish + update every live QWidget.
-          4. Fire registered change-listeners (e.g. SettingsScreen).
-          5. Persist the new preference to disk.
+        Full live theme switch — no restart needed.
+        Order matters:
+          patch → stylesheet → listeners (rebuild inline) → deep_refresh (repaint)
         """
         if name not in _THEME_MODULES:
             name = _DEFAULT_THEME
-
         mod = cls._load_module(name)
         cls._patch_theme(mod)
         cls._set_stylesheet()
-        cls._deep_refresh()
         cls._active = name
-
+        if notify:
+            cls._fire_listeners(name)  # rebuild inline styles BEFORE repaint
+        cls._deep_refresh()            # repaint everything
         if save:
             cls._write_pref(name)
-        if notify:
-            cls._fire_listeners(name)
 
     @classmethod
     def register_on_change(cls, callback) -> None:
-        """
-        Register callback(theme_name: str).
-        Called on the main thread after every successful theme switch.
-        Use this in screens that build inline-style strings at __init__ time
-        so they can restyle themselves after a theme change.
-        """
         if callback not in _on_change_listeners:
             _on_change_listeners.append(callback)
 
@@ -128,12 +109,10 @@ class ThemeManager:
 
     @classmethod
     def is_dark(cls) -> bool:
-        mod = cls._load_module(cls._active)
-        return getattr(mod, "IS_DARK", False)
+        return getattr(cls._load_module(cls._active), "IS_DARK", False)
 
     @classmethod
     def available_themes(cls) -> list[dict]:
-        """Returns list of dicts with name, description, is_dark, emoji for each theme."""
         result = []
         for name in _THEME_MODULES:
             mod = cls._load_module(name)
@@ -157,17 +136,16 @@ class ThemeManager:
     def theme_names(cls) -> list[str]:
         return list(_THEME_MODULES.keys())
 
-    # ── Internal helpers ──────────────────────────────────────────────────────
+    # ── Internals ─────────────────────────────────────────────────────────────
 
     @staticmethod
     def _load_module(name: str):
         import importlib
-        mod_path = _THEME_MODULES.get(name, _THEME_MODULES[_DEFAULT_THEME])
-        return importlib.import_module(mod_path)
+        return importlib.import_module(
+            _THEME_MODULES.get(name, _THEME_MODULES[_DEFAULT_THEME]))
 
     @staticmethod
     def _patch_theme(mod) -> None:
-        """Monkey-patch every color token onto the live Theme class."""
         from ui.theme.theme import Theme
         for attr in _COLOR_ATTRS:
             val = getattr(mod, attr, None)
@@ -176,12 +154,11 @@ class ThemeManager:
 
     @staticmethod
     def _set_stylesheet() -> None:
-        """Regenerate and push QSS to QApplication."""
         try:
             from PyQt6.QtWidgets import QApplication
             from ui.theme.theme import Theme
             app = QApplication.instance()
-            if app is not None:
+            if app:
                 app.setStyleSheet(Theme.get_stylesheet())
         except Exception:
             pass
@@ -189,17 +166,17 @@ class ThemeManager:
     @staticmethod
     def _deep_refresh() -> None:
         """
-        Recursively call unpolish/polish/update on every live QWidget so the
-        new stylesheet takes immediate visual effect without restarting.
+        Walk every live QWidget and call unpolish/polish/update/repaint.
+        This re-evaluates the new QSS for every widget without a restart.
+        Inline setStyleSheet() widgets are handled by _fire_listeners BEFORE this.
         """
         try:
             from PyQt6.QtWidgets import QApplication, QWidget
             app = QApplication.instance()
-            if app is None:
+            if not app:
                 return
             style = app.style()
             for top in app.topLevelWidgets():
-                # Include the top-level window itself
                 for w in [top] + top.findChildren(QWidget):
                     try:
                         style.unpolish(w)
@@ -207,6 +184,18 @@ class ThemeManager:
                         w.update()
                     except Exception:
                         pass
+                try:
+                    top.repaint()
+                except Exception:
+                    pass
+            app.processEvents()
+            # Second pass — some widgets need two cycles to fully repaint
+            for top in app.topLevelWidgets():
+                try:
+                    top.update()
+                    top.repaint()
+                except Exception:
+                    pass
             app.processEvents()
         except Exception:
             pass
@@ -217,7 +206,8 @@ class ThemeManager:
             try:
                 cb(name)
             except Exception:
-                pass
+                import traceback
+                traceback.print_exc()
 
     @staticmethod
     def _read_pref() -> str:

@@ -17,7 +17,10 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 
 from ui.theme import Theme
+from ui.icons import set_btn_icon, icon as _app_icon, is_available as _icons_ok
 from core.session import session
+
+def _tab_icon(name): return _app_icon(name)
 from config import get_all_financial_years
 from models.transaction import get_income_total, get_expense_total, get_category_summary
 from models.fd_interest_record import get_total_fd_interest
@@ -109,7 +112,8 @@ class ReportsScreen(QWidget):
         self.fy_combo.currentTextChanged.connect(self._on_fy_change)
         header.addWidget(self.fy_combo)
 
-        btn = Theme.btn("🔄  Refresh", "primary", height=36, min_width=105)
+        btn = Theme.btn("  Refresh", "primary", height=36, min_width=105)
+        set_btn_icon(btn, "refresh")
         btn.setAccessibleName("Refresh reports")
         btn.setAccessibleDescription("Reload the charts for the selected financial year.")
         btn.clicked.connect(self.refresh)
@@ -120,11 +124,17 @@ class ReportsScreen(QWidget):
         self.tabs = QTabWidget()
         self.tabs.setAccessibleName("Reports tabs")
         self.tabs.setAccessibleDescription("Switch between overview, monthly, category, bank-wise, and interest charts.")
-        self.tabs.addTab(self._build_overview_tab(),   "📊  Overview")
-        self.tabs.addTab(self._build_monthly_tab(),    "📅  Monthly")
-        self.tabs.addTab(self._build_category_tab(),   "🥧  Categories")
-        self.tabs.addTab(self._build_bank_tab(),        "🏦  Bank-wise")
-        self.tabs.addTab(self._build_interest_tab(),    "📈  Interest Trend")
+        self.tabs.addTab(self._build_overview_tab(),   "Overview")
+        self.tabs.addTab(self._build_monthly_tab(),    "Monthly")
+        self.tabs.addTab(self._build_category_tab(),   "Categories")
+        self.tabs.addTab(self._build_bank_tab(),       "Bank-wise")
+        self.tabs.addTab(self._build_interest_tab(),   "Interest Trend")
+        if _icons_ok():
+            self.tabs.setTabIcon(0, _tab_icon("chart_overview"))
+            self.tabs.setTabIcon(1, _tab_icon("monthly"))
+            self.tabs.setTabIcon(2, _tab_icon("chart_pie"))
+            self.tabs.setTabIcon(3, _tab_icon("bank"))
+            self.tabs.setTabIcon(4, _tab_icon("trend"))
         layout.addWidget(self.tabs)
 
     # ── Tab builders ──────────────────────────────────────────────────────────

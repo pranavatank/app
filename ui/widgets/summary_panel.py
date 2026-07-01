@@ -1,6 +1,6 @@
 """
 ui/widgets/summary_panel.py — Summary card widget for dashboard panels.
-Enhancement: subtle card shadow via QGraphicsDropShadowEffect.
+Supports live theme switching via refresh_theme().
 """
 
 from PyQt6.QtWidgets import (
@@ -15,13 +15,13 @@ from ui.theme import Theme
 class SummaryPanel(QFrame):
     """
     Styled card with coloured left-border accent, icon, title, and stat rows.
-    Includes a subtle drop shadow for card depth.
 
     API:
         add_stat(key, label, value, value_size, value_color, bold)
         add_divider()
         update_stat(key, value)
         clear_stats()
+        refresh_theme()   ← call after a theme change
     """
 
     def __init__(self, title: str, icon: str = "",
@@ -29,22 +29,18 @@ class SummaryPanel(QFrame):
                  scrollable: bool = False,
                  parent=None):
         super().__init__(parent)
-        self._rows: dict[str, QLabel] = {}
+        self._rows:      dict[str, QLabel] = {}
         self._scrollable = scrollable
-        self._accent = accent or Theme.PRIMARY
+        self._accent     = accent or Theme.PRIMARY
+
+        # Keep refs to re-style on theme change
+        self._title_lbl:  QLabel | None = None
+        self._div:        QFrame | None = None
+        self._icon_bg:    QLabel | None = None
 
         self.setObjectName("SummaryPanel")
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self.setStyleSheet(
-            Theme.card_style(
-                border_color=Theme.BORDER,
-                left_accent=self._accent,
-                radius=14,
-                padding=0,
-                selector="QFrame#SummaryPanel",
-            )
-        )
-        # Subtle card shadow
+        self._apply_card_style()
         self.setGraphicsEffect(Theme.shadow_card())
 
         outer = QVBoxLayout(self)
@@ -56,30 +52,27 @@ class SummaryPanel(QFrame):
         header_row.setSpacing(10)
 
         if icon:
-            icon_bg = QLabel(icon)
-            icon_bg.setFont(QFont("Segoe UI Emoji", 15))
-            icon_bg.setFixedSize(38, 38)
-            icon_bg.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            icon_bg.setStyleSheet(f"""
-                background-color: {self._accent}1A;
-                border-radius: 10px;
-                border: 1px solid {self._accent}30;
-            """)
-            header_row.addWidget(icon_bg)
+            self._icon_bg = QLabel(icon)
+            self._icon_bg.setFont(QFont("Segoe UI Emoji", 15))
+            self._icon_bg.setFixedSize(38, 38)
+            self._icon_bg.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self._icon_bg.setStyleSheet(self._icon_css())
+            header_row.addWidget(self._icon_bg)
 
-        title_lbl = QLabel(title)
-        title_lbl.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
-        title_lbl.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=12, weight=700))
-        header_row.addWidget(title_lbl)
+        self._title_lbl = QLabel(title)
+        self._title_lbl.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
+        self._title_lbl.setStyleSheet(
+            Theme.text_style(color=Theme.TEXT_PRIMARY, size=12, weight=700))
+        header_row.addWidget(self._title_lbl)
         header_row.addStretch()
         outer.addLayout(header_row)
         outer.addSpacing(12)
 
         # ── Accent divider ────────────────────────────────────────────────────
-        div = QFrame()
-        div.setFixedHeight(1)
-        div.setStyleSheet(f"background: {Theme.DIVIDER};")
-        outer.addWidget(div)
+        self._div = QFrame()
+        self._div.setFixedHeight(1)
+        self._div.setStyleSheet(f"background: {Theme.DIVIDER};")
+        outer.addWidget(self._div)
         outer.addSpacing(12)
 
         # ── Stats area ────────────────────────────────────────────────────────
@@ -103,6 +96,41 @@ class SummaryPanel(QFrame):
             outer.addLayout(self._stats_layout)
             outer.addStretch()
 
+    # ── Style helpers ─────────────────────────────────────────────────────────
+
+    def _apply_card_style(self):
+        self.setStyleSheet(
+            Theme.card_style(
+                border_color=Theme.BORDER,
+                left_accent=self._accent,
+                radius=14,
+                padding=0,
+                selector="QFrame#SummaryPanel",
+            )
+        )
+
+    def _icon_css(self) -> str:
+        return (
+            f"background-color: {self._accent}1A;"
+            f"border-radius: 10px;"
+            f"border: 1px solid {self._accent}30;"
+        )
+
+    # ── Live theme refresh ────────────────────────────────────────────────────
+
+    def refresh_theme(self):
+        """Re-apply all inline styles after a theme switch."""
+        self._apply_card_style()
+        self.setGraphicsEffect(Theme.shadow_card())
+        if self._icon_bg:
+            self._icon_bg.setStyleSheet(self._icon_css())
+        if self._title_lbl:
+            self._title_lbl.setStyleSheet(
+                Theme.text_style(color=Theme.TEXT_PRIMARY, size=12, weight=700))
+        if self._div:
+            self._div.setStyleSheet(f"background: {Theme.DIVIDER};")
+        self.update()
+
     # ── Public API ────────────────────────────────────────────────────────────
 
     def add_stat(
@@ -124,16 +152,13 @@ class SummaryPanel(QFrame):
         lbl.setStyleSheet(Theme.text_style(color=Theme.TEXT_SECONDARY, size=12))
         lbl.setWordWrap(False)
 
-        color = value_color or Theme.TEXT_PRIMARY
+        color  = value_color or Theme.TEXT_PRIMARY
         weight = "700" if bold else "500"
         val = QLabel(value)
-        val.setStyleSheet(f"""
-            font-size: {value_size}px;
-            font-weight: {weight};
-            color: {color};
-            background: transparent;
-            border: none;
-        """)
+        val.setStyleSheet(
+            f"font-size: {value_size}px; font-weight: {weight};"
+            f" color: {color}; background: transparent; border: none;"
+        )
         val.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
         row.addWidget(lbl, stretch=1)

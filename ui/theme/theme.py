@@ -308,6 +308,22 @@ class Theme:
     def sidebar_nav_active() -> str:
         return tc.sidebar_nav_active()
 
+    @staticmethod
+    def chat_bubble_user() -> str:
+        return tc.chat_bubble_user(Theme)
+
+    @staticmethod
+    def chat_bubble_assistant() -> str:
+        return tc.chat_bubble_assistant(Theme)
+
+    @staticmethod
+    def chat_input_box() -> str:
+        return tc.chat_input_box(Theme)
+
+    @staticmethod
+    def attachment_chip() -> str:
+        return tc.attachment_chip(Theme)
+
     # ── Legacy helpers ────────────────────────────────────────────────────────
     @staticmethod
     def get_colors(theme_name=None) -> dict:

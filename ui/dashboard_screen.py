@@ -24,21 +24,22 @@ from models.fd_interest_record import get_total_fd_interest
 from models.savings_interest import get_total_savings_interest
 from models.tax_profile import get_tax_profile
 from ui.logo import logo_pixmap, set_window_icon
-from ui.theme import Theme
+from ui.theme import Theme, ThemeManager
+from ui.icons import icon as app_icon, fallback as icon_fallback, is_available as icons_available
 from ui.widgets.summary_panel import SummaryPanel
 
 _NAV_ITEMS = [
-    ("Overview",          "🏠"),
-    ("Accounts",          "🏛️"),
-    ("Transactions",      "💸"),
-    ("Income Management", "💰"),
-    ("Fixed Deposits",    "🏦"),
-    ("Statement Import",  "📄"),
-    ("AIS/TIS Import",    "📑"),
-    ("Tax",               "📋"),
-    ("26AS vs AIS",       "⚖️"),
-    ("Reports",           "📊"),
-    ("Settings",          "⚙️"),
+    ("Overview",          "overview"),
+    ("Accounts",          "accounts"),
+    ("Transactions",      "transactions"),
+    ("Income Management", "income"),
+    ("Fixed Deposits",    "fixed_deposits"),
+    ("Statement Import",  "statement_import"),
+    ("AIS/TIS Import",    "ais_tis"),
+    ("Tax",               "tax"),
+    ("26AS vs AIS",       "reconciliation"),
+    ("Reports",           "reports"),
+    ("Settings",          "settings"),
 ]
 
 
@@ -53,6 +54,8 @@ class DashboardScreen(QMainWindow):
         self._build_ui()
         self._populate_selectors()
         self._refresh_overview()
+        # Register live theme change listener
+        ThemeManager.register_on_change(self._on_theme_changed)
 
     # ═══════════════════════════════════════════════════════════════════════
     # Layout
@@ -76,6 +79,64 @@ class DashboardScreen(QMainWindow):
         right_layout.addWidget(self._build_content_area(), stretch=1)
 
         root_layout.addWidget(right, stretch=1)
+        self._build_chat_launcher()
+
+    def _build_chat_launcher(self):
+        self.chatbot_dialog = None
+        self.chat_launcher_btn = QPushButton("AI", self)
+        self.chat_launcher_btn.setFixedSize(58, 58)
+        self.chat_launcher_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.chat_launcher_btn.setToolTip("Open local AI chat")
+        self.chat_launcher_btn.setAccessibleName("Open local AI chat")
+        self.chat_launcher_btn.setAccessibleDescription("Open the local Ollama chatbot.")
+        self.chat_launcher_btn.clicked.connect(self._open_chatbot)
+        self.chat_launcher_btn.setStyleSheet(self._chat_launcher_style())
+        self.chat_launcher_btn.setGraphicsEffect(Theme.shadow_primary())
+        self.chat_launcher_btn.raise_()
+        self._position_chat_launcher()
+
+    @staticmethod
+    def _chat_launcher_style() -> str:
+        return f"""
+            QPushButton {{
+                background: {Theme.gradient(Theme.PRIMARY_GRADIENT_START, Theme.HERO_GRADIENT_END, diagonal=True)};
+                color: #FFFFFF;
+                border: 2px solid {Theme.SURFACE};
+                border-radius: 29px;
+                font-size: 15px;
+                font-weight: 800;
+            }}
+            QPushButton:hover {{
+                background: {Theme.gradient(Theme.PRIMARY_GRADIENT_HOVER_START, Theme.HERO_GRADIENT_HOVER_END, diagonal=True)};
+            }}
+            QPushButton:pressed {{
+                background: {Theme.PRIMARY_DARK};
+                padding-top: 2px;
+            }}
+        """
+
+    def _position_chat_launcher(self):
+        if not hasattr(self, "chat_launcher_btn"):
+            return
+        margin = 24
+        size = self.chat_launcher_btn.size()
+        self.chat_launcher_btn.move(
+            max(margin, self.width() - size.width() - margin),
+            max(margin, self.height() - size.height() - margin),
+        )
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._position_chat_launcher()
+
+    def _open_chatbot(self):
+        from ui.chatbot_screen import LocalChatbotDialog
+
+        if self.chatbot_dialog is None:
+            self.chatbot_dialog = LocalChatbotDialog(self)
+        self.chatbot_dialog.show()
+        self.chatbot_dialog.raise_()
+        self.chatbot_dialog.activateWindow()
 
     # ── Sidebar ──────────────────────────────────────────────────────────────
 
@@ -91,9 +152,8 @@ class DashboardScreen(QMainWindow):
 
         # Brand header
         brand = QWidget()
-        brand.setStyleSheet(f"""
-            background: {Theme.gradient(Theme.HERO_GRADIENT_START, Theme.HERO_GRADIENT_END, diagonal=True)};
-        """)
+        self._brand_widget = brand  # keep ref for theme refresh
+        brand.setStyleSheet(self._brand_bg_css())
         brand.setFixedHeight(64)
         brand_layout = QHBoxLayout(brand)
         brand_layout.setContentsMargins(12, 0, 12, 0)
@@ -169,7 +229,7 @@ class DashboardScreen(QMainWindow):
             self._pin_btn.setChecked(True)
         return sidebar
 
-    def _make_nav_btn(self, icon: str, label: str) -> QWidget:
+    def _make_nav_btn(self, icon_name: str, label: str) -> QWidget:
         """Create a nav button with separate icon and label components"""
         container = QWidget()
         container.setFixedHeight(44)
@@ -180,7 +240,7 @@ class DashboardScreen(QMainWindow):
         container.setProperty("nav_item", True)
         container.setProperty("active", False)
 
-        def _key_press(event, idx_label=label, idx_icon=icon):
+        def _key_press(event, idx_label=label, idx_icon=icon_name):
             if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space):
                 self._navigate(_NAV_ITEMS.index((idx_label, idx_icon)))
                 event.accept()
@@ -194,12 +254,21 @@ class DashboardScreen(QMainWindow):
         layout.setSpacing(0)
         
         # Icon label (always visible)
-        icon_label = QLabel(icon)
+        icon_label = QLabel()
         icon_label.setObjectName("nav_icon")
         icon_label.setFixedWidth(70)
         icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        icon_label.setFont(QFont("Segoe UI Emoji", 22))
-        icon_label.setStyleSheet(f"color: {Theme.SIDEBAR_TEXT}; background: transparent;")
+        if icons_available():
+            pm = app_icon(icon_name, color="auto", size=22).pixmap(22, 22)
+            if not pm.isNull():
+                icon_label.setPixmap(pm)
+            else:
+                icon_label.setText(icon_fallback(icon_name))
+                icon_label.setFont(QFont("Segoe UI Emoji", 18))
+        else:
+            icon_label.setText(icon_fallback(icon_name))
+            icon_label.setFont(QFont("Segoe UI Emoji", 18))
+        icon_label.setStyleSheet("background: transparent;")
         layout.addWidget(icon_label)
         
         # Text label (hidden when collapsed)
@@ -220,21 +289,35 @@ class DashboardScreen(QMainWindow):
             is_active = (i == index)
             container.setProperty("active", is_active)
             container.setStyleSheet(self._nav_active_style() if is_active else self._nav_normal_style())
-            
-            # Update colors
+
             icon_label = container.findChild(QLabel, "nav_icon")
             text_label = container.findChild(QLabel, "nav_label")
-            
-            if is_active:
-                if icon_label:
-                    icon_label.setStyleSheet(f"color: {Theme.SIDEBAR_ACTIVE_TEXT}; background: transparent;")
-                if text_label:
-                    text_label.setStyleSheet(f"color: {Theme.SIDEBAR_ACTIVE_TEXT}; background: transparent; padding-right: 12px; font-weight: 700;")
-            else:
-                if icon_label:
-                    icon_label.setStyleSheet(f"color: {Theme.SIDEBAR_TEXT}; background: transparent;")
-                if text_label:
-                    text_label.setStyleSheet(f"color: {Theme.SIDEBAR_TEXT}; background: transparent; padding-right: 12px;")
+            # Active items get crisp white icon (contrasts with the gradient bg).
+            # Inactive items use the registry's colourful default so each icon
+            # stays visible and distinguishable on the always-dark sidebar.
+            icon_color = Theme.SIDEBAR_ACTIVE_TEXT if is_active else "auto"
+            text_color = Theme.SIDEBAR_ACTIVE_TEXT if is_active else "#CBD5E1"
+
+            if icon_label:
+                if icons_available():
+                    icon_name = _NAV_ITEMS[i][1]
+                    pm = app_icon(icon_name, color=icon_color, size=22).pixmap(22, 22)
+                    if not pm.isNull():
+                        icon_label.setPixmap(pm)
+                icon_label.setStyleSheet("background: transparent;")
+            if text_label:
+                weight = "font-weight: 700;" if is_active else ""
+                text_label.setStyleSheet(
+                    f"color: {text_color}; background: transparent; padding-right: 12px; {weight}")
+
+    @staticmethod
+    def _brand_bg_css() -> str:
+        return (f"background: {Theme.gradient(Theme.HERO_GRADIENT_START, Theme.HERO_GRADIENT_END, diagonal=True)};")
+
+    @staticmethod
+    def _overview_banner_css() -> str:
+        return (f"QFrame {{ background: {Theme.gradient(Theme.PRIMARY_GRADIENT_START, Theme.PRIMARY_DARK)};"
+                f" border-radius: 14px; }}")
 
     @staticmethod
     def _nav_normal_style() -> str:
@@ -262,6 +345,58 @@ class DashboardScreen(QMainWindow):
                 border-radius: 0;
             }}
         """
+
+    def _on_theme_changed(self, name: str) -> None:
+        """
+        Called by ThemeManager after a theme switch.
+        Rebuilds all inline-styled dashboard widgets that can't be
+        updated by Qt's polish/unpolish cycle alone.
+        """
+        # Brand gradient header
+        if hasattr(self, '_brand_widget') and self._brand_widget:
+            self._brand_widget.setStyleSheet(self._brand_bg_css())
+
+        # Nav button styles + icon pixmaps (colors are baked into QPixmap)
+        current_idx = self.stack.currentIndex() if hasattr(self, 'stack') else 0
+        self._set_nav_active(current_idx)
+
+        # Nav label / version label colors
+        if hasattr(self, 'nav_lbl') and self.nav_lbl:
+            self.nav_lbl.setStyleSheet(
+                Theme.text_style(color=Theme.TEXT_MUTED, size=10, weight=700) +
+                " letter-spacing: 1.5px; padding-left: 20px;"
+            )
+        if hasattr(self, 'ver_lbl') and self.ver_lbl:
+            self.ver_lbl.setStyleSheet(
+                Theme.text_style(color=Theme.TEXT_MUTED, size=10) + " padding-bottom: 12px;")
+
+        # Page title
+        if hasattr(self, 'page_title_lbl') and self.page_title_lbl:
+            self.page_title_lbl.setStyleSheet(Theme.title_style(15))
+
+        # Overview banner gradient
+        if hasattr(self, '_overview_banner') and self._overview_banner:
+            self._overview_banner.setStyleSheet(self._overview_banner_css())
+
+        if hasattr(self, 'chat_launcher_btn') and self.chat_launcher_btn:
+            self.chat_launcher_btn.setStyleSheet(self._chat_launcher_style())
+
+        # Refresh all SummaryPanel cards (left-accent + card border are inline)
+        for panel_name in ('panel_financial', 'panel_bank', 'panel_interest', 'panel_tax'):
+            panel = getattr(self, panel_name, None)
+            if panel is not None:
+                panel.refresh_theme()
+
+        # Refresh stacked pages that carry baked-in colours (inline styles,
+        # QColor table-row foregrounds, etc.) and won't update via the
+        # global QSS unpolish/polish pass alone.
+        for page_name in ('accounts_page', 'transactions_page', 'fd_page'):
+            page = getattr(self, page_name, None)
+            if page is not None and hasattr(page, 'refresh_theme'):
+                try:
+                    page.refresh_theme()
+                except Exception:
+                    pass
 
     # ── Top bar ───────────────────────────────────────────────────────────────
 
@@ -415,12 +550,8 @@ class DashboardScreen(QMainWindow):
 
         # FY banner
         banner = QFrame()
-        banner.setStyleSheet(f"""
-            QFrame {{
-                background: {Theme.gradient(Theme.PRIMARY_GRADIENT_START, Theme.PRIMARY_DARK)};
-                border-radius: 14px;
-            }}
-        """)
+        self._overview_banner = banner  # keep ref for theme refresh
+        banner.setStyleSheet(self._overview_banner_css())
         banner.setFixedHeight(70)
         b_layout = QHBoxLayout(banner)
         b_layout.setContentsMargins(24, 0, 24, 0)

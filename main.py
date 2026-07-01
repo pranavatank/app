@@ -18,6 +18,14 @@ from ui.messagebox_utils import install_copyable_error_dialogs
 from ui.logo import set_app_icon, set_windows_app_user_model_id
 
 
+def _unload_local_ai_model():
+    try:
+        from engines.statement_parser import unload_ollama_model
+        unload_ollama_model(only_if_used=True)
+    except Exception:
+        pass
+
+
 def bootstrap():
     os.makedirs(DATA_DIR,   exist_ok=True)
     os.makedirs(BACKUP_DIR, exist_ok=True)
@@ -42,6 +50,7 @@ def launch_app():
     
     qInstallMessageHandler(_qt_message_handler)
     app = QApplication(sys.argv)
+    app.aboutToQuit.connect(_unload_local_ai_model)
     install_copyable_error_dialogs()
     app.setApplicationName(APP_NAME)
     app.setApplicationVersion(APP_VERSION)

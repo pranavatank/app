@@ -12,6 +12,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 
 from ui.theme import Theme
+from ui.icons import set_btn_icon, icon as app_icon, icon_label as app_icon_label, is_available as icons_available
 from ui.widgets.advance_tax_banner import AdvanceTaxBanner
 from core.session import session
 from models.person import get_person
@@ -82,7 +83,8 @@ class TaxScreen(QWidget):
         self.source_combo.currentIndexChanged.connect(self._on_source_changed)
         header_layout.addWidget(self.source_combo)
 
-        self.btn_calc = Theme.btn("⚡  Estimate Tax", "primary", height=40, min_width=158)
+        self.btn_calc = Theme.btn("  Estimate Tax", "primary", height=40, min_width=158)
+        set_btn_icon(self.btn_calc, "calculate")
         self.btn_calc.setAccessibleName("Estimate tax")
         self.btn_calc.setAccessibleDescription("Calculate tax from the selected data source.")
         self.btn_calc.clicked.connect(self._on_calculate)
@@ -214,7 +216,7 @@ class TaxScreen(QWidget):
         )
 
     def _build_basic_info_section(self) -> QGroupBox:
-        group = self._section_group("📋  Basic Information")
+        group = self._section_group("Basic Information")
         layout = QFormLayout(group); layout.setSpacing(12)
         self.pan_label       = QLabel("—"); layout.addRow("PAN:", self.pan_label)
         self.taxpayer_label  = QLabel("—"); layout.addRow("Name of Taxpayer:", self.taxpayer_label)
@@ -226,7 +228,7 @@ class TaxScreen(QWidget):
         return group
 
     def _build_salary_section(self) -> QGroupBox:
-        group = self._section_group("💼  Income under the head Salaries")
+        group = self._section_group("Income — Salaries")
         layout = QFormLayout(group); layout.setSpacing(12)
         self.gross_salary    = self._spin(); layout.addRow("Gross Salary:", self.gross_salary)
         self.exemption_10    = self._spin(); layout.addRow("Exemption claimed u/s 10:", self.exemption_10)
@@ -238,7 +240,7 @@ class TaxScreen(QWidget):
         return group
 
     def _build_house_property_section(self) -> QGroupBox:
-        group = self._section_group("🏠  Income under the head House Property")
+        group = self._section_group("Income — House Property")
         layout = QFormLayout(group); layout.setSpacing(12)
         self.self_occupied_interest = self._spin()
         layout.addRow("Self-occupied — Interest on Borrowed Capital:", self.self_occupied_interest)
@@ -249,7 +251,7 @@ class TaxScreen(QWidget):
         return group
 
     def _build_capital_gains_section(self) -> QGroupBox:
-        group = self._section_group("📈  Income under the head Capital Gains")
+        group = self._section_group("Income — Capital Gains")
         layout = QFormLayout(group); layout.setSpacing(12)
         self.stcg_normal = self._spin(); layout.addRow("Short Term Capital Gains (Normal rates):", self.stcg_normal)
         self.stcg_111a   = self._spin(); layout.addRow("STCG u/s 111A (@ 20%):", self.stcg_111a)
@@ -259,7 +261,7 @@ class TaxScreen(QWidget):
         return group
 
     def _build_business_section(self) -> QGroupBox:
-        group = self._section_group("🏢  Income under the head Business or Profession")
+        group = self._section_group("Income — Business / Profession")
         layout = QFormLayout(group); layout.setSpacing(12)
         self.presumptive_income      = self._spin(); layout.addRow("Presumptive Income u/s 44AD/44ADA:", self.presumptive_income)
         self.manufacturing_income    = self._spin(); layout.addRow("Manufacturing Business Income:", self.manufacturing_income)
@@ -267,7 +269,7 @@ class TaxScreen(QWidget):
         return group
 
     def _build_other_sources_section(self) -> QGroupBox:
-        group = self._section_group("💰  Income under the head Other Sources")
+        group = self._section_group("Income — Other Sources")
         layout = QFormLayout(group); layout.setSpacing(12)
         self.savings_interest_input  = self._spin(readonly=True)
         layout.addRow("Interest from Savings Bank Account:", self.savings_interest_input)
@@ -286,7 +288,7 @@ class TaxScreen(QWidget):
         return group
 
     def _build_deductions_section(self) -> QGroupBox:
-        group = self._section_group("📤  Deductions (Old Regime Only)")
+        group = self._section_group("Deductions (Old Regime Only)")
         layout = QFormLayout(group); layout.setSpacing(12)
         self.deduction_80c    = self._spin(); layout.addRow("80C — LIC, PF, PPF, NSC (max ₹1.5L):", self.deduction_80c)
         self.deduction_80ccc  = self._spin(); layout.addRow("80CCC — Pension Fund:", self.deduction_80ccc)
@@ -307,7 +309,7 @@ class TaxScreen(QWidget):
         return group
 
     def _build_tds_section(self) -> QGroupBox:
-        group = self._section_group("💳  TDS / TCS & Tax Payments")
+        group = self._section_group("TDS / TCS & Tax Payments")
         layout = QFormLayout(group); layout.setSpacing(12)
         self.tds_salary          = self._spin(); layout.addRow("TDS on Salary:", self.tds_salary)
         self.tds_other           = self._spin(); layout.addRow("TDS on Other Income:", self.tds_other)
@@ -317,7 +319,7 @@ class TaxScreen(QWidget):
         return group
 
     def _build_results_section(self) -> QGroupBox:
-        group = self._section_group("📊  Tax Calculation Results")
+        group = self._section_group("Tax Calculation Results")
         layout = QVBoxLayout(group)
         layout.setSpacing(10)
 
@@ -443,7 +445,7 @@ class TaxScreen(QWidget):
         fy  = session.selected_fy
         self._update_context_panel()
         if not pid:
-            self.person_label.setText("⚠  Please select a person from the top bar")
+            self.person_label.setText("Please select a person from the top bar")
             self.person_label.setStyleSheet(Theme.text_style(color=Theme.WARNING, size=13, weight=600))
             self._clear_inputs()
             self.advance_tax_banner.clear()
@@ -563,7 +565,7 @@ class TaxScreen(QWidget):
         color   = Theme.WARNING if is_old else Theme.INFO
         bg      = Theme.WARNING_LIGHT if is_old else Theme.INFO_LIGHT
         self.recommendation_label.setText(
-            f"{'🏆 Old Regime' if is_old else '🏆 New Regime'}\nSave ₹ {savings:,.2f}")
+            f"{'Old Regime ✓' if is_old else 'New Regime ✓'}\nSave ₹ {savings:,.2f}")
         self.recommendation_label.setStyleSheet(self._recommendation_style(bg, color, emphasize=True))
 
     def _display_results_from_summary(self, summary, profile):
@@ -579,7 +581,7 @@ class TaxScreen(QWidget):
         color  = Theme.WARNING if is_old else Theme.INFO
         bg     = Theme.WARNING_LIGHT if is_old else Theme.INFO_LIGHT
         self.recommendation_label.setText(
-            f"{'🏆 Old Regime' if is_old else '🏆 New Regime'}\nSave ₹ {summary['savings']:,.2f}")
+            f"{'Old Regime ✓' if is_old else 'New Regime ✓'}\nSave ₹ {summary['savings']:,.2f}")
         self.recommendation_label.setStyleSheet(self._recommendation_style(bg, color, emphasize=True))
 
     def _update_advance_tax_banner(self):
