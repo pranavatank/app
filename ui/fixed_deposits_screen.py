@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (
     QPlainTextEdit, QSpinBox, QScrollArea, QCheckBox
 )
 from PyQt6.QtCore import Qt, QDate
-from PyQt6.QtGui import QFont, QColor
+from PyQt6.QtGui import QFont, QColor, QDoubleValidator
 
 from datetime import date
 from dateutil.relativedelta import relativedelta
@@ -56,7 +56,11 @@ class FixedDepositsScreen(QWidget):
         layout.setSpacing(16)
 
         # Header
-        header = QHBoxLayout()
+        self.header_frame = QFrame()
+        self.header_frame.setObjectName("pageHeader")
+        self.header_frame.setStyleSheet(Theme.page_header_style())
+        header = QHBoxLayout(self.header_frame)
+        header.setContentsMargins(20, 16, 20, 16)
         title = QLabel("Fixed Deposits")
         title.setFont(QFont("Segoe UI", 15, QFont.Weight.Bold))
         title.setStyleSheet(f"color: {Theme.TEXT_PRIMARY};")
@@ -67,42 +71,42 @@ class FixedDepositsScreen(QWidget):
         header.addStretch()
 
         btn_add = Theme.btn("  Add FD", "primary", height=38, min_width=110)
-        btn_add.setIcon(app_icon("add", color="#FFFFFF", size=14))
+        btn_add.setIcon(app_icon("add", color="#FFFFFF", size=16))
         btn_add.setAccessibleName("Add fixed deposit")
         btn_add.clicked.connect(self._on_add_fd)
         header.addWidget(btn_add)
 
         btn_del = Theme.btn("  Delete Selected", "danger", height=38, min_width=145)
-        btn_del.setIcon(app_icon("delete", color="#FFFFFF", size=14))
+        btn_del.setIcon(app_icon("delete", color="#FFFFFF", size=16))
         btn_del.setAccessibleName("Delete selected fixed deposit")
         btn_del.clicked.connect(self._on_delete_fd)
         header.addWidget(btn_del)
 
         btn_link = Theme.btn("  Link Txn", "success", height=38, min_width=108)
-        btn_link.setIcon(app_icon("link", color="#FFFFFF", size=14))
+        btn_link.setIcon(app_icon("link", color="#FFFFFF", size=16))
         btn_link.setAccessibleName("Link transaction to fixed deposit")
         btn_link.clicked.connect(self._on_link_fd_transaction)
         header.addWidget(btn_link)
 
         btn_auto = Theme.btn("  Auto-Link", "success", height=38, min_width=108)
-        btn_auto.setIcon(app_icon("auto_link", color="#FFFFFF", size=14))
+        btn_auto.setIcon(app_icon("auto_link", color="#FFFFFF", size=16))
         btn_auto.setAccessibleName("Auto-link fixed deposit transactions")
         btn_auto.clicked.connect(self._on_auto_link)
         header.addWidget(btn_auto)
 
         btn_recalc = Theme.btn("  Recalculate Selected", "primary", height=38, min_width=165)
-        btn_recalc.setIcon(app_icon("recalculate", color="#FFFFFF", size=14))
+        btn_recalc.setIcon(app_icon("recalculate", color="#FFFFFF", size=16))
         btn_recalc.setAccessibleName("Recalculate selected fixed deposits")
         btn_recalc.clicked.connect(self._on_recalculate_selected)
         header.addWidget(btn_recalc)
 
         btn_save = Theme.btn("  Save Changes", "success", height=38, min_width=125)
-        btn_save.setIcon(app_icon("save", color="#FFFFFF", size=14))
+        btn_save.setIcon(app_icon("save", color="#FFFFFF", size=16))
         btn_save.setAccessibleName("Save fixed deposit changes")
         btn_save.clicked.connect(self._on_save_changes)
         header.addWidget(btn_save)
 
-        layout.addLayout(header)
+        layout.addWidget(self.header_frame)
 
         # Table
         self.table_widget = ExcelTableWithStats(show_checkboxes=True)
@@ -115,6 +119,10 @@ class FixedDepositsScreen(QWidget):
             "Compounding", "Start Date", "Maturity Date", "Maturity Amount",
             "Expected Interest", "Actual Interest", "Method", "Status"
         ])
+        # Principal, Rate %, Actual Interest are the only strictly-numeric
+        # editable columns (FD No/Tenure/Compounding/Start Date are editable
+        # too but not plain numbers) — reject non-numeric pastes into them.
+        self.table.setNumericColumns({4, 5, 12})
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self.table.setEditTriggers(QTableWidget.EditTrigger.DoubleClicked | QTableWidget.EditTrigger.EditKeyPressed)
         self.table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection)  # Allow multi-cell selection
@@ -124,6 +132,9 @@ class FixedDepositsScreen(QWidget):
         self.table.doubleClicked.connect(self._on_edit_fd)
         self.table.cellDataChanged.connect(self._on_table_data_changed)
         self.table.itemChanged.connect(self._on_item_changed)  # Track manual edits
+        # Override the base ExcelTable delete (which only removes UI rows)
+        # so pressing Delete also removes the underlying FD records.
+        self.table.deleteSelectedRows = self._delete_selected_fds
         for i, w in enumerate([40,110,120,110,110,70,90,100,100,110,130,130,120,110,85]):
             self.table.setColumnWidth(i, w)
         layout.addWidget(self.table_widget)
@@ -233,6 +244,8 @@ class FixedDepositsScreen(QWidget):
         """Called after a live theme switch — the table is fully rebuilt on
         every refresh() call (status colours included), so re-running it
         picks up the new theme automatically."""
+        if hasattr(self, "header_frame") and self.header_frame:
+            self.header_frame.setStyleSheet(Theme.page_header_style())
         self.refresh()
 
     def _format_tenure(self, fd: dict) -> str:
@@ -275,6 +288,30 @@ class FixedDepositsScreen(QWidget):
             delete_fd(fd_id)
             self.refresh()
             if self.parent_window: self.parent_window.refresh_overview()
+
+    def _delete_selected_fds(self):
+        """Delete key handler for the table — unlike the base ExcelTable
+        implementation, this actually deletes the underlying FD records,
+        not just the UI rows (mirrors transactions_screen.py's override)."""
+        selected_rows = sorted({item.row() for item in self.table.selectedItems()}, reverse=True)
+        if not selected_rows:
+            return
+        reply = QMessageBox.question(
+            self, "Delete Fixed Deposits",
+            f"Delete {len(selected_rows)} selected fixed deposit(s)?\n\nThis action cannot be undone.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        for row in selected_rows:
+            id_item = self.table.item(row, 1)
+            fd_id = id_item.data(Qt.ItemDataRole.UserRole) if id_item else None
+            if fd_id:
+                delete_fd(fd_id)
+        self.refresh()
+        if self.parent_window:
+            self.parent_window.refresh_overview()
 
     def _selected_fd_id(self) -> int | None:
         row = self.table.currentRow()
@@ -363,6 +400,11 @@ class FixedDepositsScreen(QWidget):
 
                 rate_text = self.table.item(row, 4+1).text().replace("%", "").strip()
                 rate = float(rate_text) if rate_text and rate_text != "—" else fd_data.get("interest_rate")
+
+                if principal <= 0:
+                    raise ValueError("Principal must be greater than 0")
+                if rate <= 0 or rate > 100:
+                    raise ValueError("Interest rate must be between 0 and 100")
 
                 tenure_text = self.table.item(row, 5+1).text().strip()
                 # Parse tenure
@@ -478,11 +520,17 @@ class FixedDepositsScreen(QWidget):
                     errors.append(f"Row {row+1}: Missing principal")
                     continue
                 principal = float(principal_text)
+                if principal <= 0:
+                    errors.append(f"Row {row+1}: Principal must be greater than 0")
+                    continue
 
                 if not rate_text or rate_text == "—":
                     errors.append(f"Row {row+1}: Missing rate")
                     continue
                 rate = float(rate_text)
+                if rate <= 0 or rate > 100:
+                    errors.append(f"Row {row+1}: Interest rate must be between 0 and 100")
+                    continue
 
                 # Parse tenure (format: "2y 3m 5d" or "24m" or "730d")
                 years, months, days = 0, 0, 0
@@ -616,6 +664,7 @@ class FDDialog(QDialog):
         self._on_person_changed()
 
         self.principal_input = QLineEdit(); self.principal_input.setPlaceholderText("e.g. 100000")
+        self.principal_input.setValidator(QDoubleValidator(0.01, 99_999_999.99, 2, self.principal_input))
         self.principal_input.textChanged.connect(self._calc)
         form.addRow("Principal (₹):", self.principal_input)
 
@@ -623,6 +672,7 @@ class FDDialog(QDialog):
         form.addRow("FD No / TD No:", self.fd_no_input)
 
         self.rate_input = QLineEdit(); self.rate_input.setPlaceholderText("e.g. 7.5")
+        self.rate_input.setValidator(QDoubleValidator(0.01, 100.0, 2, self.rate_input))
         self.rate_input.textChanged.connect(self._calc)
         form.addRow("Interest Rate (%):", self.rate_input)
 
@@ -988,8 +1038,8 @@ class FDDialog(QDialog):
             fd_ref_no = (self.fd_no_input.text() or "").strip() or None
             expected_interest = float(self.expected_interest_input.text()) if (self.expected_interest_input.text() or "").strip() else None
             actual_interest = float(self.actual_interest_input.text()) if (self.actual_interest_input.text() or "").strip() else None
-            if not account_id or principal<=0 or rate<=0 or (tenure_years<=0 and tenure_months<=0 and tenure_days<=0):
-                QMessageBox.warning(self,"Invalid","Please fill all fields correctly."); return
+            if not account_id or principal<=0 or rate<=0 or rate>100 or (tenure_years<=0 and tenure_months<=0 and tenure_days<=0):
+                QMessageBox.warning(self,"Invalid","Please fill all fields correctly (interest rate must be between 0 and 100)."); return
             mat_date = calculate_fd_maturity_date(start, tenure_years, tenure_months, tenure_days)
             mat_formula = calculate_fd_maturity_flexible(
                 principal, rate, start, mat_date, compounding,
@@ -1047,6 +1097,8 @@ class FDDialog(QDialog):
             self.accept()
         except ValueError:
             QMessageBox.warning(self, "Invalid Input", "Please enter valid numeric values.")
+        except Exception as e:
+            QMessageBox.warning(self, "Could Not Save", f"Failed to save the fixed deposit: {e}")
 
 
 class LinkFDTransactionDialog(QDialog):

@@ -18,18 +18,20 @@ _CONFIG_FILE = os.path.join(_CONFIG_DIR, "theme_prefs.json")
 
 _THEME_MODULES: dict[str, str] = {
     # Light
+    "Aurora":         "ui.theme.theme_aurora_light",
     "Ocean Blue":     "ui.theme.theme_ocean_blue",
     "Arctic Breeze":  "ui.theme.theme_arctic_breeze",
     "Forest Light":   "ui.theme.theme_forest_light",
     "Rose Gold Luxe": "ui.theme.theme_rose_gold",
     "Sunrise Warm":   "ui.theme.theme_sunrise_warm",
     # Dark
+    "Nova":           "ui.theme.theme_nova_dark",
     "Midnight Pro":   "ui.theme.theme_midnight_pro",
     "Amethyst Dusk":  "ui.theme.theme_amethyst_dusk",
     "Finance Pro":    "ui.theme.theme_finance_pro",
 }
 
-_DEFAULT_THEME = "Ocean Blue"
+_DEFAULT_THEME = "Aurora"
 
 _COLOR_ATTRS = [
     "PRIMARY","PRIMARY_DARK","PRIMARY_LIGHT","PRIMARY_TEXT",

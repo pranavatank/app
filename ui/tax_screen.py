@@ -45,13 +45,7 @@ class TaxScreen(QWidget):
         header_card = QFrame()
         header_card.setObjectName("TaxHeaderCard")
         header_card.setStyleSheet(
-            Theme.card_style(
-                bg=Theme.SURFACE,
-                border_color=Theme.BORDER,
-                radius=12,
-                padding=0,
-                selector="QFrame#TaxHeaderCard",
-            )
+            Theme.page_header_style(radius=14, selector="QFrame#TaxHeaderCard")
         )
         header_layout = QHBoxLayout(header_card)
         header_layout.setContentsMargins(16, 12, 16, 12)

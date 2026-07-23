@@ -10,6 +10,7 @@ from PyQt6.QtCore import Qt, QDate
 from PyQt6.QtGui import QFont
 
 from ui.theme import Theme
+from ui.icons import icon_label
 from config import INCOME_CATEGORIES, EXPENSE_CATEGORIES, TRANSACTION_MODES
 
 
@@ -30,10 +31,15 @@ class TransactionEditDialog(QDialog):
         layout.setContentsMargins(24, 20, 24, 20)
 
         # Title
-        title = QLabel("✏️  Edit Transaction")
+        title_row = QHBoxLayout()
+        title_row.setSpacing(10)
+        title_row.addWidget(icon_label("edit", size=20, color=Theme.PRIMARY))
+        title = QLabel("Edit Transaction")
         title.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
         title.setStyleSheet(Theme.title_style(14))
-        layout.addWidget(title)
+        title_row.addWidget(title)
+        title_row.addStretch()
+        layout.addLayout(title_row)
 
         # Form
         form = QFormLayout()

@@ -2,6 +2,8 @@
 ui/dialogs/bank_dialog.py — Bank management dialog with person-like operations.
 """
 
+import re
+
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView, QLineEdit,
@@ -11,6 +13,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 
 from ui.theme import Theme
+from ui.icons import icon_label, set_btn_icon
 from models.bank import add_bank, get_all_banks, get_bank, update_bank, delete_bank
 
 
@@ -32,12 +35,14 @@ class BankManagementDialog(QDialog):
         layout.setContentsMargins(24, 20, 24, 20)
 
         header = QHBoxLayout()
+        header.setSpacing(10)
+        header.addWidget(icon_label("bank", size=20, color=Theme.PRIMARY))
         title = QLabel("Banks")
-        title.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
-        title.setStyleSheet(f"color: {Theme.TEXT_PRIMARY};")
+        title.setStyleSheet(Theme.title_style(14))
         header.addWidget(title)
         header.addStretch()
-        btn_add = _btn("＋  Add Bank", "primary")
+        btn_add = _btn("  Add Bank", "primary")
+        set_btn_icon(btn_add, "add")
         btn_add.setAccessibleName("Add bank")
         btn_add.clicked.connect(self._on_add)
         header.addWidget(btn_add)
@@ -60,11 +65,13 @@ class BankManagementDialog(QDialog):
 
         actions = QHBoxLayout()
         actions.addStretch()
-        btn_edit = _btn("✏  Edit", "edit")
+        btn_edit = _btn("  Edit", "edit")
+        set_btn_icon(btn_edit, "edit")
         btn_edit.setAccessibleName("Edit bank")
         btn_edit.clicked.connect(self._on_edit)
         actions.addWidget(btn_edit)
-        btn_del = _btn("🗑  Delete", "danger")
+        btn_del = _btn("  Delete", "danger")
+        set_btn_icon(btn_del, "delete")
         btn_del.setAccessibleName("Delete bank")
         btn_del.clicked.connect(self._on_delete)
         actions.addWidget(btn_del)
@@ -206,6 +213,11 @@ class BankDialog(QDialog):
     def _on_save(self):
         if not self.bank_name_input.text().strip():
             QMessageBox.warning(self, "Missing", "Please enter bank name.")
+            return
+        tan = self.tan_input.text().strip().upper()
+        if tan and not re.fullmatch(r"[A-Z]{4}[0-9]{5}[A-Z]", tan):
+            QMessageBox.warning(self, "Invalid TAN",
+                "TAN must be 10 characters in the format ABCD12345E.")
             return
         self.accept()
 

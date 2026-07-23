@@ -126,7 +126,7 @@ class ReconciliationScreen(QWidget):
 
     def _metric_card(self, label: str, value: str, accent: str) -> QFrame:
         card = QFrame()
-        card.setStyleSheet(Theme.metric_card_style(accent=accent, bg=Theme.SURFACE, radius=12))
+        card.setStyleSheet(Theme.stat_tile_style(accent, radius=12))
         card.setMinimumHeight(90)
         
         layout = QVBoxLayout(card)

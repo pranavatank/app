@@ -3,6 +3,8 @@ ui/dialogs/account_dialog.py — Bank account management dialog with clean styli
 FIX: All buttons now have explicit inline styles (no objectName dependency in QDialog).
 """
 
+import re
+
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView, QLineEdit,
@@ -13,7 +15,7 @@ from PyQt6.QtCore import Qt, QDate
 from PyQt6.QtGui import QFont
 
 from ui.theme import Theme
-from ui.icons import set_btn_icon, tab_icon
+from ui.icons import set_btn_icon, tab_icon, icon_label
 from config import ACCOUNT_TYPES
 from models.person import get_all_persons
 from models.bank_account import add_account, get_all_accounts, update_account, delete_account
@@ -38,9 +40,10 @@ class AccountManagementDialog(QDialog):
         layout.setContentsMargins(24, 20, 24, 20)
 
         header = QHBoxLayout()
+        header.setSpacing(10)
+        header.addWidget(icon_label("bank_details", size=20, color=Theme.PRIMARY))
         title = QLabel("Bank Accounts")
-        title.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
-        title.setStyleSheet(f"color: {Theme.TEXT_PRIMARY};")
+        title.setStyleSheet(Theme.title_style(14))
         header.addWidget(title)
         header.addStretch()
         btn_add = _btn(" Add Account", "primary")
@@ -397,6 +400,9 @@ class AccountDialog(QDialog):
         self.ifsc_input = self._field("e.g. HDFC0001234")
         self.ifsc_input.setAccessibleName("IFSC code")
         self.ifsc_input.setMaxLength(11)
+        self.ifsc_input.textChanged.connect(
+            lambda txt: self.ifsc_input.setText((txt or "").upper()) if (txt or "") != (txt or "").upper() else None
+        )
         f.addRow("IFSC Code:", self.ifsc_input)
 
         self.micr_input = self._field("e.g. 360240001")
@@ -531,6 +537,32 @@ class AccountDialog(QDialog):
         bank_name = (self.bank_combo.currentData() or self.bank_combo.currentText() or "").strip()
         if not bank_name or bank_name == "-- Select or Type New Bank --":
             QMessageBox.warning(self,"Missing","Please enter a bank name."); return
+
+        tan = self.tan_input.text().strip().upper()
+        if tan and not re.fullmatch(r"[A-Z]{4}[0-9]{5}[A-Z]", tan):
+            QMessageBox.warning(self, "Invalid TAN", "TAN must be 10 characters in the format ABCD12345E.")
+            return
+
+        ifsc = self.ifsc_input.text().strip().upper()
+        if ifsc and not re.fullmatch(r"[A-Z]{4}0[A-Z0-9]{6}", ifsc):
+            QMessageBox.warning(self, "Invalid IFSC", "IFSC must be 11 characters in the format HDFC0001234.")
+            return
+
+        micr = self.micr_input.text().strip()
+        if micr and not re.fullmatch(r"[0-9]{9}", micr):
+            QMessageBox.warning(self, "Invalid MICR", "MICR code must be exactly 9 digits.")
+            return
+
+        email = self.email_input.text().strip()
+        if email and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+            QMessageBox.warning(self, "Invalid Email", "Please enter a valid email address.")
+            return
+
+        phone = self.phone_input.text().strip()
+        if phone and not re.fullmatch(r"[0-9]{10}", re.sub(r"[\s\-+]", "", phone).removeprefix("91")):
+            QMessageBox.warning(self, "Invalid Phone", "Please enter a valid 10-digit phone number.")
+            return
+
         self.accept()
 
     def get_data(self) -> dict:
@@ -550,7 +582,7 @@ class AccountDialog(QDialog):
             "currency":                self.currency_combo.currentText(),
             "opening_balance":         self.opening_balance.value(),
             "interest_rate":           self.interest_rate.value(),
-            "ifsc_code":               self.ifsc_input.text().strip() or None,
+            "ifsc_code":               self.ifsc_input.text().strip().upper() or None,
             "micr_code":               self.micr_input.text().strip() or None,
             "branch_name":             self.branch_name_input.text().strip() or None,
             "branch_address":          self.branch_address_input.toPlainText().strip() or None,

@@ -14,6 +14,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 
 from ui.theme import Theme
+from ui.icons import set_btn_icon, tab_icon
 from core.session import session
 from models.person import get_person, get_ais_tis_password, set_ais_tis_password
 from models.form26as import save_form26as_import, get_form26as_import, get_form26as_records
@@ -79,15 +80,18 @@ class AISTISImportScreenV2(QWidget):
 
         # Tab 1: Form 26AS
         self.tab_26as = self._build_26as_tab()
-        self.tabs.addTab(self.tab_26as, "📄 Form 26AS")
+        self.tabs.addTab(self.tab_26as, "Form 26AS")
+        self.tabs.setTabIcon(0, tab_icon("basic_info"))
 
         # Tab 2: AIS
         self.tab_ais = self._build_ais_tab()
-        self.tabs.addTab(self.tab_ais, "📑 AIS")
+        self.tabs.addTab(self.tab_ais, "AIS")
+        self.tabs.setTabIcon(1, tab_icon("account_found"))
 
         # Tab 3: TIS
         self.tab_tis = self._build_tis_tab()
-        self.tabs.addTab(self.tab_tis, "📋 TIS")
+        self.tabs.addTab(self.tab_tis, "TIS")
+        self.tabs.setTabIcon(2, tab_icon("chart_overview"))
 
         layout.addWidget(self.tabs, 1)
         
@@ -97,6 +101,7 @@ class AISTISImportScreenV2(QWidget):
     def _build_header(self) -> QFrame:
         header = QFrame()
         header.setStyleSheet(Theme.card_style(radius=10, padding=12))
+        header.setGraphicsEffect(Theme.shadow_card())
         h_layout = QHBoxLayout(header)
         h_layout.setSpacing(12)
 
@@ -120,8 +125,9 @@ class AISTISImportScreenV2(QWidget):
 
         # Import button
         btn_layout = QHBoxLayout()
-        btn_import = Theme.btn("📤 Import Form 26AS PDF", "primary", height=36, min_width=200)
+        btn_import = Theme.btn("Import Form 26AS PDF", "primary", height=36, min_width=200)
         btn_import.setAccessibleName("Import Form 26AS PDF")
+        set_btn_icon(btn_import, "import")
         btn_import.clicked.connect(self._import_26as)
         btn_layout.addWidget(btn_import)
         btn_layout.addStretch()
@@ -159,12 +165,14 @@ class AISTISImportScreenV2(QWidget):
 
         # Import buttons
         btn_layout = QHBoxLayout()
-        btn_import_pdf = Theme.btn("📄 Import AIS PDF", "primary", height=36, min_width=170)
+        btn_import_pdf = Theme.btn("Import AIS PDF", "primary", height=36, min_width=170)
         btn_import_pdf.setAccessibleName("Import AIS PDF")
+        set_btn_icon(btn_import_pdf, "import_pdf")
         btn_import_pdf.clicked.connect(self._import_ais_pdf)
         btn_layout.addWidget(btn_import_pdf)
-        btn_import_json = Theme.btn("📤 Import AIS JSON", "success", height=36, min_width=180)
+        btn_import_json = Theme.btn("Import AIS JSON", "success", height=36, min_width=180)
         btn_import_json.setAccessibleName("Import AIS JSON")
+        set_btn_icon(btn_import_json, "import")
         btn_import_json.clicked.connect(self._import_ais)
         btn_layout.addWidget(btn_import_json)
         btn_layout.addStretch()
@@ -202,12 +210,14 @@ class AISTISImportScreenV2(QWidget):
 
         # Import buttons
         btn_layout = QHBoxLayout()
-        btn_import_pdf = Theme.btn("📄 Import TIS PDF", "primary", height=36, min_width=170)
+        btn_import_pdf = Theme.btn("Import TIS PDF", "primary", height=36, min_width=170)
         btn_import_pdf.setAccessibleName("Import TIS PDF")
+        set_btn_icon(btn_import_pdf, "import_pdf")
         btn_import_pdf.clicked.connect(self._import_tis_pdf)
         btn_layout.addWidget(btn_import_pdf)
-        btn_import_json = Theme.btn("📤 Import TIS JSON", "info", height=36, min_width=180)
+        btn_import_json = Theme.btn("Import TIS JSON", "info", height=36, min_width=180)
         btn_import_json.setAccessibleName("Import TIS JSON")
+        set_btn_icon(btn_import_json, "import")
         btn_import_json.clicked.connect(self._import_tis)
         btn_layout.addWidget(btn_import_json)
         btn_layout.addStretch()
@@ -249,7 +259,7 @@ class AISTISImportScreenV2(QWidget):
         debug_layout.setSpacing(4)
         
         debug_header = QHBoxLayout()
-        debug_title = QLabel("🐞 Debug: Extracted Text")
+        debug_title = QLabel("Debug: Extracted Text")
         debug_title.setStyleSheet(Theme.text_style(color=Theme.TEXT_SECONDARY, size=11, weight=600))
         debug_header.addWidget(debug_title)
         debug_header.addStretch()
@@ -287,7 +297,8 @@ class AISTISImportScreenV2(QWidget):
         parent_layout.addWidget(self.debug_frame)
         
         # Toggle button
-        self.btn_toggle_debug = Theme.btn("🐞 Show Debug", "ghost", height=28, min_width=120)
+        self.btn_toggle_debug = Theme.btn("Show Debug", "ghost", height=28, min_width=120)
+        set_btn_icon(self.btn_toggle_debug, "debug")
         self.btn_toggle_debug.clicked.connect(self._toggle_debug)
         parent_layout.addWidget(self.btn_toggle_debug)
 
@@ -296,7 +307,7 @@ class AISTISImportScreenV2(QWidget):
         fy = session.selected_fy
         
         if not pid:
-            self.person_label.setText("⚠ Please select a person from the top bar")
+            self.person_label.setText("Please select a person from the top bar")
             self.person_label.setStyleSheet(Theme.text_style(color=Theme.WARNING, size=11, weight=500))
             self.table_26as.setRowCount(0)
             self.table_ais.setRowCount(0)
@@ -365,7 +376,7 @@ class AISTISImportScreenV2(QWidget):
             # Show debug
             self.debug_text.setPlainText(pdf_text[:5000])  # First 5000 chars
             self.debug_frame.show()
-            self.btn_toggle_debug.setText("🐞 Hide Debug")
+            self.btn_toggle_debug.setText("Hide Debug")
             
             # Parse Form 26AS
             parsed = parse_form26as_pdf(pdf_text)
@@ -522,7 +533,7 @@ class AISTISImportScreenV2(QWidget):
         pdf_text = result.text
         self.debug_text.setPlainText(pdf_text[:5000])
         self.debug_frame.show()
-        self.btn_toggle_debug.setText("🐞 Hide Debug")
+        self.btn_toggle_debug.setText("Hide Debug")
 
         parser = parse_ais_pdf_text if source_type == "AIS" else parse_tis_pdf_text
         try:
@@ -572,31 +583,31 @@ class AISTISImportScreenV2(QWidget):
     def _import_ais(self):
         pid = session.selected_person_id
         fy = session.selected_fy
-        
+
         if not pid:
             QMessageBox.warning(self, "No Person", "Please select a person from the top bar.")
             return
-        
+
         file_path, _ = QFileDialog.getOpenFileName(
             self, "Select AIS/TIS JSON", "", "JSON Files (*.json)"
         )
-        
+
         if not file_path:
             return
-        
+
         try:
             with open(file_path, "r", encoding="utf-8") as f:
                 raw_json = f.read()
                 json_data = json.loads(raw_json)
-            
+
             # Parse AIS
             source_type = "AIS"
             parsed = parse_ais_json(json_data)
-            
+
             # Show debug
             self.debug_text.setPlainText(raw_json[:5000])  # First 5000 chars
             self.debug_frame.show()
-            self.btn_toggle_debug.setText("🐞 Hide Debug")
+            self.btn_toggle_debug.setText("Hide Debug")
             
             # Check for existing AIS data
             existing = get_ais_tis_data(pid, fy, source_type=source_type)
@@ -746,39 +757,39 @@ class AISTISImportScreenV2(QWidget):
         """Toggle debug panel visibility."""
         if self.debug_frame.isVisible():
             self.debug_frame.hide()
-            self.btn_toggle_debug.setText("🐞 Show Debug")
+            self.btn_toggle_debug.setText("Show Debug")
         else:
             self.debug_frame.show()
-            self.btn_toggle_debug.setText("🐞 Hide Debug")
+            self.btn_toggle_debug.setText("Hide Debug")
 
     def _import_tis(self):
         """Import TIS JSON - similar to AIS but separate storage."""
         pid = session.selected_person_id
         fy = session.selected_fy
-        
+
         if not pid:
             QMessageBox.warning(self, "No Person", "Please select a person from the top bar.")
             return
-        
+
         file_path, _ = QFileDialog.getOpenFileName(
             self, "Select TIS JSON", "", "JSON Files (*.json)"
         )
-        
+
         if not file_path:
             return
-        
+
         try:
             with open(file_path, "r", encoding="utf-8") as f:
                 raw_json = f.read()
                 json_data = json.loads(raw_json)
-            
+
             # Parse TIS
             parsed = parse_tis_json(json_data)
-            
+
             # Show debug
             self.debug_text.setPlainText(raw_json[:5000])  # First 5000 chars
             self.debug_frame.show()
-            self.btn_toggle_debug.setText("🐞 Hide Debug")
+            self.btn_toggle_debug.setText("Hide Debug")
             
             # Save to database with TIS source type
             import_id = save_ais_tis_data(
@@ -841,8 +852,8 @@ class NewSourceDialog(QDialog):
     def _build_ui(self):
         layout = QVBoxLayout(self)
         layout.setSpacing(16)
-        
-        title = QLabel(f"🔍 New TANs found in {self.source_type}")
+
+        title = QLabel(f"New TANs found in {self.source_type}")
         title.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
         title.setStyleSheet(Theme.title_style(14))
         layout.addWidget(title)

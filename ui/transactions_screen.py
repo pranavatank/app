@@ -82,29 +82,30 @@ class TransactionsScreen(QWidget):
     def _build_action_bar(self) -> QWidget:
         bar = QFrame()
         bar.setObjectName("actionBar")
+        bar.setStyleSheet(Theme.action_bar_style())
         layout = QHBoxLayout(bar)
         layout.setContentsMargins(12, 8, 12, 8)
         layout.setSpacing(10)
 
         self.btn_add = Theme.btn("  Add Transaction", "primary", height=40, min_width=140)
-        self.btn_add.setIcon(app_icon("add", color="#FFFFFF", size=14))
+        self.btn_add.setIcon(app_icon("add", color="#FFFFFF", size=16))
         self.btn_add.clicked.connect(self._add_transaction)
         layout.addWidget(self.btn_add)
 
         self.btn_edit = Theme.btn("  Edit", "edit", height=40, min_width=96)
-        self.btn_edit.setIcon(app_icon("edit", color="#FFFFFF", size=14))
+        self.btn_edit.setIcon(app_icon("edit", color="#FFFFFF", size=16))
         self.btn_edit.setEnabled(False)
         self.btn_edit.clicked.connect(self._edit_transaction)
         layout.addWidget(self.btn_edit)
 
         self.btn_delete = Theme.btn("  Delete", "danger", height=40, min_width=105)
-        self.btn_delete.setIcon(app_icon("delete", color="#FFFFFF", size=14))
+        self.btn_delete.setIcon(app_icon("delete", color="#FFFFFF", size=16))
         self.btn_delete.setEnabled(False)
         self.btn_delete.clicked.connect(self._delete_transaction)
         layout.addWidget(self.btn_delete)
 
         self.btn_reprocess = Theme.btn("Reprocess Data", "secondary", height=40, min_width=130)
-        self.btn_reprocess.setIcon(app_icon("refresh", size=14))
+        self.btn_reprocess.setIcon(app_icon("refresh", size=16))
         self.btn_reprocess.clicked.connect(self._reprocess_data)
         layout.addWidget(self.btn_reprocess)
 
@@ -118,6 +119,7 @@ class TransactionsScreen(QWidget):
         layout.addWidget(self.lbl_expense_sum)
         layout.addWidget(self.lbl_net_sum)
 
+        self.action_bar = bar  # keep ref for theme refresh
         return bar
 
     def _build_unsaved_bar(self) -> QWidget:
@@ -222,6 +224,9 @@ class TransactionsScreen(QWidget):
         self.table = self.table_widget.table
         self.table.editable = True  # Enable editing for certain columns
         self.table.setHeaders(headers)
+        # Amount and Balance After are the only free-numeric editable columns
+        # (Category/Mode/Reference/Description are editable but free text).
+        self.table.setNumericColumns({_COL_AMOUNT+1, _COL_BAL+1})
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked | QAbstractItemView.EditTrigger.EditKeyPressed)
         self.table.setSortingEnabled(True)
         self.table.cellDataChanged.connect(self._on_table_data_changed)
@@ -248,6 +253,8 @@ class TransactionsScreen(QWidget):
         """Called after a live theme switch — rebuilds all inline-styled
         widgets (unsaved bar, filter bar, pill badges) and re-tints the
         table rows, which carry baked QColor foreground colours."""
+        if hasattr(self, 'action_bar') and self.action_bar:
+            self.action_bar.setStyleSheet(Theme.action_bar_style())
         if hasattr(self, '_unsaved_bar') and self._unsaved_bar:
             self._unsaved_bar.setStyleSheet(self._unsaved_bar_css())
         if hasattr(self, 'filter_bar') and self.filter_bar:

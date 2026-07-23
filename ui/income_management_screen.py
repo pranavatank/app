@@ -104,7 +104,11 @@ class IncomeManagementScreen(QWidget):
         if event.key() == Qt.Key.Key_Delete:
             self._delete_selected_expectations()
         else:
-            super(type(self.table), self.table).keyPressEvent(event)
+            # Delegate to ExcelTable's own keyPressEvent (Ctrl+C/V/X/A) —
+            # calling super(type(self.table), ...) here would skip it
+            # entirely and fall straight through to plain QTableWidget.
+            from ui.widgets.excel_table import ExcelTable
+            ExcelTable.keyPressEvent(self.table, event)
 
     def _delete_selected_expectations(self):
         """Delete all checked expectations"""
@@ -218,7 +222,8 @@ class IncomeManagementScreen(QWidget):
         card = QFrame()
         card.setObjectName("card")
         card.setFixedHeight(85)
-        
+        card.setStyleSheet(Theme.stat_tile_style(color, radius=14, selector="QFrame#card"))
+
         layout = QVBoxLayout(card)
         layout.setContentsMargins(16, 12, 16, 12)
         layout.setSpacing(6)

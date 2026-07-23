@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 from ui.theme import Theme
+from ui.icons import pixmap as icon_pixmap, fallback as icon_fallback, is_available as icons_available
 
 
 class SummaryPanel(QFrame):
@@ -28,6 +29,12 @@ class SummaryPanel(QFrame):
                  accent: str = None,
                  scrollable: bool = False,
                  parent=None):
+        """
+        `icon` is a registry key from ui.icons (e.g. "bank", "trend") — it is
+        rendered as a tinted icon via the shared icon registry. If the key
+        isn't found in the registry, it's treated as a literal emoji string
+        (kept for backward compatibility with any external callers).
+        """
         super().__init__(parent)
         self._rows:      dict[str, QLabel] = {}
         self._scrollable = scrollable
@@ -51,11 +58,12 @@ class SummaryPanel(QFrame):
         header_row = QHBoxLayout()
         header_row.setSpacing(10)
 
+        self._icon_key = icon
         if icon:
-            self._icon_bg = QLabel(icon)
-            self._icon_bg.setFont(QFont("Segoe UI Emoji", 15))
+            self._icon_bg = QLabel()
             self._icon_bg.setFixedSize(38, 38)
             self._icon_bg.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self._render_icon()
             self._icon_bg.setStyleSheet(self._icon_css())
             header_row.addWidget(self._icon_bg)
 
@@ -110,11 +118,21 @@ class SummaryPanel(QFrame):
         )
 
     def _icon_css(self) -> str:
-        return (
-            f"background-color: {self._accent}1A;"
-            f"border-radius: 10px;"
-            f"border: 1px solid {self._accent}30;"
-        )
+        return Theme.icon_chip_style(self._accent, radius=10)
+
+    def _render_icon(self):
+        """Render the header icon via the shared registry, tinted with this
+        panel's accent color. Falls back to the key itself as literal emoji
+        text if it isn't a known registry key or no icon library is loaded."""
+        if not self._icon_bg or not self._icon_key:
+            return
+        if icons_available():
+            pm = icon_pixmap(self._icon_key, size=20, color=self._accent)
+            if not pm.isNull():
+                self._icon_bg.setPixmap(pm)
+                return
+        self._icon_bg.setText(icon_fallback(self._icon_key) or self._icon_key)
+        self._icon_bg.setFont(QFont("Segoe UI Emoji", 15))
 
     # ── Live theme refresh ────────────────────────────────────────────────────
 
@@ -123,6 +141,7 @@ class SummaryPanel(QFrame):
         self._apply_card_style()
         self.setGraphicsEffect(Theme.shadow_card())
         if self._icon_bg:
+            self._render_icon()
             self._icon_bg.setStyleSheet(self._icon_css())
         if self._title_lbl:
             self._title_lbl.setStyleSheet(

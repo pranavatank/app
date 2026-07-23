@@ -32,6 +32,7 @@ from engines.statement_parser import (
     unload_ollama_model,
 )
 from ui.theme import Theme
+from ui.icons import set_btn_icon
 from ui import icons
 
 
@@ -289,7 +290,7 @@ def _md_to_html(text: str) -> str:
         s = re.sub(r"\*(.+?)\*", r"<i>\1</i>", s)
         s = re.sub(r"(?<![_])_([^_]+)_(?![_])", r"<i>\1</i>", s)
         # Inline code `code`
-        s = re.sub(r"`([^`]+)`", r'<code style="background:#2a2a3e;padding:1px 4px;border-radius:3px;">\1</code>', s)
+        s = re.sub(r"`([^`]+)`", rf'<code style="background:{Theme.SURFACE_ALT};padding:1px 4px;border-radius:3px;">\1</code>', s)
         return s
 
     for line in lines:
@@ -545,11 +546,13 @@ class LocalChatbotDialog(QDialog):
         self.stop_model_btn.hide()
         lay.addWidget(self.stop_model_btn)
 
-        clear_btn = self._header_btn("🗑  Clear", ghost=True)
+        clear_btn = self._header_btn("  Clear", ghost=True)
+        set_btn_icon(clear_btn, "delete")
         clear_btn.clicked.connect(self._clear_chat)
         lay.addWidget(clear_btn)
 
-        close_btn = self._header_btn("✕ Close", ghost=True)
+        close_btn = self._header_btn("  Close", ghost=True)
+        set_btn_icon(close_btn, "close")
         close_btn.clicked.connect(self.close)
         lay.addWidget(close_btn)
 
@@ -569,9 +572,9 @@ class LocalChatbotDialog(QDialog):
             )
         else:
             btn.setStyleSheet(
-                "QPushButton { background: white; color: #1E3A5F;"
+                f"QPushButton {{ background: #FFFFFF; color: {Theme.PRIMARY_DARK};"
                 " border: none; border-radius: 8px; padding: 4px 14px; font-weight: 700; }"
-                "QPushButton:hover { background: #E8F4FF; }"
+                f"QPushButton:hover {{ background: {Theme.PRIMARY_LIGHT}; }}"
                 "QPushButton:disabled { background: rgba(255,255,255,0.4); color: rgba(0,0,0,0.4); }"
             )
         return btn
@@ -727,14 +730,14 @@ class LocalChatbotDialog(QDialog):
         if is_ollama_available(model=self.model, timeout=1.5):
             self.status_lbl.setText("●  Online")
             self.status_lbl.setStyleSheet(
-                "color: #4ADE80; background: rgba(74,222,128,0.15);"
-                " border-radius: 10px; padding: 4px 12px; font-size: 11px; font-weight: 700;"
+                Theme.badge_style(bg=f"{Theme.SUCCESS}26", fg=Theme.SUCCESS, radius=10,
+                                   padding="4px 12px", size=11, weight=700)
             )
         else:
             self.status_lbl.setText("●  Offline")
             self.status_lbl.setStyleSheet(
-                "color: #F87171; background: rgba(248,113,113,0.15);"
-                " border-radius: 10px; padding: 4px 12px; font-size: 11px; font-weight: 700;"
+                Theme.badge_style(bg=f"{Theme.DANGER}26", fg=Theme.DANGER, radius=10,
+                                   padding="4px 12px", size=11, weight=700)
             )
 
     # ── Send / receive ────────────────────────────────────────────────────────

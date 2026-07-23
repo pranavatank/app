@@ -7,8 +7,10 @@ from PyQt6.QtWidgets import (
     QCheckBox, QHBoxLayout
 )
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QFont
 
 from ui.theme import Theme
+from ui.icons import icon_label
 
 
 class PasswordDialog(QDialog):
@@ -33,6 +35,7 @@ class PasswordDialog(QDialog):
         self.setMinimumWidth(460)
         self._save_label = save_label
         self._build_ui(
+            title=title,
             info_text=info_text,
             hint_text=hint_text,
             placeholder_text=placeholder_text,
@@ -44,6 +47,7 @@ class PasswordDialog(QDialog):
 
     def _build_ui(
         self,
+        title: str,
         info_text: str | None,
         hint_text: str | None,
         placeholder_text: str,
@@ -55,6 +59,16 @@ class PasswordDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 24, 28, 20)
         layout.setSpacing(16)
+
+        title_row = QHBoxLayout()
+        title_row.setSpacing(10)
+        title_row.addWidget(icon_label("password", size=20, color=Theme.PRIMARY))
+        title_lbl = QLabel(title)
+        title_lbl.setFont(QFont("Segoe UI", 15, QFont.Weight.Bold))
+        title_lbl.setStyleSheet(Theme.title_style(15))
+        title_row.addWidget(title_lbl)
+        title_row.addStretch()
+        layout.addLayout(title_row)
 
         if info_text:
             info = QLabel(info_text)

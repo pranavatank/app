@@ -1,6 +1,12 @@
 """
 ui/widgets/loader.py — Universal interactive loading overlay.
 
+This is a plain in-window overlay: `Loader` is a QWidget CHILD of the
+parent widget you pass in (not a QDialog / separate top-level window).
+It covers the parent's own geometry and paints a translucent scrim, so
+visually it looks like the current screen "dims and shows a spinner" —
+it never spawns a new OS window.
+
 Usage (anywhere in the app):
 
     from ui.widgets.loader import Loader
@@ -24,54 +30,72 @@ Usage (anywhere in the app):
 """
 
 from __future__ import annotations
-import math
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QApplication
 )
 from PyQt6.QtCore import (
-    Qt, QTimer, QThread, pyqtSignal, QObject, QPropertyAnimation,
-    QEasingCurve, QRect
+    Qt, QTimer, QThread, pyqtSignal, QObject, QRect
 )
 from PyQt6.QtGui import (
-    QPainter, QPen, QColor, QBrush, QFont,
-    QLinearGradient, QConicalGradient
+    QPainter, QPen, QColor, QBrush, QFont, QPainterPath, QConicalGradient, QPixmap
 )
 
 from ui.theme import Theme
+from ui.logo import logo_pixmap
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Spinner canvas
+# Logo ring spinner
 # ══════════════════════════════════════════════════════════════════════════════
 
-class _SpinnerCanvas(QWidget):
+class _LogoRingSpinner(QWidget):
     """
-    Smooth animated ring spinner that:
-    • Rotates a gradient arc (primary color)
-    • Has a dimmer background ring
-    • Pulses size slightly
+    Big circular app logo sitting still in the center, wrapped by a
+    smoothly rotating gradient progress ring (same visual idea as a
+    social-app "story" ring) — replaces the old bare arc + text dots.
     """
 
-    def __init__(self, size: int = 52, parent=None):
+    def __init__(self, size: int = 96, parent=None):
         super().__init__(parent)
-        self._size     = size
-        self._angle    = 0
-        self._pulse    = 0.0
-        self._pulse_dir = 1
+        self._size  = size
+        self._angle = 0
         self.setFixedSize(size, size)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self._logo_pm = self._build_center_logo(size)
 
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)
         self._timer.start(14)   # ~70 fps
 
+    def _build_center_logo(self, size: int):
+        """Pre-render the app logo, clipped to a circle, sized to sit
+        inside the ring. Returns None if no logo asset is available —
+        paintEvent then falls back to a colored initials circle."""
+        pen_w   = max(4, size // 16)
+        inner_d = size - 2 * (pen_w + 6)   # small gap between ring and logo
+        pm = logo_pixmap(int(inner_d * 0.82))
+        if pm.isNull():
+            return None
+
+        circular = QPixmap(inner_d, inner_d)
+        circular.fill(Qt.GlobalColor.transparent)
+        p = QPainter(circular)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        # Circular backdrop so transparent-PNG logos still read as a clean disc
+        p.setBrush(QBrush(QColor(Theme.SURFACE)))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.drawEllipse(0, 0, inner_d, inner_d)
+        clip = QPainterPath()
+        clip.addEllipse(0, 0, inner_d, inner_d)
+        p.setClipPath(clip)
+        x = (inner_d - pm.width()) // 2
+        y = (inner_d - pm.height()) // 2
+        p.drawPixmap(x, y, pm)
+        p.end()
+        return circular
+
     def _tick(self):
-        self._angle = (self._angle + 6) % 360
-        self._pulse += 0.04 * self._pulse_dir
-        if self._pulse >= 1.0:
-            self._pulse_dir = -1
-        elif self._pulse <= 0.0:
-            self._pulse_dir = 1
+        self._angle = (self._angle + 5) % 360
         self.update()
 
     def stop(self):
@@ -82,37 +106,43 @@ class _SpinnerCanvas(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        pen_w = max(4, s // 10)
+        pen_w  = max(4, s // 16)
         margin = pen_w // 2 + 1
-        rect = QRect(margin, margin, s - 2 * margin, s - 2 * margin)
+        rect   = QRect(margin, margin, s - 2 * margin, s - 2 * margin)
 
-        # Background ring
+        # Dim background ring (full circle, always visible)
         bg_color = QColor(Theme.BORDER)
-        bg_color.setAlpha(180)
-        pen_bg = QPen(bg_color, pen_w, Qt.PenStyle.SolidLine,
-                      Qt.PenCapStyle.RoundCap)
-        painter.setPen(pen_bg)
+        bg_color.setAlpha(160)
+        painter.setPen(QPen(bg_color, pen_w, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
         painter.drawEllipse(rect)
 
-        # Gradient arc (primary color, sweeps 270°)
-        primary   = QColor(Theme.PRIMARY)
-        primary.setAlpha(255)
-        primary_t = QColor(Theme.PRIMARY)
-        primary_t.setAlpha(0)
-
-        # Use conical gradient for the smooth sweep
+        # Rotating gradient arc (primary color, sweeps 270°) — the "progress" motion
+        primary   = QColor(Theme.PRIMARY); primary.setAlpha(255)
+        primary_t = QColor(Theme.PRIMARY); primary_t.setAlpha(0)
         cg = QConicalGradient(s / 2, s / 2, -self._angle)
         cg.setColorAt(0.0,  primary)
         cg.setColorAt(0.75, primary_t)
         cg.setColorAt(1.0,  primary_t)
-
-        arc_pen = QPen(QBrush(cg), pen_w, Qt.PenStyle.SolidLine,
-                       Qt.PenCapStyle.RoundCap)
-        painter.setPen(arc_pen)
-        # Draw 270° sweep starting at current angle
+        painter.setPen(QPen(QBrush(cg), pen_w, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
         start_angle = int(self._angle * 16)
         span_angle  = int(270 * 16)
         painter.drawArc(rect, start_angle, span_angle)
+
+        # Center: circular logo, or a colored initials disc as fallback
+        cx, cy = s // 2, s // 2
+        if self._logo_pm is not None:
+            lx = cx - self._logo_pm.width() // 2
+            ly = cy - self._logo_pm.height() // 2
+            painter.drawPixmap(lx, ly, self._logo_pm)
+        else:
+            r = (s - 2 * (pen_w + 6)) // 2
+            painter.setBrush(QBrush(QColor(Theme.PRIMARY)))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawEllipse(cx - r, cy - r, r * 2, r * 2)
+            painter.setPen(QColor("#FFFFFF"))
+            painter.setFont(QFont("Segoe UI", max(10, r // 2), QFont.Weight.Bold))
+            painter.drawText(QRect(cx - r, cy - r, r * 2, r * 2),
+                              Qt.AlignmentFlag.AlignCenter, "FA")
 
         painter.end()
 
@@ -123,12 +153,13 @@ class _SpinnerCanvas(QWidget):
 
 class Loader(QWidget):
     """
-    Semi-transparent full-parent overlay with centered spinner card.
+    Semi-transparent full-parent overlay with a centered spinner card.
+    A plain child widget of `parent` — never a QDialog / new window.
     Supports context manager and static Loader.run() for threaded ops.
     """
 
     def __init__(self, parent: QWidget, message: str = "Loading…",
-                 subtitle: str = "", spinner_size: int = 52):
+                 subtitle: str = "", spinner_size: int = 88):
         super().__init__(parent)
         self._parent   = parent
         self._message  = message
@@ -157,7 +188,6 @@ class Loader(QWidget):
         card = QFrame()
         card.setObjectName("LoaderCard")
         # Use Theme tokens for card bg and border
-        is_dark = Theme.BG < "#888888"  # rough dark detection by hex value
         card_bg = Theme.SURFACE
         card.setStyleSheet(f"""
             QFrame#LoaderCard {{
@@ -166,17 +196,17 @@ class Loader(QWidget):
                 border-radius: 20px;
             }}
         """)
-        card.setFixedWidth(280)
+        card.setFixedWidth(300)
 
         card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(32, 28, 32, 28)
-        card_layout.setSpacing(16)
+        card_layout.setContentsMargins(32, 32, 32, 28)
+        card_layout.setSpacing(18)
         card_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        # Spinner
+        # Logo + progress ring
         spinner_row = QHBoxLayout()
         spinner_row.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._spinner = _SpinnerCanvas(size=spinner_size)
+        self._spinner = _LogoRingSpinner(size=spinner_size)
         spinner_row.addWidget(self._spinner)
         card_layout.addLayout(spinner_row)
 
@@ -199,19 +229,6 @@ class Loader(QWidget):
             sub.setStyleSheet(Theme.muted_style(11) + " background: transparent; border: none;")
             card_layout.addWidget(sub)
 
-        # Progress dots
-        self._dots_label = QLabel("●  ●  ●")
-        self._dots_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._dots_label.setStyleSheet(
-            f"color: {Theme.PRIMARY}; font-size: 10px; letter-spacing: 2px; "
-            "background: transparent; border: none;"
-        )
-        card_layout.addWidget(self._dots_label)
-        self._dot_timer = QTimer(self)
-        self._dot_timer.timeout.connect(self._animate_dots)
-        self._dot_state = 0
-        self._dot_timer.start(500)
-
         overlay_layout.addWidget(card, alignment=Qt.AlignmentFlag.AlignCenter)
         # Give card a shadow
         self._spinner.setGraphicsEffect(None)
@@ -219,11 +236,6 @@ class Loader(QWidget):
             card.setGraphicsEffect(Theme.shadow_elevated())
         except Exception:
             pass
-
-    def _animate_dots(self):
-        patterns = ["●  ○  ○", "○  ●  ○", "○  ○  ●"]
-        self._dot_state = (self._dot_state + 1) % 3
-        self._dots_label.setText(patterns[self._dot_state])
 
     # ── Overlay painting ──────────────────────────────────────────────────────
 
@@ -255,7 +267,6 @@ class Loader(QWidget):
 
     def hide(self):
         self._spinner.stop()
-        self._dot_timer.stop()
         self._fade_timer.stop()
         super().hide()
 

@@ -1,6 +1,8 @@
 from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QHBoxLayout, QComboBox, QPushButton
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QFont
 from ui.theme import Theme
+from ui.icons import icon_label
 import pandas as pd
 from core.settings import get_setting, set_setting
 
@@ -33,6 +35,16 @@ class ColumnMappingDialog(QDialog):
         choices = ["(none)"] + headers
 
         layout = QVBoxLayout(self)
+        title_row = QHBoxLayout()
+        title_row.setSpacing(10)
+        title_row.addWidget(icon_label("list_view", size=20, color=Theme.PRIMARY))
+        title = QLabel("Map Columns")
+        title.setFont(QFont("Segoe UI", 15, QFont.Weight.Bold))
+        title.setStyleSheet(Theme.title_style(15))
+        title_row.addWidget(title)
+        title_row.addStretch()
+        layout.addLayout(title_row)
+
         intro = QLabel("Map the columns from your file to the required fields.")
         intro.setWordWrap(True)
         intro.setAccessibleName("Mapping instructions")

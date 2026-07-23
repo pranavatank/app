@@ -70,11 +70,13 @@ class ThemeCard(QAbstractButton):
 
     # theme name → module file suffix
     _SUFFIX = {
+        "Aurora":        "aurora_light",
         "Ocean Blue":    "ocean_blue",
         "Arctic Breeze": "arctic_breeze",
         "Forest Light":  "forest_light",
         "Rose Gold Luxe":"rose_gold",
         "Sunrise Warm":  "sunrise_warm",
+        "Nova":          "nova_dark",
         "Midnight Pro":  "midnight_pro",
         "Amethyst Dusk": "amethyst_dusk",
         "Finance Pro":   "finance_pro",
@@ -316,7 +318,7 @@ class SettingsScreen(QWidget):
         layout.addLayout(badge_row)
 
         btn_backup = Theme.btn("  Backup", "success", height=34, min_width=106)
-        btn_backup.setIcon(app_icon("backup", color="#FFFFFF", size=14))
+        btn_backup.setIcon(app_icon("backup", color="#FFFFFF", size=16))
         btn_backup.clicked.connect(self._on_create_backup)
         layout.addWidget(btn_backup)
 
@@ -324,11 +326,7 @@ class SettingsScreen(QWidget):
         return f
 
     def _hdr_css(self) -> str:
-        return (
-            f"QFrame#SettingsHdr {{"
-            f"background: {Theme.gradient(Theme.HERO_GRADIENT_START, Theme.HERO_GRADIENT_END)};"
-            f"border-radius: 14px; border: none;}}"
-        )
+        return Theme.hero_header_style(radius=14, selector="QFrame#SettingsHdr")
 
     def _hdr_badge(self, text: str) -> QLabel:
         l = QLabel(text)
@@ -490,7 +488,7 @@ class SettingsScreen(QWidget):
     # ── Sections ──────────────────────────────────────────────────────────────
 
     def _section_security(self) -> QGroupBox:
-        g = self._group("🔐  Security"); gl = QVBoxLayout(g); gl.setSpacing(10)
+        g = self._group("Security"); gl = QVBoxLayout(g); gl.setSpacing(10)
 
         c1 = self._card(); l1 = QVBoxLayout(c1); l1.setSpacing(10)
         l1.addWidget(self._card_title("Change Master Password"))
@@ -519,7 +517,7 @@ class SettingsScreen(QWidget):
         return g
 
     def _section_data(self) -> QGroupBox:
-        g = self._group("🗂  Data Management"); gl = QVBoxLayout(g); gl.setSpacing(10)
+        g = self._group("Data Management"); gl = QVBoxLayout(g); gl.setSpacing(10)
         for title, desc, variant, handler in [
             ("Family Members", "Add or manage persons for tracking.",    "primary",   self._on_manage_persons),
             ("Bank Accounts",  "Manage accounts per family member.",     "info",      self._on_manage_accounts),
@@ -535,7 +533,7 @@ class SettingsScreen(QWidget):
         return g
 
     def _section_privacy(self) -> QGroupBox:
-        g = self._group("🕵️  Privacy"); gl = QVBoxLayout(g)
+        g = self._group("Privacy"); gl = QVBoxLayout(g)
         c = self._card(); lc = QVBoxLayout(c)
         lc.addWidget(self._card_title("Privacy Mode"))
         self.privacy_checkbox = QCheckBox("Mask all financial amounts  (₹ ****)")
@@ -547,13 +545,13 @@ class SettingsScreen(QWidget):
         return g
 
     def _section_backup(self) -> QGroupBox:
-        g = self._group("💾  Backup & Restore"); gl = QVBoxLayout(g); gl.setSpacing(10)
+        g = self._group("Backup & Restore"); gl = QVBoxLayout(g); gl.setSpacing(10)
 
         c1 = self._card(); l1 = QVBoxLayout(c1)
         l1.addWidget(self._card_title("Create Backup"))
         l1.addWidget(self._muted("Copies database to the backups folder."))
         b1 = Theme.btn("  Create Backup", "success", height=36, min_width=155)
-        b1.setIcon(app_icon("backup", color="#FFFFFF", size=14))
+        b1.setIcon(app_icon("backup", color="#FFFFFF", size=16))
         b1.clicked.connect(self._on_create_backup)
         l1.addWidget(b1)
         gl.addWidget(c1)
@@ -564,14 +562,14 @@ class SettingsScreen(QWidget):
         w.setStyleSheet(Theme.text_style(color=Theme.WARNING_DARK, size=12, weight=600))
         l2.addWidget(w)
         b2 = Theme.btn("  Restore Backup", "danger", height=36, min_width=155)
-        b2.setIcon(app_icon("restore", color="#FFFFFF", size=14))
+        b2.setIcon(app_icon("restore", color="#FFFFFF", size=16))
         b2.clicked.connect(self._on_restore_backup)
         l2.addWidget(b2)
         gl.addWidget(c2)
         return g
 
     def _section_device(self) -> QGroupBox:
-        g = self._group("💻  Device Information"); gl = QVBoxLayout(g)
+        g = self._group("Device Information"); gl = QVBoxLayout(g)
         c = self._card(); fl = QFormLayout(c)
         fl.setSpacing(8)
         fl.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
@@ -605,6 +603,7 @@ class SettingsScreen(QWidget):
         f.setStyleSheet(Theme.card_style(
             bg=Theme.SURFACE, border_color=Theme.BORDER,
             radius=12, padding=14, selector="QFrame#SettingsCard"))
+        f.setGraphicsEffect(Theme.shadow_card())
         f.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         return f
 

@@ -213,15 +213,7 @@ class ReportsScreen(QWidget):
 
     def _metric_card(self, title: str, value: str, accent: str, bg: str) -> QFrame:
         card = QFrame()
-        card.setStyleSheet(f"""
-            QFrame {{
-                background: qlineargradient(x1:0,y1:0,x2:0,y2:1,
-                    stop:0 {Theme.SURFACE}, stop:1 {bg});
-                border-left: 4px solid {accent};
-                border: 1px solid {accent}2E;
-                border-radius: 14px;
-            }}
-        """)
+        card.setStyleSheet(Theme.stat_tile_style(accent, radius=14))
         card.setGraphicsEffect(Theme.shadow_card())
 
         layout = QVBoxLayout(card)

@@ -144,7 +144,7 @@ class DashboardScreen(QMainWindow):
         sidebar = QWidget()
         sidebar.setObjectName("sidebar")
         self.sidebar_expanded = False
-        sidebar.setFixedWidth(70)  # Collapsed width (icons only)
+        sidebar.setFixedWidth(76)  # Collapsed width (icons only)
 
         layout = QVBoxLayout(sidebar)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -221,7 +221,7 @@ class DashboardScreen(QMainWindow):
         # Apply pinned state from session
         if session.is_sidebar_pinned():
             self.sidebar_expanded = True
-            sidebar.setFixedWidth(210)
+            sidebar.setFixedWidth(248)
             if hasattr(self, 'brand_text'):
                 self.brand_text.setVisible(True)
             if hasattr(self, 'nav_lbl'):
@@ -256,7 +256,7 @@ class DashboardScreen(QMainWindow):
         # Icon label (always visible)
         icon_label = QLabel()
         icon_label.setObjectName("nav_icon")
-        icon_label.setFixedWidth(70)
+        icon_label.setFixedWidth(76)
         icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         if icons_available():
             pm = app_icon(icon_name, color="auto", size=22).pixmap(22, 22)
@@ -296,7 +296,10 @@ class DashboardScreen(QMainWindow):
             # Inactive items use the registry's colourful default so each icon
             # stays visible and distinguishable on the always-dark sidebar.
             icon_color = Theme.SIDEBAR_ACTIVE_TEXT if is_active else "auto"
-            text_color = Theme.SIDEBAR_ACTIVE_TEXT if is_active else "#CBD5E1"
+            # Sidebar bg is always dark regardless of theme, so inactive label
+            # text is derived from the (always-white) active text token at
+            # reduced opacity rather than a bare hex literal.
+            text_color = Theme.SIDEBAR_ACTIVE_TEXT if is_active else f"{Theme.SIDEBAR_ACTIVE_TEXT}B3"
 
             if icon_label:
                 if icons_available():
@@ -316,8 +319,7 @@ class DashboardScreen(QMainWindow):
 
     @staticmethod
     def _overview_banner_css() -> str:
-        return (f"QFrame {{ background: {Theme.gradient(Theme.PRIMARY_GRADIENT_START, Theme.PRIMARY_DARK)};"
-                f" border-radius: 14px; }}")
+        return Theme.hero_header_style(radius=16, selector="QFrame")
 
     @staticmethod
     def _nav_normal_style() -> str:
@@ -325,10 +327,13 @@ class DashboardScreen(QMainWindow):
             QWidget[nav_item="true"] {{
                 background: transparent;
                 border: none;
-                border-radius: 0;
+                border-radius: 10px;
+                margin: 2px 10px;
             }}
             QWidget[nav_item="true"]:hover {{
                 background-color: {Theme.SIDEBAR_HOVER};
+                border-radius: 10px;
+                margin: 2px 10px;
             }}
         """
 
@@ -341,8 +346,8 @@ class DashboardScreen(QMainWindow):
                     stop:0 {Theme.SIDEBAR_ACTIVE},
                     stop:1 {Theme.SIDEBAR_HOVER});
                 border: none;
-                border-left: 3px solid {Theme.PRIMARY_LIGHT};
-                border-radius: 0;
+                border-radius: 10px;
+                margin: 2px 10px;
             }}
         """
 
@@ -571,7 +576,7 @@ class DashboardScreen(QMainWindow):
         grid = QGridLayout()
         grid.setSpacing(18)
 
-        self.panel_financial = SummaryPanel("Financial Summary", "💰", accent=Theme.PRIMARY)
+        self.panel_financial = SummaryPanel("Financial Summary", "chart_overview", accent=Theme.PRIMARY)
         self.panel_financial.add_stat("balance", "Total Balance",      "₹ —", value_size=16)
         self.panel_financial.add_stat("income",  "Total Credit (FY)",  "₹ —", value_color=Theme.SUCCESS)
         self.panel_financial.add_stat("expense", "Total Debit (FY)",   "₹ —", value_color=Theme.DANGER)
@@ -579,10 +584,10 @@ class DashboardScreen(QMainWindow):
         self.panel_financial.add_stat("savings", "Net Savings",        "₹ —", value_size=14, bold=True)
         grid.addWidget(self.panel_financial, 0, 0)
 
-        self.panel_bank = SummaryPanel("Bank Accounts", "🏦", accent=Theme.TEAL, scrollable=True)
+        self.panel_bank = SummaryPanel("Bank Accounts", "bank", accent=Theme.TEAL, scrollable=True)
         grid.addWidget(self.panel_bank, 0, 1)
 
-        self.panel_interest = SummaryPanel("Interest Summary", "📈", accent=Theme.SUCCESS)
+        self.panel_interest = SummaryPanel("Interest Summary", "trend", accent=Theme.SUCCESS)
         self.panel_interest.add_stat("fd_curr",   "FD Interest (Current FY)",   "₹ —")
         self.panel_interest.add_stat("fd_next",   "FD Interest (Next FY est.)", "₹ —")
         self.panel_interest.add_divider()
@@ -590,7 +595,7 @@ class DashboardScreen(QMainWindow):
         self.panel_interest.add_stat("total_int", "Total Interest Income",      "₹ —", bold=True)
         grid.addWidget(self.panel_interest, 1, 0)
 
-        self.panel_tax = SummaryPanel("Tax Summary", "📋", accent=Theme.WARNING)
+        self.panel_tax = SummaryPanel("Tax Summary", "tax", accent=Theme.WARNING)
         self.panel_tax.add_stat("gross",      "Gross Total Income", "₹ —")
         self.panel_tax.add_stat("deductions", "Total Deductions",   "₹ —")
         self.panel_tax.add_divider()
@@ -749,7 +754,7 @@ class DashboardScreen(QMainWindow):
             "deductions_80c","deductions_80d","home_loan_interest","hra_exemption","standard_deduction"])
         tax_old = profile.get("total_tax_old", 0)
         tax_new = profile.get("total_tax_new", 0)
-        regime  = "🟢 Old Regime" if tax_old < tax_new else ("🟢 New Regime" if tax_new < tax_old else "Either")
+        regime  = "Old Regime" if tax_old < tax_new else ("New Regime" if tax_new < tax_old else "Either")
         self.panel_tax.update_stat("gross",      session.mask(profile.get("gross_total_income",0)))
         self.panel_tax.update_stat("deductions", session.mask(ded))
         self.panel_tax.update_stat("tax_old",    session.mask(tax_old))
@@ -852,7 +857,7 @@ class DashboardScreen(QMainWindow):
         self.sidebar_expanded = True
         sidebar = self.findChild(QWidget, "sidebar")
         if sidebar:
-            sidebar.setFixedWidth(210)
+            sidebar.setFixedWidth(248)
         
         # Show text elements
         if hasattr(self, 'brand_text'):
@@ -878,7 +883,7 @@ class DashboardScreen(QMainWindow):
         self.sidebar_expanded = False
         sidebar = self.findChild(QWidget, "sidebar")
         if sidebar:
-            sidebar.setFixedWidth(70)
+            sidebar.setFixedWidth(76)
         
         # Hide text elements
         if hasattr(self, 'brand_text'):

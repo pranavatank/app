@@ -23,7 +23,28 @@ class ExcelTable(QTableWidget):
         self.show_checkboxes = show_checkboxes
         self.editable = editable
         self._checkbox_col = 0 if show_checkboxes else -1
+        self._numeric_cols: set[int] = set()
         self._setup_table()
+
+    def setNumericColumns(self, cols) -> None:
+        """Restrict which column indices (post-checkbox-offset) must contain
+        a numeric value when pasted into. Non-numeric pasted text into these
+        columns is rejected (cell left unchanged) instead of silently
+        accepted as text. Default is empty — no restriction, unchanged
+        behavior for any screen that doesn't opt in."""
+        self._numeric_cols = set(cols or [])
+
+    def _paste_allowed(self, col: int, cleaned_value: str) -> bool:
+        """Whether a cleaned pasted value may be written into this column."""
+        if col not in self._numeric_cols:
+            return True
+        if cleaned_value == "":
+            return True  # blank always allowed — clears the cell
+        try:
+            float(cleaned_value)
+            return True
+        except ValueError:
+            return False
         
     def _setup_table(self):
         self.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection)
@@ -189,16 +210,23 @@ class ExcelTable(QTableWidget):
             # Single value - paste to all selected editable cells
             cleaned_value = self._clean_paste_value(lines[0])
             pasted_count = 0
-            
+            rejected = 0
+
             for item in selected_items:
                 if self.show_checkboxes and item.column() == 0:
                     continue
                 if item and (item.flags() & Qt.ItemFlag.ItemIsEditable):
+                    if not self._paste_allowed(item.column(), cleaned_value):
+                        rejected += 1
+                        continue
                     item.setText(cleaned_value)
                     pasted_count += 1
-            
+
             if pasted_count > 0:
                 self.cellDataChanged.emit()
+            if rejected > 0:
+                QMessageBox.warning(self, "Paste Skipped",
+                    f"{rejected} cell(s) skipped — that column requires a numeric value.")
             return
         
         # Mode 2: Range paste (original behavior)
@@ -213,7 +241,8 @@ class ExcelTable(QTableWidget):
             start_col = 1
             
         pasted_count = 0
-        
+        rejected = 0
+
         for r_offset, line in enumerate(lines):
             if not line.strip():
                 continue
@@ -229,11 +258,17 @@ class ExcelTable(QTableWidget):
                 if item and (item.flags() & Qt.ItemFlag.ItemIsEditable):
                     # Clean the value
                     cleaned_value = self._clean_paste_value(value)
+                    if not self._paste_allowed(col, cleaned_value):
+                        rejected += 1
+                        continue
                     item.setText(cleaned_value)
                     pasted_count += 1
-        
+
         if pasted_count > 0:
             self.cellDataChanged.emit()
+        if rejected > 0:
+            QMessageBox.warning(self, "Paste Skipped",
+                f"{rejected} cell(s) skipped — that column requires a numeric value.")
             
     def _clean_paste_value(self, value: str) -> str:
         """Clean pasted value by removing common formatting."""

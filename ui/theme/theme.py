@@ -133,16 +133,16 @@ class Theme:
     def btn(text: str, variant: str = "primary",
             height: int = 40, min_width: int = 116) -> QPushButton:
         b = QPushButton(text)
-        b.setFixedHeight(max(height, 36))
-        b.setMinimumWidth(max(min_width, 96))
+        b.setFixedHeight(max(height, 38))
+        b.setMinimumWidth(max(min_width, 100))
         b.setFont(QFont("Segoe UI", 13, QFont.Weight.DemiBold))
         t = Theme
         styles = {
             "primary": f"""
                 QPushButton {{
                     background: {t.gradient(t.PRIMARY_GRADIENT_START, t.PRIMARY_GRADIENT_END)};
-                    color: #FFFFFF; border: none; border-radius: 8px;
-                    padding: 2px 20px; font-size: 13px; font-weight: 700;
+                    color: #FFFFFF; border: none; border-radius: 10px;
+                    padding: 4px 20px; font-size: 13px; font-weight: 700;
                 }}
                 QPushButton:hover  {{ background: {t.gradient(t.PRIMARY_GRADIENT_HOVER_START, t.PRIMARY_GRADIENT_HOVER_END)}; }}
                 QPushButton:pressed{{ background: {t.PRIMARY_DARK}; padding-top: 3px; }}
@@ -151,8 +151,8 @@ class Theme:
             "secondary": f"""
                 QPushButton {{
                     background: {t.SURFACE}; color: {t.TEXT_PRIMARY};
-                    border: 1.5px solid {t.BORDER}; border-radius: 8px;
-                    padding: 2px 20px; font-size: 13px; font-weight: 600;
+                    border: 1.5px solid {t.BORDER}; border-radius: 10px;
+                    padding: 4px 20px; font-size: 13px; font-weight: 600;
                 }}
                 QPushButton:hover  {{ background: {t.PRIMARY_LIGHT}; border-color: {t.PRIMARY}; color: {t.PRIMARY_DARK}; }}
                 QPushButton:pressed{{ background: {t.PRIMARY_LIGHT}; }}
@@ -161,8 +161,8 @@ class Theme:
             "success": f"""
                 QPushButton {{
                     background: {t.gradient(t.SUCCESS_GRADIENT_START, t.SUCCESS_GRADIENT_END)};
-                    color: #FFFFFF; border: none; border-radius: 8px;
-                    padding: 2px 20px; font-size: 13px; font-weight: 700;
+                    color: #FFFFFF; border: none; border-radius: 10px;
+                    padding: 4px 20px; font-size: 13px; font-weight: 700;
                 }}
                 QPushButton:hover  {{ background: {t.SUCCESS_DARK}; }}
                 QPushButton:pressed{{ background: {t.SUCCESS_DARK}; padding-top: 3px; }}
@@ -171,8 +171,8 @@ class Theme:
             "danger": f"""
                 QPushButton {{
                     background: {t.gradient(t.DANGER_GRADIENT_START, t.DANGER_GRADIENT_END)};
-                    color: #FFFFFF; border: none; border-radius: 8px;
-                    padding: 2px 20px; font-size: 13px; font-weight: 700;
+                    color: #FFFFFF; border: none; border-radius: 10px;
+                    padding: 4px 20px; font-size: 13px; font-weight: 700;
                 }}
                 QPushButton:hover  {{ background: {t.DANGER_DARK}; }}
                 QPushButton:pressed{{ background: {t.DANGER_DARK}; padding-top: 3px; }}
@@ -181,8 +181,8 @@ class Theme:
             "warning": f"""
                 QPushButton {{
                     background: {t.gradient(t.WARNING_GRADIENT_START, t.WARNING_GRADIENT_END)};
-                    color: #FFFFFF; border: none; border-radius: 8px;
-                    padding: 2px 20px; font-size: 13px; font-weight: 700;
+                    color: #FFFFFF; border: none; border-radius: 10px;
+                    padding: 4px 20px; font-size: 13px; font-weight: 700;
                 }}
                 QPushButton:hover  {{ background: {t.WARNING_DARK}; }}
                 QPushButton:disabled{{ background: {t.SURFACE_ALT}; color: {t.TEXT_MUTED}; }}
@@ -190,8 +190,8 @@ class Theme:
             "info": f"""
                 QPushButton {{
                     background: {t.gradient(t.INFO_GRADIENT_START, t.INFO_GRADIENT_END)};
-                    color: #FFFFFF; border: none; border-radius: 8px;
-                    padding: 2px 20px; font-size: 13px; font-weight: 700;
+                    color: #FFFFFF; border: none; border-radius: 10px;
+                    padding: 4px 20px; font-size: 13px; font-weight: 700;
                 }}
                 QPushButton:hover  {{ background: {t.INFO_DARK}; }}
                 QPushButton:disabled{{ background: {t.SURFACE_ALT}; color: {t.TEXT_MUTED}; }}
@@ -199,8 +199,8 @@ class Theme:
             "edit": f"""
                 QPushButton {{
                     background: {t.gradient(t.EDIT_GRADIENT_START, t.EDIT_GRADIENT_END)};
-                    color: #FFFFFF; border: none; border-radius: 8px;
-                    padding: 2px 20px; font-size: 13px; font-weight: 700;
+                    color: #FFFFFF; border: none; border-radius: 10px;
+                    padding: 4px 20px; font-size: 13px; font-weight: 700;
                 }}
                 QPushButton:hover  {{ background: {t.EDIT_DARK}; }}
                 QPushButton:disabled{{ background: {t.SURFACE_ALT}; color: {t.TEXT_MUTED}; }}
@@ -209,7 +209,7 @@ class Theme:
                 QPushButton {{
                     background: {t.gradient(t.HERO_GRADIENT_START, t.HERO_GRADIENT_END)};
                     color: #FFFFFF; border: none; border-radius: 12px;
-                    padding: 2px 24px; font-size: 14px; font-weight: 700;
+                    padding: 4px 26px; font-size: 14px; font-weight: 700;
                 }}
                 QPushButton:hover  {{ background: {t.gradient(t.HERO_GRADIENT_HOVER_START, t.HERO_GRADIENT_HOVER_END)}; }}
                 QPushButton:pressed{{ background: {t.PRIMARY_DARK}; padding-top: 3px; }}
@@ -218,8 +218,8 @@ class Theme:
             "ghost": f"""
                 QPushButton {{
                     background: transparent; color: {t.PRIMARY};
-                    border: none; border-radius: 8px;
-                    padding: 2px 18px; font-size: 13px; font-weight: 600;
+                    border: none; border-radius: 10px;
+                    padding: 4px 18px; font-size: 13px; font-weight: 600;
                 }}
                 QPushButton:hover  {{ background: {t.PRIMARY_LIGHT}; }}
                 QPushButton:pressed{{ background: {t.PRIMARY_LIGHT}; }}
@@ -263,25 +263,25 @@ class Theme:
         return tc.badge_style(Theme, bg=bg, fg=fg, radius=radius, padding=padding, size=size, weight=weight)
 
     @staticmethod
-    def card_style(bg=None, border_color=None, radius=12, padding=14,
+    def card_style(bg=None, border_color=None, radius=14, padding=14,
                    left_accent=None, selector="QFrame") -> str:
         return tc.card_style(Theme, bg=bg, border_color=border_color, radius=radius,
                              padding=padding, left_accent=left_accent, selector=selector)
 
     @staticmethod
-    def metric_card_style(accent: str, bg: str, radius: int = 14) -> str:
+    def metric_card_style(accent: str, bg: str, radius: int = 16) -> str:
         return tc.metric_card_style(Theme, accent=accent, bg=bg, radius=radius)
 
     @staticmethod
-    def info_banner_style(accent: str = None, radius: int = 10) -> str:
+    def info_banner_style(accent: str = None, radius: int = 12) -> str:
         return tc.info_banner_style(Theme, accent=accent, radius=radius)
 
     @staticmethod
-    def regime_card_style(accent: str, radius: int = 12) -> str:
+    def regime_card_style(accent: str, radius: int = 14) -> str:
         return tc.regime_card_style(Theme, accent=accent, radius=radius)
 
     @staticmethod
-    def filter_bar_style(radius=10) -> str:
+    def filter_bar_style(radius=12) -> str:
         return tc.filter_bar_style(Theme, radius=radius)
 
     @staticmethod
@@ -293,12 +293,36 @@ class Theme:
         return tc.panel_strip_style(Theme, start=start, end=end, radius=radius)
 
     @staticmethod
-    def tinted_surface_style(radius=12, border_color=None, selector="QFrame") -> str:
+    def tinted_surface_style(radius=14, border_color=None, selector="QFrame") -> str:
         return tc.tinted_surface_style(Theme, radius=radius, border_color=border_color, selector=selector)
 
     @staticmethod
-    def banner_style(level: str = "info", radius: int = 10) -> str:
+    def banner_style(level: str = "info", radius: int = 12) -> str:
         return tc.banner_style(Theme, level=level, radius=radius)
+
+    @staticmethod
+    def hero_header_style(radius: int = 16, selector: str = "QFrame") -> str:
+        return tc.hero_header_style(Theme, radius=radius, selector=selector)
+
+    @staticmethod
+    def page_header_style(radius: int = 14, selector: str = "QFrame#pageHeader") -> str:
+        return tc.page_header_style(Theme, radius=radius, selector=selector)
+
+    @staticmethod
+    def stat_tile_style(accent: str, radius: int = 16, selector: str = "QFrame") -> str:
+        return tc.stat_tile_style(Theme, accent=accent, radius=radius, selector=selector)
+
+    @staticmethod
+    def empty_state_style(radius: int = 14) -> str:
+        return tc.empty_state_style(Theme, radius=radius)
+
+    @staticmethod
+    def icon_chip_style(accent: str, radius: int = 10) -> str:
+        return tc.icon_chip_style(Theme, accent=accent, radius=radius)
+
+    @staticmethod
+    def action_bar_style(radius: int = 14, selector: str = "QFrame#actionBar") -> str:
+        return tc.action_bar_style(Theme, radius=radius, selector=selector)
 
     @staticmethod
     def sidebar_nav_normal() -> str:
@@ -370,7 +394,7 @@ class Theme:
             "muted": f"color: {t.TEXT_SECONDARY}; font-size: 13px;",
             "warning": f"color: {t.WARNING_DARK}; font-size: 13px; font-weight: 600;",
             "line_edit": (f"background-color: {t.SURFACE}; color: {t.TEXT_PRIMARY}; "
-                          f"border: 1px solid {t.BORDER}; border-radius: 8px; "
+                          f"border: 1px solid {t.BORDER}; border-radius: 10px; "
                           "padding: 8px 10px; font-size: 14px;"),
             "checkbox": f"color: {t.TEXT_PRIMARY}; font-size: 14px;",
         }
@@ -378,6 +402,9 @@ class Theme:
     @staticmethod
     def get_stylesheet() -> str:
         t = Theme
+        from .checkbox_asset import checkmark_url
+        _url = checkmark_url()
+        _checkmark_rule = f"image: url({_url});" if _url else ""
         return f"""
 /* ═══════════════════════════ BASE ══════════════════════════ */
 QMainWindow, QWidget {{
@@ -392,7 +419,7 @@ QLabel {{ color: {t.TEXT_PRIMARY}; background: transparent; border: none; }}
 /* ═══════════════════════════ INPUTS ═════════════════════════ */
 QLineEdit, QTextEdit, QPlainTextEdit {{
     background-color: {t.SURFACE}; color: {t.TEXT_PRIMARY};
-    border: 1.5px solid {t.BORDER}; border-radius: 8px;
+    border: 1.5px solid {t.BORDER}; border-radius: 10px;
     padding: 8px 12px; font-size: 14px;
     selection-background-color: {t.PRIMARY_LIGHT};
     selection-color: {t.PRIMARY_DARK};
@@ -404,7 +431,7 @@ QLineEdit[readOnly="true"] {{ background-color: {t.SURFACE_ALT}; color: {t.TEXT_
 /* ═══════════════════════════ COMBO ══════════════════════════ */
 QComboBox {{
     background-color: {t.SURFACE}; color: {t.TEXT_PRIMARY};
-    border: 1.5px solid {t.BORDER}; border-radius: 8px;
+    border: 1.5px solid {t.BORDER}; border-radius: 10px;
     padding: 7px 12px; font-size: 14px; min-height: 18px;
 }}
 QComboBox:hover {{ border-color: {t.BORDER_FOCUS}; }}
@@ -417,7 +444,7 @@ QComboBox::down-arrow {{
 }}
 QComboBox QAbstractItemView {{
     background-color: {t.SURFACE}; color: {t.TEXT_PRIMARY};
-    border: 1px solid {t.BORDER}; border-radius: 8px;
+    border: 1px solid {t.BORDER}; border-radius: 10px;
     selection-background-color: {t.PRIMARY_LIGHT};
     selection-color: {t.PRIMARY_DARK}; padding: 4px; outline: none;
 }}
@@ -425,7 +452,7 @@ QComboBox QAbstractItemView {{
 /* ═══════════════════════════ SPINBOX ════════════════════════ */
 QSpinBox, QDoubleSpinBox, QDateEdit {{
     background-color: {t.SURFACE}; color: {t.TEXT_PRIMARY};
-    border: 1.5px solid {t.BORDER}; border-radius: 8px;
+    border: 1.5px solid {t.BORDER}; border-radius: 10px;
     padding: 7px 10px; font-size: 14px;
 }}
 QSpinBox:focus, QDoubleSpinBox:focus, QDateEdit:focus {{ border-color: {t.PRIMARY}; }}
@@ -439,7 +466,7 @@ QDateEdit::drop-down {{ border: none; width: 28px; }}
 /* ═══════════════════════════ BUTTONS ════════════════════════ */
 QPushButton {{
     background: {t.gradient(t.PRIMARY_GRADIENT_START, t.PRIMARY_GRADIENT_END)};
-    color: #FFFFFF; border: none; border-radius: 8px;
+    color: #FFFFFF; border: none; border-radius: 10px;
     padding: 8px 18px; font-size: 14px; font-weight: 600; min-height: 22px;
 }}
 QPushButton:hover   {{ background: {t.gradient(t.PRIMARY_GRADIENT_HOVER_START, t.PRIMARY_GRADIENT_HOVER_END)}; }}
@@ -463,7 +490,7 @@ QTableWidget {{
     selection-background-color: {t.PRIMARY_LIGHT};
     selection-color: {t.PRIMARY_DARK}; font-size: 14px;
 }}
-QTableWidget::item {{ padding: 7px 8px; border: none; }}
+QTableWidget::item {{ padding: 8px 10px; border: none; }}
 QTableWidget::item:selected {{ background-color: {t.PRIMARY_LIGHT}; color: {t.PRIMARY_DARK}; }}
 QTableWidget::item:hover {{ background-color: {t.SURFACE_ALT}; }}
 QHeaderView::section {{
@@ -505,18 +532,57 @@ QGroupBox::title {{ subcontrol-origin: margin; left: 14px; padding: 0 6px; backg
 /* ═══════════════════════════ CHECKBOX / RADIO ═══════════════ */
 QCheckBox, QRadioButton {{ color: {t.TEXT_PRIMARY}; spacing: 8px; font-size: 14px; }}
 QCheckBox::indicator, QRadioButton::indicator {{
-    width: 18px; height: 18px; border: 2px solid {t.BORDER}; border-radius: 4px; background-color: {t.SURFACE};
+    width: 18px; height: 18px; border: 2px solid {t.BORDER}; border-radius: 5px; background-color: {t.SURFACE};
 }}
 QRadioButton::indicator {{ border-radius: 9px; }}
-QCheckBox::indicator:checked, QRadioButton::indicator:checked {{ background-color: {t.PRIMARY}; border-color: {t.PRIMARY}; }}
+QCheckBox::indicator:checked {{
+    background-color: {t.PRIMARY}; border-color: {t.PRIMARY};
+    {_checkmark_rule}
+}}
+QRadioButton::indicator:checked {{ background-color: {t.PRIMARY}; border-color: {t.PRIMARY}; }}
 QCheckBox::indicator:hover, QRadioButton::indicator:hover {{ border-color: {t.PRIMARY}; }}
+QCheckBox::indicator:checked:hover {{ background-color: {t.PRIMARY_DARK}; border-color: {t.PRIMARY_DARK}; }}
 
 /* ═══════════════════════════ PROGRESS BAR ═══════════════════ */
 QProgressBar {{
-    border: 1.5px solid {t.BORDER}; border-radius: 8px; background-color: {t.SURFACE_ALT};
+    border: 1.5px solid {t.BORDER}; border-radius: 10px; background-color: {t.SURFACE_ALT};
     text-align: center; color: {t.TEXT_PRIMARY}; font-weight: 600; height: 22px;
 }}
 QProgressBar::chunk {{ background: {t.gradient(t.PRIMARY_GRADIENT_START, t.SUCCESS_GRADIENT_END)}; border-radius: 6px; }}
+
+/* ═══════════════════════════ CALENDAR POPUP ═════════════════ */
+QCalendarWidget {{
+    background-color: {t.SURFACE}; border: 1px solid {t.BORDER};
+    border-radius: 12px; outline: none;
+}}
+QCalendarWidget QWidget#qt_calendar_navigationbar {{
+    background: {t.gradient(t.PRIMARY_GRADIENT_START, t.PRIMARY_GRADIENT_END)};
+    border-top-left-radius: 12px; border-top-right-radius: 12px;
+    min-height: 40px;
+}}
+QCalendarWidget QToolButton {{
+    color: #FFFFFF; background: transparent; border: none;
+    border-radius: 8px; font-size: 13px; font-weight: 700;
+    icon-size: 16px, 16px; padding: 4px 8px; margin: 4px 2px;
+}}
+QCalendarWidget QToolButton:hover {{ background: rgba(255,255,255,0.18); }}
+QCalendarWidget QToolButton::menu-indicator {{ image: none; }}
+QCalendarWidget QSpinBox {{
+    color: #FFFFFF; background: rgba(255,255,255,0.12);
+    border: none; border-radius: 6px; padding: 2px 6px; font-weight: 700;
+}}
+QCalendarWidget QMenu {{
+    background-color: {t.SURFACE}; color: {t.TEXT_PRIMARY};
+    border: 1px solid {t.BORDER}; border-radius: 10px; padding: 4px;
+}}
+QCalendarWidget QAbstractItemView {{
+    background-color: {t.SURFACE}; color: {t.TEXT_PRIMARY};
+    selection-background-color: {t.PRIMARY}; selection-color: #FFFFFF;
+    outline: none; border: none; font-size: 13px;
+    gridline-color: transparent;
+}}
+QCalendarWidget QAbstractItemView:disabled {{ color: {t.TEXT_MUTED}; }}
+QCalendarWidget QTableView {{ border: none; }}
 
 /* ═══════════════════════════ MENU / TOOLTIP ═════════════════ */
 QMenu {{ background-color: {t.SURFACE}; color: {t.TEXT_PRIMARY}; border: 1px solid {t.BORDER}; border-radius: 10px; padding: 6px; }}

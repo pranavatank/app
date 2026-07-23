@@ -4,6 +4,8 @@ ui/dialogs/income_source_dialog.py — Income source management dialog.
 Create/edit income sources (employers, companies, banks, etc.).
 """
 
+import re
+
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QLineEdit, QComboBox, QTextEdit, QPushButton, QFormLayout, QFrame
@@ -12,6 +14,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 
 from ui.theme import Theme
+from ui.icons import icon_label
 from models.income_source import (
     save_income_source, get_income_source, SOURCE_TYPES
 )
@@ -35,10 +38,15 @@ class IncomeSourceDialog(QDialog):
         layout.setContentsMargins(20, 20, 20, 20)
         
         # Title
+        title_row = QHBoxLayout()
+        title_row.setSpacing(10)
+        title_row.addWidget(icon_label("income_src", size=20, color=Theme.PRIMARY))
         title = QLabel("Add Income Source" if not self.source_id else "Edit Income Source")
         title.setFont(QFont("Segoe UI", 15, QFont.Weight.Bold))
         title.setStyleSheet(Theme.title_style(15))
-        layout.addWidget(title)
+        title_row.addWidget(title)
+        title_row.addStretch()
+        layout.addLayout(title_row)
         
         # Form
         form_frame = QFrame()
@@ -165,7 +173,29 @@ class IncomeSourceDialog(QDialog):
             return
         
         tan = self.tan_input.text().strip().upper()
-        
+        if tan and not re.fullmatch(r"[A-Z]{4}[0-9]{5}[A-Z]", tan):
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "Invalid TAN", "TAN must be 10 characters in the format ABCD12345E.")
+            return
+
+        pan = self.pan_input.text().strip().upper()
+        if pan and not re.fullmatch(r"[A-Z]{5}[0-9]{4}[A-Z]", pan):
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "Invalid PAN", "PAN must be 10 characters in the format ABCDE1234F.")
+            return
+
+        email = self.email_input.text().strip()
+        if email and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "Invalid Email", "Please enter a valid email address.")
+            return
+
+        phone = self.phone_input.text().strip()
+        if phone and not re.fullmatch(r"[0-9]{10}", re.sub(r"[\s\-+]", "", phone).removeprefix("91")):
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "Invalid Phone", "Please enter a valid 10-digit phone number.")
+            return
+
         try:
             save_income_source(
                 source_type=self.type_combo.currentText(),

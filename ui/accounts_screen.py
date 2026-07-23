@@ -51,7 +51,7 @@ class AccountsScreen(QWidget):
 
         # View toggle button
         self.btn_toggle = Theme.btn(" List View", "secondary", height=38, min_width=120)
-        set_btn_icon(self.btn_toggle, "list_view", color="#94A3B8")
+        set_btn_icon(self.btn_toggle, "list_view", color=Theme.TEXT_SECONDARY)
         self.btn_toggle.setAccessibleName("Toggle account view")
         self.btn_toggle.setAccessibleDescription("Switch between card and list view.")
         self.btn_toggle.clicked.connect(self._toggle_view)
@@ -86,7 +86,7 @@ class AccountsScreen(QWidget):
     def _toggle_view(self):
         self.view_mode = "list" if self.view_mode == "card" else "card"
         self.btn_toggle.setText(" Card View" if self.view_mode == "list" else " List View")
-        set_btn_icon(self.btn_toggle, "card_view" if self.view_mode == "list" else "list_view", color="#94A3B8")
+        set_btn_icon(self.btn_toggle, "card_view" if self.view_mode == "list" else "list_view", color=Theme.TEXT_SECONDARY)
         self._load_accounts()
 
     def _load_accounts(self):
@@ -100,11 +100,16 @@ class AccountsScreen(QWidget):
             accounts = [a for a in accounts if a["person_id"] == self.selected_person_id]
 
         if not accounts:
+            no_data_container = QFrame()
+            no_data_container.setStyleSheet(Theme.empty_state_style())
+            no_data_layout = QVBoxLayout(no_data_container)
+            no_data_layout.setContentsMargins(0, 0, 0, 0)
             no_data = QLabel("No accounts found.\nClick 'Add Account' to get started.")
             no_data.setAlignment(Qt.AlignmentFlag.AlignCenter)
             no_data.setStyleSheet(
-                f"color: {Theme.TEXT_MUTED}; font-size: 15px; padding: 60px; background: transparent;")
-            self.container_layout.addWidget(no_data)
+                f"color: {Theme.TEXT_MUTED}; font-size: 15px; background: transparent;")
+            no_data_layout.addWidget(no_data)
+            self.container_layout.addWidget(no_data_container)
             return
 
         if self.view_mode == "card":
@@ -189,6 +194,7 @@ class AccountsScreen(QWidget):
                 border-color: {Theme.PRIMARY};
             }}
         """)
+        item.setGraphicsEffect(Theme.shadow_card())
         item.setCursor(Qt.CursorShape.PointingHandCursor)
         item.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         item.setAccessibleName(f"Account card for {account.get('bank_display_name', account['bank_name'])}")
@@ -300,6 +306,7 @@ class AccountsScreen(QWidget):
                 background-color: {Theme.SURFACE_ALT};
             }}
         """)
+        card.setGraphicsEffect(Theme.shadow_card())
         card.setCursor(Qt.CursorShape.PointingHandCursor)
         card.mousePressEvent = lambda e: self._on_card_clicked(account)
         card.setMinimumHeight(190)

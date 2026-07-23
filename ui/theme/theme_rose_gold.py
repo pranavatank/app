@@ -54,11 +54,11 @@ EDIT_LIGHT                = "#F3E5F5"
 EDIT_GRADIENT_START       = "#AB47BC"
 EDIT_GRADIENT_END         = "#6A1B9A"
 
-# ── Hero — rose gold → blush gradient ─────────────────────────────────────────
+# ── Hero — true rose → gold gradient (honors the theme's name) ──────────────
 HERO_GRADIENT_START       = "#E91E8C"
-HERO_GRADIENT_END         = "#FF80AB"   # blush pink
+HERO_GRADIENT_END         = "#D4A017"   # bright gold
 HERO_GRADIENT_HOVER_START = "#C2185B"
-HERO_GRADIENT_HOVER_END   = "#F48FB1"
+HERO_GRADIENT_HOVER_END   = "#B7791F"
 
 # ── Extra accents ─────────────────────────────────────────────────────────────
 PURPLE       = "#7B1FA2";  PURPLE_LIGHT  = "#F3E5F5"

@@ -10,6 +10,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 
 from ui.theme import Theme
+from ui.icons import icon_label
 from models.bank_account import update_account
 
 
@@ -42,11 +43,16 @@ class AccountMetadataDialog(QDialog):
         header_layout = QVBoxLayout(header_frame)
         header_layout.setContentsMargins(28, 0, 28, 0)
         header_layout.setSpacing(6)
-        
-        title = QLabel("📄 Account Details Found")
+
+        title_row = QHBoxLayout()
+        title_row.setSpacing(10)
+        title_row.addWidget(icon_label("account_found", size=22, color="#FFFFFF"))
+        title = QLabel("Account Details Found")
         title.setFont(QFont("Segoe UI", 18, QFont.Weight.Bold))
         title.setStyleSheet("color: white; background: transparent;")
-        header_layout.addWidget(title)
+        title_row.addWidget(title)
+        title_row.addStretch()
+        header_layout.addLayout(title_row)
         
         subtitle = QLabel("Review and confirm the information extracted from your bank statement")
         subtitle.setStyleSheet("color: rgba(255,255,255,0.85); font-size: 13px; background: transparent;")
@@ -251,7 +257,7 @@ class AccountMetadataDialog(QDialog):
         footer_layout.setSpacing(12)
 
         # Update checkbox
-        self.update_check = QCheckBox("✓ Update account with these details")
+        self.update_check = QCheckBox("Update account with these details")
         self.update_check.setChecked(True)
         self.update_check.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=13, weight=600))
         self.update_check.setAccessibleName("Update account checkbox")

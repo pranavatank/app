@@ -22,6 +22,7 @@ import re
 
 from ui.widgets.excel_table import ExcelTableWithStats
 from ui.theme import Theme
+from ui.icons import icon_label, set_btn_icon
 from ui.date_utils import format_display_date
 from core.session import session
 from models.person import get_all_persons
@@ -79,17 +80,15 @@ class StatementImportScreen(QWidget):
 
         # Header
         header = QHBoxLayout()
-        title = QLabel("📄  Statement Import")
+        header.setSpacing(10)
+        header.addWidget(icon_label("statement_import", size=20, color=Theme.PRIMARY))
+        title = QLabel("Statement Import")
         title.setFont(QFont("Segoe UI", 15, QFont.Weight.Bold))
         title.setStyleSheet(Theme.title_style(15))
         header.addWidget(title)
         header.addStretch()
-        
-        self.screen_indicator = QLabel("1 of 2")
-        self.screen_indicator.setStyleSheet(
-            Theme.badge_style(Theme.PRIMARY_LIGHT, Theme.PRIMARY_DARK, radius=10, padding="6px 12px", size=11, weight=600)
-        )
-        header.addWidget(self.screen_indicator)
+
+        header.addWidget(self._build_stepper())
         layout.addLayout(header)
 
         # Stack for 2 screens
@@ -140,7 +139,7 @@ class StatementImportScreen(QWidget):
         c1_layout = QVBoxLayout(card1)
         c1_layout.setSpacing(12)
         
-        c1_layout.addWidget(self._card_title("👤  Select Person"))
+        c1_layout.addWidget(self._card_title_row("person", "Select Person"))
         c1_layout.addWidget(self._card_subtitle("Choose the family member for this statement"))
         
         self.person_combo = QComboBox()
@@ -158,7 +157,7 @@ class StatementImportScreen(QWidget):
         c2_layout = QVBoxLayout(card2)
         c2_layout.setSpacing(12)
         
-        c2_layout.addWidget(self._card_title("🏦  Select Bank Account"))
+        c2_layout.addWidget(self._card_title_row("bank", "Select Bank Account"))
         c2_layout.addWidget(self._card_subtitle("Choose the account for this statement"))
         
         self.account_combo = QComboBox()
@@ -176,7 +175,7 @@ class StatementImportScreen(QWidget):
         c3_layout = QVBoxLayout(card3)
         c3_layout.setSpacing(12)
         
-        c3_layout.addWidget(self._card_title("📁  Choose Statement File"))
+        c3_layout.addWidget(self._card_title_row("browse", "Choose Statement File"))
         c3_layout.addWidget(self._card_subtitle("Select a PDF or Excel bank statement"))
         
         file_row = QHBoxLayout()
@@ -192,13 +191,14 @@ class StatementImportScreen(QWidget):
             font-size: 13px;
         """)
         file_row.addWidget(self.file_label, stretch=1)
-        
-        btn_browse = Theme.btn("📂  Browse", "secondary", height=42, min_width=120)
+
+        btn_browse = Theme.btn("Browse", "secondary", height=42, min_width=120)
         btn_browse.clicked.connect(self._browse_file)
         btn_browse.setAccessibleName("Browse statement file")
         btn_browse.setAccessibleDescription("Open a file picker to select a bank statement file.")
         btn_browse.setToolTip("Open a file picker to select a bank statement file.")
         btn_browse.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        set_btn_icon(btn_browse, "browse")
         self.btn_browse = btn_browse
         file_row.addWidget(btn_browse)
         c3_layout.addLayout(file_row)
@@ -269,10 +269,8 @@ class StatementImportScreen(QWidget):
         hc_layout.setSpacing(10)
         
         title_row = QHBoxLayout()
-        preview_title = QLabel("📊  Transaction Preview")
-        preview_title.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
-        preview_title.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=13, weight=700))
-        title_row.addWidget(preview_title)
+        preview_title_widget = self._card_title_row("chart_overview", "Transaction Preview")
+        title_row.addWidget(preview_title_widget)
         title_row.addStretch()
         
         self.preview_summary_label = QLabel("Total: 0 | New: 0 | Duplicates: 0 | Selected: 0")
@@ -286,78 +284,86 @@ class StatementImportScreen(QWidget):
         actions = QHBoxLayout()
         actions.setSpacing(8)
         
-        btn_select_all = Theme.btn("✓ Select All New", "success", height=34, min_width=130)
+        btn_select_all = Theme.btn("Select All New", "success", height=34, min_width=130)
         btn_select_all.clicked.connect(lambda: self._set_preview_selection(True))
         btn_select_all.setAccessibleName("Select all new transactions")
         btn_select_all.setAccessibleDescription("Select all non-duplicate transactions for import.")
         btn_select_all.setToolTip("Select all non-duplicate transactions for import.")
         btn_select_all.setShortcut("Alt+S")
         btn_select_all.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        set_btn_icon(btn_select_all, "select_all")
         actions.addWidget(btn_select_all)
         
-        btn_clear = Theme.btn("✗ Clear Selection", "secondary", height=34, min_width=130)
+        btn_clear = Theme.btn("Clear Selection", "secondary", height=34, min_width=130)
         btn_clear.clicked.connect(lambda: self._set_preview_selection(False))
         btn_clear.setAccessibleName("Clear transaction selection")
         btn_clear.setAccessibleDescription("Clear all selected transactions in the preview.")
         btn_clear.setToolTip("Clear all selected transactions in the preview.")
         btn_clear.setShortcut("Alt+C")
         btn_clear.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        set_btn_icon(btn_clear, "clear_sel")
         actions.addWidget(btn_clear)
         
         actions.addStretch()
         
-        self.copy_debug_btn = Theme.btn("📋 Copy Debug", "secondary", height=34, min_width=120)
+        self.copy_debug_btn = Theme.btn("Copy Debug", "secondary", height=34, min_width=120)
         self.copy_debug_btn.clicked.connect(self._copy_debug_report)
         self.copy_debug_btn.setAccessibleName("Copy debug report")
         self.copy_debug_btn.setAccessibleDescription("Copy the parser debug report to the clipboard.")
         self.copy_debug_btn.setToolTip("Copy the parser debug report to the clipboard.")
         self.copy_debug_btn.setShortcut("Alt+D")
         self.copy_debug_btn.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        set_btn_icon(self.copy_debug_btn, "copy")
         actions.addWidget(self.copy_debug_btn)
         
-        self.export_debug_btn = Theme.btn("💾 Export Debug", "secondary", height=34, min_width=130)
+        self.export_debug_btn = Theme.btn("Export Debug", "secondary", height=34, min_width=130)
         self.export_debug_btn.clicked.connect(self._export_debug_report)
         self.export_debug_btn.setAccessibleName("Export debug report")
         self.export_debug_btn.setAccessibleDescription("Save the parser debug report to a file.")
         self.export_debug_btn.setToolTip("Save the parser debug report to a file.")
         self.export_debug_btn.setShortcut("Alt+E")
         self.export_debug_btn.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        set_btn_icon(self.export_debug_btn, "export")
         actions.addWidget(self.export_debug_btn)
 
-        self.bulk_edit_btn = Theme.btn("🧩 Bulk Edit", "secondary", height=34, min_width=120)
+        self.bulk_edit_btn = Theme.btn("Bulk Edit", "secondary", height=34, min_width=120)
         self.bulk_edit_btn.clicked.connect(self._bulk_edit_selected_rows)
         self.bulk_edit_btn.setAccessibleName("Bulk edit selected transactions")
         self.bulk_edit_btn.setAccessibleDescription("Edit shared fields for the selected transactions.")
         self.bulk_edit_btn.setToolTip("Edit shared fields for the selected transactions.")
         self.bulk_edit_btn.setShortcut("Alt+B")
         self.bulk_edit_btn.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        set_btn_icon(self.bulk_edit_btn, "bulk_edit")
         actions.addWidget(self.bulk_edit_btn)
 
-        self.shift_dates_btn = Theme.btn("🗓 Shift Dates", "secondary", height=34, min_width=120)
+        self.shift_dates_btn = Theme.btn("Shift Dates", "secondary", height=34, min_width=120)
         self.shift_dates_btn.clicked.connect(self._shift_selected_dates)
         self.shift_dates_btn.setAccessibleName("Shift selected transaction dates")
         self.shift_dates_btn.setAccessibleDescription("Move the dates of selected transactions by a number of days.")
         self.shift_dates_btn.setToolTip("Move the dates of selected transactions by a number of days.")
         self.shift_dates_btn.setShortcut("Alt+H")
         self.shift_dates_btn.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        set_btn_icon(self.shift_dates_btn, "shift_dates")
         actions.addWidget(self.shift_dates_btn)
 
-        self.split_row_btn = Theme.btn("✂ Split Row", "secondary", height=34, min_width=110)
+        self.split_row_btn = Theme.btn("Split Row", "secondary", height=34, min_width=110)
         self.split_row_btn.clicked.connect(self._split_selected_row)
         self.split_row_btn.setAccessibleName("Split selected transaction")
         self.split_row_btn.setAccessibleDescription("Split one transaction into two rows.")
         self.split_row_btn.setToolTip("Split one transaction into two rows.")
         self.split_row_btn.setShortcut("Alt+P")
         self.split_row_btn.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        set_btn_icon(self.split_row_btn, "split")
         actions.addWidget(self.split_row_btn)
 
-        self.merge_rows_btn = Theme.btn("🧷 Merge Rows", "secondary", height=34, min_width=120)
+        self.merge_rows_btn = Theme.btn("Merge Rows", "secondary", height=34, min_width=120)
         self.merge_rows_btn.clicked.connect(self._merge_selected_rows)
         self.merge_rows_btn.setAccessibleName("Merge selected transactions")
         self.merge_rows_btn.setAccessibleDescription("Combine two or more selected transactions into one row.")
         self.merge_rows_btn.setToolTip("Combine two or more selected transactions into one row.")
         self.merge_rows_btn.setShortcut("Alt+G")
         self.merge_rows_btn.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        set_btn_icon(self.merge_rows_btn, "merge")
         actions.addWidget(self.merge_rows_btn)
         
         hc_layout.addLayout(actions)
@@ -388,10 +394,8 @@ class StatementImportScreen(QWidget):
         debug_layout.setSpacing(10)
         
         debug_header = QHBoxLayout()
-        debug_title = QLabel("🔍  Import Debug Panel")
-        debug_title.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
-        debug_title.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=11, weight=700))
-        debug_header.addWidget(debug_title)
+        debug_title_widget = self._card_title_row("search", "Import Debug Panel")
+        debug_header.addWidget(debug_title_widget)
         debug_header.addStretch()
         
         self.debug_toggle_btn = Theme.btn("▼ Show", "secondary", height=28, min_width=80)
@@ -423,6 +427,50 @@ class StatementImportScreen(QWidget):
         
         return container
 
+    def _build_stepper(self) -> QWidget:
+        """Two-step progress indicator: numbered dots joined by a line,
+        replacing the old plain '1 of 2' text badge."""
+        container = QWidget()
+        row = QHBoxLayout(container)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(6)
+
+        self._step_dots = []
+        self._step_line = None
+        for i, step_label in enumerate(["Select", "Preview"], start=1):
+            dot = QLabel(str(i))
+            dot.setFixedSize(26, 26)
+            dot.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            dot.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+            row.addWidget(dot)
+            self._step_dots.append(dot)
+
+            txt = QLabel(step_label)
+            txt.setStyleSheet(Theme.muted_style(11))
+            row.addWidget(txt)
+
+            if i == 1:
+                line = QFrame()
+                line.setFixedSize(24, 2)
+                row.addWidget(line)
+                self._step_line = line
+
+        self._set_step(1)
+        return container
+
+    def _set_step(self, step: int):
+        """Update the stepper's visual state (1 or 2)."""
+        self.screen_indicator_step = step
+        for i, dot in enumerate(self._step_dots, start=1):
+            active = i <= step
+            bg = Theme.PRIMARY if active else Theme.SURFACE_ALT
+            fg = "#FFFFFF" if active else Theme.TEXT_MUTED
+            dot.setStyleSheet(f"background-color: {bg}; color: {fg}; border-radius: 13px;")
+        if self._step_line is not None:
+            self._step_line.setStyleSheet(
+                f"background-color: {Theme.PRIMARY if step >= 2 else Theme.BORDER};"
+            )
+
     def _create_card(self) -> QFrame:
         """Create a modern card container"""
         card = QFrame()
@@ -444,6 +492,18 @@ class StatementImportScreen(QWidget):
         lbl.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
         lbl.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=13, weight=700))
         return lbl
+
+    def _card_title_row(self, icon_name: str, text: str) -> QWidget:
+        """Card title with a registry icon instead of a plain emoji."""
+        row_widget = QWidget()
+        row_widget.setStyleSheet("background: transparent;")
+        row = QHBoxLayout(row_widget)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(8)
+        row.addWidget(icon_label(icon_name, size=18, color=Theme.PRIMARY))
+        row.addWidget(self._card_title(text))
+        row.addStretch()
+        return row_widget
 
     def _card_subtitle(self, text: str) -> QLabel:
         lbl = QLabel(text)
@@ -526,7 +586,7 @@ class StatementImportScreen(QWidget):
         """Go back to selection screen"""
         if self.stack.currentIndex() == 1:
             self.stack.setCurrentIndex(0)
-            self.screen_indicator.setText("1 of 2")
+            self._set_step(1)
             self.btn_back.setEnabled(False)
             self.btn_next.setText("Parse Statement →")
             self.person_combo.setFocus()
@@ -696,9 +756,10 @@ class StatementImportScreen(QWidget):
     def _switch_to_preview(self):
         """Switch to preview screen"""
         self.stack.setCurrentIndex(1)
-        self.screen_indicator.setText("2 of 2")
+        self._set_step(2)
         self.btn_back.setEnabled(True)
-        self.btn_next.setText("✓ Import Selected →")
+        self.btn_next.setText("Import Selected →")
+        set_btn_icon(self.btn_next, "check")
         self.preview_table.setFocus()
 
     def _import_transactions(self):
@@ -827,10 +888,10 @@ class StatementImportScreen(QWidget):
         
         # Reset UI
         self.stack.setCurrentIndex(0)
-        self.screen_indicator.setText("1 of 2")
+        self._set_step(1)
         self.btn_back.setEnabled(False)
         self.btn_next.setText("Parse Statement →")
-        
+
         # Reload person combo
         self.person_combo.clear()
         for p in get_all_persons():

@@ -59,7 +59,7 @@ class AdvanceTaxBanner(QFrame):
         self.btn_dismiss = QPushButton()
         self.btn_dismiss.setFixedSize(28, 28)
         if icons_available():
-            self.btn_dismiss.setIcon(app_icon("close", color=Theme.TEXT_SECONDARY, size=14))
+            self.btn_dismiss.setIcon(app_icon("close", color=Theme.TEXT_SECONDARY, size=16))
         else:
             self.btn_dismiss.setText("x")
         self.btn_dismiss.setStyleSheet(f"""
@@ -101,12 +101,12 @@ class AdvanceTaxBanner(QFrame):
         
         # Update icon
         _ICON_MAP = {
-            "success": ("success_badge", "#4ADE80"),
-            "info":    ("calendar",       "#60A5FA"),
-            "warning": ("notification",   "#FBBF24"),
-            "danger":  ("overdue",        "#F87171"),
+            "success": ("success_badge", Theme.SUCCESS),
+            "info":    ("calendar",       Theme.INFO),
+            "warning": ("notification",   Theme.WARNING),
+            "danger":  ("overdue",        Theme.DANGER),
         }
-        ic_name, ic_color = _ICON_MAP.get(result.banner_level, ("notification", "#FBBF24"))
+        ic_name, ic_color = _ICON_MAP.get(result.banner_level, ("notification", Theme.WARNING))
         if icons_available():
             pm = app_icon(ic_name, color=ic_color, size=22).pixmap(22, 22)
             self.icon_label.setPixmap(pm)

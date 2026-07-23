@@ -2,6 +2,8 @@
 ui/dialogs/person_dialog.py — Person management dialog with clean theme styling.
 """
 
+import re
+
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView, QLineEdit,
@@ -11,7 +13,7 @@ from PyQt6.QtCore import Qt, QDate
 from PyQt6.QtGui import QFont
 
 from ui.theme import Theme
-from ui.icons import set_btn_icon
+from ui.icons import set_btn_icon, icon_label
 from ui.date_utils import format_display_date
 from models.person import add_person, get_all_persons, get_person, update_person, delete_person
 
@@ -35,12 +37,14 @@ class PersonManagementDialog(QDialog):
 
         # Header
         header = QHBoxLayout()
+        header.setSpacing(10)
+        header.addWidget(icon_label("persons", size=20, color=Theme.PRIMARY))
         title = QLabel("Family Members")
-        title.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
-        title.setStyleSheet(f"color: {Theme.TEXT_PRIMARY};")
+        title.setStyleSheet(Theme.title_style(14))
         header.addWidget(title)
         header.addStretch()
-        btn_add = _btn("＋  Add Person", "primary")
+        btn_add = _btn("  Add Person", "primary")
+        set_btn_icon(btn_add, "add")
         btn_add.setAccessibleName("Add person")
         btn_add.clicked.connect(self._on_add)
         header.addWidget(btn_add)
@@ -65,11 +69,13 @@ class PersonManagementDialog(QDialog):
         # Actions
         actions = QHBoxLayout()
         actions.addStretch()
-        btn_edit = _btn("✏  Edit", "edit")
+        btn_edit = _btn("  Edit", "edit")
+        set_btn_icon(btn_edit, "edit")
         btn_edit.setAccessibleName("Edit person")
         btn_edit.clicked.connect(self._on_edit)
         actions.addWidget(btn_edit)
-        btn_del = _btn("🗑  Delete", "danger")
+        btn_del = _btn("  Delete", "danger")
+        set_btn_icon(btn_del, "delete")
         btn_del.setAccessibleName("Delete person")
         btn_del.clicked.connect(self._on_delete)
         actions.addWidget(btn_del)
@@ -232,6 +238,11 @@ class PersonDialog(QDialog):
     def _on_save(self):
         if not self.nickname_input.text().strip():
             QMessageBox.warning(self, "Missing", "Please enter a nickname."); return
+        pan = self.pan_input.text().strip().upper()
+        if pan and not re.fullmatch(r"[A-Z]{5}[0-9]{4}[A-Z]", pan):
+            QMessageBox.warning(self, "Invalid PAN",
+                "PAN must be 10 characters in the format ABCDE1234F.")
+            return
         self.accept()
 
     def get_data(self) -> dict:
@@ -241,6 +252,6 @@ class PersonDialog(QDialog):
             "middle_name":   self.middle_name_input.text().strip() or None,
             "last_name":     self.last_name_input.text().strip() or None,
             "date_of_birth": self.dob_input.date().toString("yyyy-MM-dd"),
-            "pan_number":    self.pan_input.text().strip() or None,
+            "pan_number":    self.pan_input.text().strip().upper() or None,
             "contact_notes": self.notes_input.text().strip() or None,
         }

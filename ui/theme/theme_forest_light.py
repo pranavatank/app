@@ -7,6 +7,7 @@ parchment surfaces. Inspired by Notion, Bear, and Obsidian light.
 NAME         = "Forest Light"
 DESCRIPTION  = "Warm earthy light theme — sage green primary, parchment surfaces"
 IS_DARK      = False
+EMOJI        = "🌲"
 
 # ── Primary — deep sage green ─────────────────────────────────────────────────
 PRIMARY                   = "#16A34A"   # green-600
@@ -53,11 +54,11 @@ EDIT_LIGHT                = "#F5F3FF"   # violet-50
 EDIT_GRADIENT_START       = "#8B5CF6"
 EDIT_GRADIENT_END         = "#5B21B6"
 
-# ── Hero — forest green → teal ────────────────────────────────────────────────
+# ── Hero — forest green → golden sunlight (bicolor, more vivid) ──────────────
 HERO_GRADIENT_START       = "#16A34A"
-HERO_GRADIENT_END         = "#0D9488"
+HERO_GRADIENT_END         = "#D97706"
 HERO_GRADIENT_HOVER_START = "#15803D"
-HERO_GRADIENT_HOVER_END   = "#0F766E"
+HERO_GRADIENT_HOVER_END   = "#B45309"
 
 # ── Extra accents ─────────────────────────────────────────────────────────────
 PURPLE       = "#6D28D9";  PURPLE_LIGHT  = "#F5F3FF"

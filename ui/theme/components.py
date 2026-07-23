@@ -86,7 +86,7 @@ def badge_style(theme, bg, fg, radius=12, padding="5px 14px", size=12, weight=60
 
 
 # ── Cards ─────────────────────────────────────────────────────────────────────
-def card_style(theme, bg=None, border_color=None, radius=12, padding=14,
+def card_style(theme, bg=None, border_color=None, radius=14, padding=14,
                left_accent=None, selector="QFrame"):
     base_bg     = bg or theme.SURFACE
     base_border = border_color or theme.BORDER
@@ -102,7 +102,7 @@ def card_style(theme, bg=None, border_color=None, radius=12, padding=14,
     """
 
 
-def metric_card_style(theme, accent, bg, radius=14):
+def metric_card_style(theme, accent, bg, radius=16):
     return f"""
         QFrame {{
             background: {gradient_v(theme.SURFACE, bg)};
@@ -113,7 +113,7 @@ def metric_card_style(theme, accent, bg, radius=14):
     """
 
 
-def filter_bar_style(theme, radius=10):
+def filter_bar_style(theme, radius=12):
     return f"""
         QFrame#filterBar {{
             background-color: {theme.SURFACE};
@@ -127,7 +127,7 @@ def group_box_style(theme):
     return f"""
         QGroupBox {{
             border: 1px solid {theme.BORDER};
-            border-radius: 12px;
+            border-radius: 14px;
             margin-top: 18px;
             padding: 16px 16px 12px 16px;
             background-color: {theme.SURFACE};
@@ -148,7 +148,7 @@ def panel_strip_style(theme, start=None, end=None, radius=2):
     return f"background: {g}; border-radius: {radius}px;"
 
 
-def tinted_surface_style(theme, radius=12, border_color=None, selector="QFrame"):
+def tinted_surface_style(theme, radius=14, border_color=None, selector="QFrame"):
     bg     = theme.SURFACE_ALT
     border = border_color or theme.BORDER
     return f"""
@@ -160,7 +160,7 @@ def tinted_surface_style(theme, radius=12, border_color=None, selector="QFrame")
     """
 
 
-def info_banner_style(theme, accent=None, radius=10):
+def info_banner_style(theme, accent=None, radius=12):
     a = accent or theme.PRIMARY
     return f"""
         QFrame {{
@@ -172,7 +172,7 @@ def info_banner_style(theme, accent=None, radius=10):
     """
 
 
-def regime_card_style(theme, accent, radius=12):
+def regime_card_style(theme, accent, radius=14):
     return f"""
         QFrame {{
             background-color: {theme.SURFACE};
@@ -183,7 +183,7 @@ def regime_card_style(theme, accent, radius=12):
     """
 
 
-def banner_style(theme, level="info", radius=10):
+def banner_style(theme, level="info", radius=12):
     colors = {
         "info":    (theme.INFO_LIGHT,    theme.INFO,    theme.INFO_DARK),
         "success": (theme.SUCCESS_LIGHT, theme.SUCCESS, theme.SUCCESS_DARK),
@@ -201,13 +201,70 @@ def banner_style(theme, level="info", radius=10):
     """
 
 
+def hero_header_style(theme, radius=16, selector="QFrame"):
+    return f"""
+        {selector} {{
+            background: {gradient(theme.HERO_GRADIENT_START, theme.HERO_GRADIENT_END, diagonal=True)};
+            border: none;
+            border-radius: {radius}px;
+        }}
+    """
+
+
+def page_header_style(theme, radius=14, selector="QFrame#pageHeader"):
+    return f"""
+        {selector} {{
+            background-color: {theme.SURFACE};
+            border: 1px solid {theme.BORDER};
+            border-radius: {radius}px;
+            padding: 20px;
+        }}
+    """
+
+
+def stat_tile_style(theme, accent, radius=16, selector="QFrame"):
+    return f"""
+        {selector} {{
+            background: {gradient_v(theme.SURFACE, accent + "0D")};
+            border: 1px solid {accent}2E;
+            border-top: 3px solid {accent};
+            border-radius: {radius}px;
+        }}
+    """
+
+
+def empty_state_style(theme, radius=14):
+    return f"""
+        QFrame {{
+            background-color: {theme.SURFACE_ALT};
+            border: 1.5px dashed {theme.BORDER};
+            border-radius: {radius}px;
+        }}
+    """
+
+
+def icon_chip_style(theme, accent, radius=10):
+    return f"background-color: {accent}1A; border: 1px solid {accent}30; border-radius: {radius}px;"
+
+
+def action_bar_style(theme, radius=14, selector="QFrame#actionBar"):
+    return f"""
+        {selector} {{
+            background-color: {theme.SURFACE};
+            border: 1px solid {theme.BORDER};
+            border-radius: {radius}px;
+        }}
+    """
+
+
 def sidebar_nav_normal():
     from .theme import Theme
     return f"""
         QPushButton {{
             background: transparent; color: {Theme.SIDEBAR_TEXT};
-            border: none; border-radius: 0;
+            border: none; border-radius: 10px;
             text-align: left; padding-left: 8px; font-size: 13px;
+            margin: 2px 8px;
         }}
         QPushButton:hover {{ background-color: {Theme.SIDEBAR_HOVER}; color: white; }}
     """
@@ -220,9 +277,9 @@ def sidebar_nav_active():
             background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
                 stop:0 {Theme.SIDEBAR_ACTIVE}, stop:1 {Theme.SIDEBAR_HOVER});
             color: white; border: none;
-            border-left: 3px solid {Theme.PRIMARY_LIGHT};
-            border-radius: 0; text-align: left;
+            border-radius: 10px; text-align: left;
             padding-left: 8px; font-size: 13px; font-weight: 700;
+            margin: 2px 8px;
         }}
     """
 
