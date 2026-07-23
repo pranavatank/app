@@ -482,7 +482,7 @@ class SettingsScreen(QWidget):
 
         # Flash badge
         if self.badge_theme_lbl:
-            self.badge_theme_lbl.setText(f"✅ {name}")
+            self.badge_theme_lbl.setText(f"{name} applied")
             QTimer.singleShot(2200, self._refresh_badges)
 
     # ── Sections ──────────────────────────────────────────────────────────────

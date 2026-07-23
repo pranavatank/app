@@ -66,6 +66,30 @@ def _append_issue(debug: Optional[Dict], message: str, limit: int = 200) -> None
         issues.append(message)
 
 
+def _guess_fd_category(desc_upper: str, txn_type: str) -> Optional[str]:
+    """
+    Shared FD-aware category detection, used by every parser path (rule-based
+    PDF/Excel, bank-specific plugins, and the AI parser) so FD booking/
+    maturity/interest transactions get the same category regardless of which
+    parser produced them. Returns None if the description isn't FD-related —
+    callers fall back to their own generic category logic in that case.
+    """
+    if txn_type == "Income":
+        if any(word in desc_upper for word in ["PRINC AND INT AUTO REDEEM", "AUTO REDEEM", "FD CR", "PAT CR"]):
+            return "FD Maturity"
+        if any(word in desc_upper for word in ["INT AUTO REDEEM", "FD INTEREST"]):
+            return "FD Interest"
+        if "INTEREST" in desc_upper and any(word in desc_upper for word in ["FD", "FIXED DEPOSIT", "TERM DEPOSIT"]):
+            return "FD Interest"
+        if any(word in desc_upper for word in ["MATURITY", "MATURED", "REDEMPTION", "REDEEMED"]):
+            return "FD Maturity"
+        return None
+    else:
+        if any(word in desc_upper for word in ["TD. GENERIC PAYIN DEBIT", "PAYIN DEBIT", "FIXED DEPOSIT", "TERM DEPOSIT"]):
+            return "FD Principal"
+        return None
+
+
 def mark_ollama_model_used() -> None:
     global _OLLAMA_MODEL_USED
     _OLLAMA_MODEL_USED = True
@@ -1118,7 +1142,11 @@ class GenericExcelParser(BankTemplate):
     def _guess_category(self, description: str, txn_type: str) -> str:
         """Guess category from description."""
         desc_upper = description.upper()
-        
+
+        fd_category = _guess_fd_category(desc_upper, txn_type)
+        if fd_category:
+            return fd_category
+
         if txn_type == "Income":
             if "INTEREST" in desc_upper and "CREDIT" in desc_upper:
                 return "Savings Interest"
@@ -1171,7 +1199,11 @@ class LocalAIStatementParser:
         self.endpoint = os.getenv("OLLAMA_ENDPOINT", DEFAULT_OLLAMA_ENDPOINT)
         self.model = os.getenv("OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL)
         self.keep_alive = ollama_keep_alive_value(os.getenv("OLLAMA_KEEP_ALIVE", DEFAULT_OLLAMA_KEEP_ALIVE))
-        self.timeout_seconds = float(os.getenv("OLLAMA_TIMEOUT_SECONDS", "12"))
+        # 12s was too short for a cold (not-yet-loaded) 7B model on CPU — a
+        # cold load + inference pass routinely takes longer, causing the AI
+        # parser to silently return zero transactions (and therefore skip
+        # FD detection entirely) on the first attempt after app start.
+        self.timeout_seconds = float(os.getenv("OLLAMA_TIMEOUT_SECONDS", "60"))
 
     def parse_statement(self, file_path: str, file_type: str, debug: Optional[Dict] = None,
                         password: Optional[str] = None) -> List[Dict]:
@@ -1182,6 +1214,12 @@ class LocalAIStatementParser:
 
         if debug is not None:
             debug["rows_scanned"] = debug.get("rows_scanned", 0) + len([l for l in text.splitlines() if l.strip()])
+        if len(text) > 60000:
+            _append_issue(
+                debug,
+                f"AI parser: statement text ({len(text):,} chars) exceeds the 60,000-char "
+                "limit sent to the model — later transactions were truncated and not parsed."
+            )
 
         prompt = self._build_prompt(text)
         raw = self._call_ollama(prompt, debug)
@@ -1251,7 +1289,8 @@ Return ONLY valid JSON:
   "transactions": [
     {{
       "transaction_date": "YYYY-MM-DD",
-      "description": "Clean transaction description (remove amounts, dates, account numbers)",
+      "description": "Clean transaction purpose/narration (remove amounts, dates)",
+      "reference_no": "UTR / NEFT / IMPS / cheque / FD-TD reference number if present, else empty string",
       "amount": 123.45,
       "transaction_type": "Income or Expense",
       "mode": "UPI or Bank Transfer or Cash or Card"
@@ -1261,20 +1300,21 @@ Return ONLY valid JSON:
 
 Rules:
 1. Date: Convert to YYYY-MM-DD format (DD/MM/YYYY input)
-2. Description: Extract ONLY the transaction purpose/narration. Remove:
-   - Amounts and balances
-   - Dates
-   - Account numbers
-   - Reference numbers (UTR, NEFT, UPI IDs)
-   - Keep: Payee name, transaction purpose
-3. Amount: Extract transaction amount (positive number)
-4. Type: "Income" for credits/deposits, "Expense" for debits/withdrawals
-5. Mode: Detect from keywords:
+2. Description: Extract the transaction purpose/narration (payee name, purpose).
+   Remove amounts, balances, and dates. Do NOT remove words like "FD",
+   "Fixed Deposit", "TD", "Term Deposit", "Maturity", or "Redemption" —
+   these are needed to detect Fixed Deposit transactions later.
+3. Reference: Put any UTR, NEFT/IMPS/RTGS reference, cheque number, or
+   FD/TD account number in "reference_no" (keep it out of "description").
+   If none is present, use an empty string.
+4. Amount: Extract transaction amount (positive number)
+5. Type: "Income" for credits/deposits, "Expense" for debits/withdrawals
+6. Mode: Detect from keywords:
    - "UPI" if text contains UPI/DR or UPI payment
    - "Cash" if ATM withdrawal or cash transaction
    - "Bank Transfer" for NEFT/IMPS/RTGS/transfers
    - "Card" for card payments
-6. Skip header/footer rows, summaries, opening/closing balance
+7. Skip header/footer rows, summaries, opening/closing balance
 
 STATEMENT:
 {statement_text[:60000]}
@@ -1339,9 +1379,17 @@ STATEMENT:
                 _append_issue(debug, f"AI row {index}: skipped statement summary line")
                 continue
 
+            # Extract the reference number BEFORE cleaning strips it — this is
+            # what FD matching (models.fixed_deposit) keys off of, so losing
+            # it here silently breaks FD auto-creation/maturity detection for
+            # every AI-parsed transaction.
+            reference_no = str(item.get("reference_no") or "").strip().upper()[:80] or None
+            if not reference_no:
+                reference_no = _extract_reference_no(description)
+
             description = self._clean_description(description)
             desc_upper = description.upper()
-            
+
             inferred_type = _infer_txn_type_from_desc(desc_upper)
             if inferred_type:
                 txn_type = inferred_type
@@ -1370,7 +1418,8 @@ STATEMENT:
                 "transaction_type": txn_type,
                 "category": category,
                 "mode": mode,
-                "balance_after": balance_after
+                "balance_after": balance_after,
+                "reference_no": reference_no,
             })
 
         if debug is not None:
@@ -1514,6 +1563,10 @@ STATEMENT:
     
     def _infer_category(self, desc_upper: str, txn_type: str) -> str:
         """Infer category from description."""
+        fd_category = _guess_fd_category(desc_upper, txn_type)
+        if fd_category:
+            return fd_category
+
         if txn_type == "Income":
             if "INTEREST" in desc_upper:
                 return "Savings Interest"
@@ -1598,7 +1651,10 @@ def parse_statement_with_debug(file_path: str, file_type: str, bank_name: str = 
             return [], debug_info
 
     # Rule-based parsing first (preferred). Only fall back to AI when mode allows it.
-    if file_type.upper() == "PDF":
+    # In "ai" mode, skip the rule parsers entirely so AI-only behavior is
+    # actually forceable (previously the rule parser still ran and "won" if
+    # it found any rows, even when the user explicitly asked for "ai" mode).
+    if parser_mode != "ai" and file_type.upper() == "PDF":
         parser = GenericPDFParser()
         rule_debug: Dict = {"issues": [], "rows_scanned": 0, "rows_extracted": 0}
         transactions = parser.parse_pdf(file_path, rule_debug, password=password)
@@ -1614,7 +1670,7 @@ def parse_statement_with_debug(file_path: str, file_type: str, bank_name: str = 
             return transactions, debug_info
         if parser_mode == "rule":
             return [], debug_info
-    elif file_type.upper() in ["EXCEL", "XLS", "XLSX"]:
+    elif parser_mode != "ai" and file_type.upper() in ["EXCEL", "XLS", "XLSX"]:
         parser = GenericExcelParser()
         rule_debug = {"issues": [], "rows_scanned": 0, "rows_extracted": 0}
         transactions = parser.parse_excel(file_path, rule_debug, password=password, column_mapping=column_mapping)

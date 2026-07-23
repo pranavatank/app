@@ -6,6 +6,7 @@ Uses PBKDF2-HMAC-SHA256 for key derivation from master password.
 import os
 import base64
 import hashlib
+import hmac
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives import hashes
@@ -106,5 +107,5 @@ def hash_password(password: str, salt: bytes) -> str:
 
 
 def verify_password(password: str, salt: bytes, stored_hash: str) -> bool:
-    """Verify a password against its stored hash."""
-    return hash_password(password, salt) == stored_hash
+    """Verify a password against its stored hash (constant-time comparison)."""
+    return hmac.compare_digest(hash_password(password, salt), stored_hash)

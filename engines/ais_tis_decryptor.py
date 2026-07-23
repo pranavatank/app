@@ -544,9 +544,9 @@ def decrypt_aes_value(encrypted_value: str, password: str) -> str:
             
             plaintext = _aes_cbc_decrypt(encrypted_bytes, key, iv)
             return plaintext.decode('utf-8')
-        except:
+        except Exception:
             pass
-        
+
         # Try MD5 key derivation (older systems)
         try:
             encrypted_bytes = _b64decode_relaxed(encrypted_value)
@@ -560,7 +560,7 @@ def decrypt_aes_value(encrypted_value: str, password: str) -> str:
             
             plaintext = _aes_cbc_decrypt(ciphertext, key, iv)
             return plaintext.decode('utf-8')
-        except:
+        except Exception:
             raise ValueError("Failed to decrypt value with provided password")
 
 
@@ -582,7 +582,7 @@ def decrypt_json_content(json_obj: dict, password: str) -> dict:
                 # Likely an encrypted value (base64 encoded)
                 try:
                     decrypted[key] = decrypt_aes_value(value, password)
-                except:
+                except Exception:
                     # If decryption fails, keep original value
                     decrypted[key] = value
             elif isinstance(value, (dict, list)):
@@ -673,7 +673,7 @@ def decrypt_ais_tis_json(encrypted_data: bytes, password: str) -> str:
         # Try alternative methods
         try:
             return _decrypt_alternative_methods(encrypted_data, password)
-        except:
+        except Exception:
             root = str(e).replace("\n", " ").strip()
             raise ValueError(
                 "Failed to decrypt AIS/TIS file. "
@@ -693,7 +693,7 @@ def _has_encrypted_content(json_obj: dict) -> bool:
                     # If it decodes and is long, likely encrypted
                     if len(value) > 50 and not value.startswith('{'):
                         return True
-                except:
+                except Exception:
                     pass
             elif isinstance(value, (dict, list)):
                 if _has_encrypted_content(value):
@@ -718,9 +718,9 @@ def _decrypt_alternative_methods(encrypted_data: bytes, password: str) -> str:
     for method in methods:
         try:
             return method()
-        except:
+        except Exception:
             continue
-    
+
     raise ValueError("All decryption methods failed")
 
 
@@ -826,5 +826,5 @@ def is_encrypted_file(file_path: str) -> bool:
     except UnicodeDecodeError:
         # Can't read as text, definitely encrypted
         return True
-    except:
+    except Exception:
         return True

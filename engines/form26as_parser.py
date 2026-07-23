@@ -194,5 +194,5 @@ def extract_financial_year_from_ay(assessment_year: str) -> str:
         ay_start = int(assessment_year.split("-")[0])
         fy_start = ay_start - 1
         return f"{fy_start}-{str(fy_start + 1)[2:]}"
-    except:
+    except Exception:
         return ""

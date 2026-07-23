@@ -240,6 +240,22 @@ class IncomeManagementScreen(QWidget):
         layout.addStretch()
         return card
 
+    def refresh_theme(self):
+        """Called after a live theme switch — the 4 summary cards are built
+        once at construction, so their inline stat-tile styling needs
+        re-applying (refresh() alone only updates their value text)."""
+        for card, color in (
+            (self.card_expected, Theme.PRIMARY),
+            (self.card_actual, Theme.SUCCESS),
+            (self.card_pending, Theme.WARNING),
+            (self.card_variance, Theme.INFO),
+        ):
+            card.setStyleSheet(Theme.stat_tile_style(color, radius=14, selector="QFrame#card"))
+            value_lbl = card.findChild(QLabel, "cardValue")
+            if value_lbl:
+                value_lbl.setStyleSheet(Theme.text_style(color=color, size=20, weight=700))
+        self.refresh()
+
     def refresh(self):
         self._reload_persons()
         self._fetch_and_display()

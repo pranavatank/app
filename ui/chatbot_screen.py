@@ -537,11 +537,13 @@ class LocalChatbotDialog(QDialog):
         lay.addWidget(self.status_lbl)
 
         # Buttons
-        self.run_model_btn = self._header_btn("⚡  Run Model")
+        self.run_model_btn = self._header_btn("  Run Model")
+        set_btn_icon(self.run_model_btn, "calculate")
         self.run_model_btn.clicked.connect(self._run_model)
         lay.addWidget(self.run_model_btn)
 
-        self.stop_model_btn = self._header_btn("⏹  Stop Model", ghost=True)
+        self.stop_model_btn = self._header_btn("  Stop Model", ghost=True)
+        set_btn_icon(self.stop_model_btn, "close")
         self.stop_model_btn.clicked.connect(self._stop_model)
         self.stop_model_btn.hide()
         lay.addWidget(self.stop_model_btn)
@@ -810,7 +812,8 @@ class LocalChatbotDialog(QDialog):
         if self._start_thread:
             self._start_thread.deleteLater()
         self._start_worker = self._start_thread = None
-        self.run_model_btn.setText("⚡  Run Model")
+        self.run_model_btn.setText("  Run Model")
+        set_btn_icon(self.run_model_btn, "calculate")
         self._set_busy(False)
 
     def _stop_model(self):
@@ -846,7 +849,8 @@ class LocalChatbotDialog(QDialog):
         if self._stop_thread:
             self._stop_thread.deleteLater()
         self._stop_worker = self._stop_thread = None
-        self.stop_model_btn.setText("⏹  Stop Model")
+        self.stop_model_btn.setText("  Stop Model")
+        set_btn_icon(self.stop_model_btn, "close")
         self._set_busy(False)
 
     def _on_reply(self, content: str):

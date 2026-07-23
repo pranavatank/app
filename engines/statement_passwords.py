@@ -20,6 +20,17 @@ class StatementPasswordInvalidError(StatementPasswordError):
 
 
 def ensure_pdf_password(file_path: str, password: Optional[str]) -> None:
+    """Validate PDF password for encrypted files; raise if password is required or invalid.
+
+    Args:
+        file_path: Path to PDF file.
+        password: Password to decrypt (if encrypted). None/empty string treated as no password.
+
+    Raises:
+        StatementPasswordError: If 'pypdf' module is not installed.
+        StatementPasswordRequiredError: If PDF is encrypted but no password provided.
+        StatementPasswordInvalidError: If provided password fails decryption.
+    """
     try:
         from pypdf import PdfReader
     except ModuleNotFoundError as exc:

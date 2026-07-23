@@ -546,3 +546,56 @@ def check_duplicate(account_id: int, transaction_date: str,
     ).fetchone()
     conn.close()
     return row["cnt"] > 0
+
+
+def get_account_transactions_for_balance(account_id: int) -> list[dict]:
+    """Get all transactions for an account in chronological order for balance calculation."""
+    conn = get_connection()
+    rows = conn.execute("""
+        SELECT transaction_id, transaction_type, amount, transaction_date
+        FROM Transactions
+        WHERE account_id = ?
+        ORDER BY transaction_date ASC, transaction_id ASC
+    """, (account_id,)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def set_transaction_balances(pairs: list[tuple[float, int]]) -> None:
+    """Update balance_after for multiple transactions in a single transaction."""
+    if not pairs:
+        return
+    conn = get_connection()
+    try:
+        for balance_after, transaction_id in pairs:
+            conn.execute(
+                "UPDATE Transactions SET balance_after = ? WHERE transaction_id = ?",
+                (balance_after, transaction_id)
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_balance_points(account_id: int, start_date: str = None, end_date: str = None) -> list[dict]:
+    """Get balance history points for an account, optionally filtered by date range."""
+    query = """
+        SELECT transaction_date AS date, balance_after AS balance
+        FROM Transactions
+        WHERE account_id = ?
+    """
+    params = [account_id]
+
+    if start_date:
+        query += " AND transaction_date >= ?"
+        params.append(start_date)
+    if end_date:
+        query += " AND transaction_date <= ?"
+        params.append(end_date)
+
+    query += " ORDER BY transaction_date ASC"
+
+    conn = get_connection()
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]

@@ -387,3 +387,49 @@ class ExcelTableWithStats(QWidget):
         
     def _on_stats_changed(self, stats: str):
         self.stats_label.setText(stats if stats else "No selection")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Copy-only shortcut for read-only / reference tables
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _copy_table_selection(table: QTableWidget, checkbox_col: int) -> None:
+    """Build a TSV of the current selection and put it on the clipboard —
+    same format ExcelTable.copySelection() uses, so pasting elsewhere (e.g.
+    Excel) works identically."""
+    selection = table.selectedRanges()
+    if not selection:
+        return
+    rows_data: dict[int, dict[int, str]] = {}
+    for rng in selection:
+        for row in range(rng.topRow(), rng.bottomRow() + 1):
+            rows_data.setdefault(row, {})
+            for col in range(rng.leftColumn(), rng.rightColumn() + 1):
+                if col == checkbox_col:
+                    continue
+                item = table.item(row, col)
+                rows_data[row][col] = item.text() if item else ""
+    if not rows_data:
+        return
+    lines = []
+    for row in sorted(rows_data.keys()):
+        cols = rows_data[row]
+        lines.append("\t".join(cols.get(c, "") for c in sorted(cols.keys())))
+    QApplication.clipboard().setText("\n".join(lines))
+
+
+def enable_copy_shortcut(table: QTableWidget, checkbox_col: int = -1) -> None:
+    """Attach Ctrl+C (copy-to-clipboard, TSV) to a plain read-only QTableWidget.
+    Use this for reference/view-only tables that don't need the full
+    ExcelTable editing feature set — e.g. AIS/TIS comparison tables,
+    reconciliation results, master-data list dialogs."""
+    base_keypress = table.keyPressEvent
+
+    def _keypress(event: QKeyEvent):
+        if event.matches(QKeySequence.StandardKey.Copy):
+            _copy_table_selection(table, checkbox_col)
+            event.accept()
+        else:
+            base_keypress(event)
+
+    table.keyPressEvent = _keypress

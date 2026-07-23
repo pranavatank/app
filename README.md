@@ -16,20 +16,23 @@ A fully offline, encrypted desktop application for managing personal and family 
 - 🏦 Fixed Deposit (FD) management
 - 📈 FD interest calculation (Monthly/Quarterly/Annual compounding)
 - 💵 Savings interest estimation
-- 📅 Financial year-wise interest allocation
+- 📅 Financial year-wise (and quarter-wise) interest allocation
 - 🔮 Maturity projections
+- ⚠️ FD interest TDS-threshold reminder — flags, per bank and per quarter, when yearly FD interest crosses the ₹50,000 limit and which form to file to avoid deduction
 
 ### Tax Calculation
-- 🇮🇳 Indian income tax calculation (2024-25 slabs)
-- ⚖️ Old vs New regime comparison
-- 💡 Automatic regime recommendation
-- 📋 Deductions support (80C, 80D, HRA, home loan)
-- 📊 Assessment year projections
+- 🇮🇳 Indian income tax calculation — **New Regime first** (the default regime since FY 2023-24), with Old Regime shown for comparison
+- ⚖️ Old vs New regime comparison with automatic recommendation
+- 🧾 87A rebate + 4% Health & Education cess handled for both regimes
+- 💳 Net payable / refund due — total liability minus TDS, TCS, advance tax and self-assessment tax already paid
+- 📋 Deductions support (80C, 80D, HRA, home loan) for the Old Regime
+- 📈 Next-year income projection vs tax slab — projected gross income (income expectations + real next-FY FD interest + carried-forward savings) and the ₹ headroom to the next tax bracket
 
 ### Statement Import
 - 📄 PDF bank statement import
 - 📊 Excel statement import
-- 🤖 Automatic transaction extraction
+- 🤖 Automatic transaction extraction (rule-based parser + optional local AI, see below)
+- 🏦 Automatic FD detection — booking and maturity/redemption transactions are recognised and turned into FD records
 - 🔍 Duplicate detection
 - 🏷️ Smart category suggestions
 
@@ -194,9 +197,15 @@ The importer now supports a local AI parsing mode through Ollama.
    - Optional: `$env:OLLAMA_KEEP_ALIVE = "-1"` keeps the model loaded while the app runs
 
 Modes:
-- `auto`: try the existing parser first, then use local AI when rule parsing finds no transactions
-- `ai`: use only local AI parser
-- `rule`: use only existing regex/column parser
+- `auto`: try the rule-based parser first, then fall back to local AI when rule parsing finds no transactions
+- `ai`: use only the local AI parser (rule parsers are skipped entirely)
+- `rule`: use only the regex/column rule-based parser
+
+Both parser paths share the same FD detection and reference-number extraction, so FD booking/maturity transactions are recognised whichever parser runs.
+
+Optional tuning:
+- `$env:OLLAMA_TIMEOUT_SECONDS = "60"` — request timeout (default 60s; raise it if a cold model load is slow)
+- Use the **Warm Up AI** button on the Statement Import screen to pre-load the model before parsing, so the first run in `ai`/`auto` mode doesn't hit a cold-start timeout.
 
 The app unloads the configured Ollama model when the desktop window closes.
 
@@ -204,9 +213,14 @@ The app unloads the configured Ollama model when the desktop window closes.
 1. Go to Tax screen
 2. Enter salary and other income
 3. FD/savings interest auto-loads
-4. Add deductions (80C, 80D, etc.)
-5. Click "Calculate Tax"
-6. View old vs new regime comparison
+4. Add deductions (80C, 80D, etc.) — these apply to the Old Regime only
+5. Enter taxes already paid (TDS, TCS, advance tax, self-assessment)
+6. Click "Estimate Tax"
+7. Review the results:
+   - **New Regime** (shown first) — taxable income, slab tax, 87A rebate, cess, total liability
+   - **Net Payable / Refund** — what you still owe or are owed after taxes already paid
+   - **Old Regime** — the comparison figure, plus the recommended regime
+   - **Next Year Projection** — projected income and where it lands in the tax slabs
 
 #### Importing AIS/TIS from Income Tax Portal
 1. Download AIS/TIS JSON from Income Tax e-filing portal
@@ -238,26 +252,38 @@ The app unloads the configured Ollama model when the desktop window closes.
 
 ## 📊 Database Schema
 
-The application uses 10 tables:
+The application uses the following tables:
 1. **AuthSecurity** - Authentication data
 2. **Person** - Family members
-3. **BankAccount** - Bank accounts
-4. **Transactions** - All transactions
-5. **FixedDeposit** - FD records
-6. **FDInterestRecord** - FD interest by FY
-7. **SavingsInterestRecord** - Savings interest by FY
-8. **TaxProfile** - Tax calculations by person/FY
-9. **StatementImportLog** - Import history
-10. **AISTISImport** - AIS/TIS import data
+3. **Bank** - Bank master (name, nickname, TAN)
+4. **BankAccount** - Bank accounts
+5. **Transactions** - All transactions
+6. **FixedDeposit** - FD records
+7. **FDInterestRecord** - FD interest by FY / quarter
+8. **SavingsInterestRecord** - Savings interest by FY
+9. **TaxProfile** - Tax calculations by person/FY (income, deductions, rebate, cess, TDS/TCS/advance/self-assessment tax paid)
+10. **IncomeSource** - Income source master
+11. **IncomeExpectation** - Expected/recurring income tracking
+12. **StatementImportLog** - Import history
+13. **AISTISImport** - AIS/TIS import data
+14. **Form26AS** - Form 26AS import data
 
 ## 🎨 UI Theme
 
-Dark theme with Catppuccin-inspired colors:
-- Background: `#1e1e2e`
-- Primary: `#89b4fa` (blue)
-- Success: `#a6e3a1` (green)
-- Warning: `#fab387` (orange)
-- Danger: `#f38ba8` (red)
+The app ships **10 themes** with a fully token-driven styling system — every
+screen reads colours from `Theme.*` tokens, so switching a theme re-colours the
+whole app **live, with no restart**.
+
+- **Light themes**: Aurora (default), Ocean Blue, Arctic Breeze, Forest Light, Rose Gold Luxe, Sunrise Warm
+- **Dark themes**: Nova (default), Midnight Pro, Amethyst Dusk, Finance Pro
+
+Change the theme in **Settings → Color Theme** (each card shows a live preview).
+Icons come from a unified registry (Fluent / Material Design, with emoji
+fallback) rather than being hardcoded per screen. Tables support Excel-style
+keyboard shortcuts (see below); read-only tables support Ctrl+C copy.
+
+To add a new theme, copy an existing `ui/theme/theme_*.py`, adjust its colour
+constants, and register it in `ui/theme/theme_manager.py`.
 
 # Keyboard Shortcuts Guide
 

@@ -20,7 +20,11 @@ from models.fd_interest_record import get_total_fd_interest
 from models.savings_interest import get_total_savings_interest
 from models.tax_profile import get_tax_profile
 from models.ais_tis_import import get_ais_tis_data
-from engines.tax_engine import calculate_and_save_tax, get_tax_summary
+from engines.tax_engine import (
+    calculate_and_save_tax,
+    calculate_old_regime_tax, calculate_new_regime_tax,
+    project_next_year_income,
+)
 from engines.advance_tax_engine import calculate_advance_tax
 from config import get_assessment_year
 
@@ -42,7 +46,7 @@ class TaxScreen(QWidget):
         layout.addWidget(self.advance_tax_banner)
 
         # Header card
-        header_card = QFrame()
+        self._header_card = header_card = QFrame()
         header_card.setObjectName("TaxHeaderCard")
         header_card.setStyleSheet(
             Theme.page_header_style(radius=14, selector="QFrame#TaxHeaderCard")
@@ -128,6 +132,7 @@ class TaxScreen(QWidget):
 
         right_layout.addWidget(self._build_context_panel())
         right_layout.addWidget(self._build_results_section())
+        right_layout.addWidget(self._build_projection_section())
         right_layout.addStretch()
 
         right_scroll.setWidget(right_content)
@@ -140,7 +145,7 @@ class TaxScreen(QWidget):
         self._update_context_panel()
 
     def _build_context_panel(self) -> QFrame:
-        panel = QFrame()
+        self._context_panel = panel = QFrame()
         panel.setObjectName("TaxContextPanel")
         panel.setStyleSheet(
             Theme.tinted_surface_style(
@@ -282,13 +287,20 @@ class TaxScreen(QWidget):
         return group
 
     def _build_deductions_section(self) -> QGroupBox:
-        group = self._section_group("Deductions (Old Regime Only)")
+        group = self._section_group("Deductions — Old Regime Only")
         layout = QFormLayout(group); layout.setSpacing(12)
+        note_top = QLabel(
+            "The New Regime does not allow these deductions — only the "
+            "standard deduction (₹75,000) and 80CCD(2) employer NPS apply."
+        )
+        note_top.setWordWrap(True)
+        note_top.setStyleSheet(Theme.text_style(color=Theme.WARNING_DARK, size=11, weight=600))
+        layout.addRow("", note_top)
         self.deduction_80c    = self._spin(); layout.addRow("80C — LIC, PF, PPF, NSC (max ₹1.5L):", self.deduction_80c)
         self.deduction_80ccc  = self._spin(); layout.addRow("80CCC — Pension Fund:", self.deduction_80ccc)
         self.deduction_80ccd1 = self._spin(); layout.addRow("80CCD(1) — NPS Employee:", self.deduction_80ccd1)
         self.deduction_80ccd1b= self._spin(); layout.addRow("80CCD(1B) — Additional NPS (max ₹50K):", self.deduction_80ccd1b)
-        self.deduction_80ccd2 = self._spin(); layout.addRow("80CCD(2) — NPS Employer:", self.deduction_80ccd2)
+        self.deduction_80ccd2 = self._spin(); layout.addRow("80CCD(2) — NPS Employer (also in New Regime):", self.deduction_80ccd2)
         self.deduction_80d    = self._spin(); layout.addRow("80D — MediClaim Premium (max ₹25K):", self.deduction_80d)
         self.deduction_80g    = self._spin(); layout.addRow("80G — Donations:", self.deduction_80g)
         self.deduction_80e    = self._spin(); layout.addRow("80E — Interest on Education Loan:", self.deduction_80e)
@@ -297,14 +309,19 @@ class TaxScreen(QWidget):
         self.deduction_80ttb  = self._spin(); layout.addRow("80TTB — Senior Citizens Deposits:", self.deduction_80ttb)
         self.home_loan_interest = self._spin(); layout.addRow("Home Loan Interest u/s 24(b):", self.home_loan_interest)
         self.hra_exemption    = self._spin(); layout.addRow("HRA Exemption:", self.hra_exemption)
-        note = QLabel("Standard deduction of ₹50,000 is applied automatically in salary section.")
+        note = QLabel("Old-regime standard deduction (₹50,000) is applied automatically in the salary section.")
+        note.setWordWrap(True)
         note.setStyleSheet(Theme.text_style(color=Theme.TEXT_MUTED, size=12))
         layout.addRow("", note)
         return group
 
     def _build_tds_section(self) -> QGroupBox:
-        group = self._section_group("TDS / TCS & Tax Payments")
+        group = self._section_group("Taxes Already Paid (TDS / TCS / Advance Tax)")
         layout = QFormLayout(group); layout.setSpacing(12)
+        note = QLabel("Used to work out what you still owe, or your refund, below.")
+        note.setWordWrap(True)
+        note.setStyleSheet(Theme.muted_style(11))
+        layout.addRow("", note)
         self.tds_salary          = self._spin(); layout.addRow("TDS on Salary:", self.tds_salary)
         self.tds_other           = self._spin(); layout.addRow("TDS on Other Income:", self.tds_other)
         self.tcs_collected       = self._spin(); layout.addRow("TCS Collected:", self.tcs_collected)
@@ -317,27 +334,56 @@ class TaxScreen(QWidget):
         layout = QVBoxLayout(group)
         layout.setSpacing(10)
 
-        old_card = self._regime_card("Old Regime", Theme.WARNING, Theme.WARNING_LIGHT)
-        old_form = QFormLayout(); old_form.setSpacing(6)
-        self.old_taxable = self._result_lbl(); self.old_tax = self._result_lbl()
-        self.old_cess    = self._result_lbl(); self.old_total = self._result_lbl(bold=True)
-        old_form.addRow("Taxable Income:", self.old_taxable)
-        old_form.addRow("Base Tax:", self.old_tax)
-        old_form.addRow("Cess (4%):", self.old_cess)
-        old_form.addRow("Total Tax:", self.old_total)
-        old_card.layout().addLayout(old_form)
-        layout.addWidget(old_card)
-
-        new_card = self._regime_card("New Regime", Theme.INFO, Theme.INFO_LIGHT)
+        # ── New Regime — PRIMARY card (default regime since FY 2023-24) ──────
+        self._new_regime_card = new_card = self._regime_card("New Regime — Default", Theme.PRIMARY, Theme.PRIMARY_LIGHT, hero=True)
         new_form = QFormLayout(); new_form.setSpacing(6)
         self.new_taxable = self._result_lbl(); self.new_tax = self._result_lbl()
-        self.new_cess    = self._result_lbl(); self.new_total = self._result_lbl(bold=True)
+        self.new_rebate  = self._result_lbl(); self.new_cess = self._result_lbl()
+        self.new_total   = self._result_lbl(bold=True)
         new_form.addRow("Taxable Income:", self.new_taxable)
-        new_form.addRow("Base Tax:", self.new_tax)
-        new_form.addRow("Cess (4%):", self.new_cess)
-        new_form.addRow("Total Tax:", self.new_total)
+        new_form.addRow("Tax as per Slabs:", self.new_tax)
+        new_form.addRow("Rebate u/s 87A:", self.new_rebate)
+        new_form.addRow("Health & Education Cess (4%):", self.new_cess)
+        new_form.addRow("Total Tax Liability:", self.new_total)
         new_card.layout().addLayout(new_form)
         layout.addWidget(new_card)
+
+        # ── Net Payable / Refund — the number that actually matters ──────────
+        self._net_card = net_card = QFrame()
+        net_card.setObjectName("NetPayableCard")
+        net_card.setStyleSheet(
+            Theme.card_style(bg=Theme.SURFACE_ALT, border_color=Theme.BORDER,
+                              radius=12, padding=16, selector="QFrame#NetPayableCard")
+        )
+        net_layout = QVBoxLayout(net_card); net_layout.setSpacing(6)
+        net_title = QLabel("Net Result — New Regime")
+        net_title.setStyleSheet(Theme.section_label_style())
+        net_layout.addWidget(net_title)
+        self.net_payable_label = QLabel("Calculate to see payable / refund")
+        self.net_payable_label.setFont(QFont("Segoe UI", 17, QFont.Weight.Bold))
+        self.net_payable_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.net_payable_label.setWordWrap(True)
+        self.net_payable_label.setStyleSheet(Theme.text_style(color=Theme.TEXT_SECONDARY, size=15, weight=700))
+        net_layout.addWidget(self.net_payable_label)
+        self.taxes_paid_label = QLabel("Taxes paid so far: ₹ 0.00")
+        self.taxes_paid_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.taxes_paid_label.setStyleSheet(Theme.muted_style(11))
+        net_layout.addWidget(self.taxes_paid_label)
+        layout.addWidget(net_card)
+
+        # ── Old Regime — secondary comparison card ───────────────────────────
+        self._old_regime_card = old_card = self._regime_card("Old Regime — Comparison", Theme.WARNING, Theme.WARNING_LIGHT)
+        old_form = QFormLayout(); old_form.setSpacing(6)
+        self.old_taxable = self._result_lbl(); self.old_tax = self._result_lbl()
+        self.old_rebate  = self._result_lbl(); self.old_cess = self._result_lbl()
+        self.old_total   = self._result_lbl(bold=True)
+        old_form.addRow("Taxable Income:", self.old_taxable)
+        old_form.addRow("Tax as per Slabs:", self.old_tax)
+        old_form.addRow("Rebate u/s 87A:", self.old_rebate)
+        old_form.addRow("Cess (4%):", self.old_cess)
+        old_form.addRow("Total Tax Liability:", self.old_total)
+        old_card.layout().addLayout(old_form)
+        layout.addWidget(old_card)
 
         rec_label = QLabel("Recommendation")
         rec_label.setStyleSheet(Theme.section_label_style())
@@ -351,30 +397,140 @@ class TaxScreen(QWidget):
         )
         layout.addWidget(self.recommendation_label)
 
-        helper = QLabel("Tip: Use App Actual Data when AIS/TIS is outdated.")
+        helper = QLabel("New Regime is the default since FY 2023-24. Use App Actual Data when AIS/TIS is outdated.")
         helper.setWordWrap(True)
         helper.setStyleSheet(Theme.muted_style(11))
         layout.addWidget(helper)
         return group
 
+    def _build_projection_section(self) -> QGroupBox:
+        group = self._section_group("Next Year Projection")
+        layout = QVBoxLayout(group)
+        layout.setSpacing(10)
+
+        self.proj_subtitle = QLabel("Select a person to project next year")
+        self.proj_subtitle.setWordWrap(True)
+        self.proj_subtitle.setStyleSheet(Theme.muted_style(11))
+        layout.addWidget(self.proj_subtitle)
+
+        form = QFormLayout(); form.setSpacing(6)
+        self.proj_expected = self._result_lbl()
+        self.proj_fd       = self._result_lbl()
+        self.proj_savings  = self._result_lbl()
+        self.proj_gross    = self._result_lbl(bold=True)
+        self.proj_taxable  = self._result_lbl()
+        self.proj_tax      = self._result_lbl()
+        form.addRow("Expected Income:", self.proj_expected)
+        form.addRow("FD Interest (real):", self.proj_fd)
+        form.addRow("Savings Interest (est.):", self.proj_savings)
+        form.addRow("Projected Gross Income:", self.proj_gross)
+        form.addRow("Projected Taxable Income:", self.proj_taxable)
+        form.addRow("Projected Tax (New Regime):", self.proj_tax)
+        layout.addLayout(form)
+
+        # Slab position — the "income vs max slab" answer.
+        self._proj_slab_card = QFrame()
+        self._proj_slab_card.setObjectName("ProjSlabCard")
+        self._proj_slab_card.setStyleSheet(
+            Theme.card_style(bg=Theme.SURFACE_ALT, border_color=Theme.BORDER,
+                              radius=12, padding=14, selector="QFrame#ProjSlabCard")
+        )
+        slab_l = QVBoxLayout(self._proj_slab_card); slab_l.setSpacing(4)
+        self.proj_slab_label = QLabel("—")
+        self.proj_slab_label.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
+        self.proj_slab_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.proj_slab_label.setWordWrap(True)
+        self.proj_slab_label.setStyleSheet(Theme.text_style(color=Theme.TEXT_SECONDARY, size=14, weight=700))
+        slab_l.addWidget(self.proj_slab_label)
+        self.proj_slab_sub = QLabel("")
+        self.proj_slab_sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.proj_slab_sub.setWordWrap(True)
+        self.proj_slab_sub.setStyleSheet(Theme.muted_style(11))
+        slab_l.addWidget(self.proj_slab_sub)
+        layout.addWidget(self._proj_slab_card)
+
+        note = QLabel(
+            "FD interest is real (from deposits running into next year). "
+            "Salary and savings interest are projected — treat the total as an estimate."
+        )
+        note.setWordWrap(True)
+        note.setStyleSheet(Theme.muted_style(11))
+        layout.addWidget(note)
+        return group
+
+    def _update_projection(self):
+        pid = session.selected_person_id
+        fy  = session.selected_fy
+        if not pid or not fy:
+            self.proj_subtitle.setText("Select a person to project next year")
+            for l in (self.proj_expected, self.proj_fd, self.proj_savings,
+                      self.proj_gross, self.proj_taxable, self.proj_tax):
+                l.setText("—")
+            self.proj_slab_label.setText("—")
+            self.proj_slab_label.setStyleSheet(Theme.text_style(color=Theme.TEXT_SECONDARY, size=14, weight=700))
+            self.proj_slab_sub.setText("")
+            return
+
+        proj = project_next_year_income(pid, fy)
+        src = ("from your income expectations" if proj["income_source"] == "expectations"
+               else "assuming salary unchanged from this year")
+        self.proj_subtitle.setText(
+            f"FY {proj['next_fy']}  ·  AY {proj['assessment_year']} — expected income {src}")
+        self.proj_expected.setText(f"₹ {proj['expected_income']:,.2f}")
+        self.proj_fd.setText(f"₹ {proj['fd_interest']:,.2f}")
+        self.proj_savings.setText(f"₹ {proj['savings_interest']:,.2f}")
+        self.proj_gross.setText(f"₹ {proj['gross_total_income']:,.2f}")
+        self.proj_taxable.setText(f"₹ {proj['taxable_income']:,.2f}")
+        self.proj_tax.setText(f"₹ {proj['projected_tax']:,.2f}")
+
+        slab = proj["slab"]
+        rate = slab["current_rate"]
+        if slab["is_top_slab"]:
+            self.proj_slab_label.setText(f"Top slab — {rate}% marginal rate")
+            self.proj_slab_label.setStyleSheet(Theme.text_style(color=Theme.DANGER, size=14, weight=700))
+            self.proj_slab_sub.setText("Projected income is in the highest New Regime bracket.")
+        else:
+            to_next = slab["amount_to_next_slab"] or 0
+            next_rate = slab["next_rate"]
+            self.proj_slab_label.setText(f"{rate}% slab  ·  ₹ {to_next:,.0f} to the {next_rate}% slab")
+            # Less headroom before the next bracket → warmer colour.
+            if to_next <= 50000:
+                color = Theme.DANGER
+            elif to_next <= 150000:
+                color = Theme.WARNING
+            else:
+                color = Theme.SUCCESS
+            self.proj_slab_label.setStyleSheet(Theme.text_style(color=color, size=14, weight=700))
+            ceiling = slab["slab_ceiling"] or 0
+            self.proj_slab_sub.setText(
+                f"Cross ₹ {ceiling:,.0f} taxable income and your marginal rate rises to {next_rate}%.")
+
     # ── Helpers ───────────────────────────────────────────────────────────────
 
-    def _regime_card(self, title: str, accent: str, bg: str) -> QFrame:
+    def _regime_card(self, title: str, accent: str, bg: str, hero: bool = False) -> QFrame:
         card = QFrame()
         card.setObjectName("TaxRegimeCard")
         card.setStyleSheet(
             Theme.card_style(
                 bg=bg,
                 border_color=accent,
-                radius=10,
+                radius=12 if hero else 10,
                 padding=0,
                 left_accent=accent,
                 selector="QFrame#TaxRegimeCard",
             )
         )
-        vl = QVBoxLayout(card); vl.setContentsMargins(16,12,16,12); vl.setSpacing(8)
-        t = QLabel(title); t.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
-        t.setStyleSheet(Theme.text_style(color=accent, size=13, weight=700))
+        if hero:
+            card.setGraphicsEffect(Theme.shadow_card())
+        vl = QVBoxLayout(card)
+        if hero:
+            vl.setContentsMargins(18, 14, 18, 14)
+        else:
+            vl.setContentsMargins(16, 12, 16, 12)
+        vl.setSpacing(8)
+        t = QLabel(title)
+        t.setFont(QFont("Segoe UI", 15 if hero else 13, QFont.Weight.Bold))
+        t.setStyleSheet(Theme.text_style(color=accent, size=15 if hero else 13, weight=700))
         vl.addWidget(t)
         div = QFrame(); div.setFixedHeight(1)
         div.setStyleSheet(f"background: {accent}44; border: none;")
@@ -434,10 +590,41 @@ class TaxScreen(QWidget):
         gross = salary + max(0, house) + cg + biz + others
         self.gross_income_label.setText(f"₹ {gross:,.2f}")
 
+    def refresh_theme(self):
+        """Called after a live theme switch — the header, context panel,
+        and regime/net-payable cards are built once at construction, so
+        their inline styling needs re-applying before refresh() reloads data."""
+        if hasattr(self, "_header_card"):
+            self._header_card.setStyleSheet(
+                Theme.page_header_style(radius=14, selector="QFrame#TaxHeaderCard"))
+        if hasattr(self, "_context_panel"):
+            self._context_panel.setStyleSheet(
+                Theme.tinted_surface_style(radius=12, border_color=Theme.BORDER,
+                                            selector="QFrame#TaxContextPanel"))
+        if hasattr(self, "_new_regime_card"):
+            self._new_regime_card.setStyleSheet(
+                Theme.card_style(bg=Theme.PRIMARY_LIGHT, border_color=Theme.PRIMARY, radius=12,
+                                  padding=0, left_accent=Theme.PRIMARY, selector="QFrame#TaxRegimeCard"))
+            self._new_regime_card.setGraphicsEffect(Theme.shadow_card())
+        if hasattr(self, "_old_regime_card"):
+            self._old_regime_card.setStyleSheet(
+                Theme.card_style(bg=Theme.WARNING_LIGHT, border_color=Theme.WARNING, radius=10,
+                                  padding=0, left_accent=Theme.WARNING, selector="QFrame#TaxRegimeCard"))
+        if hasattr(self, "_net_card"):
+            self._net_card.setStyleSheet(
+                Theme.card_style(bg=Theme.SURFACE_ALT, border_color=Theme.BORDER, radius=12,
+                                  padding=16, selector="QFrame#NetPayableCard"))
+        if hasattr(self, "_proj_slab_card"):
+            self._proj_slab_card.setStyleSheet(
+                Theme.card_style(bg=Theme.SURFACE_ALT, border_color=Theme.BORDER, radius=12,
+                                  padding=14, selector="QFrame#ProjSlabCard"))
+        self.refresh()
+
     def refresh(self):
         pid = session.selected_person_id
         fy  = session.selected_fy
         self._update_context_panel()
+        self._update_projection()
         if not pid:
             self.person_label.setText("Please select a person from the top bar")
             self.person_label.setStyleSheet(Theme.text_style(color=Theme.WARNING, size=13, weight=600))
@@ -486,9 +673,29 @@ class TaxScreen(QWidget):
             self.deduction_80d.setValue(profile.get("deductions_80d",0))
             self.home_loan_interest.setValue(profile.get("home_loan_interest",0))
             self.hra_exemption.setValue(profile.get("hra_exemption",0))
-            summary = get_tax_summary(pid, fy)
-            if summary:
-                self._display_results_from_summary(summary, profile)
+            self.tds_salary.setValue(profile.get("tds_deducted", 0))
+            self.tcs_collected.setValue(profile.get("tcs_collected", 0))
+            self.advance_tax.setValue(profile.get("advance_tax_paid", 0))
+            self.self_assessment_tax.setValue(profile.get("self_assessment_tax", 0))
+
+            # Recompute fresh from the stored income/deduction figures rather
+            # than trusting a stale derived cess column — guarantees the
+            # displayed numbers always match what calculate_*_regime_tax()
+            # would produce today (e.g. after a rebate/slab fix).
+            gross_total_income = profile.get("gross_total_income", 0)
+            old = calculate_old_regime_tax(
+                gross_total_income,
+                deductions_80c=profile.get("deductions_80c", 0),
+                deductions_80d=profile.get("deductions_80d", 0),
+                home_loan_interest=profile.get("home_loan_interest", 0),
+                hra_exemption=profile.get("hra_exemption", 0),
+            )
+            new = calculate_new_regime_tax(gross_total_income)
+            taxes_paid = (
+                profile.get("tds_deducted", 0) + profile.get("tcs_collected", 0)
+                + profile.get("advance_tax_paid", 0) + profile.get("self_assessment_tax", 0)
+            )
+            self._display_tax_results(old, new, taxes_paid)
 
     def _clear_income_fields(self):
         for s in [self.gross_salary, self.exemption_10, self.deduction_16ii, self.deduction_16iii,
@@ -508,9 +715,12 @@ class TaxScreen(QWidget):
                   self.deduction_80tta, self.deduction_80ttb, self.home_loan_interest, self.hra_exemption,
                   self.tds_salary, self.tds_other, self.tcs_collected, self.advance_tax, self.self_assessment_tax]:
             s.setValue(0)
-        for l in [self.old_taxable, self.old_tax, self.old_cess, self.old_total,
-                  self.new_taxable, self.new_tax, self.new_cess, self.new_total]:
+        for l in [self.old_taxable, self.old_tax, self.old_rebate, self.old_cess, self.old_total,
+                  self.new_taxable, self.new_tax, self.new_rebate, self.new_cess, self.new_total]:
             l.setText("—")
+        self.net_payable_label.setText("Calculate to see payable / refund")
+        self.net_payable_label.setStyleSheet(Theme.text_style(color=Theme.TEXT_SECONDARY, size=15, weight=700))
+        self.taxes_paid_label.setText("Taxes paid so far: ₹ 0.00")
         self.recommendation_label.setText("Calculate to\nsee recommendation")
         self.recommendation_label.setStyleSheet(
             self._recommendation_style(Theme.SURFACE_ALT, Theme.TEXT_SECONDARY, emphasize=False)
@@ -537,45 +747,51 @@ class TaxScreen(QWidget):
             deductions_80d=self.deduction_80d.value(),
             home_loan_interest=self.home_loan_interest.value(),
             hra_exemption=self.hra_exemption.value(),
+            tds_deducted=self.tds_salary.value() + self.tds_other.value(),
+            tcs_collected=self.tcs_collected.value(),
+            advance_tax_paid=self.advance_tax.value(),
+            self_assessment_tax=self.self_assessment_tax.value(),
         )
-        self._show_calc_result(result)
+        self._display_tax_results(result["old_regime"], result["new_regime"], result["taxes_paid"])
         if self.parent_window:
             self.parent_window.refresh_overview()
         QMessageBox.information(self, "Tax Estimated",
             f"Tax calculated for FY {session.selected_fy}\n\nRecommended: {result['recommended']}")
 
-    def _show_calc_result(self, result):
-        old = result["old_regime"]; new = result["new_regime"]
+    def _display_tax_results(self, old: dict, new: dict, taxes_paid: float):
+        """Populate every result widget from a pair of (old, new) regime
+        calculation dicts — the single source of truth for both the
+        just-calculated path and the recall-from-saved-profile path."""
         self.old_taxable.setText(f"₹ {old['taxable_income']:,.2f}")
         self.old_tax.setText(f"₹ {old['base_tax']:,.2f}")
+        self.old_rebate.setText(f"₹ {old.get('rebate_87a', 0):,.2f}")
         self.old_cess.setText(f"₹ {old['cess']:,.2f}")
         self.old_total.setText(f"₹ {old['total_tax']:,.2f}")
+
         self.new_taxable.setText(f"₹ {new['taxable_income']:,.2f}")
         self.new_tax.setText(f"₹ {new['base_tax']:,.2f}")
+        self.new_rebate.setText(f"₹ {new.get('rebate_87a', 0):,.2f}")
         self.new_cess.setText(f"₹ {new['cess']:,.2f}")
         self.new_total.setText(f"₹ {new['total_tax']:,.2f}")
-        savings = abs(old["total_tax"] - new["total_tax"])
-        is_old  = result["recommended"] == "Old Regime"
-        color   = Theme.WARNING if is_old else Theme.INFO
-        bg      = Theme.WARNING_LIGHT if is_old else Theme.INFO_LIGHT
-        self.recommendation_label.setText(
-            f"{'Old Regime ✓' if is_old else 'New Regime ✓'}\nSave ₹ {savings:,.2f}")
-        self.recommendation_label.setStyleSheet(self._recommendation_style(bg, color, emphasize=True))
 
-    def _display_results_from_summary(self, summary, profile):
-        self.old_taxable.setText(f"₹ {profile.get('taxable_income_old_regime',0):,.2f}")
-        self.old_tax.setText(f"₹ {profile.get('tax_old_regime',0):,.2f}")
-        self.old_cess.setText(f"₹ {profile.get('cess_amount',0):,.2f}")
-        self.old_total.setText(f"₹ {profile.get('total_tax_old',0):,.2f}")
-        self.new_taxable.setText(f"₹ {profile.get('taxable_income_new_regime',0):,.2f}")
-        self.new_tax.setText(f"₹ {profile.get('tax_new_regime',0):,.2f}")
-        self.new_cess.setText(f"₹ {profile.get('tax_new_regime',0)*0.04:,.2f}")
-        self.new_total.setText(f"₹ {profile.get('total_tax_new',0):,.2f}")
-        is_old = summary["recommended"] == "Old Regime"
-        color  = Theme.WARNING if is_old else Theme.INFO
-        bg     = Theme.WARNING_LIGHT if is_old else Theme.INFO_LIGHT
+        self.taxes_paid_label.setText(f"Taxes paid so far: ₹ {taxes_paid:,.2f}")
+        net_new = new["total_tax"] - taxes_paid
+        if net_new > 0.005:
+            self.net_payable_label.setText(f"Amount Payable: ₹ {net_new:,.2f}")
+            self.net_payable_label.setStyleSheet(Theme.text_style(color=Theme.DANGER, size=15, weight=700))
+        elif net_new < -0.005:
+            self.net_payable_label.setText(f"Refund Due: ₹ {abs(net_new):,.2f}")
+            self.net_payable_label.setStyleSheet(Theme.text_style(color=Theme.SUCCESS, size=15, weight=700))
+        else:
+            self.net_payable_label.setText("Fully settled — nothing payable, no refund due")
+            self.net_payable_label.setStyleSheet(Theme.text_style(color=Theme.TEXT_SECONDARY, size=15, weight=700))
+
+        savings = abs(old["total_tax"] - new["total_tax"])
+        is_old  = old["total_tax"] < new["total_tax"]
+        color   = Theme.WARNING if is_old else Theme.PRIMARY
+        bg      = Theme.WARNING_LIGHT if is_old else Theme.PRIMARY_LIGHT
         self.recommendation_label.setText(
-            f"{'Old Regime ✓' if is_old else 'New Regime ✓'}\nSave ₹ {summary['savings']:,.2f}")
+            f"{'Old Regime' if is_old else 'New Regime'} saves you ₹ {savings:,.2f}")
         self.recommendation_label.setStyleSheet(self._recommendation_style(bg, color, emphasize=True))
 
     def _update_advance_tax_banner(self):

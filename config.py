@@ -20,6 +20,13 @@ PBKDF2_ITERATIONS = 100_000
 SALT_SIZE         = 32    # bytes
 AES_KEY_SIZE      = 32    # bytes (256-bit)
 
+# ── FD TDS (tax deducted at source on Fixed Deposit interest) ─────────────────
+# Banks deduct TDS once a depositor's FD interest with that bank crosses this
+# limit in a financial year. Filing FD_TDS_FORM_NAME with the bank (when income
+# is below the taxable limit) avoids the deduction.
+FD_TDS_THRESHOLD  = 50_000
+FD_TDS_FORM_NAME  = "Form 121"
+
 # ── Financial Year Helpers ────────────────────────────────────────────────────
 def get_current_financial_year() -> str:
     """Returns e.g. '2024-25' based on today's date."""

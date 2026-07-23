@@ -133,6 +133,15 @@ def _guess_mode(desc_upper: str) -> str:
 
 
 def _guess_category(desc_upper: str, txn_type: str) -> str:
+    # Deferred import avoids a circular import (statement_parser imports this
+    # package at module load time); shared FD-detection logic lives there so
+    # every parser path — rule, plugin, and AI — categorizes FD activity the
+    # same way.
+    from engines.statement_parser import _guess_fd_category
+    fd_category = _guess_fd_category(desc_upper, txn_type)
+    if fd_category:
+        return fd_category
+
     if txn_type == "Income":
         if "INTEREST" in desc_upper and "CREDIT" in desc_upper:
             return "Savings Interest"

@@ -254,6 +254,25 @@ class ReportsScreen(QWidget):
 
     # ── Refresh ───────────────────────────────────────────────────────────────
 
+    def refresh_theme(self):
+        """Called after a live theme switch — the 3 KPI cards are built once
+        at construction, so their inline stat-tile styling needs re-applying."""
+        for card, accent in (
+            (self.income_card, Theme.SUCCESS),
+            (self.expense_card, Theme.DANGER),
+            (self.net_card, Theme.PRIMARY),
+        ):
+            card.setStyleSheet(Theme.stat_tile_style(accent, radius=14))
+            card.setGraphicsEffect(Theme.shadow_card())
+            for lbl in card.findChildren(QLabel):
+                is_value = lbl.objectName() == "value"
+                lbl.setStyleSheet(
+                    Theme.text_style(color=accent, size=20 if is_value else 12,
+                                      weight=700 if is_value else 600)
+                    + " border: none; background: transparent; padding: 0; margin: 0;"
+                )
+        self.refresh()
+
     def refresh(self):
         pid = session.selected_person_id
         aid = session.selected_account_id

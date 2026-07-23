@@ -5,9 +5,11 @@ engines/interest_engine.py — FD compounding, savings interest, FY allocation
 from datetime import date, timedelta
 import calendar
 from dateutil.relativedelta import relativedelta
-from config import get_assessment_year, fy_date_range
+from config import get_assessment_year, fy_date_range, FD_TDS_THRESHOLD
 from models.fixed_deposit import get_fd
-from models.fd_interest_record import upsert_fd_interest, delete_fd_interest_records
+from models.fd_interest_record import (
+    upsert_fd_interest, delete_fd_interest_records, get_fd_interest_by_fy,
+)
 from models.savings_interest import upsert_savings_interest
 from models.transaction import get_transactions_by_account
 
@@ -79,6 +81,46 @@ def _period_months_for_compounding(compounding: str) -> int:
     return 12
 
 
+def _accrue_period_interest(principal: float, annual_rate: float,
+                            period_start: date, period_end: date) -> float:
+    """
+    Calculate interest accrued over a period using actual day count with
+    leap-year awareness. Splits calculation across calendar years for precision.
+    Returns accumulated interest amount (not rounded).
+    """
+    chunk_start = period_start
+    period_interest = 0.0
+    while chunk_start <= period_end:
+        year_end = date(chunk_start.year, 12, 31)
+        chunk_end = min(period_end, year_end)
+        days = (chunk_end - chunk_start).days + 1
+        period_interest += principal * annual_rate * days / _year_days(chunk_start)
+        chunk_start = chunk_end + timedelta(days=1)
+    return period_interest
+
+
+def _average_monthly_balance(transactions: list) -> float:
+    """
+    Compute average balance across months from a list of transactions.
+    Each transaction dict must have "transaction_date" and "balance_after" fields.
+    Returns the average of monthly averages.
+    """
+    monthly_balances = {}
+    for txn in transactions:
+        txn_date = date.fromisoformat(txn["transaction_date"])
+        month_key = (txn_date.year, txn_date.month)
+        if month_key not in monthly_balances:
+            monthly_balances[month_key] = []
+        monthly_balances[month_key].append(txn["balance_after"])
+
+    avg_balance = 0
+    if monthly_balances:
+        month_avgs = [sum(balances) / len(balances) for balances in monthly_balances.values()]
+        avg_balance = sum(month_avgs) / len(month_avgs)
+
+    return avg_balance
+
+
 def calculate_fd_maturity_bank_style(principal: float, rate: float,
                                      start_date: date, maturity_date: date,
                                      compounding: str,
@@ -118,16 +160,7 @@ def calculate_fd_maturity_bank_style(principal: float, rate: float,
             maturity_date,
         )
 
-        # Split each period across calendar years so leap-year day count is exact.
-        chunk_start = period_start
-        period_interest = 0.0
-        while chunk_start <= period_end:
-            year_end = date(chunk_start.year, 12, 31)
-            chunk_end = min(period_end, year_end)
-            days = (chunk_end - chunk_start).days + 1
-            period_interest += current_principal * annual_rate * days / _year_days(chunk_start)
-            chunk_start = chunk_end + timedelta(days=1)
-
+        period_interest = _accrue_period_interest(current_principal, annual_rate, period_start, period_end)
         total_interest += period_interest
 
         # Compound only when the period is fully completed before maturity.
@@ -229,14 +262,7 @@ def _simulate_compounding_events(principal: float, rate: float,
             maturity_date,
         )
 
-        chunk_start = period_start
-        period_interest = 0.0
-        while chunk_start <= period_end:
-            year_end = date(chunk_start.year, 12, 31)
-            chunk_end = min(period_end, year_end)
-            days = (chunk_end - chunk_start).days + 1
-            period_interest += current_principal * annual_rate * days / _year_days(chunk_start)
-            chunk_start = chunk_end + timedelta(days=1)
+        period_interest = _accrue_period_interest(current_principal, annual_rate, period_start, period_end)
 
         events.append({
             "period_start": period_start,
@@ -405,31 +431,18 @@ def calculate_savings_interest_for_fy(account_id: int, financial_year: str,
                                       interest_rate: float) -> float:
     """Estimate savings interest based on average monthly balance."""
     fy_start, fy_end = fy_date_range(financial_year)
-    
+
     transactions = get_transactions_by_account(
         account_id,
         start_date=fy_start.isoformat(),
         end_date=fy_end.isoformat()
     )
-    
+
     if not transactions:
         return 0.0
-    
-    # Calculate average monthly balance
-    monthly_balances = {}
-    for txn in transactions:
-        txn_date = date.fromisoformat(txn["transaction_date"])
-        month_key = (txn_date.year, txn_date.month)
-        if month_key not in monthly_balances:
-            monthly_balances[month_key] = []
-        monthly_balances[month_key].append(txn["balance_after"])
-    
-    # Average balance per month
-    avg_balance = 0
-    if monthly_balances:
-        month_avgs = [sum(balances) / len(balances) for balances in monthly_balances.values()]
-        avg_balance = sum(month_avgs) / len(month_avgs)
-    
+
+    avg_balance = _average_monthly_balance(transactions)
+
     # Simple interest calculation
     interest = (avg_balance * interest_rate * 1) / 100
     return round(interest, 2)
@@ -439,32 +452,20 @@ def allocate_savings_interest_to_fy(account_id: int, financial_year: str,
                                     interest_rate: float) -> None:
     """Calculate and store savings interest for a FY."""
     fy_start, fy_end = fy_date_range(financial_year)
-    
+
     transactions = get_transactions_by_account(
         account_id,
         start_date=fy_start.isoformat(),
         end_date=fy_end.isoformat()
     )
-    
+
     if not transactions:
         return
-    
-    # Calculate average monthly balance
-    monthly_balances = {}
-    for txn in transactions:
-        txn_date = date.fromisoformat(txn["transaction_date"])
-        month_key = (txn_date.year, txn_date.month)
-        if month_key not in monthly_balances:
-            monthly_balances[month_key] = []
-        monthly_balances[month_key].append(txn["balance_after"])
-    
-    avg_balance = 0
-    if monthly_balances:
-        month_avgs = [sum(balances) / len(balances) for balances in monthly_balances.values()]
-        avg_balance = sum(month_avgs) / len(month_avgs)
-    
+
+    avg_balance = _average_monthly_balance(transactions)
+
     interest = (avg_balance * interest_rate * 1) / 100
-    
+
     upsert_savings_interest(
         account_id, financial_year, avg_balance, interest_rate, round(interest, 2)
     )
@@ -475,3 +476,74 @@ def project_fd_interest_next_fy(fd_id: int, current_fy: str) -> float:
     next_fy_year = int(current_fy.split("-")[0]) + 1
     next_fy = f"{next_fy_year}-{str(next_fy_year + 1)[2:]}"
     return calculate_fd_interest_for_fy(fd_id, next_fy)
+
+
+_TDS_QUARTERS = ["Q1", "Q2", "Q3", "Q4"]
+
+
+def fd_tds_threshold_status(person_id: int, financial_year: str,
+                            threshold: float = FD_TDS_THRESHOLD) -> dict:
+    """
+    Per-bank check of whether a person's FD interest crosses the TDS threshold
+    in a financial year, and in which quarter the running total crosses it.
+
+    Banks that credit FD interest quarterly deduct TDS in the quarter their
+    cumulative interest for the year first crosses the limit — so the check is
+    per-bank (each bank/deductor applies the limit to its own interest) and
+    quarter-cumulative. Interest with no quarter label is folded in before Q1
+    so the crossing is flagged at the earliest (safe) point.
+
+    Returns:
+        {
+          "threshold": float,
+          "any_exceeds": bool,
+          "banks": [
+            {"bank_name", "total_interest", "exceeds", "crossing_quarter",
+             "breakdown": [{"quarter", "interest", "cumulative"}, ...]},
+            ...
+          ]
+        }
+    """
+    records = get_fd_interest_by_fy(financial_year, person_id=person_id)
+
+    by_bank: dict[str, dict] = {}
+    for r in records:
+        bank = r.get("bank_name") or "Unknown Bank"
+        entry = by_bank.setdefault(
+            bank, {"total": 0.0, "quarters": {q: 0.0 for q in _TDS_QUARTERS}, "misc": 0.0})
+        amount = float(r.get("interest_earned") or 0)
+        entry["total"] += amount
+        quarter = r.get("quarter")
+        if quarter in entry["quarters"]:
+            entry["quarters"][quarter] += amount
+        else:
+            entry["misc"] += amount
+
+    banks = []
+    for bank, e in by_bank.items():
+        cumulative = e["misc"]
+        crossing_quarter = None
+        breakdown = []
+        for q in _TDS_QUARTERS:
+            cumulative += e["quarters"][q]
+            breakdown.append({
+                "quarter": q,
+                "interest": round(e["quarters"][q], 2),
+                "cumulative": round(cumulative, 2),
+            })
+            if crossing_quarter is None and cumulative >= threshold:
+                crossing_quarter = q
+        banks.append({
+            "bank_name": bank,
+            "total_interest": round(e["total"], 2),
+            "exceeds": e["total"] >= threshold,
+            "crossing_quarter": crossing_quarter,
+            "breakdown": breakdown,
+        })
+
+    banks.sort(key=lambda b: b["total_interest"], reverse=True)
+    return {
+        "threshold": threshold,
+        "any_exceeds": any(b["exceeds"] for b in banks),
+        "banks": banks,
+    }

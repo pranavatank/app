@@ -286,6 +286,7 @@ def unlink_fd_transaction(fd_id: int) -> None:
 
 
 def get_fd_link_candidates(fd_id: int) -> list[dict]:
+    """Return transactions that could potentially be linked to an FD based on date and amount."""
     conn = get_connection()
     fd = conn.execute("SELECT * FROM FixedDeposit WHERE fd_id = ?", (fd_id,)).fetchone()
     if not fd:
@@ -322,6 +323,7 @@ def get_fd_link_candidates(fd_id: int) -> list[dict]:
 
 
 def auto_link_fd_records(person_id: int, financial_year: str | None = None) -> int:
+    """Auto-link unlinked FD records to transactions based on FD reference number. Returns count of linked records."""
     conn = get_connection()
     query = "SELECT * FROM FixedDeposit WHERE person_id = ? AND linked_transaction_id IS NULL"
     params = [person_id]

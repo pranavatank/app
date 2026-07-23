@@ -14,6 +14,7 @@ from PyQt6.QtGui import QFont
 
 from ui.theme import Theme
 from ui.icons import set_btn_icon, icon_label
+from ui.widgets.excel_table import enable_copy_shortcut
 from ui.date_utils import format_display_date
 from models.person import add_person, get_all_persons, get_person, update_person, delete_person
 
@@ -58,6 +59,7 @@ class PersonManagementDialog(QDialog):
         self.table.setColumnHidden(4, True)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        enable_copy_shortcut(self.table)
         self.table.setAlternatingRowColors(True)
         self.table.setShowGrid(False)
         self.table.verticalHeader().setVisible(False)

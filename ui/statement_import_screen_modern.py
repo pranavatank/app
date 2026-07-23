@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import (
     QInputDialog,
     QStackedWidget, QScrollArea
 )
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal, QThread
 from PyQt6.QtGui import QFont, QColor
 from datetime import datetime
 import json
@@ -44,6 +44,7 @@ from engines.statement_parser import (
 from engines.statement_metadata_extractor import extract_account_metadata
 from ui.dialogs.account_dialog import AccountDialog
 from ui.dialogs.password_dialog import PasswordDialog
+from ui.chatbot_screen import OllamaModelStartWorker
 from ui.dialogs.column_mapping_dialog import ColumnMappingDialog
 
 
@@ -67,6 +68,8 @@ class StatementImportScreen(QWidget):
         self.statement_text = ""
         self.fds_created_last_import = 0
         self._loader = None
+        self._warmup_thread = None
+        self._warmup_worker = None
         self._preview_cell_change_lock = False
         self._selection_tab_order_ready = False
         self._preview_tab_order_ready = False
@@ -135,7 +138,7 @@ class StatementImportScreen(QWidget):
         cl.setContentsMargins(0, 0, 0, 0)
 
         # Card 1: Person Selection
-        card1 = self._create_card()
+        self._card1 = card1 = self._create_card()
         c1_layout = QVBoxLayout(card1)
         c1_layout.setSpacing(12)
         
@@ -153,7 +156,7 @@ class StatementImportScreen(QWidget):
         cl.addWidget(card1)
 
         # Card 2: Account Selection
-        card2 = self._create_card()
+        self._card2 = card2 = self._create_card()
         c2_layout = QVBoxLayout(card2)
         c2_layout.setSpacing(12)
         
@@ -171,7 +174,7 @@ class StatementImportScreen(QWidget):
         cl.addWidget(card2)
 
         # Card 3: File Selection
-        card3 = self._create_card()
+        self._card3 = card3 = self._create_card()
         c3_layout = QVBoxLayout(card3)
         c3_layout.setSpacing(12)
         
@@ -233,6 +236,21 @@ class StatementImportScreen(QWidget):
         btn_ai_check.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.btn_ai_check = btn_ai_check
         type_row.addWidget(btn_ai_check)
+
+        btn_ai_warmup = Theme.btn("Warm Up AI", "secondary", height=28, min_width=100)
+        btn_ai_warmup.clicked.connect(self._warm_up_ai_model)
+        btn_ai_warmup.setAccessibleName("Warm up local AI model")
+        btn_ai_warmup.setAccessibleDescription(
+            "Pre-load the local AI model so the first Parse Statement in AI/auto "
+            "mode doesn't hit a cold-start timeout."
+        )
+        btn_ai_warmup.setToolTip(
+            "Pre-load the local AI model before parsing — avoids a slow first "
+            "run timing out."
+        )
+        btn_ai_warmup.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.btn_ai_warmup = btn_ai_warmup
+        type_row.addWidget(btn_ai_warmup)
         # Column mapping for Excel
         self._column_mapping = None
         self.map_columns_btn = Theme.btn("Map Columns", "secondary", height=28, min_width=120)
@@ -264,7 +282,7 @@ class StatementImportScreen(QWidget):
         layout.setSpacing(16)
 
         # Header card
-        header_card = self._create_card()
+        self._preview_header_card = header_card = self._create_card()
         hc_layout = QVBoxLayout(header_card)
         hc_layout.setSpacing(10)
         
@@ -389,7 +407,7 @@ class StatementImportScreen(QWidget):
         layout.addWidget(self.preview_table_widget, stretch=3)
 
         # Debug panel (collapsible with toggle)
-        debug_card = self._create_card()
+        self._debug_card = debug_card = self._create_card()
         debug_layout = QVBoxLayout(debug_card)
         debug_layout.setSpacing(10)
         
@@ -558,6 +576,45 @@ class StatementImportScreen(QWidget):
         except Exception:
             self.ai_status_lbl.setText("AI: Unknown")
             self.ai_status_lbl.setStyleSheet(Theme.badge_style(Theme.WARNING_LIGHT, Theme.WARNING, radius=8, padding='4px 8px', size=11))
+
+    def _warm_up_ai_model(self):
+        """Pre-load the local Ollama model in the background so the first
+        Parse Statement call in AI/auto mode doesn't hit a cold-start timeout
+        (reuses the same worker the chatbot uses to start the model)."""
+        if getattr(self, "_warmup_thread", None):
+            return
+        self.btn_ai_warmup.setEnabled(False)
+        self.btn_ai_warmup.setText("Warming up…")
+        self._warmup_thread = QThread(self)
+        self._warmup_worker = OllamaModelStartWorker()
+        self._warmup_worker.moveToThread(self._warmup_thread)
+        self._warmup_thread.started.connect(self._warmup_worker.run)
+        self._warmup_worker.finished.connect(self._on_ai_warmup_finished)
+        self._warmup_worker.failed.connect(self._on_ai_warmup_failed)
+        self._warmup_worker.finished.connect(self._finish_ai_warmup)
+        self._warmup_worker.failed.connect(self._finish_ai_warmup)
+        self._warmup_thread.start()
+
+    def _on_ai_warmup_finished(self, message: str):
+        self.ai_status_lbl.setText("AI: Ready")
+        self.ai_status_lbl.setStyleSheet(
+            Theme.badge_style(Theme.SUCCESS_LIGHT, Theme.SUCCESS_DARK, radius=8, padding='4px 8px', size=11))
+
+    def _on_ai_warmup_failed(self, message: str):
+        QMessageBox.warning(self, "AI Warm-Up Failed", message)
+        self._refresh_ai_status()
+
+    def _finish_ai_warmup(self):
+        if self._warmup_thread:
+            self._warmup_thread.quit()
+            self._warmup_thread.wait()
+        if self._warmup_worker:
+            self._warmup_worker.deleteLater()
+        if self._warmup_thread:
+            self._warmup_thread.deleteLater()
+        self._warmup_worker = self._warmup_thread = None
+        self.btn_ai_warmup.setText("Warm Up AI")
+        self.btn_ai_warmup.setEnabled(True)
 
     def _go_next(self):
         """Handle next button - validate and parse"""
@@ -870,6 +927,22 @@ class StatementImportScreen(QWidget):
         except Exception as e:
             self._hide_loader()
             QMessageBox.critical(self, "Import Failed", str(e))
+
+    def refresh_theme(self):
+        """Called after a live theme switch. Deliberately does NOT call
+        refresh() — that resets the whole import wizard (selected file,
+        parsed rows, in-progress state), which would be destructive mid-import.
+        Only re-applies inline card styles and the step indicator."""
+        for attr in ("_card1", "_card2", "_card3", "_preview_header_card", "_debug_card"):
+            card = getattr(self, attr, None)
+            if card is not None:
+                card.setStyleSheet(
+                    Theme.card_style(bg=Theme.SURFACE, border_color=Theme.BORDER,
+                                      radius=14, padding=20, selector="QFrame#ImportCard")
+                )
+                card.setGraphicsEffect(Theme.shadow_card())
+        if hasattr(self, "screen_indicator_step"):
+            self._set_step(self.screen_indicator_step)
 
     def refresh(self):
         """Reset to initial state"""

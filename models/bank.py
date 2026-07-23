@@ -13,28 +13,31 @@ _TAN_RE = re.compile(r"\(([A-Z0-9]{10})\)")
 def create_bank_table():
     """Create Bank table if not exists."""
     conn = get_connection()
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS Bank (
-            bank_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            bank_name TEXT NOT NULL UNIQUE,
-            nickname TEXT,
-            tan_code TEXT,
-            created_at TEXT DEFAULT (datetime('now'))
+    try:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS Bank (
+                bank_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                bank_name TEXT NOT NULL UNIQUE,
+                nickname TEXT,
+                tan_code TEXT,
+                created_at TEXT DEFAULT (datetime('now'))
+            )
+        """)
+
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(Bank)").fetchall()}
+        if "nickname" not in cols:
+            conn.execute("ALTER TABLE Bank ADD COLUMN nickname TEXT")
+        if "tan_code" not in cols:
+            conn.execute("ALTER TABLE Bank ADD COLUMN tan_code TEXT")
+
+        # Unique TAN (ignore NULL/empty)
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_Bank_tan_code_unique "
+            "ON Bank(tan_code) WHERE tan_code IS NOT NULL AND tan_code <> ''"
         )
-    """)
-
-    cols = {row[1] for row in conn.execute("PRAGMA table_info(Bank)").fetchall()}
-    if "nickname" not in cols:
-        conn.execute("ALTER TABLE Bank ADD COLUMN nickname TEXT")
-    if "tan_code" not in cols:
-        conn.execute("ALTER TABLE Bank ADD COLUMN tan_code TEXT")
-
-    # Unique TAN (ignore NULL/empty)
-    conn.execute(
-        "CREATE UNIQUE INDEX IF NOT EXISTS idx_Bank_tan_code_unique "
-        "ON Bank(tan_code) WHERE tan_code IS NOT NULL AND tan_code <> ''"
-    )
-    conn.commit()
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def _normalize_bank_name(bank_name: str) -> str:
@@ -51,19 +54,22 @@ def add_bank(bank_name: str, nickname: str = None) -> int:
     create_bank_table()
     conn = get_connection()
     try:
-        cur = conn.execute(
-            "INSERT INTO Bank (bank_name, nickname) VALUES (?, ?)",
-            (bank_name, nick),
-        )
-        conn.commit()
-        return cur.lastrowid
-    except Exception:
-        # Bank already exists, get its ID
-        row = conn.execute("SELECT bank_id FROM Bank WHERE bank_name = ?", (bank_name,)).fetchone()
-        if row and nick:
-            conn.execute("UPDATE Bank SET nickname = COALESCE(NULLIF(nickname,''), ?) WHERE bank_id = ?", (nick, row["bank_id"]))
+        try:
+            cur = conn.execute(
+                "INSERT INTO Bank (bank_name, nickname) VALUES (?, ?)",
+                (bank_name, nick),
+            )
             conn.commit()
-        return row["bank_id"] if row else None
+            return cur.lastrowid
+        except Exception:
+            # Bank already exists, get its ID
+            row = conn.execute("SELECT bank_id FROM Bank WHERE bank_name = ?", (bank_name,)).fetchone()
+            if row and nick:
+                conn.execute("UPDATE Bank SET nickname = COALESCE(NULLIF(nickname,''), ?) WHERE bank_id = ?", (nick, row["bank_id"]))
+                conn.commit()
+            return row["bank_id"] if row else None
+    finally:
+        conn.close()
 
 
 def extract_bank_name_and_tan(source_text: str) -> tuple[str, str]:
@@ -92,51 +98,58 @@ def update_bank_tan_code_if_exists(bank_name: str, tan_code: str) -> bool:
 
     create_bank_table()
     conn = get_connection()
-    row = conn.execute(
-        "SELECT bank_id FROM Bank WHERE lower(bank_name) = lower(?) ORDER BY bank_id LIMIT 1",
-        (name,),
-    ).fetchone()
-    if not row:
-        conn.close()
-        return False
+    try:
+        row = conn.execute(
+            "SELECT bank_id FROM Bank WHERE lower(bank_name) = lower(?) ORDER BY bank_id LIMIT 1",
+            (name,),
+        ).fetchone()
+        if not row:
+            return False
 
-    # Avoid clashing with a TAN already assigned to another bank.
-    existing = conn.execute(
-        "SELECT bank_id FROM Bank WHERE tan_code = ?",
-        (tan,),
-    ).fetchone()
-    if existing and existing["bank_id"] != row["bank_id"]:
-        conn.close()
-        return False
+        # Avoid clashing with a TAN already assigned to another bank.
+        existing = conn.execute(
+            "SELECT bank_id FROM Bank WHERE tan_code = ?",
+            (tan,),
+        ).fetchone()
+        if existing and existing["bank_id"] != row["bank_id"]:
+            return False
 
-    cur = conn.execute(
-        "UPDATE Bank SET tan_code = ? WHERE bank_id = ?",
-        (tan, row["bank_id"]),
-    )
-    conn.commit()
-    return (cur.rowcount or 0) > 0
+        cur = conn.execute(
+            "UPDATE Bank SET tan_code = ? WHERE bank_id = ?",
+            (tan, row["bank_id"]),
+        )
+        conn.commit()
+        return (cur.rowcount or 0) > 0
+    finally:
+        conn.close()
 
 
 def get_all_banks() -> list[dict]:
     """Get all banks ordered by name."""
     create_bank_table()
     conn = get_connection()
-    rows = conn.execute("""
-        SELECT *, COALESCE(NULLIF(nickname, ''), bank_name) AS display_name
-        FROM Bank
-        ORDER BY lower(COALESCE(NULLIF(nickname, ''), bank_name)), lower(bank_name)
-    """).fetchall()
-    return [dict(r) for r in rows]
+    try:
+        rows = conn.execute("""
+            SELECT *, COALESCE(NULLIF(nickname, ''), bank_name) AS display_name
+            FROM Bank
+            ORDER BY lower(COALESCE(NULLIF(nickname, ''), bank_name)), lower(bank_name)
+        """).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
 
 
 def get_bank(bank_id: int) -> dict | None:
     """Get a single bank by ID."""
     conn = get_connection()
-    row = conn.execute(
-        "SELECT *, COALESCE(NULLIF(nickname, ''), bank_name) AS display_name FROM Bank WHERE bank_id = ?",
-        (bank_id,),
-    ).fetchone()
-    return dict(row) if row else None
+    try:
+        row = conn.execute(
+            "SELECT *, COALESCE(NULLIF(nickname, ''), bank_name) AS display_name FROM Bank WHERE bank_id = ?",
+            (bank_id,),
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
 
 
 def get_or_create_bank(bank_name: str) -> int:
@@ -146,34 +159,43 @@ def get_or_create_bank(bank_name: str) -> int:
         return None
     create_bank_table()
     conn = get_connection()
-    row = conn.execute(
-        "SELECT bank_id FROM Bank WHERE lower(bank_name) = lower(?) ORDER BY bank_id LIMIT 1",
-        (bank_name,),
-    ).fetchone()
-    if row:
-        return row["bank_id"]
-    return add_bank(bank_name)
+    try:
+        row = conn.execute(
+            "SELECT bank_id FROM Bank WHERE lower(bank_name) = lower(?) ORDER BY bank_id LIMIT 1",
+            (bank_name,),
+        ).fetchone()
+        if row:
+            return row["bank_id"]
+        return add_bank(bank_name)
+    finally:
+        conn.close()
 
 
 def update_bank(bank_id: int, bank_name: str, nickname: str = None, tan_code: str = None) -> None:
     conn = get_connection()
-    conn.execute(
-        """
-        UPDATE Bank
-        SET bank_name = ?, nickname = ?, tan_code = ?
-        WHERE bank_id = ?
-        """,
-        (
-            _normalize_bank_name(bank_name),
-            (nickname or "").strip() or None,
-            (tan_code or "").strip().upper() or None,
-            bank_id,
-        ),
-    )
-    conn.commit()
+    try:
+        conn.execute(
+            """
+            UPDATE Bank
+            SET bank_name = ?, nickname = ?, tan_code = ?
+            WHERE bank_id = ?
+            """,
+            (
+                _normalize_bank_name(bank_name),
+                (nickname or "").strip() or None,
+                (tan_code or "").strip().upper() or None,
+                bank_id,
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def delete_bank(bank_id: int) -> None:
     conn = get_connection()
-    conn.execute("DELETE FROM Bank WHERE bank_id = ?", (bank_id,))
-    conn.commit()
+    try:
+        conn.execute("DELETE FROM Bank WHERE bank_id = ?", (bank_id,))
+        conn.commit()
+    finally:
+        conn.close()

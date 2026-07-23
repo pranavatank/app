@@ -20,6 +20,8 @@ def upsert_tax_profile(person_id: int, financial_year: str, **fields) -> int:
         "standard_deduction", "taxable_income_old_regime",
         "taxable_income_new_regime", "tax_old_regime", "tax_new_regime",
         "cess_amount", "total_tax_old", "total_tax_new",
+        "rebate_87a_old", "rebate_87a_new", "tds_deducted",
+        "tcs_collected", "advance_tax_paid", "self_assessment_tax",
     ]
     safe_fields = {k: v for k, v in fields.items() if k in allowed}
 

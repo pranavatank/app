@@ -152,6 +152,23 @@ def _migrate_fd_interest_record_schema_if_needed(cur: sqlite3.Cursor) -> None:
         cur.execute("ALTER TABLE FDInterestRecord ADD COLUMN period_end TEXT")
 
 
+def _migrate_tax_profile_schema_if_needed(cur: sqlite3.Cursor) -> None:
+    """Upgrade older TaxProfile schemas with rebate/tax-paid tracking columns."""
+    cols = {row[1] for row in cur.execute("PRAGMA table_info(TaxProfile)").fetchall()}
+    if not cols:
+        return
+    for col, ddl in [
+        ("rebate_87a_old", "REAL NOT NULL DEFAULT 0"),
+        ("rebate_87a_new", "REAL NOT NULL DEFAULT 0"),
+        ("tds_deducted", "REAL NOT NULL DEFAULT 0"),
+        ("tcs_collected", "REAL NOT NULL DEFAULT 0"),
+        ("advance_tax_paid", "REAL NOT NULL DEFAULT 0"),
+        ("self_assessment_tax", "REAL NOT NULL DEFAULT 0"),
+    ]:
+        if col not in cols:
+            cur.execute(f"ALTER TABLE TaxProfile ADD COLUMN {col} {ddl}")
+
+
 def _migrate_bank_account_schema_if_needed(cur: sqlite3.Cursor) -> None:
     """Upgrade older BankAccount schemas with newer optional fields."""
     cols = {row[1] for row in cur.execute("PRAGMA table_info(BankAccount)").fetchall()}
@@ -443,9 +460,16 @@ def initialise_database() -> None:
             cess_amount              REAL    NOT NULL DEFAULT 0,
             total_tax_old            REAL    NOT NULL DEFAULT 0,
             total_tax_new            REAL    NOT NULL DEFAULT 0,
+            rebate_87a_old           REAL    NOT NULL DEFAULT 0,
+            rebate_87a_new           REAL    NOT NULL DEFAULT 0,
+            tds_deducted             REAL    NOT NULL DEFAULT 0,
+            tcs_collected            REAL    NOT NULL DEFAULT 0,
+            advance_tax_paid         REAL    NOT NULL DEFAULT 0,
+            self_assessment_tax      REAL    NOT NULL DEFAULT 0,
             UNIQUE(person_id, financial_year)
         )
     """)
+    _migrate_tax_profile_schema_if_needed(cur)
 
     # ── StatementImportLog ───────────────────────────────────────────────────
     cur.execute("""

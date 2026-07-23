@@ -7,6 +7,7 @@ from core.database import get_connection
 
 
 def get_auth_record() -> dict | None:
+    """Get the AuthSecurity record from the database."""
     conn = get_connection()
     row  = conn.execute(
         "SELECT * FROM AuthSecurity ORDER BY auth_id LIMIT 1"
@@ -29,5 +30,6 @@ def set_privacy_mode(enabled: bool) -> None:
 
 
 def get_privacy_mode() -> bool:
+    """Get whether privacy mode is enabled."""
     record = get_auth_record()
     return bool(record["privacy_mode_enabled"]) if record else False

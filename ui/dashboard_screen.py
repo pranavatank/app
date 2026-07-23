@@ -395,7 +395,9 @@ class DashboardScreen(QMainWindow):
         # Refresh stacked pages that carry baked-in colours (inline styles,
         # QColor table-row foregrounds, etc.) and won't update via the
         # global QSS unpolish/polish pass alone.
-        for page_name in ('accounts_page', 'transactions_page', 'fd_page'):
+        for page_name in ('accounts_page', 'transactions_page', 'fd_page',
+                          'income_page', 'import_page', 'ais_tis_page',
+                          'reconciliation_page', 'reports_page', 'tax_page'):
             page = getattr(self, page_name, None)
             if page is not None and hasattr(page, 'refresh_theme'):
                 try:

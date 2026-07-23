@@ -14,6 +14,7 @@ from PyQt6.QtGui import QFont
 
 from ui.theme import Theme
 from ui.icons import icon_label, set_btn_icon
+from ui.widgets.excel_table import enable_copy_shortcut
 from models.bank import add_bank, get_all_banks, get_bank, update_bank, delete_bank
 
 
@@ -55,6 +56,7 @@ class BankManagementDialog(QDialog):
         self.table.setColumnHidden(4, True)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        enable_copy_shortcut(self.table)
         self.table.setAlternatingRowColors(True)
         self.table.setShowGrid(False)
         self.table.verticalHeader().setVisible(False)

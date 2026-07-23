@@ -1,6 +1,5 @@
 """
 core/auth.py — Authentication: master password, device binding, optional TOTP.
-FIX: Re-enabled password verification that was accidentally commented out.
 """
 
 import os
@@ -84,8 +83,8 @@ def verify_login(password: str, totp_code: str = None) -> tuple[bool, str, bytes
 
     # ── Password check (must be active)
     salt = base64.b64decode(record["password_salt"].encode())
-    # if not verify_password(password, salt, record["password_hash"]):
-    #     return False, "Incorrect password.", None
+    if not verify_password(password, salt, record["password_hash"]):
+        return False, "Incorrect password.", None
 
     # ── TOTP check ────────────────────────────────────────────────────────────
     if record["totp_secret"]:

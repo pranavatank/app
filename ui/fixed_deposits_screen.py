@@ -17,10 +17,10 @@ from dateutil.relativedelta import relativedelta
 from ui.widgets.excel_table import ExcelTableWithStats
 
 from ui.theme import Theme
-from ui.icons import icon as app_icon
+from ui.icons import icon as app_icon, icon_label
 from ui.date_utils import format_display_date
 from core.session import session
-from config import COMPOUNDING_TYPES, fy_date_range, get_assessment_year, get_current_financial_year
+from config import COMPOUNDING_TYPES, fy_date_range, get_assessment_year, get_current_financial_year, FD_TDS_FORM_NAME
 from models.person import get_all_persons
 from models.bank_account import get_accounts_for_person
 from models.transaction import display_transaction_type
@@ -41,6 +41,7 @@ from engines.interest_engine import (
     calculate_fd_maturity_flexible,
     calculate_fd_quarterly_credit_breakdown,
     allocate_fd_interest_to_fy,
+    fd_tds_threshold_status,
 )
 
 
@@ -108,6 +109,22 @@ class FixedDepositsScreen(QWidget):
 
         layout.addWidget(self.header_frame)
 
+        # TDS-threshold reminder banner (hidden until FD interest crosses the limit)
+        self.tds_banner = QFrame()
+        self.tds_banner.setObjectName("tdsBanner")
+        self.tds_banner.setStyleSheet(Theme.banner_style("warning"))
+        tds_layout = QHBoxLayout(self.tds_banner)
+        tds_layout.setContentsMargins(14, 10, 14, 10)
+        tds_layout.setSpacing(10)
+        self._tds_icon = icon_label("warning", size=20, color=Theme.WARNING_DARK)
+        tds_layout.addWidget(self._tds_icon)
+        self.tds_banner_label = QLabel("")
+        self.tds_banner_label.setWordWrap(True)
+        self.tds_banner_label.setStyleSheet(Theme.text_style(color=Theme.WARNING_DARK, size=12, weight=600))
+        tds_layout.addWidget(self.tds_banner_label, stretch=1)
+        self.tds_banner.setVisible(False)
+        layout.addWidget(self.tds_banner)
+
         # Table
         self.table_widget = ExcelTableWithStats(show_checkboxes=True)
         self.table = self.table_widget.table
@@ -140,7 +157,7 @@ class FixedDepositsScreen(QWidget):
         layout.addWidget(self.table_widget)
 
         # Info label
-        info_label = QLabel("💡 Tip: Edit cells directly, then click 'Save Changes' or 'Recalculate Selected' to update database")
+        info_label = QLabel("Tip: Edit cells directly, then click 'Save Changes' or 'Recalculate Selected' to update database")
         info_label.setStyleSheet(f"color: {Theme.INFO}; font-size: 11px; padding: 4px;")
         info_label.setWordWrap(True)
         layout.addWidget(info_label)
@@ -239,6 +256,35 @@ class FixedDepositsScreen(QWidget):
         count = self.table.rowCount()
         self.status_label.setText(f"Showing {count} fixed deposit{'s' if count!=1 else ''}.")
         self.status_label.setStyleSheet("")  # Reset style
+        self._update_tds_banner()
+
+    def _update_tds_banner(self):
+        """Show a reminder when a person's FD interest with any bank crosses
+        the TDS threshold this FY — with the quarter it crosses in (banks that
+        credit interest quarterly deduct TDS in that quarter) and which form
+        to file to avoid the deduction."""
+        pid = session.selected_person_id
+        fy = session.selected_fy
+        if not pid or not fy:
+            self.tds_banner.setVisible(False)
+            return
+        status = fd_tds_threshold_status(pid, fy)
+        exceeding = [b for b in status["banks"] if b["exceeds"]]
+        if not exceeding:
+            self.tds_banner.setVisible(False)
+            return
+        threshold = status["threshold"]
+        parts = []
+        for b in exceeding:
+            q = b["crossing_quarter"]
+            q_txt = f", crosses in {q}" if q else ""
+            parts.append(f"{b['bank_name']} (₹{b['total_interest']:,.0f}{q_txt})")
+        banks_txt = "; ".join(parts)
+        self.tds_banner_label.setText(
+            f"FD interest crosses the ₹{threshold:,.0f} TDS limit — {banks_txt}. "
+            f"File {FD_TDS_FORM_NAME} with the bank as soon as possible to avoid tax being deducted."
+        )
+        self.tds_banner.setVisible(True)
 
     def refresh_theme(self):
         """Called after a live theme switch — the table is fully rebuilt on
@@ -246,6 +292,10 @@ class FixedDepositsScreen(QWidget):
         picks up the new theme automatically."""
         if hasattr(self, "header_frame") and self.header_frame:
             self.header_frame.setStyleSheet(Theme.page_header_style())
+        if hasattr(self, "tds_banner"):
+            self.tds_banner.setStyleSheet(Theme.banner_style("warning"))
+            self.tds_banner_label.setStyleSheet(
+                Theme.text_style(color=Theme.WARNING_DARK, size=12, weight=600))
         self.refresh()
 
     def _format_tenure(self, fd: dict) -> str:

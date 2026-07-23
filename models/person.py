@@ -63,11 +63,51 @@ def update_person(person_id: int, full_name: str, first_name: str = None,
 
 
 def delete_person(person_id: int) -> None:
-    """Delete a person and all linked data (cascade via FK)."""
+    """Delete a person and all linked data (manual cascade)."""
     conn = get_connection()
-    conn.execute("DELETE FROM Person WHERE person_id = ?", (person_id,))
-    conn.commit()
-    conn.close()
+    try:
+        # Delete Transactions for all accounts of this person
+        conn.execute("""
+            DELETE FROM Transactions
+            WHERE account_id IN (SELECT account_id FROM BankAccount WHERE person_id = ?)
+        """, (person_id,))
+
+        # Delete FDInterestRecord for all FDs of this person
+        conn.execute("""
+            DELETE FROM FDInterestRecord
+            WHERE fd_id IN (SELECT fd_id FROM FixedDeposit WHERE person_id = ?)
+        """, (person_id,))
+
+        # Delete FixedDeposit records for this person
+        conn.execute("DELETE FROM FixedDeposit WHERE person_id = ?", (person_id,))
+
+        # Delete SavingsInterestRecord for all accounts of this person
+        conn.execute("""
+            DELETE FROM SavingsInterestRecord
+            WHERE account_id IN (SELECT account_id FROM BankAccount WHERE person_id = ?)
+        """, (person_id,))
+
+        # Delete StatementImportLog for this person
+        conn.execute("DELETE FROM StatementImportLog WHERE person_id = ?", (person_id,))
+
+        # Delete IncomeExpectation for this person
+        conn.execute("DELETE FROM IncomeExpectation WHERE person_id = ?", (person_id,))
+
+        # Delete TaxProfile for this person
+        conn.execute("DELETE FROM TaxProfile WHERE person_id = ?", (person_id,))
+
+        # Delete AISTISImport for this person
+        conn.execute("DELETE FROM AISTISImport WHERE person_id = ?", (person_id,))
+
+        # Delete BankAccount records for this person
+        conn.execute("DELETE FROM BankAccount WHERE person_id = ?", (person_id,))
+
+        # Finally, delete the Person record itself
+        conn.execute("DELETE FROM Person WHERE person_id = ?", (person_id,))
+
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def get_ais_tis_password(person_id: int, aes_key: bytes | None) -> str | None:

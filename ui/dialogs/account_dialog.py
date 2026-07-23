@@ -15,6 +15,7 @@ from PyQt6.QtCore import Qt, QDate
 from PyQt6.QtGui import QFont
 
 from ui.theme import Theme
+from ui.widgets.excel_table import enable_copy_shortcut
 from ui.icons import set_btn_icon, tab_icon, icon_label
 from config import ACCOUNT_TYPES
 from models.person import get_all_persons
@@ -63,6 +64,7 @@ class AccountManagementDialog(QDialog):
         self.table.setColumnHidden(8, True)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        enable_copy_shortcut(self.table)
         self.table.setAlternatingRowColors(True)
         self.table.setShowGrid(False)
         self.table.verticalHeader().setVisible(False)

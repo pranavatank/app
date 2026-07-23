@@ -13,6 +13,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 
 from ui.theme import Theme
+from ui.widgets.excel_table import enable_copy_shortcut
 from ui.icons import set_btn_icon
 from core.session import session
 from models.person import get_person
@@ -53,13 +54,13 @@ class ReconciliationScreen(QWidget):
         layout.addLayout(summary_row)
 
         # Reconciliation table
-        table_card = QFrame()
+        self._table_card = table_card = QFrame()
         table_card.setStyleSheet(Theme.card_style(radius=12, padding=0))
         table_layout = QVBoxLayout(table_card)
         table_layout.setContentsMargins(0, 0, 0, 0)
         table_layout.setSpacing(0)
 
-        table_header = QFrame()
+        self._table_header = table_header = QFrame()
         table_header.setStyleSheet(f"background: {Theme.SURFACE_ALT}; border-radius: 12px 12px 0 0; padding: 12px 16px;")
         th_layout = QHBoxLayout(table_header)
         th_layout.setContentsMargins(16, 12, 16, 12)
@@ -90,13 +91,14 @@ class ReconciliationScreen(QWidget):
         self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        enable_copy_shortcut(self.table)
         self.table.doubleClicked.connect(self._on_row_double_click)
         table_layout.addWidget(self.table)
 
         layout.addWidget(table_card, 1)
 
     def _build_header(self) -> QFrame:
-        header = QFrame()
+        self._header_frame = header = QFrame()
         header.setStyleSheet(Theme.card_style(radius=12, padding=16))
         h_layout = QHBoxLayout(header)
         h_layout.setSpacing(12)
@@ -149,10 +151,36 @@ class ReconciliationScreen(QWidget):
 
         return card
 
+    def refresh_theme(self):
+        """Called after a live theme switch — the header, table card, and
+        4 metric cards are built once at construction, so their inline
+        styling needs re-applying before the dynamic refresh() runs."""
+        if hasattr(self, "_header_frame"):
+            self._header_frame.setStyleSheet(Theme.card_style(radius=12, padding=16))
+        if hasattr(self, "_table_card"):
+            self._table_card.setStyleSheet(Theme.card_style(radius=12, padding=0))
+        if hasattr(self, "_table_header"):
+            self._table_header.setStyleSheet(
+                f"background: {Theme.SURFACE_ALT}; border-radius: 12px 12px 0 0; padding: 12px 16px;")
+        for card, accent in (
+            (self.card_total, Theme.PRIMARY),
+            (self.card_match, Theme.SUCCESS),
+            (self.card_mismatch, Theme.DANGER),
+            (self.card_diff, Theme.WARNING),
+        ):
+            card.setStyleSheet(Theme.stat_tile_style(accent, radius=12))
+            val = card.findChild(QLabel, "metricValue")
+            if val:
+                val.setStyleSheet(
+                    Theme.text_style(color=accent, size=18, weight=700)
+                    + " border: none; background: transparent; padding: 0; margin: 0;"
+                )
+        self.refresh()
+
     def refresh(self):
         pid = session.selected_person_id
         fy = session.selected_fy
-        
+
         if not pid:
             self.person_label.setText("Please select a person from the top bar")
             self.person_label.setStyleSheet(Theme.text_style(color=Theme.WARNING, size=12, weight=600))

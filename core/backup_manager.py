@@ -1,7 +1,7 @@
 """core/backup_manager.py — Simple scheduled backup helper."""
 import os
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 import shutil
 from typing import Optional
 
@@ -21,7 +21,7 @@ def create_backup() -> Optional[str]:
     """Create a timestamped copy of the database in BACKUP_DIR. Returns path or None."""
     try:
         _ensure_backup_dir()
-        ts = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         base = os.path.basename(DB_PATH)
         dest = os.path.join(BACKUP_DIR, f"{ts}-{base}")
         shutil.copy2(DB_PATH, dest)

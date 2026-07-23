@@ -15,6 +15,7 @@ from PyQt6.QtGui import QFont
 
 from ui.theme import Theme
 from ui.icons import set_btn_icon, tab_icon
+from ui.widgets.excel_table import enable_copy_shortcut
 from core.session import session
 from models.person import get_person, get_ais_tis_password, set_ais_tis_password
 from models.form26as import save_form26as_import, get_form26as_import, get_form26as_records
@@ -99,7 +100,7 @@ class AISTISImportScreenV2(QWidget):
         self._build_debug_panel(layout)
 
     def _build_header(self) -> QFrame:
-        header = QFrame()
+        self._header_frame = header = QFrame()
         header.setStyleSheet(Theme.card_style(radius=10, padding=12))
         header.setGraphicsEffect(Theme.shadow_card())
         h_layout = QHBoxLayout(header)
@@ -151,6 +152,7 @@ class AISTISImportScreenV2(QWidget):
         self.table_26as.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table_26as.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table_26as.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        enable_copy_shortcut(self.table_26as)
         table_layout.addWidget(self.table_26as)
         
         scroll.setWidget(table_container)
@@ -196,6 +198,7 @@ class AISTISImportScreenV2(QWidget):
         self.table_ais.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table_ais.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table_ais.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        enable_copy_shortcut(self.table_ais)
         table_layout.addWidget(self.table_ais)
         
         scroll.setWidget(table_container)
@@ -241,6 +244,7 @@ class AISTISImportScreenV2(QWidget):
         self.table_tis.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table_tis.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table_tis.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        enable_copy_shortcut(self.table_tis)
         table_layout.addWidget(self.table_tis)
         
         scroll.setWidget(table_container)
@@ -302,10 +306,21 @@ class AISTISImportScreenV2(QWidget):
         self.btn_toggle_debug.clicked.connect(self._toggle_debug)
         parent_layout.addWidget(self.btn_toggle_debug)
 
+    def refresh_theme(self):
+        """Called after a live theme switch — the header card and debug
+        panel are built once at construction, so their inline styling
+        needs re-applying before the dynamic refresh() runs."""
+        if hasattr(self, "_header_frame"):
+            self._header_frame.setStyleSheet(Theme.card_style(radius=10, padding=12))
+            self._header_frame.setGraphicsEffect(Theme.shadow_card())
+        if hasattr(self, "debug_frame"):
+            self.debug_frame.setStyleSheet(Theme.card_style(radius=8, padding=8))
+        self.refresh()
+
     def refresh(self):
         pid = session.selected_person_id
         fy = session.selected_fy
-        
+
         if not pid:
             self.person_label.setText("Please select a person from the top bar")
             self.person_label.setStyleSheet(Theme.text_style(color=Theme.WARNING, size=11, weight=500))
