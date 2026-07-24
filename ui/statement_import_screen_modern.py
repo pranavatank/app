@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QComboBox, QFileDialog, QTableWidget, QTableWidgetItem,
     QHeaderView, QMessageBox, QFrame, QCheckBox,
-    QPlainTextEdit, QApplication, QProgressDialog, QDialog,
+    QPlainTextEdit, QApplication, QDialog,
     QInputDialog,
     QStackedWidget, QScrollArea
 )
@@ -21,8 +21,9 @@ import os
 import re
 
 from ui.widgets.excel_table import ExcelTableWithStats
+from ui.widgets.loader import Loader
 from ui.theme import Theme
-from ui.icons import icon_label, set_btn_icon
+from ui.icons import icon_label, set_btn_icon, pixmap as icon_pixmap
 from ui.date_utils import format_display_date
 from core.session import session
 from models.person import get_all_persons
@@ -84,8 +85,9 @@ class StatementImportScreen(QWidget):
         # Header
         header = QHBoxLayout()
         header.setSpacing(10)
-        header.addWidget(icon_label("statement_import", size=20, color=Theme.PRIMARY))
-        title = QLabel("Statement Import")
+        self._header_icon = icon_label("statement_import", size=20, color=Theme.PRIMARY)
+        header.addWidget(self._header_icon)
+        self._title_lbl = title = QLabel("Statement Import")
         title.setFont(QFont("Segoe UI", 15, QFont.Weight.Bold))
         title.setStyleSheet(Theme.title_style(15))
         header.addWidget(title)
@@ -941,6 +943,12 @@ class StatementImportScreen(QWidget):
                                       radius=14, padding=20, selector="QFrame#ImportCard")
                 )
                 card.setGraphicsEffect(Theme.shadow_card())
+        if hasattr(self, "_title_lbl"):
+            self._title_lbl.setStyleSheet(Theme.title_style(15))
+        if hasattr(self, "_header_icon"):
+            self._header_icon.setPixmap(icon_pixmap("statement_import", size=20, color=Theme.PRIMARY))
+        if hasattr(self, "preview_table_widget") and self.preview_table_widget:
+            self.preview_table_widget.refresh_theme()
         if hasattr(self, "screen_indicator_step"):
             self._set_step(self.screen_indicator_step)
 
@@ -976,42 +984,16 @@ class StatementImportScreen(QWidget):
                     self.person_combo.setCurrentIndex(i)
                     break
 
-    # Helper methods
+    # Helper methods — use the shared branded Loader overlay (same widget
+    # Settings uses for backup/restore) instead of a bespoke QProgressDialog,
+    # so the import wizard's progress feedback looks consistent with the
+    # rest of the app rather than a plain native-looking dialog.
     def _show_loader(self, title: str, message: str):
         if self._loader is None:
-            self._loader = QProgressDialog(message, "", 0, 0, self)
-            self._loader.setCancelButton(None)
-            self._loader.setWindowModality(Qt.WindowModality.WindowModal)
-            self._loader.setMinimumDuration(0)
-            self._loader.setAutoClose(False)
-            self._loader.setAutoReset(False)
-            self._loader.setWindowTitle(title)
-            self._loader.setStyleSheet(f"""
-                QProgressDialog {{
-                    background: {Theme.SURFACE};
-                    color: {Theme.TEXT_PRIMARY};
-                }}
-                QLabel {{
-                    color: {Theme.TEXT_PRIMARY};
-                    font-size: 13px;
-                    font-weight: 600;
-                    min-width: 320px;
-                }}
-                QProgressBar {{
-                    border: 1px solid {Theme.BORDER};
-                    border-radius: 8px;
-                    background: {Theme.SURFACE_ALT};
-                    text-align: center;
-                    min-height: 14px;
-                }}
-                QProgressBar::chunk {{
-                    background: {Theme.PRIMARY};
-                    border-radius: 7px;
-                }}
-            """)
+            self._loader = Loader(self, title, subtitle=message)
         else:
-            self._loader.setWindowTitle(title)
-            self._loader.setLabelText(message)
+            self._loader.set_message(title)
+            self._loader.set_subtitle(message)
         self.btn_next.setEnabled(False)
         self.btn_back.setEnabled(False)
         self._loader.show()
@@ -1019,7 +1001,7 @@ class StatementImportScreen(QWidget):
 
     def _update_loader(self, message: str):
         if self._loader is not None:
-            self._loader.setLabelText(message)
+            self._loader.set_subtitle(message)
             QApplication.processEvents()
 
     def _hide_loader(self):

@@ -16,6 +16,7 @@ from PyQt6.QtGui import QFont
 from ui.theme import Theme
 from ui.icons import set_btn_icon, tab_icon
 from ui.widgets.excel_table import enable_copy_shortcut
+from ui.widgets.loader import Loader
 from core.session import session
 from models.person import get_person, get_ais_tis_password, set_ais_tis_password
 from models.form26as import save_form26as_import, get_form26as_import, get_form26as_records
@@ -51,33 +52,11 @@ class AISTISImportScreenV2(QWidget):
         header = self._build_header()
         layout.addWidget(header)
 
-        # Tab widget with 3 tabs
+        # Tab widget with 3 tabs — relies entirely on the global QSS
+        # (QTabWidget::pane / QTabBar::tab in ui/theme/theme.py) rather than
+        # an inline override, so it live-refreshes on a theme switch like
+        # every other tab widget in the app.
         self.tabs = QTabWidget()
-        self.tabs.setStyleSheet(f"""
-            QTabWidget::pane {{
-                border: 1px solid {Theme.BORDER};
-                border-radius: 10px;
-                background: {Theme.SURFACE};
-            }}
-            QTabBar::tab {{
-                background: {Theme.SURFACE_ALT};
-                color: {Theme.TEXT_SECONDARY};
-                padding: 10px 20px;
-                border-top-left-radius: 8px;
-                border-top-right-radius: 8px;
-                margin-right: 4px;
-                font-weight: 600;
-            }}
-            QTabBar::tab:selected {{
-                background: {Theme.PRIMARY};
-                color: white;
-                font-weight: 700;
-            }}
-            QTabBar::tab:hover:!selected {{
-                background: {Theme.PRIMARY_LIGHT};
-                color: {Theme.PRIMARY_DARK};
-            }}
-        """)
 
         # Tab 1: Form 26AS
         self.tab_26as = self._build_26as_tab()
@@ -106,7 +85,7 @@ class AISTISImportScreenV2(QWidget):
         h_layout = QHBoxLayout(header)
         h_layout.setSpacing(12)
 
-        title = QLabel("Income Tax Data Import")
+        self._title_lbl = title = QLabel("Income Tax Data Import")
         title.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
         title.setStyleSheet(Theme.title_style(14))
         h_layout.addWidget(title)
@@ -315,6 +294,8 @@ class AISTISImportScreenV2(QWidget):
             self._header_frame.setGraphicsEffect(Theme.shadow_card())
         if hasattr(self, "debug_frame"):
             self.debug_frame.setStyleSheet(Theme.card_style(radius=8, padding=8))
+        if hasattr(self, "_title_lbl"):
+            self._title_lbl.setStyleSheet(Theme.title_style(14))
         self.refresh()
 
     def refresh(self):
@@ -550,40 +531,42 @@ class AISTISImportScreenV2(QWidget):
         self.debug_frame.show()
         self.btn_toggle_debug.setText("Hide Debug")
 
-        parser = parse_ais_pdf_text if source_type == "AIS" else parse_tis_pdf_text
-        try:
-            parsed = parser(pdf_text)
-        except Exception as e:
-            QMessageBox.critical(self, "Parse Failed", f"Could not parse PDF.\n\nError: {e}")
-            return
+        with Loader(self, f"Parsing {source_type} PDF…", subtitle="Extracting income and TDS records"):
+            parser = parse_ais_pdf_text if source_type == "AIS" else parse_tis_pdf_text
+            try:
+                parsed = parser(pdf_text)
+            except Exception as e:
+                QMessageBox.critical(self, "Parse Failed", f"Could not parse PDF.\n\nError: {e}")
+                return
 
-        existing = get_ais_tis_data(pid, fy, source_type=source_type)
-        if existing:
-            merged = dict(parsed)
-            for key in ["salary_income", "fd_interest", "savings_interest", "other_interest",
-                       "dividend_income", "rental_income", "other_income", "tds_deducted"]:
-                if merged.get(key, 0) == 0 and existing.get(key, 0) not in (None, 0):
-                    merged[key] = existing[key]
-            parsed = merged
+            existing = get_ais_tis_data(pid, fy, source_type=source_type)
+            if existing:
+                merged = dict(parsed)
+                for key in ["salary_income", "fd_interest", "savings_interest", "other_interest",
+                           "dividend_income", "rental_income", "other_income", "tds_deducted"]:
+                    if merged.get(key, 0) == 0 and existing.get(key, 0) not in (None, 0):
+                        merged[key] = existing[key]
+                parsed = merged
 
-        import_id = save_ais_tis_data(
-            person_id=pid,
-            financial_year=fy,
-            source_type=source_type,
-            raw_json=pdf_text,
-            data=parsed
-        )
-        if import_id:
-            save_ais_tis_pdf_lines(import_id, pdf_text)
-            save_ais_tis_records(import_id, parsed.get("details", []))
+            import_id = save_ais_tis_data(
+                person_id=pid,
+                financial_year=fy,
+                source_type=source_type,
+                raw_json=pdf_text,
+                data=parsed
+            )
+            if import_id:
+                save_ais_tis_pdf_lines(import_id, pdf_text)
+                save_ais_tis_records(import_id, parsed.get("details", []))
 
-            new_sources = []
-            for rec in (parsed.get("details") or []):
-                tan = (rec.get("source_tan") or "").strip().upper()
-                if tan and not get_income_source_by_tan(tan):
-                    new_sources.append(rec)
-            if new_sources:
-                self._handle_new_sources_ais(new_sources)
+                new_sources = []
+                for rec in (parsed.get("details") or []):
+                    tan = (rec.get("source_tan") or "").strip().upper()
+                    if tan and not get_income_source_by_tan(tan):
+                        new_sources.append(rec)
+
+        if import_id and new_sources:
+            self._handle_new_sources_ais(new_sources)
 
         QMessageBox.information(
             self, "Import Successful",
@@ -611,73 +594,74 @@ class AISTISImportScreenV2(QWidget):
             return
 
         try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                raw_json = f.read()
-                json_data = json.loads(raw_json)
+            with Loader(self, "Importing AIS/TIS JSON…", subtitle="Parsing and saving records"):
+                with open(file_path, "r", encoding="utf-8") as f:
+                    raw_json = f.read()
+                    json_data = json.loads(raw_json)
 
-            # Parse AIS
-            source_type = "AIS"
-            parsed = parse_ais_json(json_data)
+                # Parse AIS
+                source_type = "AIS"
+                parsed = parse_ais_json(json_data)
 
-            # Show debug
-            self.debug_text.setPlainText(raw_json[:5000])  # First 5000 chars
-            self.debug_frame.show()
-            self.btn_toggle_debug.setText("Hide Debug")
-            
-            # Check for existing AIS data
-            existing = get_ais_tis_data(pid, fy, source_type=source_type)
+                # Show debug
+                self.debug_text.setPlainText(raw_json[:5000])  # First 5000 chars
+                self.debug_frame.show()
+                self.btn_toggle_debug.setText("Hide Debug")
 
-            # Merge with existing if present (keep new details)
-            if existing:
-                merged = dict(parsed)
-                for key in ["salary_income", "fd_interest", "savings_interest", "other_interest",
-                           "dividend_income", "rental_income", "other_income", "tds_deducted"]:
-                    if merged.get(key, 0) == 0 and existing.get(key, 0) not in (None, 0):
-                        merged[key] = existing[key]
-                parsed = merged
-            
-            # Save to database
-            import_id = save_ais_tis_data(
-                person_id=pid,
-                financial_year=fy,
-                source_type=source_type,
-                raw_json=raw_json,
-                data=parsed
-            )
-            
-            # Save detailed records
-            records = parsed.get("details", [])
-            if records:
-                # Convert details to proper format
-                formatted_records = []
-                for rec in records:
-                    formatted_records.append({
-                        "record_type": rec.get("type", "unknown"),
-                        "information_code": rec.get("section", ""),
-                        "information_description": rec.get("type", ""),
-                        "information_source": rec.get("source", rec.get("deductor", "")),
-                        "source_tan": rec.get("tan", ""),
-                        "amount": rec.get("amount", 0),
-                        "tds_deducted": rec.get("tds", 0),
-                    })
-                save_ais_tis_records(import_id, formatted_records)
-                # Process new TANs
+                # Check for existing AIS data
+                existing = get_ais_tis_data(pid, fy, source_type=source_type)
+
+                # Merge with existing if present (keep new details)
+                if existing:
+                    merged = dict(parsed)
+                    for key in ["salary_income", "fd_interest", "savings_interest", "other_interest",
+                               "dividend_income", "rental_income", "other_income", "tds_deducted"]:
+                        if merged.get(key, 0) == 0 and existing.get(key, 0) not in (None, 0):
+                            merged[key] = existing[key]
+                    parsed = merged
+
+                # Save to database
+                import_id = save_ais_tis_data(
+                    person_id=pid,
+                    financial_year=fy,
+                    source_type=source_type,
+                    raw_json=raw_json,
+                    data=parsed
+                )
+
+                # Save detailed records
+                records = parsed.get("details", [])
                 new_sources = []
-                for rec in formatted_records:
-                    tan = (rec.get("source_tan") or "").strip().upper()
-                    if tan and not get_income_source_by_tan(tan):
-                        new_sources.append(rec)
-                
-                if new_sources:
-                    self._handle_new_sources_ais(new_sources)
-            
+                if records:
+                    # Convert details to proper format
+                    formatted_records = []
+                    for rec in records:
+                        formatted_records.append({
+                            "record_type": rec.get("type", "unknown"),
+                            "information_code": rec.get("section", ""),
+                            "information_description": rec.get("type", ""),
+                            "information_source": rec.get("source", rec.get("deductor", "")),
+                            "source_tan": rec.get("tan", ""),
+                            "amount": rec.get("amount", 0),
+                            "tds_deducted": rec.get("tds", 0),
+                        })
+                    save_ais_tis_records(import_id, formatted_records)
+                    # Process new TANs
+                    for rec in formatted_records:
+                        tan = (rec.get("source_tan") or "").strip().upper()
+                        if tan and not get_income_source_by_tan(tan):
+                            new_sources.append(rec)
+
+            if new_sources:
+                self._handle_new_sources_ais(new_sources)
+
             QMessageBox.information(
                 self, "Import Successful",
                 f"Imported AIS/TIS data for FY {fy}."
             )
-            
+
             self._load_ais_data()
-            
+
         except Exception as e:
             QMessageBox.critical(self, "Import Error", f"Failed to import AIS/TIS:\n{str(e)}")
 
@@ -794,60 +778,61 @@ class AISTISImportScreenV2(QWidget):
             return
 
         try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                raw_json = f.read()
-                json_data = json.loads(raw_json)
+            with Loader(self, "Importing TIS JSON…", subtitle="Parsing and saving records"):
+                with open(file_path, "r", encoding="utf-8") as f:
+                    raw_json = f.read()
+                    json_data = json.loads(raw_json)
 
-            # Parse TIS
-            parsed = parse_tis_json(json_data)
+                # Parse TIS
+                parsed = parse_tis_json(json_data)
 
-            # Show debug
-            self.debug_text.setPlainText(raw_json[:5000])  # First 5000 chars
-            self.debug_frame.show()
-            self.btn_toggle_debug.setText("Hide Debug")
-            
-            # Save to database with TIS source type
-            import_id = save_ais_tis_data(
-                person_id=pid,
-                financial_year=fy,
-                source_type="TIS",
-                raw_json=raw_json,
-                data=parsed
-            )
-            
-            # Save detailed records
-            records = parsed.get("details", [])
-            if records:
-                formatted_records = []
-                for rec in records:
-                    formatted_records.append({
-                        "record_type": rec.get("type", "unknown"),
-                        "information_code": rec.get("section", ""),
-                        "information_description": rec.get("type", ""),
-                        "information_source": rec.get("source", rec.get("deductor", "")),
-                        "source_tan": rec.get("tan", ""),
-                        "amount": rec.get("amount", 0),
-                        "tds_deducted": rec.get("tds", 0),
-                    })
-                save_ais_tis_records(import_id, formatted_records)
-                
-                # Process new TANs
+                # Show debug
+                self.debug_text.setPlainText(raw_json[:5000])  # First 5000 chars
+                self.debug_frame.show()
+                self.btn_toggle_debug.setText("Hide Debug")
+
+                # Save to database with TIS source type
+                import_id = save_ais_tis_data(
+                    person_id=pid,
+                    financial_year=fy,
+                    source_type="TIS",
+                    raw_json=raw_json,
+                    data=parsed
+                )
+
+                # Save detailed records
+                records = parsed.get("details", [])
                 new_sources = []
-                for rec in formatted_records:
-                    tan = (rec.get("source_tan") or "").strip().upper()
-                    if tan and not get_income_source_by_tan(tan):
-                        new_sources.append(rec)
-                
-                if new_sources:
-                    self._handle_new_sources_ais(new_sources)
-            
+                if records:
+                    formatted_records = []
+                    for rec in records:
+                        formatted_records.append({
+                            "record_type": rec.get("type", "unknown"),
+                            "information_code": rec.get("section", ""),
+                            "information_description": rec.get("type", ""),
+                            "information_source": rec.get("source", rec.get("deductor", "")),
+                            "source_tan": rec.get("tan", ""),
+                            "amount": rec.get("amount", 0),
+                            "tds_deducted": rec.get("tds", 0),
+                        })
+                    save_ais_tis_records(import_id, formatted_records)
+
+                    # Process new TANs
+                    for rec in formatted_records:
+                        tan = (rec.get("source_tan") or "").strip().upper()
+                        if tan and not get_income_source_by_tan(tan):
+                            new_sources.append(rec)
+
+            if new_sources:
+                self._handle_new_sources_ais(new_sources)
+
             QMessageBox.information(
                 self, "Import Successful",
                 f"Imported TIS data for FY {fy}."
             )
-            
+
             self._load_tis_data()
-            
+
         except Exception as e:
             QMessageBox.critical(self, "Import Error", f"Failed to import TIS:\n{str(e)}")
 

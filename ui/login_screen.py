@@ -25,15 +25,71 @@ class LoginScreen(QWidget):
         self.setFixedSize(560, 650)
         self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowCloseButtonHint)
         self.setObjectName("LoginRoot")
+        self.setStyleSheet(self._root_css())
+        self._totp_required = is_totp_enabled()
+        self._build_ui()
+        self._center_on_screen()
+        # Defensive only: this window is closed before Settings is reachable
+        # (login happens before the theme switcher exists), so a live theme
+        # switch can never actually occur while it's visible — but register
+        # a listener anyway for consistency/safety if that ever changes.
+        ThemeManager.register_on_change(self.refresh_theme)
+
+    def _root_css(self) -> str:
         # BG: gradient for light themes, flat dark for Midnight Pro
         if ThemeManager.is_dark():
             bg = f"background-color: {Theme.BG};"
         else:
             bg = f"background: {Theme.gradient(Theme.PRIMARY_GRADIENT_START, Theme.HERO_GRADIENT_END, diagonal=True)};"
-        self.setStyleSheet(f"QWidget#LoginRoot {{ {bg} }}")
-        self._totp_required = is_totp_enabled()
-        self._build_ui()
-        self._center_on_screen()
+        return f"QWidget#LoginRoot {{ {bg} }}"
+
+    def _card_css(self) -> str:
+        card_bg = Theme.SURFACE if ThemeManager.is_dark() else "rgba(255,255,255,0.97)"
+        return f"""
+            QFrame#LoginCard {{
+                background-color: {card_bg};
+                border: 1px solid {Theme.BORDER};
+                border-radius: 26px;
+            }}
+        """
+
+    @staticmethod
+    def _hero_css() -> str:
+        return f"""
+            QFrame#LoginHero {{
+                background: {Theme.gradient(Theme.PRIMARY_GRADIENT_START, Theme.HERO_GRADIENT_END)};
+                border-radius: 18px;
+                border: none;
+            }}
+        """
+
+    @staticmethod
+    def _form_card_css() -> str:
+        return Theme.tinted_surface_style(radius=14, border_color=Theme.BORDER,
+                                          selector="QFrame#LoginFormCard")
+
+    @staticmethod
+    def _error_css() -> str:
+        return (
+            Theme.text_style(color=Theme.DANGER_DARK, size=13) +
+            f" background: {Theme.DANGER_LIGHT}; border-radius: 8px; "
+            f"padding: 12px 16px; border: 1px solid {Theme.DANGER}40;"
+        )
+
+    def refresh_theme(self, *_args):
+        """This window is torn down before the theme switcher is reachable
+        (see __init__), so this is defensive-only — kept in sync with the
+        chatbot/dashboard pattern rather than exhaustively restyling every
+        widget on a screen that can't actually go stale in practice."""
+        self.setStyleSheet(self._root_css())
+        if hasattr(self, "_card"):
+            self._card.setStyleSheet(self._card_css())
+        if hasattr(self, "_hero"):
+            self._hero.setStyleSheet(self._hero_css())
+        if hasattr(self, "_form_card"):
+            self._form_card.setStyleSheet(self._form_card_css())
+        if hasattr(self, "error_label"):
+            self.error_label.setStyleSheet(self._error_css())
 
     def _build_ui(self):
         root = QVBoxLayout(self)
@@ -44,18 +100,9 @@ class LoginScreen(QWidget):
         center_layout.addStretch(1)
 
         # ── Main card ─────────────────────────────────────────────────────────
-        card = QFrame()
+        self._card = card = QFrame()
         card.setObjectName("LoginCard")
-        # On dark themes use the surface color directly; on light use near-white
-        card_bg = Theme.SURFACE if ThemeManager.is_dark() else "rgba(255,255,255,0.97)"
-        card_border = Theme.BORDER
-        card.setStyleSheet(f"""
-            QFrame#LoginCard {{
-                background-color: {card_bg};
-                border: 1px solid {card_border};
-                border-radius: 26px;
-            }}
-        """)
+        card.setStyleSheet(self._card_css())
         card.setFixedWidth(500)
         card.setGraphicsEffect(Theme.shadow_elevated())
 
@@ -64,15 +111,9 @@ class LoginScreen(QWidget):
         layout.setSpacing(14)
 
         # ── Hero header ───────────────────────────────────────────────────────
-        hero = QFrame()
+        self._hero = hero = QFrame()
         hero.setObjectName("LoginHero")
-        hero.setStyleSheet(f"""
-            QFrame#LoginHero {{
-                background: {Theme.gradient(Theme.PRIMARY_GRADIENT_START, Theme.HERO_GRADIENT_END)};
-                border-radius: 18px;
-                border: none;
-            }}
-        """)
+        hero.setStyleSheet(self._hero_css())
         hero_layout = QHBoxLayout(hero)
         hero_layout.setContentsMargins(18, 14, 18, 14)
         hero_layout.setSpacing(14)
@@ -123,12 +164,9 @@ class LoginScreen(QWidget):
         layout.addLayout(badges_row)
 
         # ── Form area ─────────────────────────────────────────────────────────
-        form_card = QFrame()
+        self._form_card = form_card = QFrame()
         form_card.setObjectName("LoginFormCard")
-        form_card.setStyleSheet(
-            Theme.tinted_surface_style(radius=14, border_color=Theme.BORDER,
-                                       selector="QFrame#LoginFormCard")
-        )
+        form_card.setStyleSheet(self._form_card_css())
         form_layout = QVBoxLayout(form_card)
         form_layout.setContentsMargins(18, 16, 18, 16)
         form_layout.setSpacing(10)
@@ -155,11 +193,7 @@ class LoginScreen(QWidget):
         self.error_label = QLabel("")
         self.error_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.error_label.setWordWrap(True)
-        self.error_label.setStyleSheet(
-            Theme.text_style(color=Theme.DANGER_DARK, size=13) +
-            f" background: {Theme.DANGER_LIGHT}; border-radius: 8px; "
-            f"padding: 12px 16px; border: 1px solid {Theme.DANGER}40;"
-        )
+        self.error_label.setStyleSheet(self._error_css())
         self.error_label.hide()
         layout.addWidget(self.error_label)
 

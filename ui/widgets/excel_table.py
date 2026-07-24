@@ -371,20 +371,29 @@ class ExcelTableWithStats(QWidget):
         v_layout.addWidget(self.table)
         
         self.stats_label = QLabel("")
-        self.stats_label.setStyleSheet(f"""
-            color: {Theme.TEXT_SECONDARY};
-            font-size: 11px;
-            padding: 4px 8px;
-            background: {Theme.SURFACE_ALT};
-            border-top: 1px solid {Theme.BORDER};
-        """)
+        self.stats_label.setStyleSheet(self._stats_label_css())
         self.stats_label.setFixedHeight(24)
         v_layout.addWidget(self.stats_label)
         
         layout.addLayout(v_layout)
         
         self.table.selectionStatsChanged.connect(self._on_stats_changed)
-        
+
+    @staticmethod
+    def _stats_label_css() -> str:
+        return f"""
+            color: {Theme.TEXT_SECONDARY};
+            font-size: 11px;
+            padding: 4px 8px;
+            background: {Theme.SURFACE_ALT};
+            border-top: 1px solid {Theme.BORDER};
+        """
+
+    def refresh_theme(self):
+        """Call after a live theme switch — the stats bar's colors are baked
+        in at construction and won't update via the global QSS alone."""
+        self.stats_label.setStyleSheet(self._stats_label_css())
+
     def _on_stats_changed(self, stats: str):
         self.stats_label.setText(stats if stats else "No selection")
 

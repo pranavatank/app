@@ -43,7 +43,7 @@ class IncomeManagementScreen(QWidget):
 
         # Header with actions
         header = QHBoxLayout()
-        title = QLabel("Income Management")
+        self._title_lbl = title = QLabel("Income Management")
         title.setFont(QFont("Segoe UI", 15, QFont.Weight.Bold))
         title.setStyleSheet(Theme.title_style(15))
         header.addWidget(title)
@@ -137,7 +137,7 @@ class IncomeManagementScreen(QWidget):
                 self._parent_window.refresh_overview()
 
     def _build_filter_bar(self) -> QWidget:
-        bar = QFrame()
+        self._filter_bar = bar = QFrame()
         bar.setObjectName("filterBar")
         bar.setStyleSheet(Theme.filter_bar_style())
         layout = QHBoxLayout(bar)
@@ -254,6 +254,12 @@ class IncomeManagementScreen(QWidget):
             value_lbl = card.findChild(QLabel, "cardValue")
             if value_lbl:
                 value_lbl.setStyleSheet(Theme.text_style(color=color, size=20, weight=700))
+        if hasattr(self, "_title_lbl"):
+            self._title_lbl.setStyleSheet(Theme.title_style(15))
+        if hasattr(self, "_filter_bar"):
+            self._filter_bar.setStyleSheet(Theme.filter_bar_style())
+        if hasattr(self, "table_widget") and self.table_widget:
+            self.table_widget.refresh_theme()
         self.refresh()
 
     def refresh(self):

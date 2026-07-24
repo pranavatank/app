@@ -180,8 +180,16 @@ class DashboardScreen(QMainWindow):
         self._pin_btn = QToolButton()
         self._pin_btn.setCheckable(True)
         self._pin_btn.setAutoRaise(True)
-        self._pin_btn.setToolTip("Pin sidebar")
+        self._pin_btn.setToolTip("Pin sidebar open")
+        self._pin_btn.setAccessibleName("Pin sidebar open")
         self._pin_btn.setFixedSize(28, 28)
+        self._pin_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        if icons_available():
+            self._pin_btn.setIcon(app_icon("pin", color="#FFFFFF", size=16))
+        else:
+            self._pin_btn.setText(icon_fallback("pin"))
+        self._pin_btn.setIconSize(QSize(16, 16))
+        self._pin_btn.setStyleSheet(self._pin_btn_style())
         self._pin_btn.clicked.connect(self._on_pin_toggled)
         brand_layout.addWidget(self._pin_btn)
         brand_layout.addStretch()
@@ -318,6 +326,21 @@ class DashboardScreen(QMainWindow):
         return (f"background: {Theme.gradient(Theme.HERO_GRADIENT_START, Theme.HERO_GRADIENT_END, diagonal=True)};")
 
     @staticmethod
+    def _pin_btn_style() -> str:
+        return f"""
+            QToolButton {{
+                background: rgba(255,255,255,0.12);
+                border: 1px solid rgba(255,255,255,0.25);
+                border-radius: 6px;
+            }}
+            QToolButton:hover {{ background: rgba(255,255,255,0.22); }}
+            QToolButton:checked {{
+                background: {Theme.SIDEBAR_ACTIVE_TEXT}22;
+                border: 1px solid {Theme.SIDEBAR_ACTIVE_TEXT};
+            }}
+        """
+
+    @staticmethod
     def _overview_banner_css() -> str:
         return Theme.hero_header_style(radius=16, selector="QFrame")
 
@@ -360,6 +383,8 @@ class DashboardScreen(QMainWindow):
         # Brand gradient header
         if hasattr(self, '_brand_widget') and self._brand_widget:
             self._brand_widget.setStyleSheet(self._brand_bg_css())
+        if hasattr(self, '_pin_btn') and self._pin_btn:
+            self._pin_btn.setStyleSheet(self._pin_btn_style())
 
         # Nav button styles + icon pixmaps (colors are baked into QPixmap)
         current_idx = self.stack.currentIndex() if hasattr(self, 'stack') else 0
@@ -580,8 +605,8 @@ class DashboardScreen(QMainWindow):
 
         self.panel_financial = SummaryPanel("Financial Summary", "chart_overview", accent=Theme.PRIMARY)
         self.panel_financial.add_stat("balance", "Total Balance",      "₹ —", value_size=16)
-        self.panel_financial.add_stat("income",  "Total Credit (FY)",  "₹ —", value_color=Theme.SUCCESS)
-        self.panel_financial.add_stat("expense", "Total Debit (FY)",   "₹ —", value_color=Theme.DANGER)
+        self.panel_financial.add_stat("income",  "Total Credit (FY)",  "₹ —", value_color_role="SUCCESS")
+        self.panel_financial.add_stat("expense", "Total Debit (FY)",   "₹ —", value_color_role="DANGER")
         self.panel_financial.add_divider()
         self.panel_financial.add_stat("savings", "Net Savings",        "₹ —", value_size=14, bold=True)
         grid.addWidget(self.panel_financial, 0, 0)

@@ -221,13 +221,15 @@ class Loader(QWidget):
         )
         card_layout.addWidget(self._msg_label)
 
-        # Subtitle
-        if self._subtitle:
-            sub = QLabel(self._subtitle)
-            sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            sub.setWordWrap(True)
-            sub.setStyleSheet(Theme.muted_style(11) + " background: transparent; border: none;")
-            card_layout.addWidget(sub)
+        # Subtitle — always created (even if empty) so set_subtitle() can
+        # reveal/update it later for callers that only know the detail text
+        # once work is underway (e.g. "Importing... 5/20 processed").
+        self._sub_label = QLabel(self._subtitle)
+        self._sub_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._sub_label.setWordWrap(True)
+        self._sub_label.setStyleSheet(Theme.muted_style(11) + " background: transparent; border: none;")
+        self._sub_label.setVisible(bool(self._subtitle))
+        card_layout.addWidget(self._sub_label)
 
         overlay_layout.addWidget(card, alignment=Qt.AlignmentFlag.AlignCenter)
         # Give card a shadow
@@ -272,6 +274,12 @@ class Loader(QWidget):
 
     def set_message(self, message: str):
         self._msg_label.setText(message)
+        QApplication.processEvents()
+
+    def set_subtitle(self, subtitle: str):
+        self._subtitle = subtitle
+        self._sub_label.setText(subtitle)
+        self._sub_label.setVisible(bool(subtitle))
         QApplication.processEvents()
 
     # ── Context manager ───────────────────────────────────────────────────────

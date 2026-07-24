@@ -62,11 +62,11 @@ class FixedDepositsScreen(QWidget):
         self.header_frame.setStyleSheet(Theme.page_header_style())
         header = QHBoxLayout(self.header_frame)
         header.setContentsMargins(20, 16, 20, 16)
-        title = QLabel("Fixed Deposits")
+        self._title_lbl = title = QLabel("Fixed Deposits")
         title.setFont(QFont("Segoe UI", 15, QFont.Weight.Bold))
         title.setStyleSheet(f"color: {Theme.TEXT_PRIMARY};")
         header.addWidget(title)
-        subtitle = QLabel("Track FD principal, expected vs actual interest, and transaction linkage")
+        self._subtitle_lbl = subtitle = QLabel("Track FD principal, expected vs actual interest, and transaction linkage")
         subtitle.setStyleSheet(f"color: {Theme.TEXT_SECONDARY}; font-size: 12px;")
         header.addWidget(subtitle)
         header.addStretch()
@@ -157,7 +157,7 @@ class FixedDepositsScreen(QWidget):
         layout.addWidget(self.table_widget)
 
         # Info label
-        info_label = QLabel("Tip: Edit cells directly, then click 'Save Changes' or 'Recalculate Selected' to update database")
+        self._info_lbl = info_label = QLabel("Tip: Edit cells directly, then click 'Save Changes' or 'Recalculate Selected' to update database")
         info_label.setStyleSheet(f"color: {Theme.INFO}; font-size: 11px; padding: 4px;")
         info_label.setWordWrap(True)
         layout.addWidget(info_label)
@@ -292,10 +292,18 @@ class FixedDepositsScreen(QWidget):
         picks up the new theme automatically."""
         if hasattr(self, "header_frame") and self.header_frame:
             self.header_frame.setStyleSheet(Theme.page_header_style())
+        if hasattr(self, "_title_lbl"):
+            self._title_lbl.setStyleSheet(f"color: {Theme.TEXT_PRIMARY};")
+        if hasattr(self, "_subtitle_lbl"):
+            self._subtitle_lbl.setStyleSheet(f"color: {Theme.TEXT_SECONDARY}; font-size: 12px;")
+        if hasattr(self, "_info_lbl"):
+            self._info_lbl.setStyleSheet(f"color: {Theme.INFO}; font-size: 11px; padding: 4px;")
         if hasattr(self, "tds_banner"):
             self.tds_banner.setStyleSheet(Theme.banner_style("warning"))
             self.tds_banner_label.setStyleSheet(
                 Theme.text_style(color=Theme.WARNING_DARK, size=12, weight=600))
+        if hasattr(self, "table_widget") and self.table_widget:
+            self.table_widget.refresh_theme()
         self.refresh()
 
     def _format_tenure(self, fd: dict) -> str:

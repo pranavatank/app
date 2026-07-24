@@ -71,7 +71,7 @@ PINK         = "#DB2777";  PINK_LIGHT    = "#FDF2F8"
 # ── Surfaces — soft violet-white ─────────────────────────────────────────────
 BG                        = "#F7F7FD"
 SURFACE                   = "#FFFFFF"
-SURFACE_ALT               = "#F1EFFC"
+SURFACE_ALT               = "#E8E4F7"
 SURFACE_TINT_START        = "#FFFFFF"
 SURFACE_TINT_END          = "#F1EFFC"
 

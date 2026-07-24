@@ -427,6 +427,9 @@ QLineEdit, QTextEdit, QPlainTextEdit {{
 QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus {{ border: 1.5px solid {t.PRIMARY}; }}
 QLineEdit:hover, QTextEdit:hover {{ border-color: {t.BORDER_FOCUS}; }}
 QLineEdit[readOnly="true"] {{ background-color: {t.SURFACE_ALT}; color: {t.TEXT_SECONDARY}; border-color: {t.DIVIDER}; }}
+QSpinBox[readOnly="true"], QDoubleSpinBox[readOnly="true"] {{
+    background-color: {t.SURFACE_ALT}; color: {t.TEXT_SECONDARY}; border-color: {t.DIVIDER};
+}}
 
 /* ═══════════════════════════ COMBO ══════════════════════════ */
 QComboBox {{
@@ -459,9 +462,39 @@ QSpinBox:focus, QDoubleSpinBox:focus, QDateEdit:focus {{ border-color: {t.PRIMAR
 QSpinBox:hover, QDoubleSpinBox:hover, QDateEdit:hover {{ border-color: {t.BORDER_FOCUS}; }}
 QSpinBox::up-button, QSpinBox::down-button,
 QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {{
-    border: none; width: 22px; background: {t.SURFACE_ALT}; border-radius: 4px;
+    border: none; width: 20px; background: {t.SURFACE_ALT};
+    subcontrol-origin: border;
 }}
-QDateEdit::drop-down {{ border: none; width: 28px; }}
+QSpinBox::up-button, QDoubleSpinBox::up-button {{
+    subcontrol-position: top right; border-top-right-radius: 8px; margin: 1px 1px 0 0;
+}}
+QSpinBox::down-button, QDoubleSpinBox::down-button {{
+    subcontrol-position: bottom right; border-bottom-right-radius: 8px; margin: 0 1px 1px 0;
+}}
+QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover,
+QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {{ background: {t.PRIMARY_LIGHT}; }}
+QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {{
+    width: 0; height: 0; border-left: 4px solid transparent; border-right: 4px solid transparent;
+    border-bottom: 5px solid {t.TEXT_SECONDARY};
+}}
+QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {{
+    width: 0; height: 0; border-left: 4px solid transparent; border-right: 4px solid transparent;
+    border-top: 5px solid {t.TEXT_SECONDARY};
+}}
+QSpinBox::up-arrow:hover, QDoubleSpinBox::up-arrow:hover {{ border-bottom-color: {t.PRIMARY}; }}
+QSpinBox::down-arrow:hover, QDoubleSpinBox::down-arrow:hover {{ border-top-color: {t.PRIMARY}; }}
+QDateEdit::drop-down {{ border: none; width: 28px; subcontrol-origin: border; subcontrol-position: right; }}
+QDateEdit::down-arrow {{
+    width: 0; height: 0; border-left: 4px solid transparent; border-right: 4px solid transparent;
+    border-top: 5px solid {t.TEXT_SECONDARY}; margin-right: 8px;
+}}
+QCalendarWidget QToolButton {{ color: {t.TEXT_PRIMARY}; background: transparent; font-weight: 600; }}
+QCalendarWidget QMenu {{ background-color: {t.SURFACE}; color: {t.TEXT_PRIMARY}; }}
+QCalendarWidget QAbstractItemView:enabled {{
+    background-color: {t.SURFACE}; color: {t.TEXT_PRIMARY};
+    selection-background-color: {t.PRIMARY}; selection-color: #FFFFFF;
+}}
+QCalendarWidget QWidget#qt_calendar_navigationbar {{ background-color: {t.SURFACE_ALT}; }}
 
 /* ═══════════════════════════ BUTTONS ════════════════════════ */
 QPushButton {{
@@ -489,10 +522,19 @@ QTableWidget {{
     border: 1px solid {t.BORDER}; border-radius: 10px;
     selection-background-color: {t.PRIMARY_LIGHT};
     selection-color: {t.PRIMARY_DARK}; font-size: 14px;
+    outline: none;
 }}
-QTableWidget::item {{ padding: 8px 10px; border: none; }}
-QTableWidget::item:selected {{ background-color: {t.PRIMARY_LIGHT}; color: {t.PRIMARY_DARK}; }}
+QTableWidget::item {{ padding: 8px 10px; border: none; outline: none; }}
+QTableWidget::item:selected {{
+    background-color: {t.PRIMARY_LIGHT}; color: {t.PRIMARY_DARK};
+    border: none; outline: none;
+}}
+QTableWidget::item:selected:focus {{
+    background-color: {t.PRIMARY_LIGHT}; color: {t.PRIMARY_DARK};
+    border: none; outline: none;
+}}
 QTableWidget::item:hover {{ background-color: {t.SURFACE_ALT}; }}
+QTableView {{ outline: none; }}
 QHeaderView::section {{
     background-color: {t.SURFACE_ALT}; color: {t.TEXT_SECONDARY};
     padding: 10px 8px; border: none;

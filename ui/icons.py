@@ -149,6 +149,13 @@ _R: dict[str, tuple] = {
     "contact":          (_fi(_FI.PEOPLE)         if _FLUENT_OK else None, "mdi6.card-account-phone",     "#94A3B8", "\U0001F4DE"),
     "account_found":    (_fi(_FI.DOCUMENT)       if _FLUENT_OK else None, "mdi6.card-account-details",   "#60A5FA", "\U0001F4C4"),
     "manage":           (_fi(_FI.SETTING)        if _FLUENT_OK else None, "mdi6.cog-transfer",           "#60A5FA", "\U0001F465"),
+
+    # -- Chat / AI assistant ------------------------------------------------------------
+    # Fluent slot intentionally None (not confident these FluentIcon members
+    # exist) — falls straight through to the reliable qtawesome mdi6 set.
+    "send":             (None,                                             "mdi6.send",                   "#FFFFFF", "➤"),
+    "attach":           (None,                                             "mdi6.paperclip",              "#94A3B8", "\U0001F4CE"),
+    "bot":              (None,                                             "mdi6.robot-happy-outline",    "#A78BFA", "\U0001F916"),
 }
 
 

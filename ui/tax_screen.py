@@ -335,7 +335,8 @@ class TaxScreen(QWidget):
         layout.setSpacing(10)
 
         # ── New Regime — PRIMARY card (default regime since FY 2023-24) ──────
-        self._new_regime_card = new_card = self._regime_card("New Regime — Default", Theme.PRIMARY, Theme.PRIMARY_LIGHT, hero=True)
+        self._new_regime_card = new_card = self._regime_card(
+            "New Regime — Default", Theme.PRIMARY, Theme.PRIMARY_LIGHT, hero=True, accent_role="PRIMARY")
         new_form = QFormLayout(); new_form.setSpacing(6)
         self.new_taxable = self._result_lbl(); self.new_tax = self._result_lbl()
         self.new_rebate  = self._result_lbl(); self.new_cess = self._result_lbl()
@@ -372,7 +373,8 @@ class TaxScreen(QWidget):
         layout.addWidget(net_card)
 
         # ── Old Regime — secondary comparison card ───────────────────────────
-        self._old_regime_card = old_card = self._regime_card("Old Regime — Comparison", Theme.WARNING, Theme.WARNING_LIGHT)
+        self._old_regime_card = old_card = self._regime_card(
+            "Old Regime — Comparison", Theme.WARNING, Theme.WARNING_LIGHT, accent_role="WARNING")
         old_form = QFormLayout(); old_form.setSpacing(6)
         self.old_taxable = self._result_lbl(); self.old_tax = self._result_lbl()
         self.old_rebate  = self._result_lbl(); self.old_cess = self._result_lbl()
@@ -507,7 +509,8 @@ class TaxScreen(QWidget):
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
-    def _regime_card(self, title: str, accent: str, bg: str, hero: bool = False) -> QFrame:
+    def _regime_card(self, title: str, accent: str, bg: str, hero: bool = False,
+                     accent_role: str = "PRIMARY") -> QFrame:
         card = QFrame()
         card.setObjectName("TaxRegimeCard")
         card.setStyleSheet(
@@ -535,6 +538,11 @@ class TaxScreen(QWidget):
         div = QFrame(); div.setFixedHeight(1)
         div.setStyleSheet(f"background: {accent}44; border: none;")
         vl.addWidget(div)
+        # Stashed for refresh_theme() — accent is baked into these two
+        # widgets at construction and won't update via the global QSS alone.
+        card._accent_title = t
+        card._accent_divider = div
+        card._accent_role = accent_role
         return card
 
     def _spin(self, readonly=False) -> QDoubleSpinBox:
@@ -543,7 +551,7 @@ class TaxScreen(QWidget):
         s.setDecimals(2); s.setGroupSeparatorShown(True); s.setPrefix("₹ ")
         if readonly:
             s.setReadOnly(True)
-            s.setStyleSheet(f"background: {Theme.SURFACE_ALT}; color: {Theme.TEXT_SECONDARY}; border: 1px solid {Theme.BORDER};")
+            s.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
         return s
 
     def _result_lbl(self, bold=False) -> QLabel:
@@ -594,6 +602,8 @@ class TaxScreen(QWidget):
         """Called after a live theme switch — the header, context panel,
         and regime/net-payable cards are built once at construction, so
         their inline styling needs re-applying before refresh() reloads data."""
+        if hasattr(self, "advance_tax_banner"):
+            self.advance_tax_banner.refresh_theme()
         if hasattr(self, "_header_card"):
             self._header_card.setStyleSheet(
                 Theme.page_header_style(radius=14, selector="QFrame#TaxHeaderCard"))
@@ -601,15 +611,25 @@ class TaxScreen(QWidget):
             self._context_panel.setStyleSheet(
                 Theme.tinted_surface_style(radius=12, border_color=Theme.BORDER,
                                             selector="QFrame#TaxContextPanel"))
-        if hasattr(self, "_new_regime_card"):
-            self._new_regime_card.setStyleSheet(
-                Theme.card_style(bg=Theme.PRIMARY_LIGHT, border_color=Theme.PRIMARY, radius=12,
-                                  padding=0, left_accent=Theme.PRIMARY, selector="QFrame#TaxRegimeCard"))
-            self._new_regime_card.setGraphicsEffect(Theme.shadow_card())
-        if hasattr(self, "_old_regime_card"):
-            self._old_regime_card.setStyleSheet(
-                Theme.card_style(bg=Theme.WARNING_LIGHT, border_color=Theme.WARNING, radius=10,
-                                  padding=0, left_accent=Theme.WARNING, selector="QFrame#TaxRegimeCard"))
+        bg_role = {"PRIMARY": "PRIMARY_LIGHT", "WARNING": "WARNING_LIGHT"}
+        for attr, hero in (("_new_regime_card", True), ("_old_regime_card", False)):
+            card = getattr(self, attr, None)
+            if card is None:
+                continue
+            role = getattr(card, "_accent_role", "PRIMARY")
+            accent = getattr(Theme, role)
+            bg = getattr(Theme, bg_role.get(role, "PRIMARY_LIGHT"))
+            card.setStyleSheet(
+                Theme.card_style(bg=bg, border_color=accent, radius=12 if hero else 10,
+                                  padding=0, left_accent=accent, selector="QFrame#TaxRegimeCard"))
+            if hero:
+                card.setGraphicsEffect(Theme.shadow_card())
+            title = getattr(card, "_accent_title", None)
+            if title:
+                title.setStyleSheet(Theme.text_style(color=accent, size=15 if hero else 13, weight=700))
+            divider = getattr(card, "_accent_divider", None)
+            if divider:
+                divider.setStyleSheet(f"background: {accent}44; border: none;")
         if hasattr(self, "_net_card"):
             self._net_card.setStyleSheet(
                 Theme.card_style(bg=Theme.SURFACE_ALT, border_color=Theme.BORDER, radius=12,

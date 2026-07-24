@@ -265,6 +265,8 @@ class TransactionsScreen(QWidget):
             self.lbl_expense_sum.setStyleSheet(Theme.badge_style(Theme.DANGER_LIGHT, Theme.DANGER_DARK))
         if hasattr(self, 'lbl_net_sum'):
             self.lbl_net_sum.setStyleSheet(Theme.badge_style(Theme.PRIMARY_LIGHT, Theme.PRIMARY_DARK))
+        if hasattr(self, 'table_widget') and self.table_widget:
+            self.table_widget.refresh_theme()
         # Re-populate the table so row text colours (baked QColor) refresh too
         if hasattr(self, '_current_rows') and self._current_rows is not None:
             self._populate_table(self._current_rows)

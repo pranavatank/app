@@ -12,7 +12,7 @@ from PyQt6.QtGui import QFont
 from core.auth import setup_master_password
 from config import APP_NAME
 from ui.logo import logo_pixmap, set_window_icon
-from ui.theme import Theme
+from ui.theme import Theme, ThemeManager
 from ui.icons import set_btn_icon
 
 
@@ -23,18 +23,40 @@ class SetupScreen(QWidget):
         set_window_icon(self)
         self.setFixedSize(480, 600)
         self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowCloseButtonHint)
-        self.setStyleSheet(f"background-color: {Theme.BG};")
+        self.setStyleSheet(self._root_css())
         self._build_ui()
         self._center_on_screen()
+        # Defensive only: closes itself before Settings is reachable (see
+        # login_screen.py's identical note) — registered for consistency.
+        ThemeManager.register_on_change(self.refresh_theme)
+
+    @staticmethod
+    def _root_css() -> str:
+        return f"background-color: {Theme.BG};"
+
+    @staticmethod
+    def _card_css() -> str:
+        return Theme.tinted_surface_style(radius=16, selector="QFrame#SetupCard")
+
+    def refresh_theme(self, *_args):
+        """Defensive-only (see __init__) — restyles the static chrome; the
+        strength bar/label depend on runtime password-strength state, not
+        theme, so they're left to their own update logic rather than guessed
+        at here."""
+        self.setStyleSheet(self._root_css())
+        if hasattr(self, "_card"):
+            self._card.setStyleSheet(self._card_css())
+        if hasattr(self, "_strip"):
+            self._strip.setStyleSheet(Theme.panel_strip_style(radius=2))
 
     def _build_ui(self):
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.addStretch(1)
 
-        card = QFrame()
+        self._card = card = QFrame()
         card.setObjectName("SetupCard")
-        card.setStyleSheet(Theme.tinted_surface_style(radius=16, selector="QFrame#SetupCard"))
+        card.setStyleSheet(self._card_css())
         card.setFixedWidth(400)
         card.setGraphicsEffect(Theme.shadow_elevated())
 
@@ -54,7 +76,7 @@ class SetupScreen(QWidget):
         cl.addWidget(logo)
         cl.addSpacing(8)
 
-        strip = QFrame()
+        self._strip = strip = QFrame()
         strip.setFixedHeight(4)
         strip.setStyleSheet(Theme.panel_strip_style(radius=2))
         cl.addWidget(strip)

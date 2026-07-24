@@ -37,6 +37,8 @@ class SummaryPanel(QFrame):
         """
         super().__init__(parent)
         self._rows:      dict[str, QLabel] = {}
+        self._row_meta:  dict[str, dict] = {}   # key -> {label_widget, value_color, bold, value_size}
+        self._dividers:  list[QFrame] = []       # every divider (header + add_divider()), for refresh_theme
         self._scrollable = scrollable
         self._accent     = accent or Theme.PRIMARY
 
@@ -137,7 +139,10 @@ class SummaryPanel(QFrame):
     # ── Live theme refresh ────────────────────────────────────────────────────
 
     def refresh_theme(self):
-        """Re-apply all inline styles after a theme switch."""
+        """Re-apply all inline styles after a theme switch — including every
+        stat row's label/value colors and every divider, not just the card
+        chrome, so a value_color=Theme.SUCCESS/DANGER row doesn't stay frozen
+        with the old theme's color after a live switch."""
         self._apply_card_style()
         self.setGraphicsEffect(Theme.shadow_card())
         if self._icon_bg:
@@ -148,6 +153,20 @@ class SummaryPanel(QFrame):
                 Theme.text_style(color=Theme.TEXT_PRIMARY, size=12, weight=700))
         if self._div:
             self._div.setStyleSheet(f"background: {Theme.DIVIDER};")
+        for div in self._dividers:
+            div.setStyleSheet(f"background: {Theme.DIVIDER};")
+        for key, meta in self._row_meta.items():
+            meta["label_widget"].setStyleSheet(Theme.text_style(color=Theme.TEXT_SECONDARY, size=12))
+            val = self._rows.get(key)
+            if val is None:
+                continue
+            role = meta.get("value_color_role")
+            color = (getattr(Theme, role, None) if role else None) or meta["value_color"] or Theme.TEXT_PRIMARY
+            weight = "700" if meta["bold"] else "500"
+            val.setStyleSheet(
+                f"font-size: {meta['value_size']}px; font-weight: {weight};"
+                f" color: {color}; background: transparent; border: none;"
+            )
         self.update()
 
     # ── Public API ────────────────────────────────────────────────────────────
@@ -159,8 +178,16 @@ class SummaryPanel(QFrame):
         value: str = "—",
         value_size: int = 13,
         value_color: str = None,
+        value_color_role: str = None,
         bold: bool = False,
     ) -> None:
+        """
+        `value_color` is a literal hex color (fine for a one-off, but frozen
+        forever after a theme switch). Prefer `value_color_role` — the NAME
+        of a Theme attribute (e.g. "SUCCESS", "DANGER") — so refresh_theme()
+        can look up the CURRENT color after a live theme switch instead of
+        replaying a color baked in at construction time.
+        """
         row_w = QWidget()
         row_w.setStyleSheet("background: transparent; border: none;")
         row = QHBoxLayout(row_w)
@@ -171,7 +198,8 @@ class SummaryPanel(QFrame):
         lbl.setStyleSheet(Theme.text_style(color=Theme.TEXT_SECONDARY, size=12))
         lbl.setWordWrap(False)
 
-        color  = value_color or Theme.TEXT_PRIMARY
+        color = (getattr(Theme, value_color_role, None) if value_color_role else None) \
+                or value_color or Theme.TEXT_PRIMARY
         weight = "700" if bold else "500"
         val = QLabel(value)
         val.setStyleSheet(
@@ -184,12 +212,20 @@ class SummaryPanel(QFrame):
         row.addWidget(val, stretch=0)
         self._insert_widget(row_w)
         self._rows[key] = val
+        self._row_meta[key] = {
+            "label_widget": lbl,
+            "value_color": value_color,
+            "value_color_role": value_color_role,
+            "bold": bold,
+            "value_size": value_size,
+        }
 
     def add_divider(self) -> None:
         line = QFrame()
         line.setFixedHeight(1)
         line.setStyleSheet(f"background: {Theme.DIVIDER};")
         self._insert_widget(line)
+        self._dividers.append(line)
 
     def _insert_widget(self, widget: QWidget):
         count = self._stats_layout.count()
@@ -206,6 +242,8 @@ class SummaryPanel(QFrame):
 
     def clear_stats(self) -> None:
         self._rows.clear()
+        self._row_meta.clear()
+        self._dividers.clear()
         while self._stats_layout.count():
             item = self._stats_layout.takeAt(0)
             if item.widget():

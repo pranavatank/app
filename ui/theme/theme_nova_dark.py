@@ -70,7 +70,7 @@ PINK         = "#F9A8D4";  PINK_LIGHT    = "#3B0A24"
 # ── Surfaces — deep space-violet, layered ────────────────────────────────────
 BG                        = "#0A0714"
 SURFACE                   = "#14101F"
-SURFACE_ALT               = "#1E1830"
+SURFACE_ALT               = "#271F42"
 SURFACE_TINT_START        = "#1A1528"
 SURFACE_TINT_END          = "#14101F"
 

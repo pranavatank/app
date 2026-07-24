@@ -58,6 +58,12 @@ class AdvanceTaxBanner(QFrame):
         # Dismiss button
         self.btn_dismiss = QPushButton()
         self.btn_dismiss.setFixedSize(28, 28)
+        self._apply_dismiss_style()
+        self.btn_dismiss.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_dismiss.clicked.connect(self.hide)
+        layout.addWidget(self.btn_dismiss)
+
+    def _apply_dismiss_style(self):
         if icons_available():
             self.btn_dismiss.setIcon(app_icon("close", color=Theme.TEXT_SECONDARY, size=16))
         else:
@@ -76,9 +82,13 @@ class AdvanceTaxBanner(QFrame):
                 border-radius: 14px;
             }}
         """)
-        self.btn_dismiss.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_dismiss.clicked.connect(self.hide)
-        layout.addWidget(self.btn_dismiss)
+
+    def refresh_theme(self):
+        """Call after a live theme switch — the dismiss button's color/icon
+        are baked in at construction and won't update via the global QSS
+        alone. The banner frame itself and its icon are already re-applied
+        on the next update_reminder() call, driven by the live banner_level."""
+        self._apply_dismiss_style()
     
     def update_reminder(self, result: AdvanceTaxResult):
         """Update banner with advance tax calculation result."""
