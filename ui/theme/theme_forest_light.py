@@ -73,12 +73,12 @@ SURFACE_ALT               = "#F3F2EC"   # alternate / hover — warm tint
 SURFACE_TINT_START        = "#FFFFF8"
 SURFACE_TINT_END          = "#F5F4EE"
 
-# ── Sidebar — dark espresso ───────────────────────────────────────────────────
-SIDEBAR_BG                = "#1C1917"   # stone-900
-SIDEBAR_TEXT              = "#78716C"   # stone-500
+# ── Sidebar — light, matches the warm parchment page background ─────────────
+SIDEBAR_BG                = "#FAFAF7"   # warm near-white parchment
+SIDEBAR_TEXT              = "#57534E"   # stone-600
 SIDEBAR_ACTIVE            = "#16A34A"
 SIDEBAR_ACTIVE_TEXT       = "#FFFFFF"
-SIDEBAR_HOVER             = "#292524"   # stone-800
+SIDEBAR_HOVER             = "#F3F2EC"   # warm tint hover
 
 # ── Topbar ────────────────────────────────────────────────────────────────────
 TOPBAR_BG                 = "#FFFFF8"

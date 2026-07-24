@@ -520,9 +520,15 @@ class StatementImportScreen(QWidget):
         row = QHBoxLayout(row_widget)
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(8)
-        row.addWidget(icon_label(icon_name, size=18, color=Theme.PRIMARY))
+        icon_lbl = icon_label(icon_name, size=18, color=Theme.PRIMARY)
+        row.addWidget(icon_lbl)
         row.addWidget(self._card_title(text))
         row.addStretch()
+        # Icon colour is baked in at construction; keep a handle so
+        # refresh_theme() can re-tint it after a live theme switch.
+        if not hasattr(self, "_title_icons"):
+            self._title_icons = []
+        self._title_icons.append((icon_lbl, icon_name))
         return row_widget
 
     def _card_subtitle(self, text: str) -> QLabel:
@@ -951,6 +957,10 @@ class StatementImportScreen(QWidget):
             self.preview_table_widget.refresh_theme()
         if hasattr(self, "screen_indicator_step"):
             self._set_step(self.screen_indicator_step)
+        for icon_lbl, icon_name in getattr(self, "_title_icons", []):
+            pm = icon_pixmap(icon_name, size=18, color=Theme.PRIMARY)
+            if not pm.isNull():
+                icon_lbl.setPixmap(pm)
 
     def refresh(self):
         """Reset to initial state"""

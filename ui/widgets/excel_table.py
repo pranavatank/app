@@ -4,11 +4,27 @@ ui/widgets/excel_table.py — Excel-like table with copy/paste, selection, stats
 
 from PyQt6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QCheckBox, QWidget,
-    QHBoxLayout, QLabel, QHeaderView, QApplication, QMessageBox
+    QHBoxLayout, QLabel, QHeaderView, QApplication, QMessageBox,
+    QStyledItemDelegate, QStyle, QStyleOptionViewItem
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QKeySequence, QKeyEvent
 from ui.theme import Theme
+
+
+class _NoFocusRectDelegate(QStyledItemDelegate):
+    """
+    Strips the native focus-rectangle state before painting. QSS alone
+    (`outline: none` / `border: none` on `::item:selected:focus`) doesn't
+    reliably suppress the platform style's own dotted/solid focus border,
+    which otherwise overlaps the cell's text on the selected/editing cell.
+    """
+
+    def paint(self, painter, option, index):
+        opt = QStyleOptionViewItem(option)
+        if opt.state & QStyle.StateFlag.State_HasFocus:
+            opt.state &= ~QStyle.StateFlag.State_HasFocus
+        super().paint(painter, opt, index)
 
 
 class ExcelTable(QTableWidget):
@@ -52,6 +68,7 @@ class ExcelTable(QTableWidget):
         self.setAlternatingRowColors(True)
         self.verticalHeader().setVisible(False)
         self.setShowGrid(False)
+        self.setItemDelegate(_NoFocusRectDelegate(self))
         self.itemSelectionChanged.connect(self._update_stats)
         
     def setHeaders(self, headers: list[str]):

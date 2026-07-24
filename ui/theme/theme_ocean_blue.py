@@ -73,12 +73,12 @@ SURFACE_ALT               = "#F1F5FD"
 SURFACE_TINT_START        = "#FFFFFF"
 SURFACE_TINT_END          = "#F1F5FD"
 
-# ── Sidebar — deep navy ───────────────────────────────────────────────────────
-SIDEBAR_BG                = "#0F172A"
-SIDEBAR_TEXT              = "#64748B"
+# ── Sidebar — light, matches the page background ─────────────────────────────
+SIDEBAR_BG                = "#F5F8FF"
+SIDEBAR_TEXT              = "#475569"
 SIDEBAR_ACTIVE            = "#2563EB"
 SIDEBAR_ACTIVE_TEXT       = "#FFFFFF"
-SIDEBAR_HOVER             = "#1E293B"
+SIDEBAR_HOVER             = "#F1F5FD"
 
 # ── Topbar ────────────────────────────────────────────────────────────────────
 TOPBAR_BG                 = "#FFFFFF"

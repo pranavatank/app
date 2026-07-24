@@ -34,6 +34,10 @@ class TaxScreen(QWidget):
         super().__init__(parent)
         self.parent_window = parent
         self.data_source = "ais"
+        # Every QGroupBox built via _section_group() bakes Theme.* colors
+        # into its stylesheet at construction — tracked here so
+        # refresh_theme() can re-apply them after a live theme switch.
+        self._section_groups: list[QGroupBox] = []
         self._build_ui()
 
     def _build_ui(self):
@@ -203,6 +207,7 @@ class TaxScreen(QWidget):
             Theme.group_box_style() +
             "\nQLabel { border: none; background: transparent; }\n"
         )
+        self._section_groups.append(group)
         return group
 
     def _recommendation_style(self, bg: str, fg: str, emphasize: bool = False) -> str:
@@ -638,6 +643,11 @@ class TaxScreen(QWidget):
             self._proj_slab_card.setStyleSheet(
                 Theme.card_style(bg=Theme.SURFACE_ALT, border_color=Theme.BORDER, radius=12,
                                   padding=14, selector="QFrame#ProjSlabCard"))
+        for group in self._section_groups:
+            group.setStyleSheet(
+                Theme.group_box_style() +
+                "\nQLabel { border: none; background: transparent; }\n"
+            )
         self.refresh()
 
     def refresh(self):

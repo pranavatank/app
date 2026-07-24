@@ -17,7 +17,7 @@ class Session:
         self.selected_fy:          str          = get_current_financial_year()
         self.privacy_mode:         bool         = False
         self.theme:                str          = "light"  # light or dark
-        self.sidebar_pinned:      bool         = False
+        self.sidebar_open:        bool         = False
 
     # ── Auth ─────────────────────────────────────────────────────────────────
 
@@ -52,12 +52,12 @@ class Session:
         """Set theme (light or dark)."""
         self.theme = theme
 
-    def set_sidebar_pinned(self, pinned: bool) -> None:
-        """Persist sidebar pinned state for the session."""
-        self.sidebar_pinned = bool(pinned)
+    def set_sidebar_open(self, open_: bool) -> None:
+        """Persist sidebar expanded/collapsed state for the session."""
+        self.sidebar_open = bool(open_)
 
-    def is_sidebar_pinned(self) -> bool:
-        return bool(self.sidebar_pinned)
+    def is_sidebar_open(self) -> bool:
+        return bool(self.sidebar_open)
 
     def get_theme(self) -> str:
         """Get current theme."""

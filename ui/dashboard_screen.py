@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (
     QFrame, QGridLayout, QSizePolicy, QMessageBox, QScrollArea
 )
 from PyQt6.QtCore import Qt, QSize
-from PyQt6.QtGui import QFont, QColor
+from PyQt6.QtGui import QFont, QColor, QIcon
 
 from core.session import session
 from config import (
@@ -175,23 +175,6 @@ class DashboardScreen(QMainWindow):
         self.brand_text.setStyleSheet("color: white; background: transparent;")
         self.brand_text.setVisible(False)  # Hidden when collapsed
         brand_layout.addWidget(self.brand_text)
-        # Pin button to persist expanded sidebar
-        from PyQt6.QtWidgets import QToolButton
-        self._pin_btn = QToolButton()
-        self._pin_btn.setCheckable(True)
-        self._pin_btn.setAutoRaise(True)
-        self._pin_btn.setToolTip("Pin sidebar open")
-        self._pin_btn.setAccessibleName("Pin sidebar open")
-        self._pin_btn.setFixedSize(28, 28)
-        self._pin_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        if icons_available():
-            self._pin_btn.setIcon(app_icon("pin", color="#FFFFFF", size=16))
-        else:
-            self._pin_btn.setText(icon_fallback("pin"))
-        self._pin_btn.setIconSize(QSize(16, 16))
-        self._pin_btn.setStyleSheet(self._pin_btn_style())
-        self._pin_btn.clicked.connect(self._on_pin_toggled)
-        brand_layout.addWidget(self._pin_btn)
         brand_layout.addStretch()
 
         layout.addWidget(brand)
@@ -222,19 +205,30 @@ class DashboardScreen(QMainWindow):
         self.ver_lbl.setStyleSheet(Theme.text_style(color=Theme.TEXT_MUTED, size=10) + " padding-bottom: 12px;")
         layout.addWidget(self.ver_lbl)
 
+        # Toggle button - expands/collapses the sidebar on click (no hover, no pin)
+        self._sidebar_toggle_btn = QPushButton()
+        self._sidebar_toggle_btn.setFixedHeight(40)
+        self._sidebar_toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._sidebar_toggle_btn.setIconSize(QSize(16, 16))
+        self._sidebar_toggle_btn.clicked.connect(self._toggle_sidebar)
+        self._sidebar_toggle_btn.setStyleSheet(self._sidebar_toggle_style())
+        layout.addWidget(self._sidebar_toggle_btn)
+
         self._set_nav_active(0)
-        
-        # Install event filter for hover
-        sidebar.installEventFilter(self)
-        # Apply pinned state from session
-        if session.is_sidebar_pinned():
+
+        # Apply persisted expanded/collapsed state from session
+        if session.is_sidebar_open():
             self.sidebar_expanded = True
             sidebar.setFixedWidth(248)
             if hasattr(self, 'brand_text'):
                 self.brand_text.setVisible(True)
             if hasattr(self, 'nav_lbl'):
                 self.nav_lbl.setVisible(True)
-            self._pin_btn.setChecked(True)
+            for container in self._nav_buttons:
+                text_label = container.findChild(QLabel, "nav_label")
+                if text_label:
+                    text_label.setVisible(True)
+        self._update_sidebar_toggle_btn()
         return sidebar
 
     def _make_nav_btn(self, icon_name: str, label: str) -> QWidget:
@@ -300,14 +294,13 @@ class DashboardScreen(QMainWindow):
 
             icon_label = container.findChild(QLabel, "nav_icon")
             text_label = container.findChild(QLabel, "nav_label")
-            # Active items get crisp white icon (contrasts with the gradient bg).
-            # Inactive items use the registry's colourful default so each icon
-            # stays visible and distinguishable on the always-dark sidebar.
+            # Active items get a crisp icon in the active-text token colour
+            # (contrasts with the active gradient pill). Inactive items use
+            # the registry's colourful default icon and the theme's muted
+            # sidebar text colour, so both stay correctly themed whether the
+            # sidebar is light or dark.
             icon_color = Theme.SIDEBAR_ACTIVE_TEXT if is_active else "auto"
-            # Sidebar bg is always dark regardless of theme, so inactive label
-            # text is derived from the (always-white) active text token at
-            # reduced opacity rather than a bare hex literal.
-            text_color = Theme.SIDEBAR_ACTIVE_TEXT if is_active else f"{Theme.SIDEBAR_ACTIVE_TEXT}B3"
+            text_color = Theme.SIDEBAR_ACTIVE_TEXT if is_active else Theme.SIDEBAR_TEXT
 
             if icon_label:
                 if icons_available():
@@ -326,18 +319,16 @@ class DashboardScreen(QMainWindow):
         return (f"background: {Theme.gradient(Theme.HERO_GRADIENT_START, Theme.HERO_GRADIENT_END, diagonal=True)};")
 
     @staticmethod
-    def _pin_btn_style() -> str:
+    def _sidebar_toggle_style() -> str:
         return f"""
-            QToolButton {{
-                background: rgba(255,255,255,0.12);
-                border: 1px solid rgba(255,255,255,0.25);
-                border-radius: 6px;
+            QPushButton {{
+                background: transparent;
+                border: none;
+                border-top: 1px solid {Theme.SIDEBAR_HOVER};
+                border-radius: 0px;
+                margin: 0px;
             }}
-            QToolButton:hover {{ background: rgba(255,255,255,0.22); }}
-            QToolButton:checked {{
-                background: {Theme.SIDEBAR_ACTIVE_TEXT}22;
-                border: 1px solid {Theme.SIDEBAR_ACTIVE_TEXT};
-            }}
+            QPushButton:hover {{ background-color: {Theme.SIDEBAR_HOVER}; }}
         """
 
     @staticmethod
@@ -362,12 +353,14 @@ class DashboardScreen(QMainWindow):
 
     @staticmethod
     def _nav_active_style() -> str:
-        """Active nav — fully theme-token driven, no hardcoded rgba."""
+        """
+        Active nav — solid SIDEBAR_ACTIVE pill. Deliberately not a gradient
+        into SIDEBAR_HOVER: that token is light on light-sidebar themes and
+        a gradient into it would wash out SIDEBAR_ACTIVE_TEXT (usually white).
+        """
         return f"""
             QWidget[nav_item="true"] {{
-                background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
-                    stop:0 {Theme.SIDEBAR_ACTIVE},
-                    stop:1 {Theme.SIDEBAR_HOVER});
+                background-color: {Theme.SIDEBAR_ACTIVE};
                 border: none;
                 border-radius: 10px;
                 margin: 2px 10px;
@@ -383,8 +376,9 @@ class DashboardScreen(QMainWindow):
         # Brand gradient header
         if hasattr(self, '_brand_widget') and self._brand_widget:
             self._brand_widget.setStyleSheet(self._brand_bg_css())
-        if hasattr(self, '_pin_btn') and self._pin_btn:
-            self._pin_btn.setStyleSheet(self._pin_btn_style())
+        if hasattr(self, '_sidebar_toggle_btn') and self._sidebar_toggle_btn:
+            self._sidebar_toggle_btn.setStyleSheet(self._sidebar_toggle_style())
+            self._update_sidebar_toggle_btn()
 
         # Nav button styles + icon pixmaps (colors are baked into QPixmap)
         current_idx = self.stack.currentIndex() if hasattr(self, 'stack') else 0
@@ -867,15 +861,31 @@ class DashboardScreen(QMainWindow):
             return self.transactions_page._confirm_unsaved(action_label)
         return True
 
-    def eventFilter(self, obj, event):
-        """Handle sidebar hover to expand/collapse"""
-        if obj.objectName() == "sidebar":
-            from PyQt6.QtCore import QEvent
-            if event.type() == QEvent.Type.Enter:
-                self._expand_sidebar()
-            elif event.type() == QEvent.Type.Leave:
-                self._collapse_sidebar()
-        return super().eventFilter(obj, event)
+    def _toggle_sidebar(self):
+        """Manually expand/collapse the sidebar via the bottom toggle button."""
+        if self.sidebar_expanded:
+            self._collapse_sidebar()
+        else:
+            self._expand_sidebar()
+        session.set_sidebar_open(self.sidebar_expanded)
+        self._update_sidebar_toggle_btn()
+
+    def _update_sidebar_toggle_btn(self):
+        """Sync the toggle button's icon/tooltip to the current sidebar state."""
+        if not hasattr(self, '_sidebar_toggle_btn') or not self._sidebar_toggle_btn:
+            return
+        if self.sidebar_expanded:
+            name, tip = "sidebar_collapse", "Collapse sidebar"
+        else:
+            name, tip = "sidebar_expand", "Expand sidebar"
+        self._sidebar_toggle_btn.setToolTip(tip)
+        self._sidebar_toggle_btn.setAccessibleName(tip)
+        if icons_available():
+            self._sidebar_toggle_btn.setIcon(app_icon(name, color=Theme.SIDEBAR_TEXT, size=16))
+            self._sidebar_toggle_btn.setText("")
+        else:
+            self._sidebar_toggle_btn.setIcon(QIcon())
+            self._sidebar_toggle_btn.setText(icon_fallback(name))
 
     def _expand_sidebar(self):
         """Expand sidebar to show labels"""
@@ -885,7 +895,7 @@ class DashboardScreen(QMainWindow):
         sidebar = self.findChild(QWidget, "sidebar")
         if sidebar:
             sidebar.setFixedWidth(248)
-        
+
         # Show text elements
         if hasattr(self, 'brand_text'):
             self.brand_text.setVisible(True)
@@ -893,7 +903,7 @@ class DashboardScreen(QMainWindow):
             self.nav_lbl.setVisible(True)
         if hasattr(self, 'ver_lbl'):
             self.ver_lbl.setText("v1.0.0  ·  Offline")
-        
+
         # Show all nav labels
         for container in self._nav_buttons:
             text_label = container.findChild(QLabel, "nav_label")
@@ -902,16 +912,13 @@ class DashboardScreen(QMainWindow):
 
     def _collapse_sidebar(self):
         """Collapse sidebar to show only icons"""
-        # Do not collapse if pinned by user
-        if session.is_sidebar_pinned():
-            return
         if not self.sidebar_expanded:
             return
         self.sidebar_expanded = False
         sidebar = self.findChild(QWidget, "sidebar")
         if sidebar:
             sidebar.setFixedWidth(76)
-        
+
         # Hide text elements
         if hasattr(self, 'brand_text'):
             self.brand_text.setVisible(False)
@@ -919,22 +926,9 @@ class DashboardScreen(QMainWindow):
             self.nav_lbl.setVisible(False)
         if hasattr(self, 'ver_lbl'):
             self.ver_lbl.setText("v1.0")
-        
+
         # Hide all nav labels
         for container in self._nav_buttons:
             text_label = container.findChild(QLabel, "nav_label")
             if text_label:
                 text_label.setVisible(False)
-
-    def _on_pin_toggled(self, checked: bool):
-        session.set_sidebar_pinned(bool(checked))
-        if checked:
-            self._expand_sidebar()
-        else:
-            # immediately collapse if mouse is not over sidebar
-            from PyQt6.QtCore import QEvent
-            sidebar = self.findChild(QWidget, "sidebar")
-            if sidebar:
-                pos = sidebar.mapFromGlobal(sidebar.cursor().pos())
-                if not sidebar.rect().contains(pos):
-                    self._collapse_sidebar()

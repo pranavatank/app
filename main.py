@@ -50,6 +50,10 @@ def launch_app():
     
     qInstallMessageHandler(_qt_message_handler)
     app = QApplication(sys.argv)
+    # Force Fusion: the native Windows style only partially honours QSS
+    # subcontrol overrides (QSpinBox/QComboBox arrows, stepper dots, etc.),
+    # which is why those icons render blank/inconsistent under some themes.
+    app.setStyle("Fusion")
     app.aboutToQuit.connect(_unload_local_ai_model)
     install_copyable_error_dialogs()
     app.setApplicationName(APP_NAME)

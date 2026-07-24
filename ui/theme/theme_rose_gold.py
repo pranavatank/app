@@ -73,12 +73,12 @@ SURFACE_ALT               = "#F9F0EA"   # hover — warm blush tint
 SURFACE_TINT_START        = "#FFFDF9"
 SURFACE_TINT_END          = "#F5ECE4"
 
-# ── Sidebar — dark rosewood ───────────────────────────────────────────────────
-SIDEBAR_BG                = "#1A0A10"   # deep rosewood almost black
-SIDEBAR_TEXT              = "#7D6570"   # muted dusty rose
+# ── Sidebar — light, matches the warm ivory page background ─────────────────
+SIDEBAR_BG                = "#FDF6F0"   # warm ivory page
+SIDEBAR_TEXT              = "#7D5A5A"   # warm brown-grey
 SIDEBAR_ACTIVE            = "#E91E8C"   # vivid rose
 SIDEBAR_ACTIVE_TEXT       = "#FFFFFF"
-SIDEBAR_HOVER             = "#2D1020"   # dark rose hover
+SIDEBAR_HOVER             = "#F9F0EA"   # warm blush hover
 
 # ── Topbar ────────────────────────────────────────────────────────────────────
 TOPBAR_BG                 = "#FFFDF9"

@@ -217,6 +217,13 @@ class SettingsScreen(QWidget):
         self._hdr_frame       = None
         self._cards_container = None
         self._desc_bar        = None
+        # every QFrame/QGroupBox built via _card()/_group() bakes Theme.*
+        # colors into its stylesheet at construction — tracked here so
+        # _on_theme_changed() can re-apply them after a live switch instead
+        # of leaving them frozen on the old theme (unpolish/polish alone
+        # can't help since the baked hex values never change on their own).
+        self._all_cards:  list[QFrame]    = []
+        self._all_groups: list[QGroupBox] = []
         self._theme_name_lbl  = None
         self._theme_desc_lbl  = None
         self._theme_mode_badge= None
@@ -456,8 +463,18 @@ class SettingsScreen(QWidget):
                                   radius=8, padding="3px 12px", size=11))
 
     def _on_card_clicked(self, name: str):
-        """Apply immediately — no popup, no restart."""
-        ThemeManager.apply(name)
+        """Apply immediately — no popup, no restart. Switching walks every
+        live widget in the app (ThemeManager._deep_refresh) which can take
+        a visible moment, so show a loader instead of a silent freeze."""
+        from PyQt6.QtWidgets import QApplication
+        from ui.widgets.loader import Loader
+        loader = Loader(self, "Applying theme…", subtitle=f"Switching to {name}")
+        loader.show()
+        QApplication.processEvents()
+        try:
+            ThemeManager.apply(name)
+        finally:
+            loader.hide()
 
     def _on_theme_changed(self, name: str):
         """
@@ -476,6 +493,14 @@ class SettingsScreen(QWidget):
             self._cards_container.setStyleSheet(self._cards_css())
         if self._desc_bar:
             self._desc_bar.setStyleSheet(self._desc_css())
+
+        # Every section card/group built via _card()/_group() bakes Theme.*
+        # colors in at construction — re-apply now that Theme has switched.
+        for card in self._all_cards:
+            card.setStyleSheet(self._card_css())
+            card.setGraphicsEffect(Theme.shadow_card())
+        for group in self._all_groups:
+            group.setStyleSheet(self._group_css())
 
         self._update_desc(name)
         self._refresh_badges()
@@ -587,24 +612,34 @@ class SettingsScreen(QWidget):
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
-    def _group(self, title: str) -> QGroupBox:
-        g = QGroupBox(title)
-        g.setStyleSheet(f"""
+    @staticmethod
+    def _group_css() -> str:
+        return f"""
             QGroupBox {{
                 border: none; margin-top: 4px; background: transparent;
                 font-size: 13px; font-weight: 700; color: {Theme.PRIMARY_DARK};
             }}
             QGroupBox::title {{ subcontrol-origin: margin; left: 2px; padding: 0 6px; }}
-        """)
+        """
+
+    def _group(self, title: str) -> QGroupBox:
+        g = QGroupBox(title)
+        g.setStyleSheet(self._group_css())
+        self._all_groups.append(g)
         return g
+
+    @staticmethod
+    def _card_css() -> str:
+        return Theme.card_style(
+            bg=Theme.SURFACE, border_color=Theme.BORDER,
+            radius=12, padding=14, selector="QFrame#SettingsCard")
 
     def _card(self) -> QFrame:
         f = QFrame(); f.setObjectName("SettingsCard")
-        f.setStyleSheet(Theme.card_style(
-            bg=Theme.SURFACE, border_color=Theme.BORDER,
-            radius=12, padding=14, selector="QFrame#SettingsCard"))
+        f.setStyleSheet(self._card_css())
         f.setGraphicsEffect(Theme.shadow_card())
         f.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self._all_cards.append(f)
         return f
 
     def _card_title(self, text: str) -> QLabel:

@@ -75,12 +75,12 @@ SURFACE_ALT               = "#E8E4F7"
 SURFACE_TINT_START        = "#FFFFFF"
 SURFACE_TINT_END          = "#F1EFFC"
 
-# ── Sidebar — deep violet-black ──────────────────────────────────────────────
-SIDEBAR_BG                = "#17122B"
-SIDEBAR_TEXT              = "#71708A"
+# ── Sidebar — light, matches the page background (not a fixed dark panel) ───
+SIDEBAR_BG                = "#F7F7FD"
+SIDEBAR_TEXT              = "#57536E"
 SIDEBAR_ACTIVE            = "#4F46E5"
 SIDEBAR_ACTIVE_TEXT       = "#FFFFFF"
-SIDEBAR_HOVER             = "#241B47"
+SIDEBAR_HOVER             = "#E8E4F7"
 
 # ── Topbar ────────────────────────────────────────────────────────────────────
 TOPBAR_BG                 = "#FFFFFF"

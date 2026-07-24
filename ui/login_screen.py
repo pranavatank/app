@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QLineEdit, QFrame, QSizePolicy
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QFont
 
 from core.auth import verify_login, is_totp_enabled, get_privacy_mode
@@ -15,6 +15,7 @@ from config import APP_NAME
 from ui.logo import logo_pixmap, set_window_icon
 from ui.theme import Theme, ThemeManager
 from ui.icons import set_btn_icon, icon_label as app_icon_label
+from ui.widgets.loader import Loader
 
 
 class LoginScreen(QWidget):
@@ -255,47 +256,88 @@ class LoginScreen(QWidget):
         if not pwd:
             self._show_error("Please enter your password.")
             return
+        self.error_label.hide()
         self.btn_login.setEnabled(False)
+        self.pwd_input.setEnabled(False)
+        self.otp_input.setEnabled(False)
         self.btn_login.setText("Verifying…")
-        success, message, aes_key = verify_login(pwd, otp)
-        if success:
-            session.login(aes_key)
-            session.set_privacy_mode(get_privacy_mode())
-            from ui.dashboard_screen import DashboardScreen
-            self.dashboard = DashboardScreen()
-            self.dashboard.showMaximized()
-            # Start periodic backups (best-effort) after successful login
-            try:
-                from core.backup_manager import schedule_periodic_backups
-                schedule_periodic_backups(interval_hours=24.0)
-            except Exception:
-                pass
 
-            # Show onboarding once if not shown before
-            try:
-                from config import DATA_DIR
-                import os
-                from ui.onboarding import OnboardingDialog
-                flag = os.path.join(DATA_DIR, "onboarding_shown")
-                if not os.path.exists(flag):
-                    dlg = OnboardingDialog(self)
-                    dlg.exec()
-                    try:
-                        os.makedirs(DATA_DIR, exist_ok=True)
-                        with open(flag, "w") as fh:
-                            fh.write("1")
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-            self.close()
-        else:
+        # Password/TOTP verification does real crypto work (KDF hashing) and
+        # can take a noticeable moment — run it off the UI thread so the
+        # loader spinner actually animates instead of the window freezing.
+        Loader.run(
+            self,
+            fn=lambda: verify_login(pwd, otp),
+            message="Unlocking your vault…",
+            subtitle="Verifying your credentials",
+            on_done=self._on_verify_done,
+            on_error=self._on_verify_error,
+        )
+
+    def _on_verify_done(self, result):
+        success, message, aes_key = result
+        if not success:
             self._show_error(message)
-            self.btn_login.setEnabled(True)
-            self.btn_login.setText(" Unlock")
-            self.pwd_input.clear()
-            self.otp_input.clear()
-            self.pwd_input.setFocus()
+            self._reset_login_form()
+            return
+
+        session.login(aes_key)
+        session.set_privacy_mode(get_privacy_mode())
+
+        # Building the dashboard (DB queries + full widget tree) must happen
+        # on the main thread and can itself take a moment — keep a loader up
+        # and defer the heavy construction one event-loop tick so the loader
+        # has actually painted before the work starts.
+        self._dashboard_loader = Loader(
+            self, "Loading your dashboard…", subtitle="Preparing accounts and reports")
+        self._dashboard_loader.show()
+        QTimer.singleShot(30, self._finish_login)
+
+    def _on_verify_error(self, exc: Exception):
+        self._show_error(f"Login failed: {exc}")
+        self._reset_login_form()
+
+    def _finish_login(self):
+        from ui.dashboard_screen import DashboardScreen
+        self.dashboard = DashboardScreen()
+        self.dashboard.showMaximized()
+        # Start periodic backups (best-effort) after successful login
+        try:
+            from core.backup_manager import schedule_periodic_backups
+            schedule_periodic_backups(interval_hours=24.0)
+        except Exception:
+            pass
+
+        # Show onboarding once if not shown before
+        try:
+            from config import DATA_DIR
+            import os
+            from ui.onboarding import OnboardingDialog
+            flag = os.path.join(DATA_DIR, "onboarding_shown")
+            if not os.path.exists(flag):
+                dlg = OnboardingDialog(self)
+                dlg.exec()
+                try:
+                    os.makedirs(DATA_DIR, exist_ok=True)
+                    with open(flag, "w") as fh:
+                        fh.write("1")
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        if hasattr(self, "_dashboard_loader"):
+            self._dashboard_loader.hide()
+        self.close()
+
+    def _reset_login_form(self):
+        self.btn_login.setEnabled(True)
+        self.btn_login.setText(" Unlock")
+        self.pwd_input.setEnabled(True)
+        self.otp_input.setEnabled(True)
+        self.pwd_input.clear()
+        self.otp_input.clear()
+        self.pwd_input.setFocus()
 
     def _show_error(self, msg: str):
         self.error_label.setText(msg)
@@ -304,5 +346,6 @@ class LoginScreen(QWidget):
     def _center_on_screen(self):
         from PyQt6.QtGui import QGuiApplication
         screen = QGuiApplication.primaryScreen().geometry()
-        self.frameGeometry().moveCenter(screen.center())
-        self.move(self.frameGeometry().topLeft())
+        frame_geo = self.frameGeometry()
+        frame_geo.moveCenter(screen.center())
+        self.move(frame_geo.topLeft())

@@ -14,6 +14,7 @@ Key fixes vs old version:
 """
 
 from __future__ import annotations
+import functools
 import traceback
 
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel
@@ -69,6 +70,18 @@ except Exception:
     _MPL_AVAILABLE = False
 
 
+def _remember_call(fn):
+    """Record the (method, args, kwargs) used to draw the chart so
+    refresh_theme() can replay it after a live theme switch — colors are
+    baked into matplotlib artists at draw time, so re-polishing the canvas
+    alone leaves the existing chart stale."""
+    @functools.wraps(fn)
+    def wrapper(self, *args, **kwargs):
+        self._last_call = (fn.__name__, args, kwargs)
+        return fn(self, *args, **kwargs)
+    return wrapper
+
+
 def _inr(value: float) -> str:
     """Format a number as Indian Rupee (abbreviated)."""
     if value >= 1_00_00_000:
@@ -103,6 +116,7 @@ class ChartWidget(QWidget):
         self._canvas = None
         self._fig    = None
         self._empty_lbl = None
+        self._last_call: tuple | None = None
 
         if not _MPL_AVAILABLE:
             self._show_unavailable()
@@ -178,11 +192,24 @@ class ChartWidget(QWidget):
 
     # ── Public: clear / empty state ───────────────────────────────────────────
 
+    def refresh_theme(self):
+        """Re-apply theme colors after a live switch: restyle the canvas
+        background and replay whatever was last plotted."""
+        if not self._canvas:
+            return
+        self._canvas.setStyleSheet(f"background-color: {Theme.SURFACE};")
+        if self._last_call is None:
+            return
+        name, args, kwargs = self._last_call
+        getattr(self, name)(*args, **kwargs)
+
+    @_remember_call
     def clear(self):
         if self._canvas:
             self._fig.clear()
             self._canvas.draw()
 
+    @_remember_call
     def show_empty_state(self, message: str = "No data to display"):
         if not self._canvas:
             return
@@ -200,6 +227,7 @@ class ChartWidget(QWidget):
 
     # ── Bar chart ─────────────────────────────────────────────────────────────
 
+    @_remember_call
     def plot_bar(
         self,
         categories: list,
@@ -243,6 +271,7 @@ class ChartWidget(QWidget):
 
     # ── Comparison bar chart ──────────────────────────────────────────────────
 
+    @_remember_call
     def plot_comparison(
         self,
         categories: list,
@@ -295,6 +324,7 @@ class ChartWidget(QWidget):
 
     # ── Pie / donut chart ─────────────────────────────────────────────────────
 
+    @_remember_call
     def plot_pie(self, labels: list, values: list, title: str = ""):
         if not self._canvas:
             return
@@ -354,6 +384,7 @@ class ChartWidget(QWidget):
 
     # ── Line chart ────────────────────────────────────────────────────────────
 
+    @_remember_call
     def plot_line(
         self,
         x_data: list,
@@ -407,6 +438,7 @@ class ChartWidget(QWidget):
 
     # ── Multi-line trend chart ────────────────────────────────────────────────
 
+    @_remember_call
     def plot_trend_line(
         self,
         categories: list,
@@ -461,6 +493,7 @@ class ChartWidget(QWidget):
 
     # ── Monthly income vs expense bar chart ───────────────────────────────────
 
+    @_remember_call
     def plot_monthly_bar(
         self,
         months: list,

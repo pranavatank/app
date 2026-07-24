@@ -89,7 +89,10 @@ _R: dict[str, tuple] = {
     "split":            (_fi(_FI.CUT)            if _FLUENT_OK else None, "mdi6.scissors-cutting",       "#FB923C", "\u2702"),
     "merge":            (_fi(_FI.ADD_TO)         if _FLUENT_OK else None, "mdi6.merge",                  "#34D399", "\U0001F500"),
     "debug":            (None,                                             "mdi6.bug",                    "#F87171", "\U0001F41E"),
-    "pin":              (_fi(_FI.PIN)            if _FLUENT_OK else None, "mdi6.pin",                    "#FBBF24", "\U0001F4CC"),
+    # Fluent slot intentionally None (not confident these FluentIcon members
+    # exist) — falls straight through to the reliable qtawesome mdi6 set.
+    "sidebar_expand":   (None,                                             "mdi6.chevron-right",          "#94A3B8", "▶"),
+    "sidebar_collapse": (None,                                             "mdi6.chevron-left",           "#94A3B8", "◀"),
     "list_view":        (_fi(_FI.TILES)          if _FLUENT_OK else None, "mdi6.view-list",              "#60A5FA", "\U0001F4CB"),
     "card_view":        (_fi(_FI.VIEW)           if _FLUENT_OK else None, "mdi6.view-grid",              "#A78BFA", "\U0001FA9F"),
     "calculate":        (_fi(_FI.ASTERISK)       if _FLUENT_OK else None, "mdi6.lightning-bolt",         "#FBBF24", "\u26A1"),

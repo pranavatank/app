@@ -79,12 +79,12 @@ SURFACE_ALT               = "#EDF1FB"   # alt rows / hover — soft blue-grey
 SURFACE_TINT_START        = "#FAFCFF"
 SURFACE_TINT_END          = "#EDF1FB"
 
-# ── Sidebar — cool slate-blue (professional, calm) ────────────────────────────
-SIDEBAR_BG                = "#1E2D5C"   # deep cool navy
-SIDEBAR_TEXT              = "#6B80B5"   # muted periwinkle-grey
+# ── Sidebar — light, matches the frost page background ───────────────────────
+SIDEBAR_BG                = "#F4F7FF"   # frost page background
+SIDEBAR_TEXT              = "#4B5563"   # cool grey
 SIDEBAR_ACTIVE            = "#4F6EF7"   # periwinkle active
 SIDEBAR_ACTIVE_TEXT       = "#FFFFFF"
-SIDEBAR_HOVER             = "#293D7A"   # slightly lighter navy
+SIDEBAR_HOVER             = "#EDF1FB"   # soft blue-grey hover
 
 # ── Topbar ────────────────────────────────────────────────────────────────────
 TOPBAR_BG                 = "#FAFCFF"

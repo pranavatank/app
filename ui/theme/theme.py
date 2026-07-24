@@ -517,7 +517,7 @@ QPushButton#editBtn    {{ background: {t.gradient(t.EDIT_GRADIENT_START,    t.ED
 
 /* ═══════════════════════════ TABLE ══════════════════════════ */
 QTableWidget {{
-    background-color: {t.SURFACE}; alternate-background-color: {t.SURFACE_ALT};
+    background-color: {t.SURFACE}; alternate-background-color: {t.SURFACE_TINT_END};
     color: {t.TEXT_PRIMARY}; gridline-color: {t.DIVIDER};
     border: 1px solid {t.BORDER}; border-radius: 10px;
     selection-background-color: {t.PRIMARY_LIGHT};
@@ -647,7 +647,7 @@ QSplitter::handle:horizontal {{ width: 1px; }}
 QSplitter::handle:vertical {{ height: 1px; }}
 
 /* ═══════════════════════════ NAMED WIDGETS ══════════════════ */
-QWidget#sidebar {{ background-color: {t.SIDEBAR_BG}; border-right: 1px solid rgba(255,255,255,0.05); }}
+QWidget#sidebar {{ background-color: {t.SIDEBAR_BG}; border-right: 1px solid {t.BORDER}; }}
 QWidget#topBar {{ background-color: {t.TOPBAR_BG}; border-bottom: 1px solid {t.TOPBAR_BORDER}; }}
 QWidget#topBar QComboBox {{ font-size: 13px; padding: 6px 10px; }}
 QWidget#topBar QPushButton {{ font-size: 13px; padding: 6px 12px; }}

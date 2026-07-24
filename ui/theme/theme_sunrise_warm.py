@@ -77,12 +77,12 @@ SURFACE_ALT               = "#FFF4EE"   # warm apricot tint — hover rows
 SURFACE_TINT_START        = "#FFFFFF"
 SURFACE_TINT_END          = "#FFF4EE"
 
-# ── Sidebar — rich charcoal with warm undertone ───────────────────────────────
-SIDEBAR_BG                = "#1C1208"   # dark espresso brown (warm, not cold)
-SIDEBAR_TEXT              = "#7D6A5A"   # warm taupe
+# ── Sidebar — light, matches the warm cream page background ─────────────────
+SIDEBAR_BG                = "#FFFAF7"   # warm cream white — page bg
+SIDEBAR_TEXT              = "#6D4C41"   # warm brown-grey
 SIDEBAR_ACTIVE            = "#F05A28"   # coral active nav
 SIDEBAR_ACTIVE_TEXT       = "#FFFFFF"
-SIDEBAR_HOVER             = "#2E1E10"   # dark warm hover
+SIDEBAR_HOVER             = "#FFF4EE"   # warm apricot tint hover
 
 # ── Topbar ────────────────────────────────────────────────────────────────────
 TOPBAR_BG                 = "#FFFFFF"
