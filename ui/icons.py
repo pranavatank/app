@@ -16,6 +16,7 @@ Usage:
 from __future__ import annotations
 
 import os
+import tempfile
 
 from PyQt6.QtGui     import QIcon, QPixmap, QColor
 from PyQt6.QtWidgets import QLabel, QPushButton
@@ -242,7 +243,8 @@ def fallback(name: str) -> str:
 # -- QSS image: url() support ------------------------------------------------
 # Qt Style Sheets can't embed a QPixmap/QIcon directly (`image: url(...)`
 # needs a real file path or Qt resource) — this renders a registry icon to a
-# small cached PNG on disk so global QSS (combobox/spinbox/date-edit arrows)
+# small cached PNG on disk (OS temp dir) so global QSS
+# (combobox/spinbox/date-edit arrows)
 # can reference a real icon instead of the old CSS zero-size-box border
 # triangle, which renders as an unstyled little rectangle in this app's Qt6
 # build rather than an actual arrow shape.
@@ -252,8 +254,7 @@ _icon_cache_dir: str | None = None
 def _icon_cache_dir_path() -> str:
     global _icon_cache_dir
     if _icon_cache_dir is None:
-        from config import DATA_DIR
-        _icon_cache_dir = os.path.join(DATA_DIR, ".icon_cache")
+        _icon_cache_dir = os.path.join(tempfile.gettempdir(), "FinancialApp", "icon_cache")
         os.makedirs(_icon_cache_dir, exist_ok=True)
     return _icon_cache_dir
 

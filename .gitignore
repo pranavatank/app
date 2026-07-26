@@ -4,6 +4,12 @@ data/*.db-shm
 data/*.db-wal
 data/*.pdf
 data/onboarding_shown
+data/theme_prefs.json
+data/.icon_cache/
+data/checkbox_check.png
+data/logo_clean.png
+data/logo.ico
+data/old logo.png
 
 # Backup files
 backups/*.db

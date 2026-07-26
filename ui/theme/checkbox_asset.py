@@ -4,8 +4,7 @@ ui/theme/checkbox_asset.py — Pre-rendered checkmark glyph for QCheckBox.
 Qt stylesheets can't draw an arbitrary vector checkmark on
 QCheckBox::indicator:checked directly — the `image` property needs a real
 file path. This module renders a small white checkmark PNG once (cached
-under data/, the same convention already used for logo.png and
-theme_prefs.json) and returns a QSS-safe url() path for it.
+under the OS temp directory) and returns a QSS-safe url() path for it.
 
 White is used regardless of theme because the checked indicator's
 background is always Theme.PRIMARY (a saturated color across every theme),
@@ -13,8 +12,9 @@ so a white checkmark reads clearly on all of them.
 """
 from __future__ import annotations
 import os
+import tempfile
 
-_ASSET_DIR  = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "data")
+_ASSET_DIR  = os.path.join(tempfile.gettempdir(), "FinancialApp", "assets")
 _ASSET_PATH = os.path.join(_ASSET_DIR, "checkbox_check.png")
 
 
