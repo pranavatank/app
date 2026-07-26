@@ -15,6 +15,8 @@ Usage:
 """
 from __future__ import annotations
 
+import os
+
 from PyQt6.QtGui     import QIcon, QPixmap, QColor
 from PyQt6.QtWidgets import QLabel, QPushButton
 from PyQt6.QtCore    import QSize
@@ -175,7 +177,8 @@ def _fluent_icon(fi, color_hex: str, size: int) -> QIcon:
     try:
         qicon = fi.icon(theme=_FTheme.AUTO, color=QColor(color_hex))
         return qicon if qicon and not qicon.isNull() else QIcon()
-    except Exception:
+    except Exception as e:
+        print(f"[icons] FluentIcon render failed for {fi!r}: {e}")
         return QIcon()
 
 
@@ -188,7 +191,8 @@ def _qta_icon(mdi6_name: str, color_hex: str | None, size: int) -> QIcon:
         opts["color"] = color_hex
     try:
         return qta.icon(mdi6_name, **opts)
-    except Exception:
+    except Exception as e:
+        print(f"[icons] qtawesome render failed for '{mdi6_name}': {e}")
         return QIcon()
 
 
@@ -233,6 +237,41 @@ def fallback(name: str) -> str:
     """Return the emoji fallback string."""
     entry = _R.get(name)
     return entry[3] if entry else ""
+
+
+# -- QSS image: url() support ------------------------------------------------
+# Qt Style Sheets can't embed a QPixmap/QIcon directly (`image: url(...)`
+# needs a real file path or Qt resource) — this renders a registry icon to a
+# small cached PNG on disk so global QSS (combobox/spinbox/date-edit arrows)
+# can reference a real icon instead of the old CSS zero-size-box border
+# triangle, which renders as an unstyled little rectangle in this app's Qt6
+# build rather than an actual arrow shape.
+_icon_cache_dir: str | None = None
+
+
+def _icon_cache_dir_path() -> str:
+    global _icon_cache_dir
+    if _icon_cache_dir is None:
+        from config import DATA_DIR
+        _icon_cache_dir = os.path.join(DATA_DIR, ".icon_cache")
+        os.makedirs(_icon_cache_dir, exist_ok=True)
+    return _icon_cache_dir
+
+
+def icon_file(name: str, color: str, size: int = 16) -> str:
+    """
+    Render a registry icon to a cached PNG and return its path (forward
+    slashes, safe for direct use inside a QSS `url(...)`). Cached by
+    (name, color, size) — a new theme's colors just add new cache files,
+    nothing to invalidate.
+    """
+    safe_color = (color or "").lstrip("#").upper() or "AUTO"
+    path = os.path.join(_icon_cache_dir_path(), f"{name}_{safe_color}_{size}.png")
+    if not os.path.exists(path):
+        pm = pixmap(name, size=size, color=color)
+        if not pm.isNull():
+            pm.save(path, "PNG")
+    return path.replace("\\", "/") if os.path.exists(path) else ""
 
 
 def is_available() -> bool:

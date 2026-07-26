@@ -405,6 +405,26 @@ class Theme:
         from .checkbox_asset import checkmark_url
         _url = checkmark_url()
         _checkmark_rule = f"image: url({_url});" if _url else ""
+
+        # Combobox/spinbox/date-edit arrows: rendered from the icon registry
+        # instead of the old zero-size-box CSS border triangle, which this
+        # app's Qt6 build paints as a small unstyled rectangle rather than an
+        # actual arrow. Sized relative to the ~36px input height so they read
+        # clearly instead of disappearing into the field.
+        from ui.icons import icon_file
+        _combo_arrow_url    = icon_file("show", color=t.TEXT_SECONDARY, size=16)
+        _spin_up_arrow_url  = icon_file("hide", color=t.TEXT_SECONDARY, size=11)
+        _spin_down_arrow_url = icon_file("show", color=t.TEXT_SECONDARY, size=11)
+        _date_arrow_url     = icon_file("calendar", color=t.TEXT_SECONDARY, size=16)
+        # Primary-tinted hover variants (mirrors the old border-color:hover feedback)
+        _spin_up_arrow_hover_url   = icon_file("hide", color=t.PRIMARY, size=11)
+        _spin_down_arrow_hover_url = icon_file("show", color=t.PRIMARY, size=11)
+        _combo_arrow_rule = f"image: url({_combo_arrow_url}); width: 16px; height: 16px;" if _combo_arrow_url else ""
+        _spin_up_rule     = f"image: url({_spin_up_arrow_url}); width: 11px; height: 11px;" if _spin_up_arrow_url else ""
+        _spin_down_rule   = f"image: url({_spin_down_arrow_url}); width: 11px; height: 11px;" if _spin_down_arrow_url else ""
+        _spin_up_hover_rule   = f"image: url({_spin_up_arrow_hover_url});" if _spin_up_arrow_hover_url else ""
+        _spin_down_hover_rule = f"image: url({_spin_down_arrow_hover_url});" if _spin_down_arrow_hover_url else ""
+        _date_arrow_rule  = f"image: url({_date_arrow_url}); width: 16px; height: 16px;" if _date_arrow_url else ""
         return f"""
 /* ═══════════════════════════ BASE ══════════════════════════ */
 QMainWindow, QWidget {{
@@ -440,11 +460,7 @@ QComboBox {{
 QComboBox:hover {{ border-color: {t.BORDER_FOCUS}; }}
 QComboBox:focus {{ border-color: {t.PRIMARY}; }}
 QComboBox::drop-down {{ border: none; width: 28px; }}
-QComboBox::down-arrow {{
-    image: none; border-left: 4px solid transparent;
-    border-right: 4px solid transparent;
-    border-top: 5px solid {t.TEXT_SECONDARY}; margin-right: 8px;
-}}
+QComboBox::down-arrow {{ {_combo_arrow_rule} margin-right: 8px; }}
 QComboBox QAbstractItemView {{
     background-color: {t.SURFACE}; color: {t.TEXT_PRIMARY};
     border: 1px solid {t.BORDER}; border-radius: 10px;
@@ -473,21 +489,12 @@ QSpinBox::down-button, QDoubleSpinBox::down-button {{
 }}
 QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover,
 QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {{ background: {t.PRIMARY_LIGHT}; }}
-QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {{
-    width: 0; height: 0; border-left: 4px solid transparent; border-right: 4px solid transparent;
-    border-bottom: 5px solid {t.TEXT_SECONDARY};
-}}
-QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {{
-    width: 0; height: 0; border-left: 4px solid transparent; border-right: 4px solid transparent;
-    border-top: 5px solid {t.TEXT_SECONDARY};
-}}
-QSpinBox::up-arrow:hover, QDoubleSpinBox::up-arrow:hover {{ border-bottom-color: {t.PRIMARY}; }}
-QSpinBox::down-arrow:hover, QDoubleSpinBox::down-arrow:hover {{ border-top-color: {t.PRIMARY}; }}
+QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {{ {_spin_up_rule} }}
+QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {{ {_spin_down_rule} }}
+QSpinBox::up-arrow:hover, QDoubleSpinBox::up-arrow:hover {{ {_spin_up_hover_rule} }}
+QSpinBox::down-arrow:hover, QDoubleSpinBox::down-arrow:hover {{ {_spin_down_hover_rule} }}
 QDateEdit::drop-down {{ border: none; width: 28px; subcontrol-origin: border; subcontrol-position: right; }}
-QDateEdit::down-arrow {{
-    width: 0; height: 0; border-left: 4px solid transparent; border-right: 4px solid transparent;
-    border-top: 5px solid {t.TEXT_SECONDARY}; margin-right: 8px;
-}}
+QDateEdit::down-arrow {{ {_date_arrow_rule} margin-right: 8px; }}
 QCalendarWidget QToolButton {{ color: {t.TEXT_PRIMARY}; background: transparent; font-weight: 600; }}
 QCalendarWidget QMenu {{ background-color: {t.SURFACE}; color: {t.TEXT_PRIMARY}; }}
 QCalendarWidget QAbstractItemView:enabled {{

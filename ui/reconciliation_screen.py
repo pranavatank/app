@@ -13,7 +13,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 
 from ui.theme import Theme
-from ui.widgets.excel_table import enable_copy_shortcut
+from ui.widgets.excel_table import enable_copy_shortcut, NoFocusRectDelegate
 from ui.icons import set_btn_icon
 from core.session import session
 from models.person import get_person
@@ -91,6 +91,7 @@ class ReconciliationScreen(QWidget):
         self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.table.setItemDelegate(NoFocusRectDelegate(self.table))
         enable_copy_shortcut(self.table)
         self.table.doubleClicked.connect(self._on_row_double_click)
         table_layout.addWidget(self.table)
@@ -175,6 +176,12 @@ class ReconciliationScreen(QWidget):
                     Theme.text_style(color=accent, size=18, weight=700)
                     + " border: none; background: transparent; padding: 0; margin: 0;"
                 )
+        # Per-row status badges are QLabel cell-widgets with Theme colors
+        # baked in at construction (_populate_table) — refresh() alone only
+        # updates the summary cards/person label, not these, so rebuild the
+        # rows too if reconciliation results are already on screen.
+        if hasattr(self, "reconciliation_items") and self.reconciliation_items:
+            self._populate_table()
         self.refresh()
 
     def refresh(self):

@@ -5,19 +5,25 @@ ui/widgets/excel_table.py — Excel-like table with copy/paste, selection, stats
 from PyQt6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QCheckBox, QWidget,
     QHBoxLayout, QLabel, QHeaderView, QApplication, QMessageBox,
-    QStyledItemDelegate, QStyle, QStyleOptionViewItem
+    QStyledItemDelegate, QStyle, QStyleOptionViewItem, QLineEdit
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QKeySequence, QKeyEvent
 from ui.theme import Theme
 
 
-class _NoFocusRectDelegate(QStyledItemDelegate):
+class NoFocusRectDelegate(QStyledItemDelegate):
     """
-    Strips the native focus-rectangle state before painting. QSS alone
-    (`outline: none` / `border: none` on `::item:selected:focus`) doesn't
-    reliably suppress the platform style's own dotted/solid focus border,
-    which otherwise overlaps the cell's text on the selected/editing cell.
+    1) Strips the native focus-rectangle state before painting a
+       selected/non-editing cell — QSS alone (`outline: none` / `border:
+       none` on `::item:selected:focus`) doesn't reliably suppress the
+       platform style's own dotted/solid focus border.
+    2) Gives the actual in-place editor (a QLineEdit Qt spawns on top of
+       the cell while typing) a borderless, zero-radius, minimal-padding
+       style instead of letting it inherit the app's global QLineEdit QSS
+       (1.5-2px border + 10px radius + 8-12px padding) — in a normal-width
+       table cell that border/padding eats into the text, which is the
+       "cursor shows but the border hides the text" bug.
     """
 
     def paint(self, painter, option, index):
@@ -25,6 +31,22 @@ class _NoFocusRectDelegate(QStyledItemDelegate):
         if opt.state & QStyle.StateFlag.State_HasFocus:
             opt.state &= ~QStyle.StateFlag.State_HasFocus
         super().paint(painter, opt, index)
+
+    def createEditor(self, parent, option, index):
+        editor = super().createEditor(parent, option, index)
+        if isinstance(editor, QLineEdit):
+            editor.setStyleSheet(f"""
+                QLineEdit {{
+                    background-color: {Theme.SURFACE};
+                    color: {Theme.TEXT_PRIMARY};
+                    border: 1px solid {Theme.PRIMARY};
+                    border-radius: 0px;
+                    padding: 0px 8px;
+                    selection-background-color: {Theme.PRIMARY_LIGHT};
+                    selection-color: {Theme.PRIMARY_DARK};
+                }}
+            """)
+        return editor
 
 
 class ExcelTable(QTableWidget):
@@ -68,7 +90,7 @@ class ExcelTable(QTableWidget):
         self.setAlternatingRowColors(True)
         self.verticalHeader().setVisible(False)
         self.setShowGrid(False)
-        self.setItemDelegate(_NoFocusRectDelegate(self))
+        self.setItemDelegate(NoFocusRectDelegate(self))
         self.itemSelectionChanged.connect(self._update_stats)
         
     def setHeaders(self, headers: list[str]):

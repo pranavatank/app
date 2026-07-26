@@ -77,6 +77,14 @@ class LoginScreen(QWidget):
             f"padding: 12px 16px; border: 1px solid {Theme.DANGER}40;"
         )
 
+    def _badge_specs(self) -> list[tuple[str, str, str]]:
+        return [
+            ("Encrypted",  Theme.PRIMARY_LIGHT, Theme.PRIMARY_DARK),
+            ("Offline",    Theme.INFO_LIGHT,    Theme.INFO_DARK),
+            ("2FA On" if self._totp_required else "2FA Optional",
+             Theme.SUCCESS_LIGHT, Theme.SUCCESS_DARK),
+        ]
+
     def refresh_theme(self, *_args):
         """This window is torn down before the theme switcher is reachable
         (see __init__), so this is defensive-only — kept in sync with the
@@ -91,6 +99,9 @@ class LoginScreen(QWidget):
             self._form_card.setStyleSheet(self._form_card_css())
         if hasattr(self, "error_label"):
             self.error_label.setStyleSheet(self._error_css())
+        if hasattr(self, "_badges"):
+            for badge, (_txt, bg, fg) in zip(self._badges, self._badge_specs()):
+                badge.setStyleSheet(Theme.badge_style(bg, fg, radius=10, padding="4px 10px", size=11, weight=600))
 
     def _build_ui(self):
         root = QVBoxLayout(self)
@@ -149,18 +160,15 @@ class LoginScreen(QWidget):
         layout.addWidget(hero)
 
         # ── Capability badges ─────────────────────────────────────────────────
+        self._badges: list[QLabel] = []
         badges_row = QHBoxLayout()
         badges_row.setSpacing(8)
-        for txt, bg, fg in [
-            ("Encrypted",  Theme.PRIMARY_LIGHT, Theme.PRIMARY_DARK),
-            ("Offline",    Theme.INFO_LIGHT,    Theme.INFO_DARK),
-            ("2FA On" if self._totp_required else "2FA Optional",
-             Theme.SUCCESS_LIGHT, Theme.SUCCESS_DARK),
-        ]:
+        for txt, bg, fg in self._badge_specs():
             b = QLabel(txt)
             b.setAlignment(Qt.AlignmentFlag.AlignCenter)
             b.setStyleSheet(Theme.badge_style(bg, fg, radius=10, padding="4px 10px", size=11, weight=600))
             badges_row.addWidget(b)
+            self._badges.append(b)
         badges_row.addStretch()
         layout.addLayout(badges_row)
 

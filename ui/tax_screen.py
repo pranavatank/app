@@ -616,6 +616,15 @@ class TaxScreen(QWidget):
             self._context_panel.setStyleSheet(
                 Theme.tinted_surface_style(radius=12, border_color=Theme.BORDER,
                                             selector="QFrame#TaxContextPanel"))
+        if hasattr(self, "ctx_person"):
+            self.ctx_person.setStyleSheet(
+                Theme.badge_style(Theme.PRIMARY_LIGHT, Theme.PRIMARY_DARK, radius=10, padding="4px 10px", size=11, weight=600))
+        if hasattr(self, "ctx_fy"):
+            self.ctx_fy.setStyleSheet(
+                Theme.badge_style(Theme.SURFACE_ALT, Theme.TEXT_SECONDARY, radius=10, padding="4px 10px", size=11, weight=600))
+        if hasattr(self, "ctx_source"):
+            self.ctx_source.setStyleSheet(
+                Theme.badge_style(Theme.INFO_LIGHT, Theme.INFO_DARK, radius=10, padding="4px 10px", size=11, weight=600))
         bg_role = {"PRIMARY": "PRIMARY_LIGHT", "WARNING": "WARNING_LIGHT"}
         for attr, hero in (("_new_regime_card", True), ("_old_regime_card", False)):
             card = getattr(self, attr, None)
