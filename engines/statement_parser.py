@@ -148,7 +148,9 @@ def _infer_txn_type_from_desc(desc_upper: str) -> Optional[str]:
     ]
     income_markers = [
         "INTEREST CREDIT", "INTEREST", "CREDIT", " CR ", " CR.", "INT CR",
+        "NEFT CR", "NEFT CR-", "NEFT CR ",
         "DEP TFR", " DEPOSIT", "DEP ", "SALARY", "PPO,", "NEFT*RBIS",
+        "CREDIT INTEREST", "CREDIT INT",
     ]
 
     if any(marker in desc_upper for marker in expense_markers):
@@ -392,7 +394,11 @@ class GenericPDFParser(BankTemplate):
 
     def _normalize_pdf_lines(self, text: str) -> List[str]:
         """Merge wrapped narration/reference lines into logical rows."""
-        date_re = re.compile(r"\d{2}[/-](?:\d{2}|[A-Za-z]{3})[/-]\d{4}|\d{4}-\d{2}-\d{2}")
+        date_re = re.compile(
+            r"\d{2}[/-](?:\d{2}|[A-Za-z]{3})[/-]\d{4}"
+            r"|\d{4}-\d{2}-\d{2}"
+            r"|\d{2}-[A-Za-z]{3}-\d{4}"  # YES Bank: 03-Oct-2025
+        )
         amount_re = re.compile(r"\(?\d[\d,]*\.\d{1,2}\)?|\(?\.\d{1,2}\)?")
         raw_lines = [ln.strip() for ln in (text or "").split("\n") if ln and ln.strip()]
         logical: List[str] = []
@@ -440,7 +446,11 @@ class GenericPDFParser(BankTemplate):
             return parts or [text]
 
         # General case: split when multiple date tokens exist in one line.
-        date_re = re.compile(r"(?:\d{2}[-/](?:\d{2}|[A-Za-z]{3})[-/]\d{4}|\d{4}-\d{2}-\d{2})")
+        date_re = re.compile(
+            r"(?:\d{2}[-/](?:\d{2}|[A-Za-z]{3})[-/]\d{4}"
+            r"|\d{4}-\d{2}-\d{2}"
+            r"|\d{2}-[A-Za-z]{3}-\d{4})"  # YES Bank
+        )
         dates = list(date_re.finditer(text))
         if len(dates) <= 1:
             return [text]
@@ -471,7 +481,11 @@ class GenericPDFParser(BankTemplate):
         if re.match(r"^\(?\d[\d,]*\.\d{1,2}\)?(?:\s+\(?\d[\d,]*\.\d{1,2}\)?){2,}$", text):
             return False
 
-        starts_with_date = re.match(r"^(?:\d+\s+)?'?\d{4}-\d{2}-\d{2}|^\d{2}[-/](?:\d{2}|[A-Za-z]{3})[-/]\d{4}", text) is not None
+        starts_with_date = re.match(
+            r"^(?:\d+\s+)?'?\d{4}-\d{2}-\d{2}"
+            r"|^\d{2}[-/](?:\d{2}|[A-Za-z]{3})[-/]\d{4}"
+            r"|^\d{2}-[A-Za-z]{3}-\d{4}",  # YES Bank
+            text) is not None
         has_amount = re.search(r"\(?\d[\d,]*\.\d{1,2}\)?|\(?\.\d{1,2}\)?", text) is not None
         if starts_with_date and has_amount:
             return True
@@ -563,7 +577,8 @@ class GenericPDFParser(BankTemplate):
             description = self._clean_pdf_description(description)
 
             upper = description.upper()
-            txn_type = _infer_txn_type_from_desc(upper) or "Expense"
+            # Infer type from raw remainder first (before cleaning strips keywords)
+            txn_type = _infer_txn_type_from_desc(remainder.upper()) or _infer_txn_type_from_desc(upper) or "Expense"
 
             return {
                 "transaction_date": txn_date,
@@ -577,7 +592,11 @@ class GenericPDFParser(BankTemplate):
             }, "ok"
 
         # One-date row (date may appear after narration in some layouts).
-        date_match = re.search(r"((?:\d{2}[/-]\d{2}[/-]\d{4})|(?:\d{4}-\d{2}-\d{2}))", text)
+        date_match = re.search(
+            r"((?:\d{2}[/-]\d{2}[/-]\d{4})"
+            r"|(?:\d{4}-\d{2}-\d{2})"
+            r"|(?:\d{2}-[A-Za-z]{3}-\d{4}))",  # YES Bank
+            text)
         if not date_match:
             return None, "missing transaction date at line start"
 
@@ -609,8 +628,11 @@ class GenericPDFParser(BankTemplate):
         description = self._clean_pdf_description(description)
         desc_upper = description.upper()
 
+        # Infer type from raw line first so keywords stripped by cleaning are still used
+        raw_upper = text.upper()
+        txn_type = _infer_txn_type_from_desc(raw_upper) or _infer_txn_type_from_desc(desc_upper)
+
         amount = None
-        txn_type = None
         balance_after = None
 
         if len(parsed_abs) >= 3 and all(isinstance(v, float) for v in parsed_abs[-3:]):
@@ -1698,18 +1720,16 @@ def parse_statement_with_debug(file_path: str, file_type: str, bank_name: str = 
             "rows_extracted": ai_debug.get("rows_extracted", len(ai_transactions)),
             "issues": ai_debug.get("issues", [])
         })
+        debug_info["mode_used"] = debug_info["mode_used"] or "ai"
+        debug_info["issues"].extend(ai_debug.get("issues", []))
         if ai_transactions:
             debug_info["mode_used"] = "ai"
-            debug_info["issues"].extend(ai_debug.get("issues", []))
             return ai_transactions, debug_info
-        if parser_mode == "ai":
-            debug_info["mode_used"] = "ai"
-            debug_info["issues"].extend(ai_debug.get("issues", []))
-            return [], debug_info
-    else:
-        debug_info["mode_used"] = "unsupported-file-type"
-        debug_info["issues"].append(f"Unsupported file type '{file_type}'")
         return [], debug_info
+
+    debug_info["mode_used"] = "unsupported-file-type"
+    debug_info["issues"].append(f"Unsupported file type '{file_type}'")
+    return [], debug_info
 
 
 def parse_statement(file_path: str, file_type: str, bank_name: str = "Generic",
@@ -1722,7 +1742,7 @@ def parse_statement(file_path: str, file_type: str, bank_name: str = "Generic",
 def extract_statement_text(file_path: str, file_type: str, password: Optional[str] = None) -> str:
     """Extract statement text for metadata detection (PDF/Excel only)."""
     if file_type.upper() == "PDF":
-        _ensure_pdf_password(file_path, password)
+        ensure_pdf_password(file_path, password)
         try:
             if password:
                 pdf_ctx = pdfplumber.open(file_path, password=password)

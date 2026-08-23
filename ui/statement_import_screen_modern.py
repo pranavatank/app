@@ -44,6 +44,7 @@ from engines.statement_parser import (
 )
 from engines.statement_metadata_extractor import extract_account_metadata
 from ui.dialogs.account_dialog import AccountDialog
+from ui.dialogs.account_metadata_dialog import AccountMetadataDialog
 from ui.dialogs.password_dialog import PasswordDialog
 from ui.chatbot_screen import OllamaModelStartWorker
 from ui.dialogs.column_mapping_dialog import ColumnMappingDialog
@@ -719,21 +720,13 @@ class StatementImportScreen(QWidget):
                 if any(metadata.values()):
                     acc = get_account(self.selected_account_id)
                     self._hide_loader()
-                    persons = get_all_persons()
-                    merged = dict(acc or {})
-                    for k, v in metadata.items():
-                        if v not in (None, ""):
-                            merged[k] = v
-
-                    dialog = AccountDialog(self, persons, merged)
-                    dialog.setWindowTitle(f"Update Account Details - {(acc or {}).get('bank_name', 'Account')}")
-                    if dialog.exec() == QDialog.DialogCode.Accepted:
-                        payload = dialog.get_data()
-                        tan_code = payload.pop("tan_code", None)
-                        update_account(self.selected_account_id, **payload)
-                        get_or_create_bank(payload.get("bank_name") or "")
-                        if tan_code:
-                            update_bank_tan_code_if_exists(payload.get("bank_name") or "", tan_code)
+                    dialog = AccountMetadataDialog(
+                        self,
+                        account_id=self.selected_account_id,
+                        account_name=(acc or {}).get('bank_name', 'Account'),
+                        metadata=metadata,
+                    )
+                    dialog.exec()
                     self._show_loader("Processing Statement", "Validating transactions...")
             except Exception as e:
                 print(f"Metadata extraction failed: {e}")

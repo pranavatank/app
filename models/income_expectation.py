@@ -256,10 +256,18 @@ def delete_income_expectation(expectation_id):
         conn.close()
 
 def auto_link_income_expectations(person_id, account_id, financial_year):
-    """Automatically link unlinked expectations with matching transactions."""
+    """Automatically link unlinked expectations with best-matching transactions.
+
+    Matching priority (per expectation, within the same calendar month):
+      1. Amount score  — |actual - expected| / expected  (lower = better)
+      2. Date score    — |actual_day - expected_day|      (lower = better)
+
+    A candidate is only considered if its amount is within 50 % of the
+    expected amount.  This prevents a small interest credit from being
+    matched to a large salary expectation.
+    """
     conn = get_connection()
     try:
-        # Get all unlinked expectations for this person/account/FY
         expectations = conn.execute("""
             SELECT expectation_id, expected_date, income_type, expected_amount
             FROM IncomeExpectation
@@ -271,7 +279,6 @@ def auto_link_income_expectations(person_id, account_id, financial_year):
         if not expectations:
             return 0
 
-        # Get all unlinked income transactions for this person/account/FY
         from config import fy_date_range
         fy_start, fy_end = fy_date_range(financial_year)
 
@@ -292,39 +299,60 @@ def auto_link_income_expectations(person_id, account_id, financial_year):
         if not transactions:
             return 0
 
-        linked_count = 0
-
-        # Match each expectation with transaction in the same month
         from datetime import datetime
+
+        # Convert to mutable list of dicts so we can remove matched ones
+        available = [
+            {
+                "transaction_id": t["transaction_id"],
+                "date": datetime.strptime(t["transaction_date"], "%Y-%m-%d").date(),
+                "amount": t["amount"],
+            }
+            for t in transactions
+        ]
+
+        linked_count = 0
 
         for exp in expectations:
             exp_date = datetime.strptime(exp["expected_date"], "%Y-%m-%d").date()
-            exp_id = exp["expectation_id"]
-            exp_month = exp_date.month
-            exp_year = exp_date.year
+            exp_amount = exp["expected_amount"]
+            exp_day = exp_date.day
 
-            # Find first transaction in the same month and year
-            best_match = None
+            # Candidates: same month+year, amount within 50 % of expected
+            candidates = [
+                t for t in available
+                if t["date"].month == exp_date.month
+                and t["date"].year == exp_date.year
+                and abs(t["amount"] - exp_amount) <= exp_amount * 0.50
+            ]
 
-            for txn in transactions:
-                txn_date = datetime.strptime(txn["transaction_date"], "%Y-%m-%d").date()
+            if not candidates:
+                # Relax: same month, no amount filter — pick closest amount
+                candidates = [
+                    t for t in available
+                    if t["date"].month == exp_date.month
+                    and t["date"].year == exp_date.year
+                ]
 
-                # Match if same month and year
-                if txn_date.month == exp_month and txn_date.year == exp_year:
-                    best_match = txn
-                    break
+            if not candidates:
+                continue
 
-            if best_match:
-                # Link this expectation to the transaction
-                conn.execute("""
-                    UPDATE IncomeExpectation
-                    SET actual_transaction_id = ?
-                    WHERE expectation_id = ?
-                """, (best_match["transaction_id"], exp_id))
+            # Score: primary = amount proximity (ratio), secondary = date proximity (days)
+            def score(t):
+                amount_score = abs(t["amount"] - exp_amount) / max(exp_amount, 1)
+                date_score = abs(t["date"].day - exp_day) / 31.0
+                return (amount_score, date_score)
 
-                # Remove this transaction from available list
-                transactions = [t for t in transactions if t["transaction_id"] != best_match["transaction_id"]]
-                linked_count += 1
+            best = min(candidates, key=score)
+
+            conn.execute("""
+                UPDATE IncomeExpectation
+                SET actual_transaction_id = ?
+                WHERE expectation_id = ?
+            """, (best["transaction_id"], exp["expectation_id"]))
+
+            available = [t for t in available if t["transaction_id"] != best["transaction_id"]]
+            linked_count += 1
 
         conn.commit()
         return linked_count

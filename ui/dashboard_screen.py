@@ -4,6 +4,8 @@ FIX: _nav_active_style now uses Theme.SIDEBAR_ACTIVE/HOVER tokens (no hardcoded 
 FIX: Brand header uses Theme.gradient() so all themes look correct.
 """
 
+import os
+
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QLabel, QPushButton, QComboBox, QStackedWidget,
@@ -495,6 +497,12 @@ class DashboardScreen(QMainWindow):
         layout.addWidget(self.fy_combo)
 
         layout.addSpacing(8)
+        btn_refresh = Theme.btn("⟳ Refresh", "secondary", height=34, min_width=102)
+        btn_refresh.setToolTip("Hard refresh — reload all screens without logging out")
+        btn_refresh.setAccessibleName("Hard Refresh")
+        btn_refresh.clicked.connect(self._on_hard_refresh)
+        layout.addWidget(btn_refresh)
+
         btn_logout = Theme.btn("Logout", "secondary", height=34, min_width=102)
         btn_logout.setAccessibleName("Logout")
         btn_logout.setAccessibleDescription("Sign out of the application.")
@@ -835,6 +843,29 @@ class DashboardScreen(QMainWindow):
 
     def refresh_overview(self):
         self._sync_context_selectors()
+        self._refresh_overview()
+
+    def _on_hard_refresh(self):
+        """Reload all Python modules and rebuild the dashboard in-place."""
+        import importlib, sys
+        # Reload every app module (skip stdlib / site-packages)
+        app_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        for name, mod in list(sys.modules.items()):
+            spec = getattr(mod, "__spec__", None)
+            origin = getattr(spec, "origin", None) or ""
+            if origin.startswith(app_root) and name not in ("__main__",):
+                try:
+                    importlib.reload(mod)
+                except Exception:
+                    pass
+        # Re-apply theme stylesheet
+        from PyQt6.QtWidgets import QApplication
+        from ui.theme import Theme, ThemeManager
+        ThemeManager.load_and_apply()
+        QApplication.instance().setStyleSheet(Theme.get_stylesheet())
+        # Rebuild the whole UI in-place
+        self._build_ui()
+        self._populate_selectors()
         self._refresh_overview()
 
     def _on_logout(self):
