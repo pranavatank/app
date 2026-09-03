@@ -11,6 +11,9 @@ data/logo_clean.png
 data/logo.ico
 data/old logo.png
 
+# Owner's real financial documents - never track (see REBUILD_PLAN T001)
+data/PersonalData/
+
 # Backup files
 backups/*.db
 
@@ -23,6 +26,7 @@ __pycache__/
 
 # Virtual environment
 venv/
+.venv/
 env/
 ENV/
 
