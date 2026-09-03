@@ -16,7 +16,7 @@ from typing import Dict, List, Optional
 
 import pdfplumber
 
-from engines.statement_parser import (
+from engines.parser_utils import (
     _extract_reference_no,
     _append_issue,
     _guess_fd_category,
