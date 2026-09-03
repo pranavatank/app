@@ -893,7 +893,9 @@ class LocalChatbotDialog(QDialog):
             if item and isinstance(item.widget(), _FilePill):
                 if item.widget().path == path:
                     w = self._files_row.takeAt(i).widget()
-                    w.deleteLater()
+                    if w:
+                        w.setParent(None)
+                        w.deleteLater()
                     break
         if not self._pending_files:
             self._files_row_widget.hide()
@@ -903,8 +905,10 @@ class LocalChatbotDialog(QDialog):
         self._pending_files.clear()
         while self._files_row.count() > 1:
             item = self._files_row.takeAt(0)
-            if item and item.widget():
-                item.widget().deleteLater()
+            w = item.widget() if item else None
+            if w:
+                w.setParent(None)
+                w.deleteLater()
         self._files_row_widget.hide()
         self._update_send_btn_state()
 
@@ -1140,6 +1144,7 @@ class LocalChatbotDialog(QDialog):
             item = self.chat_layout.takeAt(0)
             w = item.widget()
             if w:
+                w.setParent(None)
                 w.deleteLater()
         self._add_message(
             "assistant",

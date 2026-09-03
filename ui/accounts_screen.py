@@ -92,8 +92,10 @@ class AccountsScreen(QWidget):
     def _load_accounts(self):
         while self.container_layout.count():
             item = self.container_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+            w = item.widget()
+            if w:
+                w.setParent(None)
+                w.deleteLater()
 
         accounts = get_all_accounts()
         if self.selected_person_id:

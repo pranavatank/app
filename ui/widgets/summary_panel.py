@@ -246,7 +246,9 @@ class SummaryPanel(QFrame):
         self._dividers.clear()
         while self._stats_layout.count():
             item = self._stats_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+            w = item.widget()
+            if w:
+                w.setParent(None)
+                w.deleteLater()
         if not self._scrollable:
             self._stats_layout.addStretch()
