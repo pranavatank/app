@@ -8,7 +8,10 @@ from core.database import get_connection
 def upsert_savings_interest(account_id: int, financial_year: str,
                              avg_monthly_balance: float,
                              interest_rate: float,
-                             interest_earned: float) -> None:
+                             interest_earned: float,
+                             quarter: str = None,
+                             daily_product: bool = False,
+                             calculation_basis: str = None) -> None:
     """Insert or update a savings interest record for an account and FY."""
     conn = get_connection()
     existing = conn.execute("""
@@ -19,18 +22,22 @@ def upsert_savings_interest(account_id: int, financial_year: str,
     if existing:
         conn.execute("""
             UPDATE SavingsInterestRecord
-            SET avg_monthly_balance = ?, interest_rate = ?, interest_earned = ?
+            SET avg_monthly_balance = ?, interest_rate = ?, interest_earned = ?,
+                quarter = ?, daily_product = ?, calculation_basis = ?
             WHERE record_id = ?
         """, (avg_monthly_balance, interest_rate,
-              interest_earned, existing["record_id"]))
+              interest_earned, quarter, daily_product, calculation_basis,
+              existing["record_id"]))
     else:
         conn.execute("""
             INSERT INTO SavingsInterestRecord
                 (account_id, financial_year, avg_monthly_balance,
-                 interest_rate, interest_earned)
-            VALUES (?, ?, ?, ?, ?)
+                 interest_rate, interest_earned, quarter, daily_product,
+                 calculation_basis)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, (account_id, financial_year, avg_monthly_balance,
-              interest_rate, interest_earned))
+              interest_rate, interest_earned, quarter, daily_product,
+              calculation_basis))
 
     conn.commit()
     conn.close()

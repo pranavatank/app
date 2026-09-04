@@ -43,6 +43,8 @@ from engines.statement_parser import (
     is_ollama_available,
 )
 from engines.statement_metadata_extractor import extract_account_metadata
+from engines.interest_engine import allocate_savings_interest_to_fy
+from config import get_all_financial_years, fy_date_range
 from ui.dialogs.account_dialog import AccountDialog
 from ui.dialogs.account_metadata_dialog import AccountMetadataDialog
 from ui.dialogs.password_dialog import PasswordDialog
@@ -903,14 +905,39 @@ class StatementImportScreen(QWidget):
 
             self._update_loader("Finalizing import log...")
             log_import(
-                account_id=self.selected_account_id, 
+                account_id=self.selected_account_id,
                 person_id=self.selected_person_id,
                 bank_name=self.bank_name,
                 file_name=(self.selected_file.split("/")[-1] or self.selected_file.split("\\")[-1]),
-                file_type=self.file_type, 
-                records_imported=imported, 
+                file_type=self.file_type,
+                records_imported=imported,
                 status="Success"
             )
+
+            # Recalculate savings interest for affected FYs
+            self._update_loader("Calculating savings interest...")
+            account = get_account(self.selected_account_id)
+            if account:
+                interest_rate = float(account.get("interest_rate") or 0)
+                opening_balance = float(account.get("opening_balance") or 0)
+
+                # Determine which FYs were affected by the import
+                for txn in batch_rows:
+                    txn_date = datetime.fromisoformat(txn["transaction_date"]).date()
+                    # Determine FY of transaction
+                    if txn_date.month >= 4:
+                        fy = f"{txn_date.year}-{str(txn_date.year + 1)[2:]}"
+                    else:
+                        fy = f"{txn_date.year - 1}-{str(txn_date.year)[2:]}"
+
+                    try:
+                        allocate_savings_interest_to_fy(
+                            self.selected_account_id, fy, interest_rate, opening_balance
+                        )
+                    except Exception:
+                        # Log but don't fail the import
+                        pass
+
             self.fds_created_last_import = fds_created
             self._hide_loader()
             

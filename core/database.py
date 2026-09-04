@@ -156,6 +156,19 @@ def _migrate_fd_interest_record_schema_if_needed(cur: sqlite3.Cursor) -> None:
         cur.execute("ALTER TABLE FDInterestRecord ADD COLUMN period_start TEXT")
     if "period_end" not in cols:
         cur.execute("ALTER TABLE FDInterestRecord ADD COLUMN period_end TEXT")
+    if "tds_declaration_form" not in cols:
+        cur.execute("ALTER TABLE FDInterestRecord ADD COLUMN tds_declaration_form TEXT")
+
+
+def _migrate_savings_interest_record_schema_if_needed(cur: sqlite3.Cursor) -> None:
+    """Upgrade SavingsInterestRecord schema to support daily-product calculation."""
+    cols = {row[1] for row in cur.execute("PRAGMA table_info(SavingsInterestRecord)").fetchall()}
+    if "quarter" not in cols:
+        cur.execute("ALTER TABLE SavingsInterestRecord ADD COLUMN quarter TEXT")
+    if "daily_product" not in cols:
+        cur.execute("ALTER TABLE SavingsInterestRecord ADD COLUMN daily_product INTEGER NOT NULL DEFAULT 0")
+    if "calculation_basis" not in cols:
+        cur.execute("ALTER TABLE SavingsInterestRecord ADD COLUMN calculation_basis TEXT")
 
 
 def _migrate_tax_profile_schema_if_needed(cur: sqlite3.Cursor) -> None:
@@ -505,7 +518,8 @@ def initialise_database() -> None:
             period_start    TEXT,
             period_end      TEXT,
             interest_earned REAL    NOT NULL,
-            assessment_year TEXT    NOT NULL
+            assessment_year TEXT    NOT NULL,
+            tds_declaration_form TEXT
         )
     """)
 
@@ -517,7 +531,10 @@ def initialise_database() -> None:
             financial_year      TEXT    NOT NULL,
             avg_monthly_balance REAL    NOT NULL,
             interest_rate       REAL    NOT NULL,
-            interest_earned     REAL    NOT NULL
+            interest_earned     REAL    NOT NULL,
+            quarter             TEXT,
+            daily_product       INTEGER NOT NULL DEFAULT 0,
+            calculation_basis   TEXT
         )
     """)
 
@@ -780,6 +797,7 @@ def initialise_database() -> None:
 
     _migrate_bank_account_schema_if_needed(cur)
     _migrate_fd_interest_record_schema_if_needed(cur)
+    _migrate_savings_interest_record_schema_if_needed(cur)
 
     conn.commit()
     conn.close()

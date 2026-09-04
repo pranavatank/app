@@ -5,13 +5,17 @@ engines/interest_engine.py — FD compounding, savings interest, FY allocation
 from datetime import date, timedelta
 import calendar
 from dateutil.relativedelta import relativedelta
-from config import get_assessment_year, fy_date_range, FD_TDS_THRESHOLD
+from config import (
+    get_assessment_year, fy_date_range, FD_TDS_THRESHOLD, FD_TDS_THRESHOLD_SENIOR,
+    FD_TDS_FORM_NAME, FD_TDS_FORM_NAME_SENIOR
+)
 from models.fixed_deposit import get_fd
 from models.fd_interest_record import (
     upsert_fd_interest, delete_fd_interest_records, get_fd_interest_by_fy,
 )
 from models.savings_interest import upsert_savings_interest
 from models.transaction import get_transactions_by_account
+from models.person import get_person
 
 
 def calculate_fd_maturity(principal: float, rate: float, tenure_months: int,
@@ -73,26 +77,6 @@ def _accrue_period_interest(principal: float, annual_rate: float,
     return period_interest
 
 
-def _average_monthly_balance(transactions: list) -> float:
-    """
-    Compute average balance across months from a list of transactions.
-    Each transaction dict must have "transaction_date" and "balance_after" fields.
-    Returns the average of monthly averages.
-    """
-    monthly_balances = {}
-    for txn in transactions:
-        txn_date = date.fromisoformat(txn["transaction_date"])
-        month_key = (txn_date.year, txn_date.month)
-        if month_key not in monthly_balances:
-            monthly_balances[month_key] = []
-        monthly_balances[month_key].append(txn["balance_after"])
-
-    avg_balance = 0
-    if monthly_balances:
-        month_avgs = [sum(balances) / len(balances) for balances in monthly_balances.values()]
-        avg_balance = sum(month_avgs) / len(month_avgs)
-
-    return avg_balance
 
 
 def calculate_fd_maturity_bank_style(principal: float, rate: float,
@@ -471,9 +455,27 @@ def allocate_fd_interest_to_fy(fd_id: int) -> None:
 
 
 def calculate_savings_interest_for_fy(account_id: int, financial_year: str,
-                                      interest_rate: float) -> float:
-    """Estimate savings interest based on average monthly balance."""
+                                      interest_rate: float,
+                                      opening_balance: float = 0.0) -> dict:
+    """
+    Calculate savings interest using daily closing balance method (daily product).
+
+    Indian banks have been required to credit savings interest on daily closing balance
+    since 1 April 2010, accumulated per quarter. This function:
+    1. Reconstructs the daily closing balance series from transactions
+    2. Carries the last known balance forward across days with no transaction
+    3. Accumulates interest per quarter using daily balances
+    4. Uses 365 or 366 days per year (leap-year aware)
+
+    If the FY starts before the first transaction, the opening_balance (or 0 if unknown)
+    is carried forward to the first transaction date.
+
+    Returns a dict with keys:
+      - interest_earned: float, total interest for the FY
+      - breakdown: list of {quarter, days, daily_product_sum, interest} dicts
+    """
     fy_start, fy_end = fy_date_range(financial_year)
+    year_days = 366 if calendar.isleap(fy_start.year) or calendar.isleap(fy_end.year) else 365
 
     transactions = get_transactions_by_account(
         account_id,
@@ -481,47 +483,108 @@ def calculate_savings_interest_for_fy(account_id: int, financial_year: str,
         end_date=fy_end.isoformat()
     )
 
-    if not transactions:
-        return 0.0
+    # Build a map of daily balances from transactions
+    # Key: date, Value: balance_after from the last transaction on that day
+    daily_balances = {}
+    if transactions:
+        for txn in transactions:
+            txn_date = date.fromisoformat(txn["transaction_date"])
+            if txn["balance_after"] is not None:
+                # Keep the last transaction's balance for this date
+                daily_balances[txn_date] = txn["balance_after"]
 
-    avg_balance = _average_monthly_balance(transactions)
+    # Accumulate interest per quarter
+    quarter_data = {}
+    for q_name, q_start, q_end in _fy_quarters(financial_year):
+        # Find the balance at the start of this quarter
+        # (the last known balance before q_start)
+        current_balance = opening_balance
+        for txn in transactions:
+            txn_date = date.fromisoformat(txn["transaction_date"])
+            if txn_date < q_start and txn["balance_after"] is not None:
+                current_balance = txn["balance_after"]
 
-    # Simple interest calculation
-    interest = (avg_balance * interest_rate * 1) / 100
-    return round(interest, 2)
+        # Accumulate daily balance for this quarter
+        quarter_daily_product = 0.0
+        day_count = 0
+
+        current_day = q_start
+        while current_day <= q_end:
+            # Check if there's a transaction on this day
+            if current_day in daily_balances:
+                current_balance = daily_balances[current_day]
+
+            quarter_daily_product += current_balance
+            day_count += 1
+            current_day += timedelta(days=1)
+
+        if day_count > 0:
+            # Interest = (sum of daily balances) * rate / 100 / year_days
+            quarter_interest = (quarter_daily_product * interest_rate / 100) / year_days
+            quarter_data[q_name] = {
+                "quarter": q_name,
+                "days": day_count,
+                "daily_product_sum": quarter_daily_product,
+                "interest": round(quarter_interest, 2),
+            }
+
+    total_interest = sum(q["interest"] for q in quarter_data.values())
+
+    return {
+        "interest_earned": round(total_interest, 2),
+        "breakdown": list(quarter_data.values()),
+        "calculation_basis": "daily_product",
+    }
 
 
 def allocate_savings_interest_to_fy(account_id: int, financial_year: str,
-                                    interest_rate: float) -> None:
-    """Calculate and store savings interest for a FY."""
-    fy_start, fy_end = fy_date_range(financial_year)
-
-    transactions = get_transactions_by_account(
-        account_id,
-        start_date=fy_start.isoformat(),
-        end_date=fy_end.isoformat()
+                                    interest_rate: float,
+                                    opening_balance: float = 0.0) -> None:
+    """Calculate and store savings interest for a FY using daily closing balance method."""
+    result = calculate_savings_interest_for_fy(
+        account_id, financial_year, interest_rate, opening_balance
     )
 
-    if not transactions:
-        return
-
-    avg_balance = _average_monthly_balance(transactions)
-
-    interest = (avg_balance * interest_rate * 1) / 100
+    # Determine primary quarter for the record (use Q1 for now, or could use
+    # the quarter with the highest interest)
+    primary_quarter = "Q1"
+    if result["breakdown"]:
+        primary_quarter = max(result["breakdown"], key=lambda x: x["interest"])["quarter"]
 
     upsert_savings_interest(
-        account_id, financial_year, avg_balance, interest_rate, round(interest, 2)
+        account_id, financial_year, 0.0, interest_rate, result["interest_earned"],
+        quarter=primary_quarter,
+        daily_product=True,
+        calculation_basis="daily_product"
     )
 
 
 _TDS_QUARTERS = ["Q1", "Q2", "Q3", "Q4"]
 
 
-def fd_tds_threshold_status(person_id: int, financial_year: str,
-                            threshold: float = FD_TDS_THRESHOLD) -> dict:
+def _is_senior_citizen_in_fy(person_id: int, financial_year: str) -> bool:
+    """Check if person turns 60 at ANY point during the financial year."""
+    person = get_person(person_id)
+    if not person or not person.get("date_of_birth"):
+        return False
+
+    dob = date.fromisoformat(person["date_of_birth"])
+    fy_start, fy_end = fy_date_range(financial_year)
+
+    # Check if the person turns 60 at any point during the FY
+    # This is true if: (dob + 60 years) falls within [fy_start, fy_end]
+    # or if the person was already 60+ on fy_start
+    sixty_date = dob + relativedelta(years=60)
+    return sixty_date <= fy_end
+
+
+def fd_tds_threshold_status(person_id: int, financial_year: str) -> dict:
     """
     Per-bank check of whether a person's FD interest crosses the TDS threshold
     in a financial year, and in which quarter the running total crosses it.
+
+    For non-senior citizens (< 60 during FY): threshold = 50,000, form = Form 15G
+    For senior citizens (turn 60 at any point during FY): threshold = 1,00,000, form = Form 15H
 
     Banks that credit FD interest quarterly deduct TDS in the quarter their
     cumulative interest for the year first crosses the limit — so the check is
@@ -532,21 +595,27 @@ def fd_tds_threshold_status(person_id: int, financial_year: str,
     Returns:
         {
           "threshold": float,
+          "form_name": str,
           "any_exceeds": bool,
           "banks": [
             {"bank_name", "total_interest", "exceeds", "crossing_quarter",
+             "form_name", "form_on_file", "tds_warning",
              "breakdown": [{"quarter", "interest", "cumulative"}, ...]},
             ...
           ]
         }
     """
+    is_senior = _is_senior_citizen_in_fy(person_id, financial_year)
+    threshold = FD_TDS_THRESHOLD_SENIOR if is_senior else FD_TDS_THRESHOLD
+    form_name = FD_TDS_FORM_NAME_SENIOR if is_senior else FD_TDS_FORM_NAME
+
     records = get_fd_interest_by_fy(financial_year, person_id=person_id)
 
     by_bank: dict[str, dict] = {}
     for r in records:
         bank = r.get("bank_name") or "Unknown Bank"
         entry = by_bank.setdefault(
-            bank, {"total": 0.0, "quarters": {q: 0.0 for q in _TDS_QUARTERS}, "misc": 0.0})
+            bank, {"total": 0.0, "quarters": {q: 0.0 for q in _TDS_QUARTERS}, "misc": 0.0, "declaration": None})
         amount = float(r.get("interest_earned") or 0)
         entry["total"] += amount
         quarter = r.get("quarter")
@@ -554,6 +623,9 @@ def fd_tds_threshold_status(person_id: int, financial_year: str,
             entry["quarters"][quarter] += amount
         else:
             entry["misc"] += amount
+        # Capture declaration status if available
+        if r.get("tds_declaration_form"):
+            entry["declaration"] = r.get("tds_declaration_form")
 
     banks = []
     for bank, e in by_bank.items():
@@ -569,17 +641,27 @@ def fd_tds_threshold_status(person_id: int, financial_year: str,
             })
             if crossing_quarter is None and cumulative >= threshold:
                 crossing_quarter = q
+
+        # Determine if TDS warning should be shown
+        exceeds = e["total"] >= threshold
+        declaration_on_file = e.get("declaration") == form_name
+        show_warning = exceeds and not declaration_on_file
+
         banks.append({
             "bank_name": bank,
             "total_interest": round(e["total"], 2),
-            "exceeds": e["total"] >= threshold,
+            "exceeds": exceeds,
             "crossing_quarter": crossing_quarter,
+            "form_name": form_name,
+            "form_on_file": declaration_on_file,
+            "tds_warning": show_warning,
             "breakdown": breakdown,
         })
 
     banks.sort(key=lambda b: b["total_interest"], reverse=True)
     return {
         "threshold": threshold,
+        "form_name": form_name,
         "any_exceeds": any(b["exceeds"] for b in banks),
         "banks": banks,
     }

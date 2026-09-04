@@ -170,7 +170,8 @@ class Theme:
                     padding: 4px 20px; font-size: 13px; font-weight: 700;
                 }}
                 QPushButton:hover  {{ background: {t.gradient(t.PRIMARY_GRADIENT_HOVER_START, t.PRIMARY_GRADIENT_HOVER_END)}; }}
-                QPushButton:pressed{{ background: {t.PRIMARY_DARK}; padding-top: 3px; }}
+                QPushButton:focus  {{ outline: 2px solid {t.FOCUS_RING}; outline-offset: 2px; }}
+                QPushButton:pressed{{ background: {t.PRIMARY_DARK}; }}
                 QPushButton:disabled{{ background: {t.SURFACE_ALT}; color: {t.TEXT_MUTED}; }}
             """,
             "secondary": f"""
@@ -190,7 +191,8 @@ class Theme:
                     padding: 4px 20px; font-size: 13px; font-weight: 700;
                 }}
                 QPushButton:hover  {{ background: {t.SUCCESS_DARK}; }}
-                QPushButton:pressed{{ background: {t.SUCCESS_DARK}; padding-top: 3px; }}
+                QPushButton:focus  {{ outline: 2px solid {t.FOCUS_RING}; outline-offset: 2px; }}
+                QPushButton:pressed{{ background: {t.SUCCESS_DARK}; }}
                 QPushButton:disabled{{ background: {t.SURFACE_ALT}; color: {t.TEXT_MUTED}; }}
             """,
             "danger": f"""
@@ -200,7 +202,8 @@ class Theme:
                     padding: 4px 20px; font-size: 13px; font-weight: 700;
                 }}
                 QPushButton:hover  {{ background: {t.DANGER_DARK}; }}
-                QPushButton:pressed{{ background: {t.DANGER_DARK}; padding-top: 3px; }}
+                QPushButton:focus  {{ outline: 2px solid {t.FOCUS_RING}; outline-offset: 2px; }}
+                QPushButton:pressed{{ background: {t.DANGER_DARK}; }}
                 QPushButton:disabled{{ background: {t.SURFACE_ALT}; color: {t.TEXT_MUTED}; }}
             """,
             "warning": f"""
@@ -237,7 +240,8 @@ class Theme:
                     padding: 4px 26px; font-size: 14px; font-weight: 700;
                 }}
                 QPushButton:hover  {{ background: {t.gradient(t.HERO_GRADIENT_HOVER_START, t.HERO_GRADIENT_HOVER_END)}; }}
-                QPushButton:pressed{{ background: {t.PRIMARY_DARK}; padding-top: 3px; }}
+                QPushButton:focus  {{ outline: 2px solid {t.FOCUS_RING}; outline-offset: 2px; }}
+                QPushButton:pressed{{ background: {t.PRIMARY_DARK}; }}
                 QPushButton:disabled{{ background: {t.SURFACE_ALT}; color: {t.TEXT_MUTED}; }}
             """,
             "ghost": f"""
@@ -469,7 +473,7 @@ QLineEdit, QTextEdit, QPlainTextEdit {{
     selection-background-color: {t.PRIMARY_LIGHT};
     selection-color: {t.PRIMARY_DARK};
 }}
-QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus {{ border: 1.5px solid {t.PRIMARY}; }}
+QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus {{ border: 1.5px solid {t.PRIMARY}; outline: 2px solid {t.FOCUS_RING}; outline-offset: 2px; }}
 QLineEdit:hover, QTextEdit:hover {{ border-color: {t.BORDER_FOCUS}; }}
 QLineEdit[readOnly="true"] {{ background-color: {t.SURFACE_ALT}; color: {t.TEXT_SECONDARY}; border-color: {t.DIVIDER}; }}
 QSpinBox[readOnly="true"], QDoubleSpinBox[readOnly="true"] {{
@@ -483,7 +487,7 @@ QComboBox {{
     padding: 7px 12px; font-size: 14px; min-height: 18px;
 }}
 QComboBox:hover {{ border-color: {t.BORDER_FOCUS}; }}
-QComboBox:focus {{ border-color: {t.PRIMARY}; }}
+QComboBox:focus {{ border-color: {t.PRIMARY}; outline: 2px solid {t.FOCUS_RING}; outline-offset: 2px; }}
 QComboBox::drop-down {{ border: none; width: 28px; }}
 QComboBox::down-arrow {{ {_combo_arrow_rule} margin-right: 8px; }}
 QComboBox QAbstractItemView {{
@@ -499,11 +503,11 @@ QSpinBox, QDoubleSpinBox, QDateEdit {{
     border: 1.5px solid {t.BORDER}; border-radius: 10px;
     padding: 7px 10px; font-size: 14px;
 }}
-QSpinBox:focus, QDoubleSpinBox:focus, QDateEdit:focus {{ border-color: {t.PRIMARY}; }}
+QSpinBox:focus, QDoubleSpinBox:focus, QDateEdit:focus {{ border-color: {t.PRIMARY}; outline: 2px solid {t.FOCUS_RING}; outline-offset: 2px; }}
 QSpinBox:hover, QDoubleSpinBox:hover, QDateEdit:hover {{ border-color: {t.BORDER_FOCUS}; }}
 QSpinBox::up-button, QSpinBox::down-button,
 QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {{
-    border: none; width: 20px; background: {t.SURFACE_ALT};
+    border: none; width: 24px; height: 12px; background: {t.SURFACE_ALT};
     subcontrol-origin: border;
 }}
 QSpinBox::up-button, QDoubleSpinBox::up-button {{
@@ -535,7 +539,8 @@ QPushButton {{
     padding: 8px 18px; font-size: 14px; font-weight: 600; min-height: 22px;
 }}
 QPushButton:hover   {{ background: {t.gradient(t.PRIMARY_GRADIENT_HOVER_START, t.PRIMARY_GRADIENT_HOVER_END)}; }}
-QPushButton:pressed {{ background-color: {t.PRIMARY_DARK}; padding-top: 10px; }}
+QPushButton:focus   {{ outline: 2px solid {t.FOCUS_RING}; outline-offset: 2px; }}
+QPushButton:pressed {{ background-color: {t.PRIMARY_DARK}; }}
 QPushButton:disabled {{ background-color: {t.SURFACE_ALT}; color: {t.TEXT_MUTED}; border: 1px solid {t.DIVIDER}; }}
 QPushButton#primaryBtn   {{ background: {t.gradient(t.PRIMARY_GRADIENT_START,  t.PRIMARY_GRADIENT_END)};  color: {t.TEXT_ON_PRIMARY}; }}
 QPushButton#primaryBtn:hover {{ background: {t.gradient(t.PRIMARY_GRADIENT_HOVER_START, t.PRIMARY_GRADIENT_HOVER_END)}; }}
@@ -563,7 +568,7 @@ QTableWidget::item:selected {{
 }}
 QTableWidget::item:selected:focus {{
     background-color: {t.PRIMARY_LIGHT}; color: {t.PRIMARY_DARK};
-    border: none; outline: none;
+    border: 2px solid {t.FOCUS_RING}; outline: none;
 }}
 QTableWidget::item:hover {{ background-color: {t.SURFACE_ALT}; }}
 QTableView {{ outline: none; }}
@@ -575,12 +580,12 @@ QHeaderView::section {{
 }}
 
 /* ═══════════════════════════ SCROLLBAR ══════════════════════ */
-QScrollBar:vertical {{ background: transparent; width: 7px; margin: 0; }}
-QScrollBar::handle:vertical {{ background: {t.BORDER}; border-radius: 3px; min-height: 28px; }}
+QScrollBar:vertical {{ background: transparent; width: 16px; margin: 0; padding: 0 2px; }}
+QScrollBar::handle:vertical {{ background: {t.BORDER}; border-radius: 6px; min-height: 28px; min-width: 12px; }}
 QScrollBar::handle:vertical:hover {{ background: {t.PRIMARY}; }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
-QScrollBar:horizontal {{ background: transparent; height: 7px; margin: 0; }}
-QScrollBar::handle:horizontal {{ background: {t.BORDER}; border-radius: 3px; min-width: 28px; }}
+QScrollBar:horizontal {{ background: transparent; height: 16px; margin: 0; padding: 2px 0; }}
+QScrollBar::handle:horizontal {{ background: {t.BORDER}; border-radius: 6px; min-width: 28px; min-height: 12px; }}
 QScrollBar::handle:horizontal:hover {{ background: {t.PRIMARY}; }}
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width: 0; }}
 
@@ -593,6 +598,7 @@ QTabBar::tab {{
     border: 1px solid {t.BORDER}; border-bottom: none;
 }}
 QTabBar::tab:selected {{ background-color: {t.PRIMARY}; color: {t.TEXT_ON_PRIMARY}; font-weight: 700; border-color: {t.PRIMARY}; }}
+QTabBar::tab:focus {{ outline: 2px solid {t.FOCUS_RING}; outline-offset: 2px; }}
 QTabBar::tab:hover:!selected {{ background-color: {t.PRIMARY_LIGHT}; color: {t.PRIMARY_DARK}; border-color: {t.PRIMARY}; }}
 
 /* ═══════════════════════════ GROUP BOX ══════════════════════ */
@@ -605,6 +611,7 @@ QGroupBox::title {{ subcontrol-origin: margin; left: 14px; padding: 0 6px; backg
 
 /* ═══════════════════════════ CHECKBOX / RADIO ═══════════════ */
 QCheckBox, QRadioButton {{ color: {t.TEXT_PRIMARY}; spacing: 8px; font-size: 14px; }}
+QCheckBox:focus, QRadioButton:focus {{ outline: 2px solid {t.FOCUS_RING}; outline-offset: 2px; }}
 QCheckBox::indicator, QRadioButton::indicator {{
     width: 18px; height: 18px; border: 2px solid {t.BORDER}; border-radius: 5px; background-color: {t.SURFACE};
 }}
@@ -685,6 +692,7 @@ QWidget#topBar QComboBox {{ font-size: 13px; padding: 6px 10px; }}
 QWidget#topBar QPushButton {{ font-size: 13px; padding: 6px 12px; }}
 QWidget#contentArea {{ background-color: {t.BG}; }}
 QFrame#card {{ background-color: {t.SURFACE}; border: 1px solid {t.BORDER}; border-radius: 12px; }}
+QFrame#card:focus {{ border: 2px solid {t.FOCUS_RING}; }}
 QFrame#filterBar {{ background-color: {t.SURFACE}; border: 1px solid {t.BORDER}; border-radius: 10px; padding: 6px 4px; }}
 QFrame#stepCard {{ background-color: {t.SURFACE}; border: 1px solid {t.BORDER}; border-radius: 12px; }}
 QFrame#dividerLine {{ background-color: {t.DIVIDER}; border: none; max-height: 1px; }}
@@ -694,4 +702,7 @@ QLabel#errorLabel   {{ color: {t.DANGER};         font-size: 12px; }}
 QLabel#warningLabel {{ color: {t.WARNING};        font-size: 12px; }}
 QLabel#successLabel {{ color: {t.SUCCESS};        font-size: 12px; }}
 QLabel#mutedLabel   {{ color: {t.TEXT_MUTED};     font-size: 12px; }}
+
+/* Sidebar navigation items */
+QWidget[nav_item="true"]:focus {{ outline: 2px solid {t.FOCUS_RING}; outline-offset: 2px; }}
 """
