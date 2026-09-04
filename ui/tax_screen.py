@@ -22,7 +22,7 @@ from models.tax_profile import get_tax_profile
 from models.ais_tis_import import get_ais_tis_data
 from engines.tax_engine import (
     calculate_and_save_tax,
-    calculate_old_regime_tax, calculate_new_regime_tax,
+    calculate_new_regime_tax,
     project_next_year_income,
 )
 from engines.advance_tax_engine import calculate_advance_tax
@@ -377,33 +377,6 @@ class TaxScreen(QWidget):
         net_layout.addWidget(self.taxes_paid_label)
         layout.addWidget(net_card)
 
-        # ── Old Regime — secondary comparison card ───────────────────────────
-        self._old_regime_card = old_card = self._regime_card(
-            "Old Regime — Comparison", Theme.WARNING, Theme.WARNING_LIGHT, accent_role="WARNING")
-        old_form = QFormLayout(); old_form.setSpacing(6)
-        self.old_taxable = self._result_lbl(); self.old_tax = self._result_lbl()
-        self.old_rebate  = self._result_lbl(); self.old_cess = self._result_lbl()
-        self.old_total   = self._result_lbl(bold=True)
-        old_form.addRow("Taxable Income:", self.old_taxable)
-        old_form.addRow("Tax as per Slabs:", self.old_tax)
-        old_form.addRow("Rebate u/s 87A:", self.old_rebate)
-        old_form.addRow("Cess (4%):", self.old_cess)
-        old_form.addRow("Total Tax Liability:", self.old_total)
-        old_card.layout().addLayout(old_form)
-        layout.addWidget(old_card)
-
-        rec_label = QLabel("Recommendation")
-        rec_label.setStyleSheet(Theme.section_label_style())
-        layout.addWidget(rec_label)
-
-        self.recommendation_label = QLabel("Calculate to\nsee recommendation")
-        self.recommendation_label.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
-        self.recommendation_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.recommendation_label.setStyleSheet(
-            self._recommendation_style(Theme.SURFACE_ALT, Theme.TEXT_SECONDARY, emphasize=False)
-        )
-        layout.addWidget(self.recommendation_label)
-
         helper = QLabel("New Regime is the default since FY 2023-24. Use App Actual Data when AIS/TIS is outdated.")
         helper.setWordWrap(True)
         helper.setStyleSheet(Theme.muted_style(11))
@@ -625,22 +598,19 @@ class TaxScreen(QWidget):
         if hasattr(self, "ctx_source"):
             self.ctx_source.setStyleSheet(
                 Theme.badge_style(Theme.INFO_LIGHT, Theme.INFO_DARK, radius=10, padding="4px 10px", size=11, weight=600))
-        bg_role = {"PRIMARY": "PRIMARY_LIGHT", "WARNING": "WARNING_LIGHT"}
-        for attr, hero in (("_new_regime_card", True), ("_old_regime_card", False)):
-            card = getattr(self, attr, None)
-            if card is None:
-                continue
+        # Refresh New Regime card styling
+        card = getattr(self, "_new_regime_card", None)
+        if card is not None:
             role = getattr(card, "_accent_role", "PRIMARY")
             accent = getattr(Theme, role)
-            bg = getattr(Theme, bg_role.get(role, "PRIMARY_LIGHT"))
+            bg = getattr(Theme, "PRIMARY_LIGHT")
             card.setStyleSheet(
-                Theme.card_style(bg=bg, border_color=accent, radius=12 if hero else 10,
-                                  padding=0, left_accent=accent, selector="QFrame#TaxRegimeCard"))
-            if hero:
-                card.setGraphicsEffect(Theme.shadow_card())
+                Theme.card_style(bg=bg, border_color=accent, radius=12, padding=0,
+                                  left_accent=accent, selector="QFrame#TaxRegimeCard"))
+            card.setGraphicsEffect(Theme.shadow_card())
             title = getattr(card, "_accent_title", None)
             if title:
-                title.setStyleSheet(Theme.text_style(color=accent, size=15 if hero else 13, weight=700))
+                title.setStyleSheet(Theme.text_style(color=accent, size=15, weight=700))
             divider = getattr(card, "_accent_divider", None)
             if divider:
                 divider.setStyleSheet(f"background: {accent}44; border: none;")
@@ -658,6 +628,7 @@ class TaxScreen(QWidget):
                 "\nQLabel { border: none; background: transparent; }\n"
             )
         self.refresh()
+
 
     def refresh(self):
         pid = session.selected_person_id
@@ -719,22 +690,16 @@ class TaxScreen(QWidget):
 
             # Recompute fresh from the stored income/deduction figures rather
             # than trusting a stale derived cess column — guarantees the
-            # displayed numbers always match what calculate_*_regime_tax()
+            # displayed numbers always match what calculate_new_regime_tax()
             # would produce today (e.g. after a rebate/slab fix).
             gross_total_income = profile.get("gross_total_income", 0)
-            old = calculate_old_regime_tax(
-                gross_total_income,
-                deductions_80c=profile.get("deductions_80c", 0),
-                deductions_80d=profile.get("deductions_80d", 0),
-                home_loan_interest=profile.get("home_loan_interest", 0),
-                hra_exemption=profile.get("hra_exemption", 0),
-            )
-            new = calculate_new_regime_tax(gross_total_income)
+            salary_income = profile.get("salary_income", 0)
+            new = calculate_new_regime_tax(gross_total_income, salary_income=salary_income, financial_year=fy)
             taxes_paid = (
                 profile.get("tds_deducted", 0) + profile.get("tcs_collected", 0)
                 + profile.get("advance_tax_paid", 0) + profile.get("self_assessment_tax", 0)
             )
-            self._display_tax_results(old, new, taxes_paid)
+            self._display_tax_results(new, taxes_paid)
 
     def _clear_income_fields(self):
         for s in [self.gross_salary, self.exemption_10, self.deduction_16ii, self.deduction_16iii,
@@ -754,16 +719,11 @@ class TaxScreen(QWidget):
                   self.deduction_80tta, self.deduction_80ttb, self.home_loan_interest, self.hra_exemption,
                   self.tds_salary, self.tds_other, self.tcs_collected, self.advance_tax, self.self_assessment_tax]:
             s.setValue(0)
-        for l in [self.old_taxable, self.old_tax, self.old_rebate, self.old_cess, self.old_total,
-                  self.new_taxable, self.new_tax, self.new_rebate, self.new_cess, self.new_total]:
+        for l in [self.new_taxable, self.new_tax, self.new_rebate, self.new_cess, self.new_total]:
             l.setText("—")
         self.net_payable_label.setText("Calculate to see payable / refund")
         self.net_payable_label.setStyleSheet(Theme.text_style(color=Theme.TEXT_SECONDARY, size=15, weight=700))
         self.taxes_paid_label.setText("Taxes paid so far: ₹ 0.00")
-        self.recommendation_label.setText("Calculate to\nsee recommendation")
-        self.recommendation_label.setStyleSheet(
-            self._recommendation_style(Theme.SURFACE_ALT, Theme.TEXT_SECONDARY, emphasize=False)
-        )
 
     def _on_calculate(self):
         pid = session.selected_person_id
@@ -791,22 +751,14 @@ class TaxScreen(QWidget):
             advance_tax_paid=self.advance_tax.value(),
             self_assessment_tax=self.self_assessment_tax.value(),
         )
-        self._display_tax_results(result["old_regime"], result["new_regime"], result["taxes_paid"])
+        self._display_tax_results(result["new_regime"], result["taxes_paid"])
         if self.parent_window:
             self.parent_window.refresh_overview()
         QMessageBox.information(self, "Tax Estimated",
-            f"Tax calculated for FY {session.selected_fy}\n\nRecommended: {result['recommended']}")
+            f"Tax calculated for FY {session.selected_fy}")
 
-    def _display_tax_results(self, old: dict, new: dict, taxes_paid: float):
-        """Populate every result widget from a pair of (old, new) regime
-        calculation dicts — the single source of truth for both the
-        just-calculated path and the recall-from-saved-profile path."""
-        self.old_taxable.setText(f"₹ {old['taxable_income']:,.2f}")
-        self.old_tax.setText(f"₹ {old['base_tax']:,.2f}")
-        self.old_rebate.setText(f"₹ {old.get('rebate_87a', 0):,.2f}")
-        self.old_cess.setText(f"₹ {old['cess']:,.2f}")
-        self.old_total.setText(f"₹ {old['total_tax']:,.2f}")
-
+    def _display_tax_results(self, new: dict, taxes_paid: float):
+        """Populate result widgets from the New Regime calculation dict."""
         self.new_taxable.setText(f"₹ {new['taxable_income']:,.2f}")
         self.new_tax.setText(f"₹ {new['base_tax']:,.2f}")
         self.new_rebate.setText(f"₹ {new.get('rebate_87a', 0):,.2f}")
@@ -824,14 +776,6 @@ class TaxScreen(QWidget):
         else:
             self.net_payable_label.setText("Fully settled — nothing payable, no refund due")
             self.net_payable_label.setStyleSheet(Theme.text_style(color=Theme.TEXT_SECONDARY, size=15, weight=700))
-
-        savings = abs(old["total_tax"] - new["total_tax"])
-        is_old  = old["total_tax"] < new["total_tax"]
-        color   = Theme.WARNING if is_old else Theme.PRIMARY
-        bg      = Theme.WARNING_LIGHT if is_old else Theme.PRIMARY_LIGHT
-        self.recommendation_label.setText(
-            f"{'Old Regime' if is_old else 'New Regime'} saves you ₹ {savings:,.2f}")
-        self.recommendation_label.setStyleSheet(self._recommendation_style(bg, color, emphasize=True))
 
     def _update_advance_tax_banner(self):
         """Calculate and display advance tax reminder."""

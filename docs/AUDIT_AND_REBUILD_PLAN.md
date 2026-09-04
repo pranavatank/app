@@ -1326,3 +1326,33 @@ RESOLUTION TAKEN: the AIS parser reports what AIS actually says (12,073) and
 26AS remains the authority on tax credit. The 1,294 difference between the two
 documents is a real reconciliation finding about the owner's data, not a
 parser bug, and the Tax Documents screen should surface it rather than hide it.
+
+## Z12. 26AS detail-row count is 49, not the "200+" M8 implies (no action)
+M8 says the document has "200+ detail rows" against 6 recovered. The rewritten
+parser returns 49 PART-I detail records. The difference is that the raw page
+count includes PART-II detail rows (now correctly held separately), the legend
+tables, and matched reversal pairs. Every acceptance figure that matters is
+exact: total TDS 13,367, PART-II 2,23,133, deductor totals, dates, no 194B.
+The row count itself was never an acceptance criterion.
+
+## Z13. Marginal relief at 12,10,000 yields 10,400, not 10,000 (no action)
+T028 expects "approximately 10,000". Marginal relief caps the TAX at the 10,000
+of income earned above the 12,00,000 threshold; the 4% cess then applies on top,
+giving 10,400. That ordering is what the plan itself specifies (cess last, on
+tax - rebate + surcharge), so 10,400 is correct and the plan's figure was the
+pre-cess number.
+
+## Z14. Tests were running against the owner's real database (fixed)
+config.DB_PATH defaults to data/financial.db, and nothing in the test suite
+redirected it, so any test touching the database was operating on the owner's
+real financial data. tests/conftest.py now redirects the whole session to a
+temp database, seeds it, and asserts DB_PATH does not resolve to
+data/financial.db. Verified by mtime/size before and after a full run.
+
+## Z15. deposit_account_no had no migration (fixed)
+T013 added the column to the CREATE TABLE statements only. CREATE TABLE IF NOT
+EXISTS is a no-op on an existing database, so the column was never added there,
+and the new index on it made initialise_database() raise
+"no such column: deposit_account_no" — on a FRESH database everything worked,
+so this only broke machines that already had data. The owner's. Guarded
+ALTER TABLE migrations now run before the index is created.

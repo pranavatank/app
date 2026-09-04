@@ -256,6 +256,49 @@ def _migrate_person_schema_if_needed(cur: sqlite3.Cursor) -> None:
         cur.execute("ALTER TABLE Person ADD COLUMN ais_tis_password_enc TEXT")
 
 
+def _seed_tax_config(cur: sqlite3.Cursor) -> None:
+    """Seed TaxSlabConfig and TaxParams with FY2025-26 and FY2026-27 data (idempotent)."""
+
+    # Define New Regime slabs (identical for both FY2025-26 and FY2026-27)
+    new_regime_slabs = [
+        (400000, 0, 1),
+        (800000, 5, 2),
+        (1200000, 10, 3),
+        (1600000, 15, 4),
+        (2000000, 20, 5),
+        (2400000, 25, 6),
+        (None, 30, 7),  # Top slab, no upper limit
+    ]
+
+    years = ["2025-26", "2026-27"]
+
+    for fy in years:
+        # Check if this FY already has slabs
+        existing = cur.execute(
+            "SELECT COUNT(*) FROM TaxSlabConfig WHERE financial_year = ? AND regime = ?",
+            (fy, "new")
+        ).fetchone()[0]
+
+        if existing == 0:
+            for upper_limit, rate, sort_order in new_regime_slabs:
+                cur.execute("""
+                    INSERT INTO TaxSlabConfig (financial_year, regime, upper_limit, rate, sort_order)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (fy, "new", upper_limit, rate, sort_order))
+
+        # Check if TaxParams exist for this FY
+        existing_params = cur.execute(
+            "SELECT COUNT(*) FROM TaxParams WHERE financial_year = ?", (fy,)
+        ).fetchone()[0]
+
+        if existing_params == 0:
+            cur.execute("""
+                INSERT INTO TaxParams
+                (financial_year, rebate_87a_limit, rebate_87a_max, standard_deduction, cess_rate, fd_tds_threshold, fd_tds_threshold_senior)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (fy, 1200000, 60000, 75000, 4, 50000, 100000))
+
+
 def get_connection() -> sqlite3.Connection:
     """Return a connection to the SQLite database."""
     os.makedirs(DATA_DIR, exist_ok=True)
@@ -420,6 +463,10 @@ def initialise_database() -> None:
             source_description TEXT
         )
     """)
+
+    # Run migrations BEFORE creating indexes so existing databases gain missing columns
+    _migrate_transactions_schema_if_needed(cur)
+    _migrate_fixed_deposit_schema_if_needed(conn, cur)
 
     cur.execute(
         "CREATE INDEX IF NOT EXISTS idx_FixedDeposit_deposit_account_no "
@@ -664,9 +711,38 @@ def initialise_database() -> None:
     cur.execute("CREATE INDEX IF NOT EXISTS idx_IncomeSource_tan ON IncomeSource(tan)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_IncomeSource_type ON IncomeSource(source_type)")
 
+    # ── TaxSlabConfig ───────────────────────────────────────────────────────
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS TaxSlabConfig (
+            slab_id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            financial_year    TEXT    NOT NULL,
+            regime            TEXT    NOT NULL,
+            upper_limit       REAL,
+            rate              REAL    NOT NULL,
+            sort_order        INTEGER NOT NULL,
+            UNIQUE(financial_year, regime, sort_order)
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_TaxSlabConfig_fy_regime ON TaxSlabConfig(financial_year, regime)")
+
+    # ── TaxParams ───────────────────────────────────────────────────────────
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS TaxParams (
+            param_id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+            financial_year           TEXT    NOT NULL UNIQUE,
+            rebate_87a_limit         REAL    NOT NULL,
+            rebate_87a_max           REAL    NOT NULL,
+            standard_deduction       REAL    NOT NULL,
+            cess_rate                REAL    NOT NULL,
+            fd_tds_threshold         REAL    NOT NULL,
+            fd_tds_threshold_senior  REAL    NOT NULL
+        )
+    """)
+
+    # Seed TaxSlabConfig and TaxParams if they don't exist
+    _seed_tax_config(cur)
+
     _migrate_bank_account_schema_if_needed(cur)
-    _migrate_transactions_schema_if_needed(cur)
-    _migrate_fixed_deposit_schema_if_needed(conn, cur)
     _migrate_fd_interest_record_schema_if_needed(cur)
 
     conn.commit()
