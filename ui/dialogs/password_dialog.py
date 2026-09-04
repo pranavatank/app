@@ -94,7 +94,7 @@ class PasswordDialog(QDialog):
         self.password_input = QLineEdit()
         self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
         self.password_input.setPlaceholderText(placeholder_text)
-        self.password_input.setFixedHeight(40)
+        self.password_input.setMinimumHeight(40)
         self.password_input.setAccessibleName("Password input")
         self.password_input.setAccessibleDescription("Enter the password to unlock the file.")
         self.password_input.setToolTip("Enter the password to unlock the file.")

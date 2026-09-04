@@ -411,7 +411,7 @@ class ExcelTableWithStats(QWidget):
         
         self.stats_label = QLabel("")
         self.stats_label.setStyleSheet(self._stats_label_css())
-        self.stats_label.setFixedHeight(24)
+        self.stats_label.setMinimumHeight(24)
         v_layout.addWidget(self.stats_label)
         
         layout.addLayout(v_layout)

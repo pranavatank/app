@@ -156,25 +156,25 @@ class PersonDialog(QDialog):
 
         self.nickname_input = QLineEdit()
         self.nickname_input.setPlaceholderText("e.g. Rajesh")
-        self.nickname_input.setFixedHeight(40)
+        self.nickname_input.setMinimumHeight(40)
         self.nickname_input.setAccessibleName("Nickname")
         form.addRow("Nickname *:", self.nickname_input)
 
         self.first_name_input = QLineEdit()
         self.first_name_input.setPlaceholderText("e.g. Rajesh")
-        self.first_name_input.setFixedHeight(40)
+        self.first_name_input.setMinimumHeight(40)
         self.first_name_input.setAccessibleName("First name")
         form.addRow("First Name:", self.first_name_input)
 
         self.middle_name_input = QLineEdit()
         self.middle_name_input.setPlaceholderText("e.g. Kumar")
-        self.middle_name_input.setFixedHeight(40)
+        self.middle_name_input.setMinimumHeight(40)
         self.middle_name_input.setAccessibleName("Middle name")
         form.addRow("Middle Name:", self.middle_name_input)
 
         self.last_name_input = QLineEdit()
         self.last_name_input.setPlaceholderText("e.g. Sharma")
-        self.last_name_input.setFixedHeight(40)
+        self.last_name_input.setMinimumHeight(40)
         self.last_name_input.setAccessibleName("Last name")
         form.addRow("Last Name:", self.last_name_input)
 
@@ -182,20 +182,20 @@ class PersonDialog(QDialog):
         self.dob_input.setCalendarPopup(True)
         self.dob_input.setDate(QDate.currentDate())
         self.dob_input.setDisplayFormat("dd/MM/yy")
-        self.dob_input.setFixedHeight(40)
+        self.dob_input.setMinimumHeight(40)
         self.dob_input.setAccessibleName("Date of birth")
         form.addRow("Date of Birth:", self.dob_input)
 
         self.pan_input = QLineEdit()
         self.pan_input.setPlaceholderText("e.g. ABCDE1234F")
         self.pan_input.setMaxLength(10)
-        self.pan_input.setFixedHeight(40)
+        self.pan_input.setMinimumHeight(40)
         self.pan_input.setAccessibleName("PAN number")
         form.addRow("PAN Number:", self.pan_input)
 
         self.notes_input = QLineEdit()
         self.notes_input.setPlaceholderText("Optional notes")
-        self.notes_input.setFixedHeight(40)
+        self.notes_input.setMinimumHeight(40)
         self.notes_input.setAccessibleName("Notes")
         form.addRow("Notes:", self.notes_input)
 

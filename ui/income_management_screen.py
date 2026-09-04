@@ -4,7 +4,7 @@ ui/income_management_screen.py — Income expectation and tracking with modern U
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QComboBox,
-    QHeaderView, QDialog, QFormLayout,
+    QHeaderView, QDialog, QFormLayout, QSizePolicy,
     QDateEdit, QDoubleSpinBox, QTextEdit, QMessageBox, QFrame, QLineEdit,
     QTableWidget, QTableWidgetItem
 )
@@ -161,16 +161,18 @@ class IncomeManagementScreen(QWidget):
 
         layout.addWidget(lbl("Person"))
         self.f_person = QComboBox()
-        self.f_person.setFixedWidth(140)
-        self.f_person.setFixedHeight(32)
+        self.f_person.setMinimumWidth(110)
+        self.f_person.setMinimumHeight(32)
+        self.f_person.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.f_person.setAccessibleName("Income person filter")
         self.f_person.addItem("All Persons", userData=None)
         layout.addWidget(self.f_person)
 
         layout.addWidget(lbl("FY"))
         self.f_fy = QComboBox()
-        self.f_fy.setFixedWidth(95)
-        self.f_fy.setFixedHeight(32)
+        self.f_fy.setMinimumWidth(75)
+        self.f_fy.setMinimumHeight(32)
+        self.f_fy.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         self.f_fy.setAccessibleName("Income financial year filter")
         for fy in reversed(get_all_financial_years(since_year=2020)):
             self.f_fy.addItem(fy)
@@ -179,8 +181,9 @@ class IncomeManagementScreen(QWidget):
 
         layout.addWidget(lbl("Type"))
         self.f_type = QComboBox()
-        self.f_type.setFixedWidth(130)
-        self.f_type.setFixedHeight(32)
+        self.f_type.setMinimumWidth(100)
+        self.f_type.setMinimumHeight(32)
+        self.f_type.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.f_type.setAccessibleName("Income type filter")
         self.f_type.addItem("All Types", userData=None)
         for it in INCOME_TYPES:
@@ -189,8 +192,9 @@ class IncomeManagementScreen(QWidget):
 
         layout.addWidget(lbl("Status"))
         self.f_status = QComboBox()
-        self.f_status.setFixedWidth(110)
-        self.f_status.setFixedHeight(32)
+        self.f_status.setMinimumWidth(90)
+        self.f_status.setMinimumHeight(32)
+        self.f_status.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         self.f_status.setAccessibleName("Income status filter")
         self.f_status.addItems(["All", "Pending", "Received", "Overdue"])
         layout.addWidget(self.f_status)
@@ -231,7 +235,7 @@ class IncomeManagementScreen(QWidget):
     def _create_summary_card(self, title: str, value: str, color: str) -> QFrame:
         card = QFrame()
         card.setObjectName("card")
-        card.setFixedHeight(85)
+        card.setMinimumHeight(85)
         card.setStyleSheet(Theme.stat_tile_style(color, radius=14, selector="QFrame#card"))
 
         layout = QVBoxLayout(card)
@@ -670,7 +674,7 @@ class IncomeExpectationDialog(QDialog):
             form.addRow("", info_label)
 
         self.notes_edit = QTextEdit()
-        self.notes_edit.setFixedHeight(68)
+        self.notes_edit.setMinimumHeight(68)
         self.notes_edit.setPlaceholderText("Optional notes...")
         form.addRow("Notes", self.notes_edit)
         

@@ -240,7 +240,7 @@ class LoginScreen(QWidget):
     def _field(self, placeholder: str, password: bool = False) -> QLineEdit:
         e = QLineEdit()
         e.setPlaceholderText(placeholder)
-        e.setFixedHeight(46)
+        e.setMinimumHeight(46)
         e.setStyleSheet(f"""
             QLineEdit {{
                 background-color: {Theme.SURFACE};

@@ -38,7 +38,7 @@ class AccountMetadataDialog(QDialog):
                 border-radius: 0;
             }}
         """)
-        header_frame.setFixedHeight(104)
+        header_frame.setMinimumHeight(104)
         
         header_layout = QVBoxLayout(header_frame)
         header_layout.setContentsMargins(28, 0, 28, 0)

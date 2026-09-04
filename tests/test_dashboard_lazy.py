@@ -141,3 +141,97 @@ def test_initial_widget_count():
     widget_count = len(dash.findChildren(QWidget))
 
     assert widget_count < 300, f"Initial widget count {widget_count}, should be < 300"
+
+
+def test_nav_labels_not_clipped_when_expanded():
+    """Regression test for sidebar nav label and icon clipping bug.
+
+    When the sidebar is expanded to 248px, both nav icons and labels should have
+    enough space and not be clipped. This test verifies that nav buttons have a
+    proper expanding size policy, icons get natural width (24px), and labels
+    expand to fill remaining space.
+
+    Previously, nav labels were clipped when sidebar was 248px (buttons were too
+    narrow), and nav icons were clipped when set to 6px for a 22px icon.
+    """
+    from core.session import session
+    from PyQt6.QtWidgets import QToolButton
+
+    # Ensure sidebar is expanded
+    session.set_sidebar_open(True)
+    dash = DashboardScreen()
+    dash.resize(1280, 720)
+    dash.show()
+
+    # Get sidebar and verify its width
+    sidebar = dash.findChild(QWidget, 'sidebar')
+    assert sidebar is not None, "Sidebar widget not found"
+    assert sidebar.width() == 248, f"Expanded sidebar should be 248px, got {sidebar.width()}"
+
+    # Get all nav buttons and verify they expand with the sidebar
+    nav_buttons = [b for b in dash.findChildren(QToolButton) if b.property('nav_item')]
+    assert len(nav_buttons) == 9, f"Should have 9 nav buttons, got {len(nav_buttons)}"
+
+    # Verify each nav button fills the sidebar width
+    for btn in nav_buttons:
+        assert btn.width() > 200, \
+            f"Nav button should fill expanded sidebar (>{200}px), but is {btn.width()}px"
+
+    # Verify no nav labels are clipped
+    clipped_labels = 0
+    for btn in nav_buttons:
+        label = btn.findChild(QLabel, 'nav_label')
+        if label and label.isVisible():
+            label_width = label.width()
+            label_required = label.sizeHint().width()
+            # Allow 2px tolerance for rounding errors in Qt's layout engine
+            if label_required > label_width + 2:
+                clipped_labels += 1
+
+    assert clipped_labels == 0, f"{clipped_labels} nav labels are clipped"
+
+    # Verify no nav icons are clipped
+    clipped_icons = 0
+    for btn in nav_buttons:
+        icon = btn.findChild(QLabel, 'navIcon')
+        if icon and icon.isVisible():
+            icon_width = icon.width()
+            icon_required = icon.sizeHint().width()
+            # Allow 2px tolerance for rounding errors
+            if icon_required > icon_width + 2:
+                clipped_icons += 1
+
+    assert clipped_icons == 0, f"{clipped_icons} nav icons are clipped"
+
+
+def test_nav_labels_hidden_when_collapsed():
+    """Regression test: nav labels should be hidden when sidebar is collapsed.
+
+    This ensures the collapse path properly hides labels and the labels
+    remain hidden (not clipped) in the 76px rail mode.
+    """
+    from core.session import session
+    from PyQt6.QtWidgets import QToolButton
+
+    # Start expanded, then collapse
+    session.set_sidebar_open(True)
+    dash = DashboardScreen()
+    dash.resize(1280, 720)
+    dash.show()
+
+    # Collapse the sidebar
+    dash._toggle_sidebar()
+
+    # Verify sidebar width is collapsed
+    sidebar = dash.findChild(QWidget, 'sidebar')
+    assert sidebar.width() == 76, f"Collapsed sidebar should be 76px, got {sidebar.width()}"
+
+    # Verify all nav labels are hidden (not just clipped)
+    visible_count = 0
+    for btn in dash.findChildren(QToolButton):
+        if btn.property('nav_item'):
+            label = btn.findChild(QLabel, 'nav_label')
+            if label and label.isVisible():
+                visible_count += 1
+
+    assert visible_count == 0, f"{visible_count} nav labels should be hidden in collapsed mode"

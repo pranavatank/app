@@ -6,7 +6,7 @@ FIX: btn_calc now uses Theme.btn() for guaranteed visibility.
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QGroupBox, QFormLayout, QFrame, QScrollArea,
-    QMessageBox, QDoubleSpinBox, QComboBox, QSplitter
+    QMessageBox, QDoubleSpinBox, QComboBox, QSplitter, QSizePolicy
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
@@ -77,8 +77,9 @@ class TaxScreen(QWidget):
 
         self.source_combo = QComboBox()
         self.source_combo.addItems(["AIS/TIS Data", "App Actual Data"])
-        self.source_combo.setFixedWidth(170)
-        self.source_combo.setFixedHeight(40)
+        self.source_combo.setMinimumWidth(150)
+        self.source_combo.setMinimumHeight(40)
+        self.source_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.source_combo.setAccessibleName("Tax data source selector")
         self.source_combo.setAccessibleDescription("Choose whether the tax estimate uses AIS/TIS data or app data.")
         self.source_combo.currentIndexChanged.connect(self._on_source_changed)

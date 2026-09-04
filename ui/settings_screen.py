@@ -280,7 +280,7 @@ class SettingsScreen(QWidget):
     def _build_header(self) -> QFrame:
         f = QFrame()
         f.setObjectName("SettingsHdr")
-        f.setFixedHeight(76)
+        f.setMinimumHeight(76)
         f.setGraphicsEffect(Theme.shadow_elevated())
 
         layout = QHBoxLayout(f)
@@ -410,7 +410,7 @@ class SettingsScreen(QWidget):
         self._theme_name_lbl = QLabel("")
         self._theme_name_lbl.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
         dl.addWidget(self._theme_name_lbl)
-        self._theme_mode_badge = QLabel(""); self._theme_mode_badge.setFixedHeight(22)
+        self._theme_mode_badge = QLabel(""); self._theme_mode_badge.setMinimumHeight(22)
         dl.addWidget(self._theme_mode_badge)
         self._theme_desc_lbl = QLabel("")
         dl.addWidget(self._theme_desc_lbl); dl.addStretch()
@@ -591,7 +591,7 @@ class SettingsScreen(QWidget):
 
     def _pwd_field(self, placeholder: str) -> QLineEdit:
         e = QLineEdit(); e.setEchoMode(QLineEdit.EchoMode.Password)
-        e.setPlaceholderText(placeholder); e.setFixedHeight(36); return e
+        e.setPlaceholderText(placeholder); e.setMinimumHeight(36); return e
 
     def _form_lbl(self, text: str) -> QLabel:
         l = QLabel(f"{text}:"); l.setProperty("textrole", "section-label"); return l

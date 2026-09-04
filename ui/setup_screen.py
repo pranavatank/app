@@ -68,7 +68,7 @@ class SetupScreen(QWidget):
 
         self._strip = strip = QFrame()
         strip.setObjectName("setupStrip")
-        strip.setFixedHeight(4)
+        strip.setMinimumHeight(4)
         cl.addWidget(strip)
         cl.addSpacing(14)
 
@@ -94,7 +94,7 @@ class SetupScreen(QWidget):
 
         self.strength_bar = QFrame()
         self.strength_bar.setObjectName("setupStrengthBar")
-        self.strength_bar.setFixedHeight(4)
+        self.strength_bar.setMinimumHeight(4)
         self.strength_bar.setProperty("strength", "empty")
         cl.addWidget(self.strength_bar)
 
@@ -148,7 +148,7 @@ class SetupScreen(QWidget):
     def _field(self, placeholder: str, password: bool = False) -> QLineEdit:
         e = QLineEdit()
         e.setPlaceholderText(placeholder)
-        e.setFixedHeight(42)
+        e.setMinimumHeight(42)
         if password:
             e.setEchoMode(QLineEdit.EchoMode.Password)
         return e

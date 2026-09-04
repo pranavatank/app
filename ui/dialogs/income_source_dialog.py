@@ -58,21 +58,21 @@ class IncomeSourceDialog(QDialog):
         # Source Type
         self.type_combo = QComboBox()
         self.type_combo.addItems(SOURCE_TYPES)
-        self.type_combo.setFixedHeight(36)
+        self.type_combo.setMinimumHeight(36)
         self.type_combo.setAccessibleName("Income source type")
         form_layout.addRow("Source Type:", self.type_combo)
         
         # Source Name
         self.name_input = QLineEdit()
         self.name_input.setPlaceholderText("e.g., ABC Company Ltd")
-        self.name_input.setFixedHeight(36)
+        self.name_input.setMinimumHeight(36)
         self.name_input.setAccessibleName("Income source name")
         form_layout.addRow("Name:*", self.name_input)
         
         # TAN
         self.tan_input = QLineEdit()
         self.tan_input.setPlaceholderText("e.g., ABCD12345E")
-        self.tan_input.setFixedHeight(36)
+        self.tan_input.setMinimumHeight(36)
         self.tan_input.setMaxLength(10)
         self.tan_input.setAccessibleName("Income source TAN")
         form_layout.addRow("TAN:", self.tan_input)
@@ -80,7 +80,7 @@ class IncomeSourceDialog(QDialog):
         # PAN
         self.pan_input = QLineEdit()
         self.pan_input.setPlaceholderText("e.g., ABCDE1234F")
-        self.pan_input.setFixedHeight(36)
+        self.pan_input.setMinimumHeight(36)
         self.pan_input.setMaxLength(10)
         self.pan_input.setAccessibleName("Income source PAN")
         form_layout.addRow("PAN:", self.pan_input)
@@ -95,21 +95,21 @@ class IncomeSourceDialog(QDialog):
         # Contact Person
         self.contact_input = QLineEdit()
         self.contact_input.setPlaceholderText("Contact person name")
-        self.contact_input.setFixedHeight(36)
+        self.contact_input.setMinimumHeight(36)
         self.contact_input.setAccessibleName("Contact person")
         form_layout.addRow("Contact Person:", self.contact_input)
         
         # Phone
         self.phone_input = QLineEdit()
         self.phone_input.setPlaceholderText("Phone number")
-        self.phone_input.setFixedHeight(36)
+        self.phone_input.setMinimumHeight(36)
         self.phone_input.setAccessibleName("Phone number")
         form_layout.addRow("Phone:", self.phone_input)
         
         # Email
         self.email_input = QLineEdit()
         self.email_input.setPlaceholderText("Email address")
-        self.email_input.setFixedHeight(36)
+        self.email_input.setMinimumHeight(36)
         self.email_input.setAccessibleName("Email address")
         form_layout.addRow("Email:", self.email_input)
         

@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (
     QHeaderView, QMessageBox, QFrame, QCheckBox,
     QPlainTextEdit, QApplication, QDialog,
     QInputDialog,
-    QStackedWidget, QScrollArea
+    QStackedWidget, QScrollArea, QSizePolicy
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QThread, QObject
 from PyQt6.QtGui import QFont, QColor
@@ -330,7 +330,7 @@ class StatementImportScreen(QWidget):
         c1_layout.addWidget(self._card_subtitle("Choose the family member for this statement"))
         
         self.person_combo = QComboBox()
-        self.person_combo.setFixedHeight(42)
+        self.person_combo.setMinimumHeight(42)
         self.person_combo.setAccessibleName("Person selection")
         self.person_combo.setAccessibleDescription("Choose the person associated with this bank statement.")
         self.person_combo.setToolTip("Choose the person associated with this bank statement.")
@@ -348,7 +348,7 @@ class StatementImportScreen(QWidget):
         c2_layout.addWidget(self._card_subtitle("Choose the account for this statement"))
         
         self.account_combo = QComboBox()
-        self.account_combo.setFixedHeight(42)
+        self.account_combo.setMinimumHeight(42)
         self.account_combo.setEnabled(False)
         self.account_combo.setAccessibleName("Bank account selection")
         self.account_combo.setAccessibleDescription("Choose the bank account for the selected person.")
@@ -390,8 +390,9 @@ class StatementImportScreen(QWidget):
         
         self.file_type_combo = QComboBox()
         self.file_type_combo.addItems(["PDF", "Excel"])
-        self.file_type_combo.setFixedHeight(38)
-        self.file_type_combo.setFixedWidth(120)
+        self.file_type_combo.setMinimumHeight(38)
+        self.file_type_combo.setMinimumWidth(100)
+        self.file_type_combo.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         self.file_type_combo.setAccessibleName("Statement file type")
         self.file_type_combo.setAccessibleDescription("Choose whether the selected file is a PDF or Excel statement.")
         self.file_type_combo.setToolTip("Choose whether the selected file is a PDF or Excel statement.")
@@ -400,7 +401,7 @@ class StatementImportScreen(QWidget):
         type_row.addWidget(self.file_type_combo)
         # AI parser status
         self.ai_status_lbl = QLabel("")
-        self.ai_status_lbl.setFixedHeight(22)
+        self.ai_status_lbl.setMinimumHeight(22)
         self.ai_status_lbl.setProperty("textrole", "muted-sm")
         type_row.addWidget(self.ai_status_lbl)
 

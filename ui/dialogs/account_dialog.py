@@ -304,20 +304,20 @@ class AccountDialog(QDialog):
         s.setDecimals(2)
         s.setGroupSeparatorShown(True)
         s.setPrefix(prefix)
-        s.setFixedHeight(40)
+        s.setMinimumHeight(40)
         return s
 
     def _combo(self, items: list) -> QComboBox:
-        c = QComboBox(); c.addItems(items); c.setFixedHeight(40); return c
+        c = QComboBox(); c.addItems(items); c.setMinimumHeight(40); return c
 
     def _field(self, placeholder="") -> QLineEdit:
-        e = QLineEdit(); e.setPlaceholderText(placeholder); e.setFixedHeight(40); return e
+        e = QLineEdit(); e.setPlaceholderText(placeholder); e.setMinimumHeight(40); return e
 
     def _basic_tab(self) -> QWidget:
         w, f = self._form_widget()
 
         self.person_combo = QComboBox()
-        self.person_combo.setFixedHeight(40)
+        self.person_combo.setMinimumHeight(40)
         self.person_combo.setAccessibleName("Person selector")
         for p in self.persons:
             self.person_combo.addItem(p["full_name"], userData=p["person_id"])
@@ -326,7 +326,7 @@ class AccountDialog(QDialog):
         self.bank_combo = QComboBox()
         self.bank_combo.setEditable(True)
         self.bank_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
-        self.bank_combo.setFixedHeight(40)
+        self.bank_combo.setMinimumHeight(40)
         self.bank_combo.setAccessibleName("Bank selector")
         self._populate_bank_combo()
         f.addRow("Bank Name *:", self.bank_combo)
@@ -367,7 +367,7 @@ class AccountDialog(QDialog):
         self.opening_date.setCalendarPopup(True)
         self.opening_date.setDate(QDate.currentDate())
         self.opening_date.setDisplayFormat("dd/MM/yy")
-        self.opening_date.setFixedHeight(40)
+        self.opening_date.setMinimumHeight(40)
         self.opening_date.setAccessibleName("Opening date")
         f.addRow("Opening Date:", self.opening_date)
 
@@ -391,7 +391,7 @@ class AccountDialog(QDialog):
         self.interest_rate = QDoubleSpinBox()
         self.interest_rate.setRange(0, 100); self.interest_rate.setDecimals(2)
         self.interest_rate.setSuffix(" %"); self.interest_rate.setValue(3.5)
-        self.interest_rate.setFixedHeight(40)
+        self.interest_rate.setMinimumHeight(40)
         self.interest_rate.setAccessibleName("Interest rate")
         f.addRow("Interest Rate:", self.interest_rate)
 
@@ -495,7 +495,7 @@ class AccountDialog(QDialog):
         self.debit_effective.setCalendarPopup(True)
         self.debit_effective.setDate(QDate.currentDate())
         self.debit_effective.setDisplayFormat("dd/MM/yy")
-        self.debit_effective.setFixedHeight(40)
+        self.debit_effective.setMinimumHeight(40)
         self.debit_effective.setEnabled(False)
         self.debit_effective.setAccessibleName("Debit card effective date")
         f.addRow("Effective From:", self.debit_effective)

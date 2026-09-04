@@ -41,7 +41,7 @@ class PrivacyPinDialog(QDialog):
         self.pin_input = QLineEdit()
         self.pin_input.setEchoMode(QLineEdit.EchoMode.Password)
         self.pin_input.setPlaceholderText("Master Password")
-        self.pin_input.setFixedHeight(42)
+        self.pin_input.setMinimumHeight(42)
         self.pin_input.returnPressed.connect(self.accept)
         layout.addWidget(self.pin_input)
 

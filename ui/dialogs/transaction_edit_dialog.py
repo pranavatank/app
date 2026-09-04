@@ -50,7 +50,7 @@ class TransactionEditDialog(QDialog):
         self.date_edit = QDateEdit()
         self.date_edit.setCalendarPopup(True)
         self.date_edit.setDisplayFormat("dd/MM/yyyy")
-        self.date_edit.setFixedHeight(38)
+        self.date_edit.setMinimumHeight(38)
         self.date_edit.setAccessibleName("Transaction date")
         self.date_edit.setAccessibleDescription("Edit the date for this transaction.")
         self.date_edit.setToolTip("Edit the date for this transaction.")
@@ -60,7 +60,7 @@ class TransactionEditDialog(QDialog):
         # Type
         self.type_combo = QComboBox()
         self.type_combo.addItems(["Income", "Expense"])
-        self.type_combo.setFixedHeight(38)
+        self.type_combo.setMinimumHeight(38)
         self.type_combo.currentTextChanged.connect(self._on_type_changed)
         self.type_combo.setAccessibleName("Transaction type")
         self.type_combo.setAccessibleDescription("Choose whether the transaction is income or expense.")
@@ -72,7 +72,7 @@ class TransactionEditDialog(QDialog):
         self.mode_combo = QComboBox()
         self.mode_combo.addItems(TRANSACTION_MODES)
         self.mode_combo.setEditable(True)
-        self.mode_combo.setFixedHeight(38)
+        self.mode_combo.setMinimumHeight(38)
         self.mode_combo.setAccessibleName("Transaction mode")
         self.mode_combo.setAccessibleDescription("Edit or choose the transaction mode.")
         self.mode_combo.setToolTip("Edit or choose the transaction mode.")
@@ -82,7 +82,7 @@ class TransactionEditDialog(QDialog):
         # Category
         self.category_combo = QComboBox()
         self.category_combo.setEditable(True)
-        self.category_combo.setFixedHeight(38)
+        self.category_combo.setMinimumHeight(38)
         self.category_combo.setAccessibleName("Transaction category")
         self.category_combo.setAccessibleDescription("Edit or choose the transaction category.")
         self.category_combo.setToolTip("Edit or choose the transaction category.")
@@ -92,7 +92,7 @@ class TransactionEditDialog(QDialog):
         # Amount
         self.amount_edit = QLineEdit()
         self.amount_edit.setPlaceholderText("0.00")
-        self.amount_edit.setFixedHeight(38)
+        self.amount_edit.setMinimumHeight(38)
         self.amount_edit.setAccessibleName("Transaction amount")
         self.amount_edit.setAccessibleDescription("Enter the transaction amount.")
         self.amount_edit.setToolTip("Enter the transaction amount.")
@@ -102,7 +102,7 @@ class TransactionEditDialog(QDialog):
         # Balance After
         self.balance_edit = QLineEdit()
         self.balance_edit.setPlaceholderText("Optional")
-        self.balance_edit.setFixedHeight(38)
+        self.balance_edit.setMinimumHeight(38)
         self.balance_edit.setAccessibleName("Balance after transaction")
         self.balance_edit.setAccessibleDescription("Enter the account balance after the transaction, if known.")
         self.balance_edit.setToolTip("Enter the account balance after the transaction, if known.")
@@ -112,7 +112,7 @@ class TransactionEditDialog(QDialog):
         # Description
         self.description_edit = QLineEdit()
         self.description_edit.setPlaceholderText("Transaction description")
-        self.description_edit.setFixedHeight(38)
+        self.description_edit.setMinimumHeight(38)
         self.description_edit.setAccessibleName("Transaction description")
         self.description_edit.setAccessibleDescription("Edit the description for this transaction.")
         self.description_edit.setToolTip("Edit the description for this transaction.")
@@ -122,7 +122,7 @@ class TransactionEditDialog(QDialog):
         # Reference
         self.reference_edit = QLineEdit()
         self.reference_edit.setPlaceholderText("Reference number")
-        self.reference_edit.setFixedHeight(38)
+        self.reference_edit.setMinimumHeight(38)
         self.reference_edit.setAccessibleName("Reference number")
         self.reference_edit.setAccessibleDescription("Edit the transaction reference number, if available.")
         self.reference_edit.setToolTip("Edit the transaction reference number, if available.")

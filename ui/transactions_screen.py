@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (
     QPushButton, QComboBox, QLineEdit, QTableWidget,
     QTableWidgetItem, QHeaderView, QDialog, QDialogButtonBox,
     QFormLayout, QDateEdit, QDoubleSpinBox, QTextEdit,
-    QMessageBox, QFrame, QAbstractItemView, QCheckBox, QTabWidget
+    QMessageBox, QFrame, QAbstractItemView, QCheckBox, QTabWidget, QSizePolicy
 )
 from PyQt6.QtCore import Qt, QDate, QTimer
 from PyQt6.QtGui import QFont, QColor
@@ -133,7 +133,7 @@ class TransactionsScreen(QWidget):
         self.category_chart = ChartWidget()
         self.charts_tabs.addTab(self.monthly_chart, "Monthly")
         self.charts_tabs.addTab(self.category_chart, "Categories")
-        self.charts_tabs.setFixedHeight(380)
+        self.charts_tabs.setMinimumHeight(380)
         layout.addWidget(self.charts_tabs)
 
         # Table container (will hold table or empty state)
@@ -253,31 +253,46 @@ class TransactionsScreen(QWidget):
             return l
 
         layout.addWidget(lbl("Person"))
-        self.f_person = QComboBox(); self.f_person.setFixedWidth(140); self.f_person.setFixedHeight(32)
+        self.f_person = QComboBox()
+        self.f_person.setMinimumWidth(110)
+        self.f_person.setMinimumHeight(32)
+        self.f_person.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.f_person.addItem("All Persons", userData=None)
         self.f_person.currentIndexChanged.connect(self._on_filter_person_changed)
         layout.addWidget(self.f_person)
 
         layout.addWidget(lbl("Account"))
-        self.f_account = QComboBox(); self.f_account.setFixedWidth(180); self.f_account.setFixedHeight(32)
+        self.f_account = QComboBox()
+        self.f_account.setMinimumWidth(150)
+        self.f_account.setMinimumHeight(32)
+        self.f_account.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.f_account.addItem("All Accounts", userData=None)
         layout.addWidget(self.f_account)
 
         layout.addWidget(lbl("FY"))
-        self.f_fy = QComboBox(); self.f_fy.setFixedWidth(95); self.f_fy.setFixedHeight(32)
+        self.f_fy = QComboBox()
+        self.f_fy.setMinimumWidth(75)
+        self.f_fy.setMinimumHeight(32)
+        self.f_fy.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         for fy in reversed(get_all_financial_years(since_year=2020)):
             self.f_fy.addItem(fy)
         self.f_fy.setCurrentText(session.selected_fy)
         layout.addWidget(self.f_fy)
 
         layout.addWidget(lbl("Type"))
-        self.f_type = QComboBox(); self.f_type.setFixedWidth(110); self.f_type.setFixedHeight(32)
+        self.f_type = QComboBox()
+        self.f_type.setMinimumWidth(90)
+        self.f_type.setMinimumHeight(32)
+        self.f_type.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         self.f_type.addItems(["All Types", "Credit", "Debit", "Transfer"])
         layout.addWidget(self.f_type)
 
         layout.addWidget(lbl("Search"))
-        self.f_search = QLineEdit(); self.f_search.setPlaceholderText("description / category …")
-        self.f_search.setFixedWidth(180); self.f_search.setFixedHeight(32)
+        self.f_search = QLineEdit()
+        self.f_search.setPlaceholderText("description / category …")
+        self.f_search.setMinimumWidth(150)
+        self.f_search.setMinimumHeight(32)
+        self.f_search.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         layout.addWidget(self.f_search)
 
         layout.addStretch()
@@ -957,7 +972,7 @@ class TransactionDialog(QDialog):
         form.addRow("Balance After", self.bal_spin)
 
         self.desc_edit = QTextEdit()
-        self.desc_edit.setFixedHeight(68)
+        self.desc_edit.setMinimumHeight(68)
         self.desc_edit.setPlaceholderText("Optional description / notes …")
         form.addRow("Description", self.desc_edit)
 

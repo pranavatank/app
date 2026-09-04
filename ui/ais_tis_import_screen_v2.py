@@ -1196,7 +1196,7 @@ class NewSourceDialog(QDialog):
             combo = QComboBox()
             combo.addItems(SOURCE_TYPES)
             combo.setCurrentText(SOURCE_TYPE_EMPLOYER)
-            combo.setFixedHeight(32)
+            combo.setMinimumHeight(32)
             
             self.combos.append((rec, combo))
             form_layout.addRow(label, combo)

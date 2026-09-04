@@ -70,7 +70,7 @@ class AccountsScreen(QWidget):
 
         # Bank-wise balance chart
         self.bank_chart = ChartWidget()
-        self.bank_chart.setFixedHeight(350)
+        self.bank_chart.setMinimumHeight(350)
         layout.addWidget(self.bank_chart)
 
         # Container for both views
@@ -324,7 +324,7 @@ class AccountsScreen(QWidget):
             padding: 4px 12px; border-radius: 12px;
             font-size: 11px; font-weight: 700; border: none;
         """)
-        status_lbl.setFixedHeight(24)
+        status_lbl.setMinimumHeight(24)
         header.addWidget(status_lbl)
         layout.addLayout(header)
 
@@ -513,7 +513,7 @@ class AccountDetailsDialog(QDialog):
                     stop:0 {Theme.PRIMARY}, stop:1 {Theme.PRIMARY_DARK});
             }}
         """)
-        h.setFixedHeight(68)
+        h.setMinimumHeight(68)
         hl = QHBoxLayout(h)
         hl.setContentsMargins(28, 0, 28, 0)
         title = QLabel(self.account.get('bank_display_name', self.account['bank_name']))
@@ -539,7 +539,7 @@ class AccountDetailsDialog(QDialog):
                 border-top: 1px solid {Theme.BORDER};
             }}
         """)
-        f.setFixedHeight(68)
+        f.setMinimumHeight(68)
         fl = QHBoxLayout(f)
         fl.setContentsMargins(28, 14, 28, 14)
         fl.addStretch()

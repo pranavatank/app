@@ -12,8 +12,8 @@ from PyQt6.QtWidgets import (
     QLabel, QPushButton, QComboBox, QStackedWidget,
     QFrame, QGridLayout, QSizePolicy, QMessageBox, QScrollArea, QToolButton
 )
-from PyQt6.QtCore import Qt, QSize
-from PyQt6.QtGui import QFont, QColor, QIcon
+from PyQt6.QtCore import Qt, QSize, QEvent, QObject
+from PyQt6.QtGui import QFont, QColor, QIcon, QFontMetrics
 
 from core.session import session
 from config import (
@@ -42,6 +42,22 @@ _NAV_ITEMS = [
     ("Tax",                   "tax"),
     ("Settings",              "settings"),
 ]
+
+
+class NavLabelElisionFilter(QObject):
+    """Event filter for nav labels to apply text elision when resized."""
+    def __init__(self, full_text: str, label_widget: QLabel):
+        super().__init__()
+        self.full_text = full_text
+        self.label_widget = label_widget
+
+    def eventFilter(self, obj: QWidget, event: QEvent) -> bool:
+        if event.type() == QEvent.Type.Resize:
+            metrics = QFontMetrics(self.label_widget.font())
+            elided = metrics.elidedText(self.full_text, Qt.TextElideMode.ElideRight,
+                                       self.label_widget.width() - 4)
+            self.label_widget.setText(elided)
+        return False
 
 
 class DashboardScreen(QMainWindow):
@@ -106,7 +122,7 @@ class DashboardScreen(QMainWindow):
         brand = QWidget()
         self._brand_widget = brand  # keep ref for theme refresh
         brand.setObjectName("brand")
-        brand.setFixedHeight(64)
+        brand.setMinimumHeight(64)
         brand_layout = QHBoxLayout(brand)
         brand_layout.setContentsMargins(12, 0, 12, 0)
         brand_layout.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
@@ -158,7 +174,7 @@ class DashboardScreen(QMainWindow):
         # Toggle button - expands/collapses the sidebar on click (no hover, no pin)
         self._sidebar_toggle_btn = QPushButton()
         self._sidebar_toggle_btn.setObjectName("sidebarToggle")
-        self._sidebar_toggle_btn.setFixedHeight(40)
+        self._sidebar_toggle_btn.setMinimumHeight(40)
         self._sidebar_toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._sidebar_toggle_btn.setIconSize(QSize(16, 16))
         self._sidebar_toggle_btn.clicked.connect(self._toggle_sidebar)
@@ -184,7 +200,9 @@ class DashboardScreen(QMainWindow):
         container = QToolButton()
         container.setCheckable(True)
         container.setAutoExclusive(True)
-        container.setFixedHeight(44)
+        container.setMinimumHeight(44)
+        # Expand horizontally to fill the sidebar; fixed height keeps consistent spacing
+        container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         container.setCursor(Qt.CursorShape.PointingHandCursor)
         container.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         container.setToolTip(label)  # Tooltip for accessibility when collapsed
@@ -198,10 +216,14 @@ class DashboardScreen(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        # Icon label (always visible, 76px fixed)
+        # Icon label: width depends on sidebar state
+        # In collapsed mode (76px rail), icon fills the width for centered display
+        # In expanded mode (248px), icon takes natural width (~24px); text label expands to fill remaining space
         icon_label = QLabel()
         icon_label.setObjectName("navIcon")
-        icon_label.setFixedWidth(76)
+        # 76px for collapsed (centers the icon), 24px for expanded (icon sizeHint + padding)
+        icon_width = 76 if not self.sidebar_expanded else 24
+        icon_label.setFixedWidth(icon_width)
         icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         if icons_available():
             pm = app_icon(icon_name, color="auto", size=22).pixmap(22, 22)
@@ -213,15 +235,23 @@ class DashboardScreen(QMainWindow):
         else:
             icon_label.setText(icon_fallback(icon_name))
             icon_label.setFont(QFont("Segoe UI Emoji", 18))
-        layout.addWidget(icon_label)
+        layout.addWidget(icon_label, stretch=0)
 
         # Text label (hidden when collapsed)
         text_label = QLabel(label)
         text_label.setObjectName("nav_label")
         text_label.setFont(QFont("Segoe UI", 12))
         text_label.setVisible(False)
+        # Expand horizontally to fill ALL remaining space in the button (no trailing stretch)
+        text_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        # Keep full text in tooltip for accessibility
+        text_label.setToolTip(label)
+        # Install event filter for text elision on resize
+        elision_filter = NavLabelElisionFilter(label, text_label)
+        text_label.installEventFilter(elision_filter)
+        # Store the filter to keep it alive
+        text_label._elision_filter = elision_filter
         layout.addWidget(text_label)
-        layout.addStretch()
 
         # Store icon name for theme refresh
         container._icon_name = icon_name
@@ -295,7 +325,7 @@ class DashboardScreen(QMainWindow):
     def _build_topbar(self) -> QWidget:
         bar = QWidget()
         bar.setObjectName("topBar")
-        bar.setFixedHeight(60)
+        bar.setMinimumHeight(60)
 
         layout = QHBoxLayout(bar)
         layout.setContentsMargins(24, 0, 24, 0)
@@ -314,6 +344,7 @@ class DashboardScreen(QMainWindow):
         self.page_title_lbl = QLabel("Overview")
         self.page_title_lbl.setObjectName("pageTitle")
         self.page_title_lbl.setFont(QFont("Segoe UI", 15, QFont.Weight.Bold))
+        self.page_title_lbl.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         layout.addWidget(self.page_title_lbl)
 
         layout.addStretch()
@@ -322,7 +353,7 @@ class DashboardScreen(QMainWindow):
             s = QFrame()
             s.setFrameShape(QFrame.Shape.VLine)
             s.setObjectName("divider")
-            s.setFixedHeight(28)
+            s.setMinimumHeight(28)
             return s
 
         def _combo_lbl(text):
@@ -332,31 +363,37 @@ class DashboardScreen(QMainWindow):
 
         layout.addWidget(_combo_lbl("Person"))
         self.person_combo = QComboBox()
-        self.person_combo.setFixedWidth(155)
-        self.person_combo.setFixedHeight(34)
+        self.person_combo.setMinimumWidth(120)
+        self.person_combo.setMinimumHeight(34)
+        self.person_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.person_combo.setAccessibleName("Dashboard person selector")
         self.person_combo.setAccessibleDescription("Filter the dashboard by family member.")
         self.person_combo.currentIndexChanged.connect(self._on_person_changed)
+        self.person_combo.currentIndexChanged.connect(lambda: self._update_combo_tooltip(self.person_combo))
         layout.addWidget(self.person_combo)
 
         layout.addWidget(_sep())
         layout.addWidget(_combo_lbl("Account"))
         self.account_combo = QComboBox()
-        self.account_combo.setFixedWidth(200)
-        self.account_combo.setFixedHeight(34)
+        self.account_combo.setMinimumWidth(160)
+        self.account_combo.setMinimumHeight(34)
+        self.account_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.account_combo.setAccessibleName("Dashboard account selector")
         self.account_combo.setAccessibleDescription("Switch the dashboard to a specific bank account.")
         self.account_combo.currentIndexChanged.connect(self._on_account_changed)
+        self.account_combo.currentIndexChanged.connect(lambda: self._update_combo_tooltip(self.account_combo))
         layout.addWidget(self.account_combo)
 
         layout.addWidget(_sep())
         layout.addWidget(_combo_lbl("FY"))
         self.fy_combo = QComboBox()
-        self.fy_combo.setFixedWidth(95)
-        self.fy_combo.setFixedHeight(34)
+        self.fy_combo.setMinimumWidth(100)
+        self.fy_combo.setMinimumHeight(34)
+        self.fy_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.fy_combo.setAccessibleName("Dashboard financial year selector")
         self.fy_combo.setAccessibleDescription("Choose the financial year shown in summaries.")
         self.fy_combo.currentTextChanged.connect(self._on_fy_changed)
+        self.fy_combo.currentIndexChanged.connect(lambda: self._update_combo_tooltip(self.fy_combo))
         layout.addWidget(self.fy_combo)
 
         layout.addSpacing(8)
@@ -517,7 +554,7 @@ class DashboardScreen(QMainWindow):
         banner = QFrame()
         self._overview_banner = banner  # keep ref for theme refresh
         banner.setObjectName("overviewBanner")
-        banner.setFixedHeight(70)
+        banner.setMinimumHeight(70)
         b_layout = QHBoxLayout(banner)
         b_layout.setContentsMargins(24, 0, 24, 0)
 
@@ -741,6 +778,7 @@ class DashboardScreen(QMainWindow):
         self._set_nav_active(index)
         self.stack.setCurrentIndex(index)
         self.page_title_lbl.setText(_NAV_ITEMS[index][0])
+        self.page_title_lbl.updateGeometry()
         self._on_refresh_all()
 
     def _on_refresh_all(self):
@@ -768,6 +806,11 @@ class DashboardScreen(QMainWindow):
         self.accounts_page.selected_person_id = session.selected_person_id
         self.accounts_page.selected_fy = session.selected_fy
         self.accounts_page._load_accounts()
+
+    def _update_combo_tooltip(self, combo: QComboBox):
+        """Set tooltip to the full current text so elided text is still visible on hover."""
+        if combo.count() > 0:
+            combo.setToolTip(combo.currentText())
 
     def _on_person_changed(self):
         session.set_person(self.person_combo.currentData())
@@ -877,8 +920,11 @@ class DashboardScreen(QMainWindow):
         if hasattr(self, 'ver_lbl'):
             self.ver_lbl.setText("v1.0.0  ·  Offline")
 
-        # Show all nav labels
+        # Resize icons to natural width (24px) and show all nav labels
         for btn in self._nav_buttons:
+            icon_label = btn._icon_label
+            if icon_label:
+                icon_label.setFixedWidth(24)
             text_label = btn._text_label
             if text_label:
                 text_label.setVisible(True)
@@ -900,8 +946,11 @@ class DashboardScreen(QMainWindow):
         if hasattr(self, 'ver_lbl'):
             self.ver_lbl.setText("v1.0")
 
-        # Hide all nav labels
+        # Resize icons to fill rail (76px) and hide all nav labels
         for btn in self._nav_buttons:
+            icon_label = btn._icon_label
+            if icon_label:
+                icon_label.setFixedWidth(76)
             text_label = btn._text_label
             if text_label:
                 text_label.setVisible(False)

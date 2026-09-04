@@ -133,7 +133,7 @@ class FixedDepositsScreen(QWidget):
 
         # Interest trend chart
         self.interest_chart = ChartWidget()
-        self.interest_chart.setFixedHeight(350)
+        self.interest_chart.setMinimumHeight(350)
         layout.addWidget(self.interest_chart)
 
         # Table

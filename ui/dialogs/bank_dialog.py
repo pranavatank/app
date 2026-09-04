@@ -164,20 +164,20 @@ class BankDialog(QDialog):
 
         self.nickname_input = QLineEdit()
         self.nickname_input.setPlaceholderText("Display name in UI, e.g. Salary Bank")
-        self.nickname_input.setFixedHeight(40)
+        self.nickname_input.setMinimumHeight(40)
         self.nickname_input.setAccessibleName("Bank nickname")
         form.addRow("Nickname:", self.nickname_input)
 
         self.bank_name_input = QLineEdit()
         self.bank_name_input.setPlaceholderText("Actual bank name, e.g. HDFC Bank")
-        self.bank_name_input.setFixedHeight(40)
+        self.bank_name_input.setMinimumHeight(40)
         self.bank_name_input.setAccessibleName("Bank name")
         form.addRow("Bank Name *:", self.bank_name_input)
 
         self.tan_input = QLineEdit()
         self.tan_input.setPlaceholderText("Optional TAN")
         self.tan_input.setMaxLength(10)
-        self.tan_input.setFixedHeight(40)
+        self.tan_input.setMinimumHeight(40)
         self.tan_input.setAccessibleName("Bank TAN")
         self.tan_input.textChanged.connect(
             lambda txt: self.tan_input.setText((txt or "").upper()) if (txt or "") != (txt or "").upper() else None
