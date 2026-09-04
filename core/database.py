@@ -254,7 +254,7 @@ def _migrate_transactions_schema_if_needed(cur: sqlite3.Cursor) -> None:
 
 
 def _migrate_person_schema_if_needed(cur: sqlite3.Cursor) -> None:
-    """Upgrade older Person schemas with split name fields."""
+    """Upgrade older Person schemas with split name fields and entity_type."""
     cols = {row[1] for row in cur.execute("PRAGMA table_info(Person)").fetchall()}
     if not cols:
         return
@@ -267,6 +267,51 @@ def _migrate_person_schema_if_needed(cur: sqlite3.Cursor) -> None:
         cur.execute("ALTER TABLE Person ADD COLUMN last_name TEXT")
     if "ais_tis_password_enc" not in cols:
         cur.execute("ALTER TABLE Person ADD COLUMN ais_tis_password_enc TEXT")
+    if "entity_type" not in cols:
+        cur.execute("ALTER TABLE Person ADD COLUMN entity_type TEXT DEFAULT 'Individual'")
+
+
+def _migrate_bank_account_to_account_holder_if_needed(conn: sqlite3.Connection, cur: sqlite3.Cursor) -> None:
+    """
+    Migrate existing BankAccount.person_id rows into AccountHolder as primary holder.
+    The person_id column is deliberately RETAINED so existing queries keep working.
+    This function is idempotent: running it multiple times is safe.
+    """
+    # Check if AccountHolder table exists
+    table_info = cur.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='AccountHolder'"
+    ).fetchone()
+
+    if not table_info:
+        return  # Table doesn't exist yet, nothing to migrate
+
+    # Check if any rows exist in AccountHolder
+    count = cur.execute("SELECT COUNT(*) FROM AccountHolder").fetchone()[0]
+    if count > 0:
+        return  # Already migrated, idempotent
+
+    # Get all BankAccount rows
+    rows = cur.execute("""
+        SELECT DISTINCT account_id, person_id
+        FROM BankAccount
+        WHERE person_id IS NOT NULL
+    """).fetchall()
+
+    for row in rows:
+        account_id = row[0]
+        person_id = row[1]
+
+        # Check if this holder already exists (shouldn't happen, but be safe)
+        existing = cur.execute("""
+            SELECT COUNT(*) FROM AccountHolder
+            WHERE account_id = ? AND person_id = ?
+        """, (account_id, person_id)).fetchone()[0]
+
+        if existing == 0:
+            cur.execute("""
+                INSERT INTO AccountHolder (account_id, person_id, is_primary)
+                VALUES (?, ?, 1)
+            """, (account_id, person_id))
 
 
 def _seed_bank_fd_conventions(cur: sqlite3.Cursor) -> None:
@@ -446,6 +491,16 @@ def initialise_database() -> None:
         )
     """)
 
+    # ── AccountHolder ────────────────────────────────────────────────────────
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS AccountHolder (
+            account_id  INTEGER NOT NULL REFERENCES BankAccount(account_id),
+            person_id   INTEGER NOT NULL REFERENCES Person(person_id),
+            is_primary  INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (account_id, person_id)
+        )
+    """)
+
     # ── Transaction ──────────────────────────────────────────────────────────
     cur.execute("""
         CREATE TABLE IF NOT EXISTS Transactions (
@@ -502,6 +557,7 @@ def initialise_database() -> None:
     # Run migrations BEFORE creating indexes so existing databases gain missing columns
     _migrate_transactions_schema_if_needed(cur)
     _migrate_fixed_deposit_schema_if_needed(conn, cur)
+    _migrate_bank_account_to_account_holder_if_needed(conn, cur)
 
     cur.execute(
         "CREATE INDEX IF NOT EXISTS idx_FixedDeposit_deposit_account_no "
@@ -801,6 +857,11 @@ def initialise_database() -> None:
 
     conn.commit()
     conn.close()
+
+    # Backfill deposit account numbers from existing transaction descriptions
+    from models.transaction import backfill_deposit_account_numbers
+    backfill_deposit_account_numbers()
+
     print("[DB] Database initialised successfully.")
 
 

@@ -44,6 +44,7 @@ from engines.statement_parser import (
 )
 from engines.statement_metadata_extractor import extract_account_metadata
 from engines.interest_engine import allocate_savings_interest_to_fy
+from engines.balance_engine import recalculate_account_balance
 from config import get_all_financial_years, fy_date_range
 from ui.dialogs.account_dialog import AccountDialog
 from ui.dialogs.account_metadata_dialog import AccountMetadataDialog
@@ -914,7 +915,7 @@ class StatementImportScreen(QWidget):
                 status="Success"
             )
 
-            # Recalculate savings interest for affected FYs
+            # Recalculate savings interest for affected FYs and update running balances
             self._update_loader("Calculating savings interest...")
             account = get_account(self.selected_account_id)
             if account:
@@ -937,6 +938,14 @@ class StatementImportScreen(QWidget):
                     except Exception:
                         # Log but don't fail the import
                         pass
+
+            # Recalculate running balances after import (ensures current_balance matches last transaction)
+            self._update_loader("Updating account balance...")
+            try:
+                recalculate_account_balance(self.selected_account_id)
+            except Exception:
+                # Log but don't fail the import
+                pass
 
             self.fds_created_last_import = fds_created
             self._hide_loader()

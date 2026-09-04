@@ -21,6 +21,7 @@ from config import ACCOUNT_TYPES
 from models.person import get_all_persons
 from models.bank_account import add_account, get_all_accounts, update_account, delete_account
 from models.bank import get_all_banks, get_or_create_bank, update_bank_tan_code_if_exists
+from models.account_holder import get_account_holders, add_account_holder
 
 
 def _btn(text: str, style: str = "primary") -> QPushButton:
@@ -114,10 +115,15 @@ class AccountManagementDialog(QDialog):
         if dlg.exec() == QDialog.DialogCode.Accepted:
             payload = dlg.get_data()
             tan_code = payload.pop("tan_code", None)
-            add_account(**payload)
+            account_id = add_account(**payload)
             get_or_create_bank(payload.get("bank_name") or "")
             if tan_code:
                 update_bank_tan_code_if_exists(payload.get("bank_name") or "", tan_code)
+
+            # Save account holders
+            for holder in dlg._holders_data:
+                add_account_holder(account_id, holder["person_id"], holder["is_primary"])
+
             self._load_accounts()
 
     def _on_edit(self):
@@ -136,6 +142,17 @@ class AccountManagementDialog(QDialog):
             get_or_create_bank(payload.get("bank_name") or "")
             if tan_code:
                 update_bank_tan_code_if_exists(payload.get("bank_name") or "", tan_code)
+
+            # Update account holders: clear old and add new
+            from core.database import get_connection
+            conn = get_connection()
+            conn.execute("DELETE FROM AccountHolder WHERE account_id = ?", (aid,))
+            conn.commit()
+            conn.close()
+
+            for holder in dlg._holders_data:
+                add_account_holder(aid, holder["person_id"], holder["is_primary"])
+
             self._load_accounts()
 
     def _on_delete(self):
@@ -193,10 +210,12 @@ class AccountDialog(QDialog):
         tabs.addTab(self._scroll_tab(self._bank_tab()),    "Bank Details")
         tabs.addTab(self._scroll_tab(self._contact_tab()), "Contact")
         tabs.addTab(self._scroll_tab(self._card_tab()),    "Debit Card")
+        tabs.addTab(self._holders_tab(),                   "Account Holders")
         tabs.setTabIcon(0, tab_icon("basic_info"))
         tabs.setTabIcon(1, tab_icon("bank_details"))
         tabs.setTabIcon(2, tab_icon("contact"))
         tabs.setTabIcon(3, tab_icon("debit_card"))
+        tabs.setTabIcon(4, tab_icon("person"))
         layout.addWidget(tabs)
 
         div = QFrame(); div.setFrameShape(QFrame.Shape.HLine)
@@ -485,6 +504,136 @@ class AccountDialog(QDialog):
 
         return w
 
+    def _holders_tab(self) -> QWidget:
+        """Tab to manage joint account holders."""
+        w = QWidget()
+        layout = QVBoxLayout(w)
+        layout.setSpacing(12)
+        layout.setContentsMargins(16, 16, 16, 16)
+
+        # Title
+        lbl = QLabel("Account Holders (for joint accounts)")
+        lbl.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+        layout.addWidget(lbl)
+
+        # Info label
+        info_lbl = QLabel("Select one or more family members who hold this account. "
+                          "The primary holder is the one who declares interest income.")
+        info_lbl.setWordWrap(True)
+        layout.addWidget(info_lbl)
+
+        # Table of holders
+        self.holders_table = QTableWidget()
+        self.holders_table.setColumnCount(3)
+        self.holders_table.setHorizontalHeaderLabels(["Person", "Entity Type", "Primary"])
+        self.holders_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.holders_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.holders_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.holders_table.setAlternatingRowColors(True)
+        self.holders_table.setShowGrid(False)
+        self.holders_table.verticalHeader().setVisible(False)
+        self.holders_table.setMaximumHeight(250)
+        layout.addWidget(self.holders_table)
+
+        # Buttons
+        btn_layout = QHBoxLayout()
+        self.btn_add_holder = Theme.btn(" Add Holder", "primary", height=36, min_width=100)
+        set_btn_icon(self.btn_add_holder, "add")
+        self.btn_add_holder.clicked.connect(self._on_add_holder)
+        self.btn_add_holder.setAccessibleName("Add joint account holder")
+        btn_layout.addWidget(self.btn_add_holder)
+
+        self.btn_remove_holder = Theme.btn(" Remove", "secondary", height=36, min_width=100)
+        set_btn_icon(self.btn_remove_holder, "delete")
+        self.btn_remove_holder.clicked.connect(self._on_remove_holder)
+        self.btn_remove_holder.setAccessibleName("Remove selected holder")
+        btn_layout.addWidget(self.btn_remove_holder)
+
+        self.btn_set_primary = Theme.btn(" Set as Primary", "secondary", height=36, min_width=120)
+        self.btn_set_primary.clicked.connect(self._on_set_primary)
+        self.btn_set_primary.setAccessibleName("Set selected holder as primary")
+        btn_layout.addWidget(self.btn_set_primary)
+        btn_layout.addStretch()
+
+        layout.addLayout(btn_layout)
+        layout.addStretch()
+
+        self._holders_data = []  # Track holder person_ids
+
+        return w
+
+    def _on_add_holder(self):
+        """Add a new holder to the account."""
+        # Get list of persons not already added
+        all_persons = [p for p in self.persons]
+        added_ids = {h["person_id"] for h in self._holders_data}
+        available = [p for p in all_persons if p["person_id"] not in added_ids]
+
+        if not available:
+            QMessageBox.information(self, "No Available", "All family members are already added as holders.")
+            return
+
+        # Simple selection dialog
+        names = [p["full_name"] for p in available]
+        names_str = "\n".join(names)
+        from PyQt6.QtWidgets import QInputDialog
+        selected, ok = QInputDialog.getItem(
+            self, "Add Holder", "Select a family member:", names, 0, False
+        )
+        if not ok:
+            return
+
+        # Find the selected person
+        person = next((p for p in available if p["full_name"] == selected), None)
+        if person:
+            self._holders_data.append({
+                "person_id": person["person_id"],
+                "full_name": person["full_name"],
+                "entity_type": "Individual",
+                "is_primary": 0
+            })
+            self._refresh_holders_table()
+
+    def _on_remove_holder(self):
+        """Remove the selected holder."""
+        row = self.holders_table.currentRow()
+        if row < 0:
+            QMessageBox.warning(self, "No Selection", "Select a holder to remove.")
+            return
+        if len(self._holders_data) <= 1:
+            QMessageBox.warning(self, "Cannot Remove", "An account must have at least one holder.")
+            return
+        del self._holders_data[row]
+        self._refresh_holders_table()
+
+    def _on_set_primary(self):
+        """Set the selected holder as primary."""
+        row = self.holders_table.currentRow()
+        if row < 0:
+            QMessageBox.warning(self, "No Selection", "Select a holder to set as primary.")
+            return
+        for h in self._holders_data:
+            h["is_primary"] = 0
+        self._holders_data[row]["is_primary"] = 1
+        self._refresh_holders_table()
+
+    def _refresh_holders_table(self):
+        """Refresh the holders table display."""
+        self.holders_table.setRowCount(len(self._holders_data))
+        for idx, holder in enumerate(self._holders_data):
+            name_item = QTableWidgetItem(holder["full_name"])
+            entity_item = QTableWidgetItem(holder.get("entity_type", "Individual"))
+            primary_item = QTableWidgetItem("Yes" if holder.get("is_primary") else "No")
+
+            name_item.setFlags(name_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            entity_item.setFlags(entity_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            primary_item.setFlags(primary_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+
+            self.holders_table.setItem(idx, 0, name_item)
+            self.holders_table.setItem(idx, 1, entity_item)
+            self.holders_table.setItem(idx, 2, primary_item)
+            self.holders_table.setRowHeight(idx, 32)
+
     def _on_card_toggled(self, checked):
         self.debit_charges.setEnabled(checked)
         self.debit_effective.setEnabled(checked)
@@ -534,6 +683,35 @@ class AccountDialog(QDialog):
         if d.get("debit_card_effective_from"):
             qd = QDate.fromString(d["debit_card_effective_from"],"yyyy-MM-dd")
             if qd.isValid(): self.debit_effective.setDate(qd)
+
+        # Load account holders
+        account_id = d.get("account_id")
+        if account_id:
+            holders = get_account_holders(account_id)
+            self._holders_data = [
+                {
+                    "person_id": h["person_id"],
+                    "full_name": h["full_name"],
+                    "entity_type": h.get("entity_type", "Individual"),
+                    "is_primary": h["is_primary"]
+                }
+                for h in holders
+            ]
+            self._refresh_holders_table()
+        else:
+            # New account: add the currently selected person as primary holder
+            person_id = self.person_combo.currentData()
+            person_name = self.person_combo.currentText()
+            if person_id:
+                self._holders_data = [
+                    {
+                        "person_id": person_id,
+                        "full_name": person_name,
+                        "entity_type": "Individual",
+                        "is_primary": 1
+                    }
+                ]
+                self._refresh_holders_table()
 
     def _on_save(self):
         bank_name = (self.bank_combo.currentData() or self.bank_combo.currentText() or "").strip()

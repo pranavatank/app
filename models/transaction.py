@@ -600,3 +600,46 @@ def get_balance_points(account_id: int, start_date: str = None, end_date: str = 
     rows = conn.execute(query, params).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+def backfill_deposit_account_numbers() -> int:
+    """
+    Backfill deposit_account_no on existing transactions with NULL values.
+    Extracts from the description field using the same logic as statement parsing.
+    Idempotent: running multiple times will not duplicate or corrupt data.
+
+    Returns the number of transactions updated.
+    """
+    from engines.statement.assemble import normalize_account_no
+
+    conn = get_connection()
+    try:
+        # Get all transactions with NULL deposit_account_no but non-null description
+        rows = conn.execute("""
+            SELECT transaction_id, description
+            FROM Transactions
+            WHERE deposit_account_no IS NULL
+              AND description IS NOT NULL
+              AND description != ''
+        """).fetchall()
+
+        updated = 0
+        for row in rows:
+            transaction_id = row[0]
+            description = row[1]
+
+            # Extract account number from description
+            account_no = normalize_account_no(description)
+
+            if account_no:
+                conn.execute("""
+                    UPDATE Transactions
+                    SET deposit_account_no = ?
+                    WHERE transaction_id = ?
+                """, (account_no, transaction_id))
+                updated += 1
+
+        conn.commit()
+        return updated
+    finally:
+        conn.close()

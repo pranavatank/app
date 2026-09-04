@@ -5,11 +5,12 @@ FIX: Brand header uses Theme.gradient() so all themes look correct.
 """
 
 import os
+import traceback
 
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QLabel, QPushButton, QComboBox, QStackedWidget,
-    QFrame, QGridLayout, QSizePolicy, QMessageBox, QScrollArea
+    QFrame, QGridLayout, QSizePolicy, QMessageBox, QScrollArea, QToolButton
 )
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QFont, QColor, QIcon
@@ -53,6 +54,9 @@ class DashboardScreen(QMainWindow):
         self.setMinimumSize(1200, 720)
         self._persons: list[dict] = []
         self._accounts: list[dict] = []
+        # Lazy-load screen pages: index -> screen instance or error message
+        self._screen_pages: dict[int, QWidget | None] = {}
+        self._screen_errors: dict[int, str] = {}
         self._build_ui()
         self._populate_selectors()
         self._refresh_overview()
@@ -87,8 +91,9 @@ class DashboardScreen(QMainWindow):
     def _build_sidebar(self) -> QWidget:
         sidebar = QWidget()
         sidebar.setObjectName("sidebar")
-        self.sidebar_expanded = False
-        sidebar.setFixedWidth(76)  # Collapsed width (icons only)
+        # Start expanded; will collapse if persisted preference says so
+        self.sidebar_expanded = session.is_sidebar_open()
+        sidebar.setFixedWidth(248 if self.sidebar_expanded else 76)
 
         layout = QVBoxLayout(sidebar)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -134,13 +139,14 @@ class DashboardScreen(QMainWindow):
         layout.addWidget(self.nav_lbl)
         layout.addSpacing(6)
 
-        # Nav buttons
-        self._nav_buttons: list[QWidget] = []  # Store container widgets
+        # Nav buttons (QToolButton in checkable + autoExclusive mode)
+        self._nav_buttons: list[QToolButton] = []
+        nav_button_group_id = 1  # for autoExclusive
         for idx, (label, icon) in enumerate(_NAV_ITEMS):
-            btn_container = self._make_nav_btn(icon, label)
-            btn_container.mousePressEvent = lambda e, i=idx: self._navigate(i)
-            layout.addWidget(btn_container)
-            self._nav_buttons.append(btn_container)
+            btn = self._make_nav_btn(icon, label)
+            btn.clicked.connect(lambda checked, i=idx: self._navigate(i))
+            layout.addWidget(btn)
+            self._nav_buttons.append(btn)
 
         layout.addStretch()
 
@@ -160,46 +166,39 @@ class DashboardScreen(QMainWindow):
 
         self._set_nav_active(0)
 
-        # Apply persisted expanded/collapsed state from session
-        if session.is_sidebar_open():
-            self.sidebar_expanded = True
-            sidebar.setFixedWidth(248)
-            if hasattr(self, 'brand_text'):
-                self.brand_text.setVisible(True)
-            if hasattr(self, 'nav_lbl'):
-                self.nav_lbl.setVisible(True)
-            for container in self._nav_buttons:
-                text_label = container.findChild(QLabel, "nav_label")
+        # Apply current sidebar state visibility
+        if self.sidebar_expanded:
+            self.brand_text.setVisible(True)
+            self.nav_lbl.setVisible(True)
+            for btn in self._nav_buttons:
+                text_label = btn.findChild(QLabel, "nav_label")
                 if text_label:
                     text_label.setVisible(True)
         self._update_sidebar_toggle_btn()
         return sidebar
 
-    def _make_nav_btn(self, icon_name: str, label: str) -> QWidget:
-        """Create a nav button with separate icon and label components"""
-        container = QWidget()
+    def _make_nav_btn(self, icon_name: str, label: str) -> QToolButton:
+        """Create a nav button as QToolButton in checkable + autoExclusive mode.
+        Uses a container widget to maintain icon + label layout."""
+        # Container widget to hold the layout (replaces previous QWidget approach)
+        container = QToolButton()
+        container.setCheckable(True)
+        container.setAutoExclusive(True)
         container.setFixedHeight(44)
         container.setCursor(Qt.CursorShape.PointingHandCursor)
         container.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        container.setToolTip(label)  # Tooltip for accessibility when collapsed
         container.setAccessibleName(f"Navigate to {label}")
         container.setAccessibleDescription(f"Open the {label} page.")
         container.setProperty("nav_item", True)
         container.setProperty("active", False)
 
-        def _key_press(event, idx_label=label, idx_icon=icon_name):
-            if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space):
-                self._navigate(_NAV_ITEMS.index((idx_label, idx_icon)))
-                event.accept()
-                return
-            QWidget.keyPressEvent(container, event)
-
-        container.keyPressEvent = _key_press
-        
+        # Use QToolButton's layout capability
         layout = QHBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-        
-        # Icon label (always visible)
+
+        # Icon label (always visible, 76px fixed)
         icon_label = QLabel()
         icon_label.setObjectName("nav_icon")
         icon_label.setFixedWidth(76)
@@ -216,7 +215,7 @@ class DashboardScreen(QMainWindow):
             icon_label.setFont(QFont("Segoe UI Emoji", 18))
         icon_label.setStyleSheet("background: transparent;")
         layout.addWidget(icon_label)
-        
+
         # Text label (hidden when collapsed)
         text_label = QLabel(label)
         text_label.setObjectName("nav_label")
@@ -225,38 +224,40 @@ class DashboardScreen(QMainWindow):
         text_label.setVisible(False)
         layout.addWidget(text_label)
         layout.addStretch()
-        
+
+        # Store icon name for theme refresh
+        container._icon_name = icon_name
+        container._icon_label = icon_label
+        container._text_label = text_label
+
         container.setStyleSheet(self._nav_normal_style())
         return container
 
     def _set_nav_active(self, index: int):
-        """Set active state for navigation item"""
-        for i, container in enumerate(self._nav_buttons):
+        """Set active state for navigation item using dynamic properties and style updates"""
+        for i, btn in enumerate(self._nav_buttons):
             is_active = (i == index)
-            container.setProperty("active", is_active)
-            container.setStyleSheet(self._nav_active_style() if is_active else self._nav_normal_style())
+            btn.setProperty("active", is_active)
+            btn.setChecked(is_active)  # Update checked state for QToolButton
+            # Use dynamic property for styling instead of reassigning stylesheet
+            btn.style().unpolish(btn)
+            btn.style().polish(btn)
 
-            icon_label = container.findChild(QLabel, "nav_icon")
-            text_label = container.findChild(QLabel, "nav_label")
+            icon_label = btn._icon_label
+            text_label = btn._text_label
             # Active items get a crisp icon in the active-text token colour
-            # (contrasts with the active gradient pill). Inactive items use
-            # the registry's colourful default icon and the theme's muted
-            # sidebar text colour, so both stay correctly themed whether the
-            # sidebar is light or dark.
             icon_color = Theme.SIDEBAR_ACTIVE_TEXT if is_active else "auto"
             text_color = Theme.SIDEBAR_ACTIVE_TEXT if is_active else Theme.SIDEBAR_TEXT
 
-            if icon_label:
-                if icons_available():
-                    icon_name = _NAV_ITEMS[i][1]
-                    pm = app_icon(icon_name, color=icon_color, size=22).pixmap(22, 22)
-                    if not pm.isNull():
-                        icon_label.setPixmap(pm)
-                icon_label.setStyleSheet("background: transparent;")
-            if text_label:
-                weight = "font-weight: 700;" if is_active else ""
-                text_label.setStyleSheet(
-                    f"color: {text_color}; background: transparent; padding-right: 12px; {weight}")
+            if icons_available():
+                icon_name = btn._icon_name
+                pm = app_icon(icon_name, color=icon_color, size=22).pixmap(22, 22)
+                if not pm.isNull():
+                    icon_label.setPixmap(pm)
+
+            weight = "font-weight: 700;" if is_active else ""
+            text_label.setStyleSheet(
+                f"color: {text_color}; background: transparent; padding-right: 12px; {weight}")
 
     @staticmethod
     def _brand_bg_css() -> str:
@@ -282,14 +283,21 @@ class DashboardScreen(QMainWindow):
     @staticmethod
     def _nav_normal_style() -> str:
         return f"""
-            QWidget[nav_item="true"] {{
+            QToolButton[nav_item="true"] {{
                 background: transparent;
                 border: none;
                 border-radius: 10px;
                 margin: 2px 10px;
+                padding: 0px;
             }}
-            QWidget[nav_item="true"]:hover {{
+            QToolButton[nav_item="true"]:hover {{
                 background-color: {Theme.SIDEBAR_HOVER};
+                border-radius: 10px;
+                margin: 2px 10px;
+            }}
+            QToolButton[nav_item="true"]:checked {{
+                background-color: {Theme.SIDEBAR_ACTIVE};
+                border: none;
                 border-radius: 10px;
                 margin: 2px 10px;
             }}
@@ -298,12 +306,10 @@ class DashboardScreen(QMainWindow):
     @staticmethod
     def _nav_active_style() -> str:
         """
-        Active nav — solid SIDEBAR_ACTIVE pill. Deliberately not a gradient
-        into SIDEBAR_HOVER: that token is light on light-sidebar themes and
-        a gradient into it would wash out SIDEBAR_ACTIVE_TEXT (usually white).
+        Active nav — solid SIDEBAR_ACTIVE pill. Used for dynamic styling via checked state.
         """
         return f"""
-            QWidget[nav_item="true"] {{
+            QToolButton[nav_item="true"][active="true"] {{
                 background-color: {Theme.SIDEBAR_ACTIVE};
                 border: none;
                 border-radius: 10px;
@@ -325,6 +331,10 @@ class DashboardScreen(QMainWindow):
             self._update_sidebar_toggle_btn()
 
         # Nav button styles + icon pixmaps (colors are baked into QPixmap)
+        # Update nav button stylesheet for dynamic property-based styling
+        if hasattr(self, '_nav_buttons'):
+            for btn in self._nav_buttons:
+                btn.setStyleSheet(self._nav_normal_style())
         current_idx = self.stack.currentIndex() if hasattr(self, 'stack') else 0
         self._set_nav_active(current_idx)
 
@@ -453,56 +463,140 @@ class DashboardScreen(QMainWindow):
     # ── Content stack ─────────────────────────────────────────────────────────
 
     def _build_content_area(self) -> QWidget:
+        """Build content area with lazy-loaded screens. Only overview is built immediately."""
         container = QWidget()
         layout = QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
         self.stack = QStackedWidget()
-        self.stack.addWidget(self._build_overview_page())
 
-        from ui.accounts_screen import AccountsScreen
-        self.accounts_page = AccountsScreen()
-        self.stack.addWidget(self.accounts_page)
+        # Overview page (index 0) is built immediately since __init__ expects it
+        overview = self._build_overview_page()
+        self.stack.addWidget(overview)
+        self._screen_pages[0] = overview
 
-        from ui.transactions_screen import TransactionsScreen
-        self.transactions_page = TransactionsScreen(self)
-        self.stack.addWidget(self.transactions_page)
-
-        from ui.income_management_screen import IncomeManagementScreen
-        self.income_page = IncomeManagementScreen(self)
-        self.stack.addWidget(self.income_page)
-
-        from ui.fixed_deposits_screen import FixedDepositsScreen
-        self.fd_page = FixedDepositsScreen(self)
-        self.stack.addWidget(self.fd_page)
-
-        from ui.statement_import_screen_modern import StatementImportScreen
-        self.import_page = StatementImportScreen(self)
-        self.stack.addWidget(self.import_page)
-
-        from ui.ais_tis_import_screen_v2 import AISTISImportScreenV2
-        self.ais_tis_page = AISTISImportScreenV2(self)
-        self.stack.addWidget(self.ais_tis_page)
-
-        from ui.tax_screen import TaxScreen
-        self.tax_page = TaxScreen(self)
-        self.stack.addWidget(self.tax_page)
-
-        from ui.reconciliation_screen import ReconciliationScreen
-        self.reconciliation_page = ReconciliationScreen(self)
-        self.stack.addWidget(self.reconciliation_page)
-
-        from ui.reports_screen import ReportsScreen
-        self.reports_page = ReportsScreen(self)
-        self.stack.addWidget(self.reports_page)
-
-        from ui.settings_screen import SettingsScreen
-        self.settings_page = SettingsScreen(self)
-        self.stack.addWidget(self.settings_page)
+        # Add placeholders for remaining pages (will be replaced on first navigation)
+        for i in range(1, len(_NAV_ITEMS)):
+            placeholder = self._build_placeholder_page(i)
+            self.stack.addWidget(placeholder)
+            self._screen_pages[i] = None  # Mark as not yet loaded
 
         layout.addWidget(self.stack)
         return container
+
+    def _build_placeholder_page(self, index: int) -> QWidget:
+        """Build a lightweight placeholder page."""
+        page = QWidget()
+        page.setStyleSheet(f"background-color: {Theme.BG};")
+        page.setObjectName(f"placeholder_{index}")
+        return page
+
+    def _get_screen_page(self, index: int) -> QWidget:
+        """Get or lazy-load the screen page at the given index."""
+        if index in self._screen_pages and self._screen_pages[index] is not None:
+            return self._screen_pages[index]
+
+        if index in self._screen_errors:
+            return self._build_error_page(index, self._screen_errors[index])
+
+        # Try to load the screen
+        try:
+            page = self._load_screen_page(index)
+            self._screen_pages[index] = page
+            return page
+        except Exception as e:
+            error_msg = f"{_NAV_ITEMS[index][0]}: {type(e).__name__}: {str(e)}"
+            self._screen_errors[index] = error_msg
+            return self._build_error_page(index, error_msg)
+
+    def _load_screen_page(self, index: int) -> QWidget:
+        """Load a screen page at the given index. Raises if construction fails."""
+        if index == 0:  # Overview
+            return self._build_overview_page()
+        elif index == 1:  # Accounts
+            from ui.accounts_screen import AccountsScreen
+            self.accounts_page = AccountsScreen()
+            return self.accounts_page
+        elif index == 2:  # Transactions
+            from ui.transactions_screen import TransactionsScreen
+            self.transactions_page = TransactionsScreen(self)
+            return self.transactions_page
+        elif index == 3:  # Income
+            from ui.income_management_screen import IncomeManagementScreen
+            self.income_page = IncomeManagementScreen(self)
+            return self.income_page
+        elif index == 4:  # Fixed Deposits
+            from ui.fixed_deposits_screen import FixedDepositsScreen
+            self.fd_page = FixedDepositsScreen(self)
+            return self.fd_page
+        elif index == 5:  # Statement Import
+            from ui.statement_import_screen_modern import StatementImportScreen
+            self.import_page = StatementImportScreen(self)
+            return self.import_page
+        elif index == 6:  # AIS/TIS
+            from ui.ais_tis_import_screen_v2 import AISTISImportScreenV2
+            self.ais_tis_page = AISTISImportScreenV2(self)
+            return self.ais_tis_page
+        elif index == 7:  # Tax
+            from ui.tax_screen import TaxScreen
+            self.tax_page = TaxScreen(self)
+            return self.tax_page
+        elif index == 8:  # Reconciliation
+            from ui.reconciliation_screen import ReconciliationScreen
+            self.reconciliation_page = ReconciliationScreen(self)
+            return self.reconciliation_page
+        elif index == 9:  # Reports
+            from ui.reports_screen import ReportsScreen
+            self.reports_page = ReportsScreen(self)
+            return self.reports_page
+        elif index == 10:  # Settings
+            from ui.settings_screen import SettingsScreen
+            self.settings_page = SettingsScreen(self)
+            return self.settings_page
+        else:
+            raise ValueError(f"Unknown screen index: {index}")
+
+    def _build_error_page(self, index: int, error_msg: str) -> QWidget:
+        """Build an error page to display inline when screen construction fails."""
+        page = QWidget()
+        page.setStyleSheet(f"background-color: {Theme.BG};")
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addStretch()
+
+        error_frame = QFrame()
+        error_frame.setStyleSheet(f"""
+            background-color: {Theme.SURFACE};
+            border: 2px solid {Theme.DANGER};
+            border-radius: 12px;
+            padding: 24px;
+        """)
+        error_layout = QVBoxLayout(error_frame)
+
+        title = QLabel("Screen Load Error")
+        title.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
+        title.setStyleSheet(f"color: {Theme.DANGER}; background: transparent;")
+        error_layout.addWidget(title)
+
+        msg = QLabel(error_msg)
+        msg.setFont(QFont("Segoe UI", 12))
+        msg.setStyleSheet(f"color: {Theme.TEXT_PRIMARY}; background: transparent; word-wrap: break-word;")
+        msg.setWordWrap(True)
+        error_layout.addWidget(msg)
+
+        error_layout.addStretch()
+
+        error_container = QWidget()
+        error_container_layout = QHBoxLayout(error_container)
+        error_container_layout.addStretch()
+        error_container_layout.addWidget(error_frame, stretch=1)
+        error_container_layout.addStretch()
+
+        layout.addWidget(error_container, stretch=1)
+        layout.addStretch()
+
+        return page
 
     # ── Overview page ─────────────────────────────────────────────────────────
 
@@ -736,6 +830,16 @@ class DashboardScreen(QMainWindow):
     def _navigate(self, index: int):
         if not self._confirm_unsaved_transactions("switch pages"):
             return
+
+        # Lazy-load screen if not yet loaded
+        screen = self._get_screen_page(index)
+        if self._screen_pages.get(index) != screen:
+            # First time loading - replace placeholder
+            old_widget = self.stack.widget(index)
+            self.stack.removeWidget(old_widget)
+            self.stack.insertWidget(index, screen)
+            self._screen_pages[index] = screen
+
         self._set_nav_active(index)
         self.stack.setCurrentIndex(index)
         self.page_title_lbl.setText(_NAV_ITEMS[index][0])
@@ -746,19 +850,22 @@ class DashboardScreen(QMainWindow):
         idx = self.stack.currentIndex()
         pages = [
             lambda: self._refresh_overview(),
-            lambda: self._refresh_accounts_page(),
-            lambda: self.transactions_page.refresh(),
-            lambda: self.income_page.refresh(),
-            lambda: self.fd_page.refresh(),
-            lambda: self.import_page.refresh(),
-            lambda: self.ais_tis_page.refresh(),
-            lambda: self.tax_page.refresh(),
-            lambda: self.reconciliation_page.refresh(),
-            lambda: self.reports_page.refresh(),
-            lambda: self.settings_page.refresh(),
+            lambda: self._refresh_accounts_page() if hasattr(self, 'accounts_page') else None,
+            lambda: self.transactions_page.refresh() if hasattr(self, 'transactions_page') else None,
+            lambda: self.income_page.refresh() if hasattr(self, 'income_page') else None,
+            lambda: self.fd_page.refresh() if hasattr(self, 'fd_page') else None,
+            lambda: self.import_page.refresh() if hasattr(self, 'import_page') else None,
+            lambda: self.ais_tis_page.refresh() if hasattr(self, 'ais_tis_page') else None,
+            lambda: self.tax_page.refresh() if hasattr(self, 'tax_page') else None,
+            lambda: self.reconciliation_page.refresh() if hasattr(self, 'reconciliation_page') else None,
+            lambda: self.reports_page.refresh() if hasattr(self, 'reports_page') else None,
+            lambda: self.settings_page.refresh() if hasattr(self, 'settings_page') else None,
         ]
         if 0 <= idx < len(pages):
-            pages[idx]()
+            try:
+                pages[idx]()
+            except Exception:
+                pass  # If a page raises during refresh, silently skip
 
     def _refresh_accounts_page(self):
         """Update accounts page with current filters."""
@@ -875,8 +982,8 @@ class DashboardScreen(QMainWindow):
             self.ver_lbl.setText("v1.0.0  ·  Offline")
 
         # Show all nav labels
-        for container in self._nav_buttons:
-            text_label = container.findChild(QLabel, "nav_label")
+        for btn in self._nav_buttons:
+            text_label = btn._text_label
             if text_label:
                 text_label.setVisible(True)
 
@@ -898,7 +1005,7 @@ class DashboardScreen(QMainWindow):
             self.ver_lbl.setText("v1.0")
 
         # Hide all nav labels
-        for container in self._nav_buttons:
-            text_label = container.findChild(QLabel, "nav_label")
+        for btn in self._nav_buttons:
+            text_label = btn._text_label
             if text_label:
                 text_label.setVisible(False)

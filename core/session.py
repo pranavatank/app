@@ -3,7 +3,12 @@ core/session.py — Global session state for the logged-in app instance.
 Holds AES key, selected person, account, financial year, and privacy flag.
 """
 
+import json
+import os
 from config import get_current_financial_year
+
+_CONFIG_DIR  = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+_CONFIG_FILE = os.path.join(_CONFIG_DIR, "theme_prefs.json")
 
 
 class Session:
@@ -17,7 +22,7 @@ class Session:
         self.selected_fy:          str          = get_current_financial_year()
         self.privacy_mode:         bool         = False
         self.theme:                str          = "light"  # light or dark
-        self.sidebar_open:        bool         = False
+        self.sidebar_open:        bool         = self._load_sidebar_pref()
 
     # ── Auth ─────────────────────────────────────────────────────────────────
 
@@ -55,6 +60,7 @@ class Session:
     def set_sidebar_open(self, open_: bool) -> None:
         """Persist sidebar expanded/collapsed state for the session."""
         self.sidebar_open = bool(open_)
+        self._save_sidebar_pref()
 
     def is_sidebar_open(self) -> bool:
         return bool(self.sidebar_open)
@@ -62,6 +68,34 @@ class Session:
     def get_theme(self) -> str:
         """Get current theme."""
         return self.theme
+
+    @staticmethod
+    def _load_sidebar_pref() -> bool:
+        """Load saved sidebar state from theme_prefs.json. Default to True (expanded) on first run."""
+        try:
+            if os.path.exists(_CONFIG_FILE):
+                with open(_CONFIG_FILE, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                return data.get("sidebar_open", True)
+        except Exception:
+            pass
+        return True  # Default to expanded on first run
+
+    def _save_sidebar_pref(self) -> None:
+        """Save sidebar state to theme_prefs.json alongside theme preference."""
+        try:
+            os.makedirs(_CONFIG_DIR, exist_ok=True)
+            data = {}
+            # Preserve existing theme preference if it exists
+            if os.path.exists(_CONFIG_FILE):
+                with open(_CONFIG_FILE, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            # Update sidebar_open with current instance state
+            data["sidebar_open"] = self.sidebar_open
+            with open(_CONFIG_FILE, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+        except Exception:
+            pass
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
