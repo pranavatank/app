@@ -1,0 +1,10 @@
+# Jana bank profile
+# Real bank with validated sample documents
+
+# Jana's statements are printed newest-first (descending)
+# The parser auto-detects this from parsed dates
+row_order: descending
+
+# Jana fills BOTH Deposits and Withdrawal columns with 0.00 in the unused one
+# The non-zero column decides direction
+amount_columns_both_populated: true

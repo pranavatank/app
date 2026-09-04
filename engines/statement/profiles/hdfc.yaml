@@ -1,0 +1,14 @@
+# HDFC Bank profile
+# UNVALIDATED: existing Python parser (engines/bank_parsers/hdfc_statement_parser.py) but NO sample documents
+# Seeded from HDFC parser code at time of profile creation
+
+date_formats:
+  - "%d/%m/%y"      # DD/MM/YY (2-digit year, HDFC uses this)
+  - "%d/%m/%Y"      # DD/MM/YYYY
+  - "%d-%b-%Y"      # 30-Apr-2025
+  - "%Y-%m-%d"      # 2025-04-01
+
+# HDFC uses standard ascending order
+row_order: ascending
+
+amount_columns_both_populated: false

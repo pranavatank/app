@@ -1,0 +1,78 @@
+# Generic bank profile — default values for all banks
+# Use as fallback when bank-specific profile is missing or malformed
+
+column_synonyms:
+  date:
+    - "transaction date"
+    - "txn date"
+    - "tran date"
+    - "date"
+    - "value date"
+  desc:
+    - "particulars"
+    - "narration"
+    - "description"
+    - "particular"
+  debit:
+    - "withdrawal"
+    - "withdrawals"
+    - "debit"
+  credit:
+    - "deposit"
+    - "deposits"
+    - "credit"
+  balance:
+    - "closingbalance"
+    - "closing balance"
+    - "balance"
+  ref:
+    - "reference"
+    - "cheque"
+    - "chq"
+
+date_formats:
+  - "%d-%b-%Y"      # 30-Apr-2025
+  - "%d/%m/%Y"      # 01/04/2026
+  - "%d-%m-%Y"      # 06-09-2025
+  - "%Y-%m-%d"      # 2025-04-01
+
+row_order: ascending
+
+amount_columns_both_populated: false
+
+# FD (Fixed Deposit) categorization patterns
+# Authoritative source: engines/parser_utils.py::_guess_fd_category
+# Patterns are checked in descending order of length (longest first)
+narration_vocabulary:
+  Income:
+    - "PRINC AND INT AUTO REDEEM"
+    - "CREDIT INTEREST CAPITALISED"
+    - "CREDIT INTEREST CAPITALIZED"
+    - "CASA CREDIT INTEREST"
+    - "INT AUTO REDEEM"
+    - "CLOSURE PROCEEDS"
+    - "INTEREST ON DEPOSIT"
+    - "FD INTEREST"
+    - "AUTO REDEEM"
+    - "MATURITY"
+    - "MATURED"
+    - "REDEMPTION"
+    - "REDEEMED"
+    - "FD CR"
+    - "PAT CR"
+  Expense:
+    - "TD. GENERIC PAYIN DEBIT"
+    - "SMS ALERTS CHARGES"
+    - "GOODS AND SERVICES TAX"
+    - "INITIAL PAYIN"
+    - "PAYIN DEBIT"
+    - "FIXED DEPOSIT"
+    - "TERM DEPOSIT"
+    - "FD BOOKING"
+    - "AMB CHARGES"
+
+fd_conventions:
+  compounding: "quarterly"
+  simple_below_days: 183
+  day_count: "actual/365"
+  rounding_adjustment: 4

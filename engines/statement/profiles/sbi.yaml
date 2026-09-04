@@ -1,0 +1,13 @@
+# State Bank of India (SBI) profile
+# UNVALIDATED: existing Python parser (engines/bank_parsers/sbi_statement_parser.py) but NO sample documents
+# Seeded from SBI parser code at time of profile creation
+
+date_formats:
+  - "%d/%m/%Y"      # DD/MM/YYYY
+  - "%d/%m/%y"      # DD/MM/YY (2-digit year)
+  - "%d-%b-%Y"      # 30-Apr-2025
+  - "%Y-%m-%d"      # 2025-04-01
+
+row_order: ascending
+
+amount_columns_both_populated: false
