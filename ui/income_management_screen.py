@@ -12,6 +12,7 @@ from PyQt6.QtCore import Qt, QDate
 from PyQt6.QtGui import QFont, QColor
 
 from ui.widgets.excel_table import ExcelTableWithStats
+from ui.widgets.toast_utils import show_success, show_warning, show_info
 from ui.theme import Theme
 from ui.icons import set_btn_icon
 from ui.date_utils import format_display_date
@@ -120,7 +121,7 @@ class IncomeManagementScreen(QWidget):
                 checked_rows.append((row, exp_id))
         
         if not checked_rows:
-            QMessageBox.warning(self, "No Selection", "Please select expectations to delete.")
+            show_warning("Please select expectations to delete.")
             return
         
         reply = QMessageBox.question(
@@ -416,7 +417,7 @@ class IncomeManagementScreen(QWidget):
     def _add_expectation(self):
         persons = get_all_persons()
         if not persons:
-            QMessageBox.information(self, "No Persons", "Add a family member first.")
+            show_warning("Add a family member first.")
             return
         
         dlg = IncomeExpectationDialog(self, persons=persons,
@@ -442,7 +443,7 @@ class IncomeManagementScreen(QWidget):
                 self._parent_window.refresh_overview()
             
             if frequency in ["Monthly", "Quarterly", "Half-Yearly"]:
-                QMessageBox.information(self, "Success", f"Created {frequency.lower()} income expectations for the financial year.")
+                show_success(f"Created {frequency.lower()} income expectations for the financial year.")
 
     def _edit_expectation(self):
         exp = self._selected_expectation()
@@ -506,16 +507,13 @@ class IncomeManagementScreen(QWidget):
         fy = self.f_fy.currentText()
         
         if not pid:
-            QMessageBox.information(
-                self, "Select Person",
-                "Please select a specific person to auto-link their income."
-            )
+            show_warning("Please select a specific person to auto-link their income.")
             return
         
         # Get all accounts for this person
         accounts = get_accounts_for_person(pid)
         if not accounts:
-            QMessageBox.information(self, "No Accounts", "No accounts found for this person.")
+            show_info("No accounts found for this person.")
             return
         
         total_linked = 0
@@ -524,23 +522,16 @@ class IncomeManagementScreen(QWidget):
             total_linked += linked
         
         if total_linked > 0:
-            QMessageBox.information(
-                self, "Auto-Link Complete",
-                f"Successfully linked {total_linked} expectation{'s' if total_linked != 1 else ''} with actual transactions."
-            )
+            show_success(f"Successfully linked {total_linked} expectation{'s' if total_linked != 1 else ''} with actual transactions.")
             self.refresh()
             if self._parent_window:
                 self._parent_window.refresh_overview()
         else:
-            QMessageBox.information(
-                self, "No Matches",
-                "No matching transactions found to link automatically.\n\n"
-                "Transactions must be in the same month as expected date."
-            )
+            show_info("No matching transactions found to link automatically.\n\nTransactions must be in the same month as expected date.")
 
     def _selected_expectation(self):
         if not self.table.selectedItems():
-            QMessageBox.warning(self, "No Selection", "Please select an income expectation.")
+            show_warning("Please select an income expectation.")
             return None
         
         row = self.table.currentRow()
@@ -710,7 +701,7 @@ class IncomeExpectationDialog(QDialog):
             txn_id = dlg.get_selected_transaction_id()
             if txn_id:
                 link_actual_transaction(self._existing["expectation_id"], txn_id)
-                QMessageBox.information(self, "Linked", "Transaction has been linked.")
+                show_success("Transaction has been linked.")
                 self.accept()
 
     def _on_unlink(self):
@@ -722,7 +713,7 @@ class IncomeExpectationDialog(QDialog):
         )
         if reply == QMessageBox.StandardButton.Yes:
             unlink_actual_transaction(self._existing["expectation_id"])
-            QMessageBox.information(self, "Unlinked", "Transaction has been unlinked.")
+            show_success("Transaction has been unlinked.")
             self.accept()  # Close dialog and refresh
 
     def _on_frequency_changed(self, frequency):
@@ -799,10 +790,10 @@ class IncomeExpectationDialog(QDialog):
 
     def _on_accept(self):
         if not self.cmb_account.currentData():
-            QMessageBox.warning(self, "Missing", "Please select an account.")
+            show_warning("Please select an account.")
             return
         if self.amount_spin.value() <= 0:
-            QMessageBox.warning(self, "Invalid", "Amount must be > 0.")
+            show_warning("Amount must be > 0.")
             return
         self.accept()
 
@@ -897,7 +888,7 @@ class LinkActualDialog(QDialog):
 
     def _on_accept(self):
         if not self.table.selectedItems():
-            QMessageBox.warning(self, "No Selection", "Please select a transaction.")
+            show_warning("Please select a transaction.")
             return
         self.accept()
 

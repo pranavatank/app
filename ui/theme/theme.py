@@ -921,4 +921,69 @@ QLabel[textrole="label"][color="danger"] {{ color: {t.DANGER}; }}
 QLabel[textrole="label"][color="success"] {{ color: {t.SUCCESS}; }}
 QLabel[textrole="label"][color="warning"] {{ color: {t.WARNING}; }}
 QLabel[textrole="label"][color="primary"] {{ color: {t.PRIMARY}; }}
+
+/* ═══════════════════════════ TOASTS ════════════════════════════ */
+QWidget#Toast {{
+    background-color: {t.SURFACE}; border-radius: 10px;
+    border: 1px solid {t.BORDER}; padding: 0; margin: 0;
+}}
+QWidget#Toast[variant="success"] {{
+    background-color: {t.SUCCESS_LIGHT}; border-color: {t.SUCCESS};
+    border-left: 3px solid {t.SUCCESS};
+}}
+QWidget#Toast[variant="success"] QLabel {{
+    color: {t.SUCCESS_TEXT};
+}}
+QWidget#Toast[variant="success"] QPushButton {{
+    color: {t.SUCCESS_TEXT}; background: transparent;
+    border: none; font-size: 18px; padding: 0;
+}}
+QWidget#Toast[variant="success"] QPushButton:hover {{
+    color: {t.SUCCESS_DARK};
+}}
+
+QWidget#Toast[variant="info"] {{
+    background-color: {t.INFO_LIGHT}; border-color: {t.INFO};
+    border-left: 3px solid {t.INFO};
+}}
+QWidget#Toast[variant="info"] QLabel {{
+    color: {t.INFO_TEXT};
+}}
+QWidget#Toast[variant="info"] QPushButton {{
+    color: {t.INFO_TEXT}; background: transparent;
+    border: none; font-size: 18px; padding: 0;
+}}
+QWidget#Toast[variant="info"] QPushButton:hover {{
+    color: {t.INFO_DARK};
+}}
+
+QWidget#Toast[variant="warning"] {{
+    background-color: {t.WARNING_LIGHT}; border-color: {t.WARNING};
+    border-left: 3px solid {t.WARNING};
+}}
+QWidget#Toast[variant="warning"] QLabel {{
+    color: {t.WARNING_TEXT};
+}}
+QWidget#Toast[variant="warning"] QPushButton {{
+    color: {t.WARNING_TEXT}; background: transparent;
+    border: none; font-size: 18px; padding: 0;
+}}
+QWidget#Toast[variant="warning"] QPushButton:hover {{
+    color: {t.WARNING_DARK};
+}}
+
+QWidget#Toast[variant="danger"] {{
+    background-color: {t.DANGER_LIGHT}; border-color: {t.DANGER};
+    border-left: 3px solid {t.DANGER};
+}}
+QWidget#Toast[variant="danger"] QLabel {{
+    color: {t.DANGER_TEXT};
+}}
+QWidget#Toast[variant="danger"] QPushButton {{
+    color: {t.DANGER_TEXT}; background: transparent;
+    border: none; font-size: 18px; padding: 0;
+}}
+QWidget#Toast[variant="danger"] QPushButton:hover {{
+    color: {t.DANGER_DARK};
+}}
 """

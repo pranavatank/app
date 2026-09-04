@@ -22,6 +22,7 @@ import re
 
 from ui.widgets.excel_table import ExcelTableWithStats
 from ui.widgets.loader import Loader
+from ui.widgets.toast_utils import show_success, show_warning, show_info
 from ui.theme import Theme
 from ui.icons import icon_label, set_btn_icon, pixmap as icon_pixmap
 from ui.date_utils import format_display_date
@@ -772,7 +773,7 @@ class StatementImportScreen(QWidget):
             Theme.badge_style(Theme.SUCCESS_LIGHT, Theme.SUCCESS_DARK, radius=8, padding='4px 8px', size=11))
 
     def _on_ai_warmup_failed(self, message: str):
-        QMessageBox.warning(self, "AI Warm-Up Failed", message)
+        show_warning(message)
         self._refresh_ai_status()
 
     def _finish_ai_warmup(self):
@@ -792,16 +793,16 @@ class StatementImportScreen(QWidget):
         if self.stack.currentIndex() == 0:
             # Validate selection screen
             if not self.selected_person_id:
-                QMessageBox.warning(self, "No Person", "Please select a person.")
+                show_warning("Please select a person.")
                 return
             
             self.selected_account_id = self.account_combo.currentData()
             if not self.selected_account_id:
-                QMessageBox.warning(self, "No Account", "Please select an account.")
+                show_warning("Please select an account.")
                 return
             
             if not self.selected_file:
-                QMessageBox.warning(self, "No File", "Please select a statement file.")
+                show_warning("Please select a statement file.")
                 return
             
             # Parse statement (will be implemented in next chunk)
@@ -897,7 +898,7 @@ class StatementImportScreen(QWidget):
             self._parse_save_password = save_password
             self._start_statement_parse_worker()
         elif isinstance(exc, StatementPasswordInvalidError):
-            QMessageBox.warning(self, "Invalid Password", "The password did not unlock the file. Please try again.")
+            show_warning("The password did not unlock the file. Please try again.")
             password, save_password = self._prompt_statement_password(self._parse_password or None)
             if not password:
                 return
@@ -960,13 +961,13 @@ class StatementImportScreen(QWidget):
                 self.duplicate_count = 0
                 self._populate_preview_table()
                 self._switch_to_preview()
-                QMessageBox.information(self, "No Transactions", "Could not extract transactions. Check debug panel for details.")
+                show_warning("Could not extract transactions. Check debug panel for details.")
                 return
 
             valid, errors = validate_transactions(txns)
             self.validation_errors = errors
             if errors:
-                QMessageBox.warning(self, "Validation Errors", f"{len(errors)} rows were skipped. Check debug panel for details.")
+                show_warning(f"{len(errors)} rows were skipped. Check debug panel for details.")
 
             # Check duplicates (lightweight DB queries, stay on UI thread)
             self.preview_transactions = valid
@@ -988,9 +989,9 @@ class StatementImportScreen(QWidget):
 
             if dups > 0:
                 if dups == len(valid) and valid:
-                    QMessageBox.information(self, "All Duplicates", "All extracted rows already exist. Preview shows parsed rows, but duplicates are disabled for import.")
+                    show_info("All extracted rows already exist. Preview shows parsed rows, but duplicates are disabled for import.")
                 else:
-                    QMessageBox.information(self, "Duplicates", f"{dups} duplicate(s) will be skipped.")
+                    show_info(f"{dups} duplicate(s) will be skipped.")
 
             self.parsed_transactions = unique
             self._populate_preview_table()
@@ -1011,12 +1012,12 @@ class StatementImportScreen(QWidget):
     def _import_transactions(self):
         """Import selected transactions using background worker thread."""
         if not self.preview_transactions:
-            QMessageBox.warning(self, "Nothing to Import", "No transactions available. Please go back and choose another file.")
+            show_warning("No transactions available. Please go back and choose another file.")
             return
 
         checked_rows = self.preview_table.getCheckedRows()
         if not checked_rows:
-            QMessageBox.warning(self, "Nothing Selected", "Please select at least one transaction to import.")
+            show_warning("Please select at least one transaction to import.")
             return
 
         # Disable controls during import
@@ -1076,7 +1077,7 @@ class StatementImportScreen(QWidget):
                 if self._loader:
                     self._loader.hide()
 
-                QMessageBox.information(self, "✓ Import Complete", msg)
+                show_success(msg)
 
                 if self.parent_window:
                     self.parent_window.refresh_overview()
@@ -1313,12 +1314,12 @@ class StatementImportScreen(QWidget):
 
     def _open_column_mapping_dialog(self):
         if not self.selected_file:
-            QMessageBox.warning(self, "No File", "Please choose a file first.")
+            show_warning("Please choose a file first.")
             return
         dlg = ColumnMappingDialog(self, self.selected_file, account_id=self.selected_account_id)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             self._column_mapping = dlg.get_mapping()
-            QMessageBox.information(self, "Mapping Saved", "Column mapping saved for this import.")
+            show_success("Column mapping saved for this import.")
 
     def _set_preview_selection(self, selected: bool):
         for idx in range(len(self.preview_transactions)):
@@ -1382,7 +1383,7 @@ class StatementImportScreen(QWidget):
     def _copy_debug_report(self):
         report = self._build_debug_text()
         QApplication.clipboard().setText(report)
-        QMessageBox.information(self, "Copied", "Debug report copied to clipboard.")
+        show_success("Debug report copied to clipboard.")
 
     def _export_debug_report(self):
         default_name = "import_debug_report.json"
@@ -1417,7 +1418,7 @@ class StatementImportScreen(QWidget):
                 with open(path, "w", encoding="utf-8") as f:
                     json.dump(payload, f, ensure_ascii=False, indent=2)
 
-            QMessageBox.information(self, "Exported", f"Debug report saved to:\n{path}")
+            show_success(f"Debug report saved to:\n{path}")
         except Exception as e:
             QMessageBox.critical(self, "Export Failed", str(e))
 
@@ -1448,7 +1449,7 @@ class StatementImportScreen(QWidget):
             return None, False
         password = dlg.get_password()
         if not password:
-            QMessageBox.warning(self, "No Password", "Password is required to open the file.")
+            show_warning("Password is required to open the file.")
             return None, False
         return password, dlg.should_save()
 
@@ -1585,7 +1586,7 @@ class StatementImportScreen(QWidget):
             elif col == 7:
                 txn["reference_no"] = text or None
         except Exception:
-            QMessageBox.warning(self, "Invalid Value", "Could not apply the edit. Reverting the row.")
+            show_warning("Could not apply the edit. Reverting the row.")
         finally:
             self._update_preview_row(row)
             self._update_preview_summary()
@@ -1593,7 +1594,7 @@ class StatementImportScreen(QWidget):
     def _bulk_edit_selected_rows(self):
         rows = self._selected_preview_rows()
         if not rows:
-            QMessageBox.information(self, "No Selection", "Select one or more rows to bulk edit.")
+            show_warning("Select one or more rows to bulk edit.")
             return
         base = dict(self.preview_transactions[rows[0]])
         from ui.dialogs.transaction_edit_dialog import TransactionEditDialog
@@ -1612,7 +1613,7 @@ class StatementImportScreen(QWidget):
     def _shift_selected_dates(self):
         rows = self._selected_preview_rows()
         if not rows:
-            QMessageBox.information(self, "No Selection", "Select one or more rows to shift dates.")
+            show_warning("Select one or more rows to shift dates.")
             return
         days, ok = QInputDialog.getInt(self, "Shift Dates", "Shift selected dates by how many days?", value=1, min=-3650, max=3650)
         if not ok or days == 0:
@@ -1630,13 +1631,13 @@ class StatementImportScreen(QWidget):
     def _split_selected_row(self):
         rows = self._selected_preview_rows()
         if len(rows) != 1:
-            QMessageBox.information(self, "Select One Row", "Select exactly one row to split.")
+            show_warning("Select exactly one row to split.")
             return
         row = rows[0]
         txn = self.preview_transactions[row]
         max_split = float(txn.get("amount") or 0)
         if max_split <= 0:
-            QMessageBox.warning(self, "Cannot Split", "This row does not have a valid amount.")
+            show_warning("This row does not have a valid amount.")
             return
         split_amount, ok = QInputDialog.getDouble(self, "Split Row", "Amount to move into the new split row:", value=max_split / 2, min=0.01, max=max_split, decimals=2)
         if not ok or split_amount <= 0 or split_amount >= max_split:
@@ -1652,7 +1653,7 @@ class StatementImportScreen(QWidget):
     def _merge_selected_rows(self):
         rows = self._selected_preview_rows()
         if len(rows) < 2:
-            QMessageBox.information(self, "Select Multiple Rows", "Select at least two rows to merge.")
+            show_warning("Select at least two rows to merge.")
             return
         rows = sorted(rows)
         base = dict(self.preview_transactions[rows[0]])

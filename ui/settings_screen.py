@@ -33,6 +33,7 @@ from datetime import datetime
 
 from ui.theme import Theme, ThemeManager
 from ui.icons import icon as app_icon, icon_label, is_available as icons_available
+from ui.widgets.toast_utils import show_success, show_warning
 from core.session import session
 from core.auth import (
     change_password, is_totp_enabled, enable_totp, disable_totp,
@@ -600,30 +601,29 @@ class SettingsScreen(QWidget):
     def _on_change_password(self):
         cur, new, conf = self.current_pwd.text(), self.new_pwd.text(), self.confirm_pwd.text()
         if not all([cur, new, conf]):
-            QMessageBox.warning(self, "Missing", "Please fill all password fields."); return
+            show_warning("Please fill all password fields."); return
         if new != conf:
-            QMessageBox.warning(self, "Mismatch", "New passwords do not match."); return
+            show_warning("New passwords do not match."); return
         if len(new) < 8:
-            QMessageBox.warning(self, "Too Short", "Password must be at least 8 characters."); return
+            show_warning("Password must be at least 8 characters."); return
         ok, msg = change_password(cur, new)
         if ok:
-            QMessageBox.information(self, "Success", "Password changed successfully!")
+            show_success("Password changed successfully!")
             for f in [self.current_pwd, self.new_pwd, self.confirm_pwd]: f.clear()
         else:
-            QMessageBox.warning(self, "Failed", msg)
+            show_warning(msg)
 
     def _on_totp_toggle(self, state):
         enabled = bool(state)
         try:
             if enabled:
                 uri = enable_totp()
-                QMessageBox.information(self, "TOTP Enabled",
-                    f"Scan this URI with your authenticator app:\n\n{uri}")
+                show_success(f"Scan this URI with your authenticator app:\n\n{uri}")
             else:
                 disable_totp()
-                QMessageBox.information(self, "TOTP Disabled", "2FA has been disabled.")
+                show_success("2FA has been disabled.")
         except Exception as e:
-            QMessageBox.warning(self, "Error", str(e))
+            show_warning(str(e))
             self.totp_checkbox.setChecked(not enabled)
         finally:
             self._refresh_badges()
@@ -636,7 +636,7 @@ class SettingsScreen(QWidget):
             self._refresh_badges()
             if self.parent_window: self.parent_window.refresh_overview()
         except Exception as e:
-            QMessageBox.warning(self, "Error", str(e))
+            show_warning(str(e))
             self.privacy_checkbox.setChecked(not enabled)
 
     def _on_create_backup(self):
@@ -647,7 +647,7 @@ class SettingsScreen(QWidget):
             dest = os.path.join(BACKUP_DIR, f"backup_{ts}.db")
             with Loader(self, "Creating backup…", subtitle="Copying database file"):
                 backup_database(dest)
-            QMessageBox.information(self, "Backup Created", f"Saved to:\n{dest}")
+            show_success(f"Saved to:\n{dest}")
         except Exception as e:
             QMessageBox.critical(self, "Backup Failed", str(e))
 
@@ -666,8 +666,7 @@ class SettingsScreen(QWidget):
             from core.database import restore_database
             with Loader(self, "Restoring backup…", subtitle="Please do not close the app"):
                 restore_database(path)
-            QMessageBox.information(self, "Restored",
-                "Database restored. Please restart the app.")
+            show_success("Database restored. Please restart the app.")
         except Exception as e:
             QMessageBox.critical(self, "Restore Failed", str(e))
 
@@ -684,7 +683,7 @@ class SettingsScreen(QWidget):
             from ui.dialogs.bank_dialog import BankManagementDialog
             BankManagementDialog(self).exec()
         except Exception as e:
-            QMessageBox.warning(self, "Error", str(e))
+            show_warning(str(e))
 
     def refresh(self):
         if self.totp_checkbox:

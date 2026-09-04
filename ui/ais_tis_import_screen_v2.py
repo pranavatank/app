@@ -17,6 +17,7 @@ from ui.theme import Theme
 from ui.icons import set_btn_icon, tab_icon
 from ui.widgets.excel_table import ExcelTableWithStats, enable_copy_shortcut, NoFocusRectDelegate
 from ui.widgets.loader import Loader
+from ui.widgets.toast_utils import show_success, show_warning, show_info
 from core.session import session
 from models.person import get_person, get_ais_tis_password, set_ais_tis_password
 from models.form26as import save_form26as_import, get_form26as_import, get_form26as_records
@@ -439,7 +440,7 @@ class AISTISImportScreenV2(QWidget):
         fy = session.selected_fy
 
         if not pid:
-            QMessageBox.warning(self, "No Person", "Please select a person from the top bar.")
+            show_warning("Please select a person from the top bar.")
             return
 
         file_path, _ = QFileDialog.getOpenFileName(
@@ -463,7 +464,7 @@ class AISTISImportScreenV2(QWidget):
                 """Callback on GUI thread after Form 26AS parse completes."""
                 try:
                     if not parsed["records"]:
-                        QMessageBox.warning(self, "No Records", "No TDS records found in PDF.")
+                        show_info("No TDS records found in PDF.")
                         return
 
                     # Determine FY
@@ -489,7 +490,7 @@ class AISTISImportScreenV2(QWidget):
                         return
                     approved_records = preview.get_selected_records()
                     if not approved_records:
-                        QMessageBox.information(self, "Nothing to Import", "No rows were selected.")
+                        show_info("No rows were selected.")
                         return
 
                     # Process records and match with income sources
@@ -524,10 +525,7 @@ class AISTISImportScreenV2(QWidget):
                         raw_text=pdf_text,
                     )
 
-                    QMessageBox.information(
-                        self, "Import Successful",
-                        f"Imported {len(processed_records)} TDS records from Form 26AS."
-                    )
+                    show_success(f"Imported {len(processed_records)} TDS records from Form 26AS.")
 
                     self._load_26as_data()
 
@@ -595,7 +593,7 @@ class AISTISImportScreenV2(QWidget):
             return None, False
         password = dlg.get_password()
         if not password:
-            QMessageBox.warning(self, "No Password", "Password is required to open the PDF.")
+            show_warning("Password is required to open the PDF.")
             return None, False
         return password, dlg.should_save()
 
@@ -604,7 +602,7 @@ class AISTISImportScreenV2(QWidget):
         fy = session.selected_fy
 
         if not pid:
-            QMessageBox.warning(self, "No Person", "Please select a person from the top bar.")
+            show_warning("Please select a person from the top bar.")
             return
 
         file_path, _ = QFileDialog.getOpenFileName(
@@ -629,11 +627,7 @@ class AISTISImportScreenV2(QWidget):
                 break
             except PDFExtractionError as e:
                 if self._is_password_error(e):
-                    QMessageBox.warning(
-                        self,
-                        "Invalid Password",
-                        "The password did not unlock the PDF. Please try again."
-                    )
+                    show_warning("The password did not unlock the PDF. Please try again.")
                     password, save_password = self._prompt_ais_tis_password(password or saved_password)
                     if not password:
                         return
@@ -664,7 +658,7 @@ class AISTISImportScreenV2(QWidget):
             try:
                 details = parsed.get("details") or []
                 if not details:
-                    QMessageBox.warning(self, "No Records", f"No {source_type} records found in the PDF.")
+                    show_info(f"No {source_type} records found in the PDF.")
                     return
 
                 # Preview & edit before writing anything to the database
@@ -683,7 +677,7 @@ class AISTISImportScreenV2(QWidget):
                     return
                 approved_details = preview.get_selected_records()
                 if not approved_details:
-                    QMessageBox.information(self, "Nothing to Import", "No rows were selected.")
+                    show_info("No rows were selected.")
                     return
                 for rec in approved_details:
                     rec["source_tan"] = (rec.get("source_tan") or "").strip().upper()
@@ -720,10 +714,7 @@ class AISTISImportScreenV2(QWidget):
                 if import_id and new_sources:
                     self._handle_new_sources_ais(new_sources)
 
-                QMessageBox.information(
-                    self, "Import Successful",
-                    f"Imported {len(approved_details)} {source_type} record(s) for FY {fy}."
-                )
+                show_success(f"Imported {len(approved_details)} {source_type} record(s) for FY {fy}.")
 
                 if source_type == "AIS":
                     self._load_ais_data()
@@ -759,7 +750,7 @@ class AISTISImportScreenV2(QWidget):
         fy = session.selected_fy
 
         if not pid:
-            QMessageBox.warning(self, "No Person", "Please select a person from the top bar.")
+            show_warning("Please select a person from the top bar.")
             return
 
         file_path, _ = QFileDialog.getOpenFileName(
@@ -783,7 +774,7 @@ class AISTISImportScreenV2(QWidget):
 
             records = parsed.get("details", [])
             if not records:
-                QMessageBox.warning(self, "No Records", "No AIS records found in the JSON file.")
+                show_info("No AIS records found in the JSON file.")
                 return
 
             formatted_records = [
@@ -815,7 +806,7 @@ class AISTISImportScreenV2(QWidget):
                 return
             approved_records = preview.get_selected_records()
             if not approved_records:
-                QMessageBox.information(self, "Nothing to Import", "No rows were selected.")
+                show_info("No rows were selected.")
                 return
             for rec in approved_records:
                 rec["source_tan"] = (rec.get("source_tan") or "").strip().upper()
@@ -850,10 +841,7 @@ class AISTISImportScreenV2(QWidget):
             if new_sources:
                 self._handle_new_sources_ais(new_sources)
 
-            QMessageBox.information(
-                self, "Import Successful",
-                f"Imported {len(approved_records)} AIS record(s) for FY {fy}."
-            )
+            show_success(f"Imported {len(approved_records)} AIS record(s) for FY {fy}.")
 
             self._load_ais_data()
 
@@ -962,7 +950,7 @@ class AISTISImportScreenV2(QWidget):
         fy = session.selected_fy
 
         if not pid:
-            QMessageBox.warning(self, "No Person", "Please select a person from the top bar.")
+            show_warning("Please select a person from the top bar.")
             return
 
         file_path, _ = QFileDialog.getOpenFileName(
@@ -985,7 +973,7 @@ class AISTISImportScreenV2(QWidget):
 
             records = parsed.get("details", [])
             if not records:
-                QMessageBox.warning(self, "No Records", "No TIS records found in the JSON file.")
+                show_info("No TIS records found in the JSON file.")
                 return
 
             formatted_records = [
@@ -1017,7 +1005,7 @@ class AISTISImportScreenV2(QWidget):
                 return
             approved_records = preview.get_selected_records()
             if not approved_records:
-                QMessageBox.information(self, "Nothing to Import", "No rows were selected.")
+                show_info("No rows were selected.")
                 return
             for rec in approved_records:
                 rec["source_tan"] = (rec.get("source_tan") or "").strip().upper()
@@ -1045,10 +1033,7 @@ class AISTISImportScreenV2(QWidget):
             if new_sources:
                 self._handle_new_sources_ais(new_sources)
 
-            QMessageBox.information(
-                self, "Import Successful",
-                f"Imported {len(approved_records)} TIS record(s) for FY {fy}."
-            )
+            show_success(f"Imported {len(approved_records)} TIS record(s) for FY {fy}.")
 
             self._load_tis_data()
 

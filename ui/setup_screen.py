@@ -14,6 +14,7 @@ from config import APP_NAME
 from ui.logo import logo_pixmap, set_window_icon
 from ui.theme import Theme, ThemeManager
 from ui.icons import set_btn_icon
+from ui.widgets.toast_utils import show_warning, show_success
 
 
 class SetupScreen(QWidget):
@@ -180,16 +181,15 @@ class SetupScreen(QWidget):
         pwd     = self.pwd_input.text()
         confirm = self.confirm_input.text()
         if len(pwd) < 8:
-            QMessageBox.warning(self, "Weak Password", "Password must be at least 8 characters.")
+            show_warning("Password must be at least 8 characters.")
             return
         if pwd != confirm:
-            QMessageBox.warning(self, "Mismatch", "Passwords do not match.")
+            show_warning("Passwords do not match.")
             return
         totp_uri = setup_master_password(pwd, self.totp_check.isChecked())
         if totp_uri:
-            QMessageBox.information(self, "TOTP Enabled",
-                f"Scan this URI in Google Authenticator:\n\n{totp_uri}")
-        QMessageBox.information(self, "Setup Complete", "Account created! Please log in.")
+            show_success(f"Scan this URI in Google Authenticator:\n\n{totp_uri}")
+        show_success("Account created! Please log in.")
         from ui.login_screen import LoginScreen
         self.login = LoginScreen()
         self.login.show()

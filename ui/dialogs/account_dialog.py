@@ -16,6 +16,7 @@ from PyQt6.QtGui import QFont
 
 from ui.theme import Theme
 from ui.widgets.excel_table import enable_copy_shortcut
+from ui.widgets.toast_utils import show_success, show_warning
 from ui.icons import set_btn_icon, tab_icon, icon_label
 from config import ACCOUNT_TYPES
 from models.person import get_all_persons
@@ -110,7 +111,7 @@ class AccountManagementDialog(QDialog):
     def _on_add(self):
         persons = get_all_persons()
         if not persons:
-            QMessageBox.warning(self, "No Persons", "Add a family member first."); return
+            show_warning("Add a family member first."); return
         dlg = AccountDialog(self, persons)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             payload = dlg.get_data()
@@ -129,7 +130,7 @@ class AccountManagementDialog(QDialog):
     def _on_edit(self):
         row = self.table.currentRow()
         if row < 0:
-            QMessageBox.warning(self, "No Selection", "Select an account."); return
+            show_warning("Select an account."); return
         aid = int(self.table.item(row, 8).text())
         accounts = get_all_accounts()
         acc_data = next((a for a in accounts if a["account_id"] == aid), None)
@@ -158,7 +159,7 @@ class AccountManagementDialog(QDialog):
     def _on_delete(self):
         row = self.table.currentRow()
         if row < 0:
-            QMessageBox.warning(self, "No Selection", "Select an account."); return
+            show_warning("Select an account."); return
         aid  = int(self.table.item(row, 8).text())
         name = self.table.item(row, 1).text()
         reply = QMessageBox.question(self, "Confirm Delete",
@@ -264,7 +265,7 @@ class AccountDialog(QDialog):
         )
         if reply == QMessageBox.StandardButton.Yes:
             delete_account(self.account_data["account_id"])
-            QMessageBox.information(self, "Deleted", "Account deleted successfully!")
+            show_success("Account deleted successfully!")
             self.action = "delete"
             self.accept()
 
@@ -570,7 +571,7 @@ class AccountDialog(QDialog):
         available = [p for p in all_persons if p["person_id"] not in added_ids]
 
         if not available:
-            QMessageBox.information(self, "No Available", "All family members are already added as holders.")
+            show_warning("All family members are already added as holders.")
             return
 
         # Simple selection dialog
@@ -598,10 +599,10 @@ class AccountDialog(QDialog):
         """Remove the selected holder."""
         row = self.holders_table.currentRow()
         if row < 0:
-            QMessageBox.warning(self, "No Selection", "Select a holder to remove.")
+            show_warning("Select a holder to remove.")
             return
         if len(self._holders_data) <= 1:
-            QMessageBox.warning(self, "Cannot Remove", "An account must have at least one holder.")
+            show_warning("An account must have at least one holder.")
             return
         del self._holders_data[row]
         self._refresh_holders_table()
@@ -610,7 +611,7 @@ class AccountDialog(QDialog):
         """Set the selected holder as primary."""
         row = self.holders_table.currentRow()
         if row < 0:
-            QMessageBox.warning(self, "No Selection", "Select a holder to set as primary.")
+            show_warning("Select a holder to set as primary.")
             return
         for h in self._holders_data:
             h["is_primary"] = 0
@@ -716,31 +717,31 @@ class AccountDialog(QDialog):
     def _on_save(self):
         bank_name = (self.bank_combo.currentData() or self.bank_combo.currentText() or "").strip()
         if not bank_name or bank_name == "-- Select or Type New Bank --":
-            QMessageBox.warning(self,"Missing","Please enter a bank name."); return
+            show_warning("Please enter a bank name."); return
 
         tan = self.tan_input.text().strip().upper()
         if tan and not re.fullmatch(r"[A-Z]{4}[0-9]{5}[A-Z]", tan):
-            QMessageBox.warning(self, "Invalid TAN", "TAN must be 10 characters in the format ABCD12345E.")
+            show_warning("TAN must be 10 characters in the format ABCD12345E.")
             return
 
         ifsc = self.ifsc_input.text().strip().upper()
         if ifsc and not re.fullmatch(r"[A-Z]{4}0[A-Z0-9]{6}", ifsc):
-            QMessageBox.warning(self, "Invalid IFSC", "IFSC must be 11 characters in the format HDFC0001234.")
+            show_warning("IFSC must be 11 characters in the format HDFC0001234.")
             return
 
         micr = self.micr_input.text().strip()
         if micr and not re.fullmatch(r"[0-9]{9}", micr):
-            QMessageBox.warning(self, "Invalid MICR", "MICR code must be exactly 9 digits.")
+            show_warning("MICR code must be exactly 9 digits.")
             return
 
         email = self.email_input.text().strip()
         if email and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
-            QMessageBox.warning(self, "Invalid Email", "Please enter a valid email address.")
+            show_warning("Please enter a valid email address.")
             return
 
         phone = self.phone_input.text().strip()
         if phone and not re.fullmatch(r"[0-9]{10}", re.sub(r"[\s\-+]", "", phone).removeprefix("91")):
-            QMessageBox.warning(self, "Invalid Phone", "Please enter a valid 10-digit phone number.")
+            show_warning("Please enter a valid 10-digit phone number.")
             return
 
         self.accept()

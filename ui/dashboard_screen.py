@@ -80,9 +80,14 @@ class DashboardScreen(QMainWindow):
         right_layout.setSpacing(0)
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.addWidget(self._build_topbar())
-        right_layout.addWidget(self._build_content_area(), stretch=1)
+        self.content_area = self._build_content_area()
+        right_layout.addWidget(self.content_area, stretch=1)
 
         root_layout.addWidget(right, stretch=1)
+
+        # Initialize toast container anchored to content area
+        from ui.widgets.toast_utils import init_toast_container
+        init_toast_container(self.content_area)
 
     # ── Sidebar ──────────────────────────────────────────────────────────────
 

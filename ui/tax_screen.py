@@ -14,6 +14,7 @@ from PyQt6.QtGui import QFont
 from ui.theme import Theme
 from ui.icons import set_btn_icon, icon as app_icon, icon_label as app_icon_label, is_available as icons_available
 from ui.widgets.advance_tax_banner import AdvanceTaxBanner
+from ui.widgets.toast_utils import show_success
 from core.session import session
 from models.person import get_person
 from models.fd_interest_record import get_total_fd_interest
@@ -752,8 +753,7 @@ class TaxScreen(QWidget):
         self._display_tax_results(result["new_regime"], result["taxes_paid"])
         if self.parent_window:
             self.parent_window.refresh_overview()
-        QMessageBox.information(self, "Tax Estimated",
-            f"Tax calculated for FY {session.selected_fy}")
+        show_success(f"Tax calculated for FY {session.selected_fy}")
 
     def _display_tax_results(self, new: dict, taxes_paid: float):
         """Populate result widgets from the New Regime calculation dict."""

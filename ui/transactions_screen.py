@@ -14,6 +14,7 @@ from PyQt6.QtGui import QFont, QColor
 
 from ui.widgets.excel_table import ExcelTableWithStats
 from ui.widgets.chart_widget import ChartWidget
+from ui.widgets.toast_utils import show_success, show_warning
 
 from ui.theme import Theme
 from ui.icons import icon as app_icon, is_available as icons_available
@@ -550,20 +551,16 @@ class TransactionsScreen(QWidget):
         self._fetch_and_display()
         if self._parent_window:
             self._parent_window.refresh_overview()
-        QMessageBox.information(
-            self,
-            "Reprocess Completed",
-            f"Linked pairs: {pairs}\nTransactions marked as Internal Transfer: {marked}",
-        )
+        show_success(f"Linked pairs: {pairs}\nTransactions marked as Internal Transfer: {marked}")
 
     def _add_transaction(self):
         persons  = get_all_persons()
         accounts = get_all_accounts()
         if not persons:
-            QMessageBox.information(self, "No Persons", "Add a family member first.")
+            show_warning("Add a family member first.")
             return
         if not accounts:
-            QMessageBox.information(self, "No Accounts", "Add a bank account first.")
+            show_warning("Add a bank account first.")
             return
         dlg = TransactionDialog(self, persons=persons, accounts=accounts,
                                 preselect_person_id=session.selected_person_id,
@@ -672,11 +669,7 @@ class TransactionsScreen(QWidget):
         if not self._dirty or self._dirty_reminder_shown:
             return
         self._dirty_reminder_shown = True
-        QMessageBox.information(
-            self,
-            "Unsaved Changes",
-            "You have unsaved changes in Transactions. Click 'Save Changes' to keep them.",
-        )
+        show_warning("You have unsaved changes in Transactions. Click 'Save Changes' to keep them.")
 
     def has_unsaved_changes(self) -> bool:
         return self._dirty
@@ -763,7 +756,7 @@ class TransactionsScreen(QWidget):
                 continue
 
             if data["amount"] is None or data["amount"] <= 0:
-                QMessageBox.warning(self, "Invalid Amount", f"Row {row+1}: Amount must be > 0.")
+                show_warning(f"Row {row+1}: Amount must be > 0.")
                 return False
 
             changed = False
@@ -813,7 +806,7 @@ class TransactionsScreen(QWidget):
         self._fetch_and_display()
         if self._parent_window:
             self._parent_window.refresh_overview()
-        QMessageBox.information(self, "Saved", f"Saved {len(updates)} change(s).")
+        show_success(f"Saved {len(updates)} change(s).")
         return True
 
     def _discard_changes(self, confirm: bool = True):
@@ -982,9 +975,9 @@ class TransactionDialog(QDialog):
 
     def _on_accept(self):
         if not self.cmb_account.currentData():
-            QMessageBox.warning(self, "Missing", "Please select an account."); return
+            show_warning("Please select an account."); return
         if self.amount_spin.value() <= 0:
-            QMessageBox.warning(self, "Invalid", "Amount must be > 0."); return
+            show_warning("Amount must be > 0."); return
         self.accept()
 
     def get_data(self) -> dict:

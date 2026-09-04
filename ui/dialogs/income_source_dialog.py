@@ -15,6 +15,7 @@ from PyQt6.QtGui import QFont
 
 from ui.theme import Theme
 from ui.icons import icon_label
+from ui.widgets.toast_utils import show_warning
 from models.income_source import (
     save_income_source, get_income_source, SOURCE_TYPES
 )
@@ -169,31 +170,31 @@ class IncomeSourceDialog(QDialog):
         name = self.name_input.text().strip()
         if not name:
             from PyQt6.QtWidgets import QMessageBox
-            QMessageBox.warning(self, "Validation Error", "Source name is required.")
+            show_warning("Source name is required.")
             return
         
         tan = self.tan_input.text().strip().upper()
         if tan and not re.fullmatch(r"[A-Z]{4}[0-9]{5}[A-Z]", tan):
             from PyQt6.QtWidgets import QMessageBox
-            QMessageBox.warning(self, "Invalid TAN", "TAN must be 10 characters in the format ABCD12345E.")
+            show_warning("TAN must be 10 characters in the format ABCD12345E.")
             return
 
         pan = self.pan_input.text().strip().upper()
         if pan and not re.fullmatch(r"[A-Z]{5}[0-9]{4}[A-Z]", pan):
             from PyQt6.QtWidgets import QMessageBox
-            QMessageBox.warning(self, "Invalid PAN", "PAN must be 10 characters in the format ABCDE1234F.")
+            show_warning("PAN must be 10 characters in the format ABCDE1234F.")
             return
 
         email = self.email_input.text().strip()
         if email and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
             from PyQt6.QtWidgets import QMessageBox
-            QMessageBox.warning(self, "Invalid Email", "Please enter a valid email address.")
+            show_warning("Please enter a valid email address.")
             return
 
         phone = self.phone_input.text().strip()
         if phone and not re.fullmatch(r"[0-9]{10}", re.sub(r"[\s\-+]", "", phone).removeprefix("91")):
             from PyQt6.QtWidgets import QMessageBox
-            QMessageBox.warning(self, "Invalid Phone", "Please enter a valid 10-digit phone number.")
+            show_warning("Please enter a valid 10-digit phone number.")
             return
 
         try:

@@ -16,6 +16,7 @@ from dateutil.relativedelta import relativedelta
 
 from ui.widgets.excel_table import ExcelTableWithStats
 from ui.widgets.chart_widget import ChartWidget
+from ui.widgets.toast_utils import show_success, show_warning, show_info
 
 from ui.theme import Theme
 from ui.icons import icon as app_icon, icon_label
@@ -364,7 +365,7 @@ class FixedDepositsScreen(QWidget):
     def _on_delete_fd(self):
         row = self.table.currentRow()
         if row < 0:
-            QMessageBox.warning(self, "No Selection", "Please select an FD."); return
+            show_warning("Please select an FD."); return
         fd_id = self.table.item(row, 0+1).data(Qt.ItemDataRole.UserRole)
         reply = QMessageBox.question(self, "Delete FD", "Delete this Fixed Deposit?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
@@ -420,17 +421,17 @@ class FixedDepositsScreen(QWidget):
 
     def _on_auto_link(self):
         if not session.selected_person_id:
-            QMessageBox.information(self, "Select Person", "Please select a person first.")
+            show_warning("Please select a person first.")
             return
 
         linked = auto_link_fd_records(session.selected_person_id, session.selected_fy)
         if linked > 0:
-            QMessageBox.information(self, "Auto-Link Complete", f"Linked {linked} FD record(s) with account transactions.")
+            show_success(f"Linked {linked} FD record(s) with account transactions.")
             self.refresh()
             if self.parent_window:
                 self.parent_window.refresh_overview()
         else:
-            QMessageBox.information(self, "No Matches", "No FD references were matched in account transactions.")
+            show_info("No FD references were matched in account transactions.")
 
     def _on_table_data_changed(self):
         """Handle data changes in table (after paste or edit)."""
@@ -566,11 +567,9 @@ class FixedDepositsScreen(QWidget):
             error_msg = "\n".join(errors[:10])
             if len(errors) > 10:
                 error_msg += f"\n... and {len(errors)-10} more errors"
-            QMessageBox.warning(self, "Save Errors",
-                f"Saved {saved} FD(s).\n\nErrors:\n{error_msg}")
+            show_warning(f"Saved {saved} FD(s).\n\nErrors:\n{error_msg}")
         else:
-            QMessageBox.information(self, "Success",
-                f"Successfully saved {saved} FD(s)!")
+            show_success(f"Successfully saved {saved} FD(s)!")
 
         self.refresh()
         if self.parent_window:
@@ -580,7 +579,7 @@ class FixedDepositsScreen(QWidget):
         """Recalculate maturity for selected FDs based on edited values."""
         checked_rows = self.table.getCheckedRows()
         if not checked_rows:
-            QMessageBox.information(self, "No Selection", "Please select FDs to recalculate using checkboxes.")
+            show_warning("Please select FDs to recalculate using checkboxes.")
             return
 
         recalculated = 0
@@ -692,11 +691,9 @@ class FixedDepositsScreen(QWidget):
             error_msg = "\n".join(errors[:10])
             if len(errors) > 10:
                 error_msg += f"\n... and {len(errors)-10} more errors"
-            QMessageBox.warning(self, "Recalculation Errors", 
-                f"Recalculated {recalculated} FD(s).\n\nErrors:\n{error_msg}")
+            show_warning(f"Recalculated {recalculated} FD(s).\n\nErrors:\n{error_msg}")
         else:
-            QMessageBox.information(self, "Success", 
-                f"Successfully recalculated {recalculated} FD(s)!")
+            show_success(f"Successfully recalculated {recalculated} FD(s)!")
 
         self.refresh()
         if self.parent_window:
@@ -1007,9 +1004,7 @@ class FDDialog(QDialog):
     def _on_show_calculations(self):
         snap = self._input_snapshot()
         if not snap:
-            QMessageBox.warning(
-                self,
-                "Incomplete Input",
+            show_warning(
                 "Enter valid Principal, Rate, and at least one tenure value (Years/Months/Days)."
             )
             return
@@ -1123,7 +1118,7 @@ class FDDialog(QDialog):
             expected_interest = float(self.expected_interest_input.text()) if (self.expected_interest_input.text() or "").strip() else None
             actual_interest = float(self.actual_interest_input.text()) if (self.actual_interest_input.text() or "").strip() else None
             if not account_id or principal<=0 or rate<=0 or rate>100 or (tenure_years<=0 and tenure_months<=0 and tenure_days<=0):
-                QMessageBox.warning(self,"Invalid","Please fill all fields correctly (interest rate must be between 0 and 100)."); return
+                show_warning("Please fill all fields correctly (interest rate must be between 0 and 100)."); return
             mat_date = calculate_fd_maturity_date(start, tenure_years, tenure_months, tenure_days)
             mat_formula = calculate_fd_maturity_flexible(
                 principal, rate, start, mat_date, compounding,
@@ -1141,11 +1136,11 @@ class FDDialog(QDialog):
                 fd_count = int(self.fd_count_spin.value())
                 fd_numbers = [n.strip() for n in (self.fd_numbers_input.text() or "").split(",") if n.strip()]
                 if fd_count > 1 and fd_numbers and len(fd_numbers) != fd_count:
-                    QMessageBox.warning(self, "Invalid FD Nos", "For bulk create, provide exactly one FD no per record.")
+                    show_warning("For bulk create, provide exactly one FD no per record.")
                     return
 
                 if fd_count > 1 and not fd_numbers:
-                    QMessageBox.warning(self, "FD Nos Required", "For bulk create, provide comma-separated unique FD numbers.")
+                    show_warning("For bulk create, provide comma-separated unique FD numbers.")
                     return
 
                 created = 0
@@ -1164,7 +1159,7 @@ class FDDialog(QDialog):
                     )
                     allocate_fd_interest_to_fy(fd_id)
                     created += 1
-                QMessageBox.information(self, "Success", f"{created} Fixed Deposit record(s) added!")
+                show_success(f"{created} Fixed Deposit record(s) added!")
             else:
                 update_fd(self.fd_id, principal, start.isoformat(), tenure_months, rate,
                           compounding, mat_date.isoformat(), mat_amt, "Active",
@@ -1177,12 +1172,12 @@ class FDDialog(QDialog):
                           self.fd_data.get("source_statement_file"),
                           self.fd_data.get("source_transaction_id"))
                 allocate_fd_interest_to_fy(self.fd_id)
-                QMessageBox.information(self, "Success", "Fixed Deposit updated!")
+                show_success("Fixed Deposit updated!")
             self.accept()
         except ValueError:
-            QMessageBox.warning(self, "Invalid Input", "Please enter valid numeric values.")
+            show_warning("Please enter valid numeric values.")
         except Exception as e:
-            QMessageBox.warning(self, "Could Not Save", f"Failed to save the fixed deposit: {e}")
+            show_warning(f"Failed to save the fixed deposit: {e}")
 
 
 class LinkFDTransactionDialog(QDialog):

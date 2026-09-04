@@ -15,6 +15,7 @@ from PyQt6.QtGui import QFont
 from ui.theme import Theme
 from ui.icons import set_btn_icon, icon_label
 from ui.widgets.excel_table import enable_copy_shortcut
+from ui.widgets.toast_utils import show_warning
 from ui.date_utils import format_display_date
 from models.person import add_person, get_all_persons, get_person, update_person, delete_person
 
@@ -108,11 +109,11 @@ class PersonManagementDialog(QDialog):
     def _on_edit(self):
         row = self.table.currentRow()
         if row < 0:
-            QMessageBox.warning(self, "No Selection", "Please select a person."); return
+            show_warning("Please select a person."); return
         pid  = int(self.table.item(row, 4).text())
         data = get_person(pid)
         if not data:
-            QMessageBox.warning(self, "Not Found", "Person record no longer exists.")
+            show_warning("Person record no longer exists.")
             self._load_persons()
             return
         dlg = PersonDialog(self, data)
@@ -123,7 +124,7 @@ class PersonManagementDialog(QDialog):
     def _on_delete(self):
         row = self.table.currentRow()
         if row < 0:
-            QMessageBox.warning(self, "No Selection", "Please select a person."); return
+            show_warning("Please select a person."); return
         pid  = int(self.table.item(row, 4).text())
         name = self.table.item(row, 0).text()
         reply = QMessageBox.question(self, "Confirm Delete",
@@ -239,11 +240,10 @@ class PersonDialog(QDialog):
 
     def _on_save(self):
         if not self.nickname_input.text().strip():
-            QMessageBox.warning(self, "Missing", "Please enter a nickname."); return
+            show_warning("Please enter a nickname."); return
         pan = self.pan_input.text().strip().upper()
         if pan and not re.fullmatch(r"[A-Z]{5}[0-9]{4}[A-Z]", pan):
-            QMessageBox.warning(self, "Invalid PAN",
-                "PAN must be 10 characters in the format ABCDE1234F.")
+            show_warning("PAN must be 10 characters in the format ABCDE1234F.")
             return
         self.accept()
 

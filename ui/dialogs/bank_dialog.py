@@ -15,6 +15,7 @@ from PyQt6.QtGui import QFont
 from ui.theme import Theme
 from ui.icons import icon_label, set_btn_icon
 from ui.widgets.excel_table import enable_copy_shortcut
+from ui.widgets.toast_utils import show_warning
 from models.bank import add_bank, get_all_banks, get_bank, update_bank, delete_bank
 
 
@@ -109,12 +110,12 @@ class BankManagementDialog(QDialog):
     def _on_edit(self):
         row = self.table.currentRow()
         if row < 0:
-            QMessageBox.warning(self, "No Selection", "Please select a bank.")
+            show_warning("Please select a bank.")
             return
         bank_id = int(self.table.item(row, 4).text())
         data = get_bank(bank_id)
         if not data:
-            QMessageBox.warning(self, "Not Found", "Bank record no longer exists.")
+            show_warning("Bank record no longer exists.")
             self._load_banks()
             return
 
@@ -127,7 +128,7 @@ class BankManagementDialog(QDialog):
     def _on_delete(self):
         row = self.table.currentRow()
         if row < 0:
-            QMessageBox.warning(self, "No Selection", "Please select a bank.")
+            show_warning("Please select a bank.")
             return
         bank_id = int(self.table.item(row, 4).text())
         bank_name = self.table.item(row, 1).text()
@@ -214,12 +215,11 @@ class BankDialog(QDialog):
 
     def _on_save(self):
         if not self.bank_name_input.text().strip():
-            QMessageBox.warning(self, "Missing", "Please enter bank name.")
+            show_warning("Please enter bank name.")
             return
         tan = self.tan_input.text().strip().upper()
         if tan and not re.fullmatch(r"[A-Z]{4}[0-9]{5}[A-Z]", tan):
-            QMessageBox.warning(self, "Invalid TAN",
-                "TAN must be 10 characters in the format ABCD12345E.")
+            show_warning("TAN must be 10 characters in the format ABCD12345E.")
             return
         self.accept()
 

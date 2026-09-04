@@ -13,6 +13,7 @@ from PyQt6.QtGui import QFont
 from ui.theme.theme import Theme
 from ui.icons import set_btn_icon, icon_label as app_icon_label, pixmap as app_pixmap, is_available as icons_available, tab_icon
 from ui.widgets.chart_widget import ChartWidget
+from ui.widgets.toast_utils import show_success, show_warning
 from models.bank_account import get_all_accounts, add_account, update_account, delete_account, get_account
 from models.bank import get_or_create_bank, update_bank_tan_code_if_exists
 from models.person import get_all_persons
@@ -448,8 +449,7 @@ class AccountsScreen(QWidget):
     def _on_add_account(self):
         persons = get_all_persons()
         if not persons:
-            QMessageBox.warning(self, "No Persons",
-                "Please add a family member first before adding accounts.")
+            show_warning("Please add a family member first before adding accounts.")
             return
         dlg = AccountDialog(self, persons)
         if dlg.exec() == QDialog.DialogCode.Accepted:
@@ -686,5 +686,5 @@ class AccountDetailsDialog(QDialog):
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         if reply == QMessageBox.StandardButton.Yes:
             delete_account(self.account["account_id"])
-            QMessageBox.information(self, "Deleted", "Account deleted successfully!")
+            show_success("Account deleted successfully!")
             self.accept()
