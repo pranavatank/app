@@ -1428,3 +1428,24 @@ test, because lazily-built screens hide constructor errors until visited. They
 were found by an explicit sweep of the diff and are fixed, with all 9 screens
 now construction-tested under all 4 themes. Any further pass at this task
 should keep that sweep.
+
+## Z18. T042 hits its target in real use, not in the worst case (accepted)
+T042 asks for `ThemeManager.apply()` under 150 ms. Measured after removing
+`_deep_refresh()`:
+    fresh dashboard, 1 screen built (the real case)   140-159 ms   TARGET MET
+    all 9 screens force-built                          740-900 ms
+The second figure is dominated by Qt's own re-polish inside
+`app.setStyleSheet()`, not by application code — deleting `_deep_refresh()`
+removed our redundant second pass over every widget, but Qt still walks the
+widget tree itself when the application stylesheet changes.
+
+The realistic number is the first one, because T043 made screens lazy: a user
+switching theme has typically visited one or two screens, not all nine. The
+worst case only appears if someone visits every screen and then switches.
+
+Driving the 9-screen case under 150 ms would mean not restyling built-but-
+hidden screens on switch — deferring their restyle until they are next shown.
+That is a real optimisation and a real risk (a screen shown mid-switch could
+paint with stale colours), so it is recorded rather than attempted.
+Residual: 143 inline setStyleSheet calls (Z17) still force 13 refresh_theme()
+listeners to run on every switch, which is part of this cost.

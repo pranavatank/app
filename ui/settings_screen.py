@@ -445,18 +445,8 @@ class SettingsScreen(QWidget):
                                   radius=8, padding="3px 12px", size=11))
 
     def _on_card_clicked(self, name: str):
-        """Apply immediately — no popup, no restart. Switching walks every
-        live widget in the app (ThemeManager._deep_refresh) which can take
-        a visible moment, so show a loader instead of a silent freeze."""
-        from PyQt6.QtWidgets import QApplication
-        from ui.widgets.loader import Loader
-        loader = Loader(self, "Applying theme…", subtitle=f"Switching to {name}")
-        loader.show()
-        QApplication.processEvents()
-        try:
-            ThemeManager.apply(name)
-        finally:
-            loader.hide()
+        """Apply immediately — no popup, no restart."""
+        ThemeManager.apply(name)
 
     def _on_theme_changed(self, name: str):
         """

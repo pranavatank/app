@@ -4,9 +4,9 @@ ui/theme/theme_manager.py — Runtime theme switcher.
 HOW LIVE SWITCHING WORKS:
   1. _patch_theme()    — overwrites all Theme.COLOR_TOKEN class attrs
   2. _set_stylesheet() — pushes regenerated QSS to QApplication
-  3. _fire_listeners() — rebuilds inline setStyleSheet() widgets FIRST
+  3. _fire_listeners() — rebuilds inline setStyleSheet() widgets
                          (inline styles can't be updated by polish alone)
-  4. _deep_refresh()   — unpolish/polish/update/repaint every live QWidget
+  Qt automatically re-polishes when the application stylesheet changes.
 """
 
 from __future__ import annotations
@@ -89,7 +89,8 @@ class ThemeManager:
         """
         Full live theme switch — no restart needed.
         Order matters:
-          patch → stylesheet → listeners (rebuild inline) → deep_refresh (repaint)
+          patch → stylesheet → listeners (rebuild inline)
+        Qt automatically re-polishes when the application stylesheet changes.
         """
         if name not in _THEME_MODULES:
             name = _DEFAULT_THEME
@@ -98,8 +99,7 @@ class ThemeManager:
         cls._set_stylesheet()
         cls._active = name
         if notify:
-            cls._fire_listeners(name)  # rebuild inline styles BEFORE repaint
-        cls._deep_refresh()            # repaint everything
+            cls._fire_listeners(name)  # rebuild inline styles
         if save:
             cls._write_pref(name)
 
@@ -174,43 +174,6 @@ class ThemeManager:
             app = QApplication.instance()
             if app:
                 app.setStyleSheet(Theme.get_stylesheet())
-        except Exception:
-            pass
-
-    @staticmethod
-    def _deep_refresh() -> None:
-        """
-        Walk every live QWidget and call unpolish/polish/update/repaint.
-        This re-evaluates the new QSS for every widget without a restart.
-        Inline setStyleSheet() widgets are handled by _fire_listeners BEFORE this.
-        """
-        try:
-            from PyQt6.QtWidgets import QApplication, QWidget
-            app = QApplication.instance()
-            if not app:
-                return
-            style = app.style()
-            for top in app.topLevelWidgets():
-                for w in [top] + top.findChildren(QWidget):
-                    try:
-                        style.unpolish(w)
-                        style.polish(w)
-                        w.update()
-                    except Exception:
-                        pass
-                try:
-                    top.repaint()
-                except Exception:
-                    pass
-            app.processEvents()
-            # Second pass — some widgets need two cycles to fully repaint
-            for top in app.topLevelWidgets():
-                try:
-                    top.update()
-                    top.repaint()
-                except Exception:
-                    pass
-            app.processEvents()
         except Exception:
             pass
 
