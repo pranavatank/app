@@ -70,16 +70,10 @@ class ThemeCard(QAbstractButton):
 
     # theme name → module file suffix
     _SUFFIX = {
-        "Aurora":        "aurora_light",
-        "Ocean Blue":    "ocean_blue",
-        "Arctic Breeze": "arctic_breeze",
-        "Forest Light":  "forest_light",
-        "Rose Gold Luxe":"rose_gold",
-        "Sunrise Warm":  "sunrise_warm",
-        "Nova":          "nova_dark",
-        "Midnight Pro":  "midnight_pro",
-        "Amethyst Dusk": "amethyst_dusk",
-        "Finance Pro":   "finance_pro",
+        "Aurora":       "aurora_light",
+        "Slate":        "slate_light",
+        "Nova":         "nova_dark",
+        "Midnight Pro": "midnight_pro",
     }
 
     def __init__(self, info: dict, is_active: bool = False, parent=None):

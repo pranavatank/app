@@ -110,10 +110,10 @@ REQUIRED_PAIRS = [
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-_BASELINE_FAILING = {
-    "Aurora", "Ocean Blue", "Arctic Breeze", "Forest Light", "Rose Gold Luxe",
-    "Sunrise Warm", "Nova", "Midnight Pro", "Amethyst Dusk", "Finance Pro",
-}
+_BASELINE_FAILING: set[str] = set()
+# All 4 surviving themes now pass all 17 pairs (verified: 0 violations of 68).
+# This set exists so a future regression can be recorded deliberately rather than
+# by weakening the gate. T037 and T039 validated the palettes at 0 violations.
 
 
 # ─────────────────────────────────────────────────────────────────────────────

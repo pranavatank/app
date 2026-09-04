@@ -1,53 +1,51 @@
 """
-ui/theme/theme_aurora_light.py — THEME: Aurora (Light)
-Vibrant modern light theme. Electric indigo primary with a colorful
-multi-hue accent set (emerald, amber, rose, fuchsia, cyan). Designed for
-a bold, contemporary dashboard look — think Linear x Stripe x Raycast,
-but turned up in saturation.
+ui/theme/theme_slate_light.py — THEME: Slate (Light)
+Neutral light theme — calm slate greys with a clear blue primary.
+Clean, professional, minimalist design with excellent contrast and readability.
 """
 
-NAME         = "Aurora"
-DESCRIPTION  = "Vibrant modern light theme — electric indigo with colorful multi-hue accents"
+NAME         = "Slate"
+DESCRIPTION  = "Neutral light theme — calm slate greys with a clear blue primary"
 IS_DARK      = False
-EMOJI        = "🌈"
+EMOJI        = "🪨"
 
-# ── Primary — electric indigo ─────────────────────────────────────────────────
-PRIMARY                   = "#4F46E5"
-PRIMARY_DARK              = "#4136C9"
-PRIMARY_LIGHT             = "#EEF2FF"
+# ── Primary — clear blue ──────────────────────────────────────────────────────
+PRIMARY                   = "#2563EB"
+PRIMARY_DARK              = "#1D4DD5"
+PRIMARY_LIGHT             = "#EFF6FF"
 PRIMARY_TEXT              = "#FFFFFF"
-PRIMARY_GRADIENT_START    = "#6366F1"
-PRIMARY_GRADIENT_END      = "#4338CA"
-PRIMARY_GRADIENT_HOVER_START = "#4F46E5"
-PRIMARY_GRADIENT_HOVER_END   = "#3730A3"
+PRIMARY_GRADIENT_START    = "#3B82F6"
+PRIMARY_GRADIENT_END      = "#1D4ED8"
+PRIMARY_GRADIENT_HOVER_START = "#2563EB"
+PRIMARY_GRADIENT_HOVER_END   = "#1E40AF"
 
 # ── Success — vivid emerald ───────────────────────────────────────────────────
-SUCCESS                   = "#10B981"
-SUCCESS_DARK              = "#059669"
+SUCCESS                   = "#059669"
+SUCCESS_DARK              = "#047857"
 SUCCESS_LIGHT             = "#ECFDF5"
 SUCCESS_GRADIENT_START    = "#34D399"
 SUCCESS_GRADIENT_END      = "#059669"
 
 # ── Danger — vivid rose ───────────────────────────────────────────────────────
-DANGER                    = "#E11D48"
-DANGER_DARK               = "#BE123C"
-DANGER_LIGHT              = "#FFF1F2"
+DANGER                    = "#DC2626"
+DANGER_DARK               = "#B91C1C"
+DANGER_LIGHT              = "#FEF2F2"
 DANGER_GRADIENT_START     = "#FB7185"
-DANGER_GRADIENT_END       = "#BE123C"
+DANGER_GRADIENT_END       = "#B91C1C"
 
 # ── Warning — vivid amber ─────────────────────────────────────────────────────
-WARNING                   = "#F59E0B"
-WARNING_DARK              = "#D97706"
+WARNING                   = "#D97706"
+WARNING_DARK              = "#B45309"
 WARNING_LIGHT             = "#FFFBEB"
 WARNING_GRADIENT_START    = "#FBBF24"
-WARNING_GRADIENT_END      = "#D97706"
+WARNING_GRADIENT_END      = "#B45309"
 
 # ── Info — vivid cyan ─────────────────────────────────────────────────────────
-INFO                      = "#06B6D4"
-INFO_DARK                 = "#0891B2"
+INFO                      = "#0891B2"
+INFO_DARK                 = "#0E7490"
 INFO_LIGHT                = "#ECFEFF"
 INFO_GRADIENT_START       = "#22D3EE"
-INFO_GRADIENT_END         = "#0891B2"
+INFO_GRADIENT_END         = "#0E7490"
 
 # ── Edit — vivid fuchsia ───────────────────────────────────────────────────────
 EDIT                      = "#C026D3"
@@ -56,11 +54,11 @@ EDIT_LIGHT                = "#FDF4FF"
 EDIT_GRADIENT_START       = "#E879F9"
 EDIT_GRADIENT_END         = "#A21CAF"
 
-# ── Hero banner gradient — indigo → pink (colorful signature look) ───────────
-HERO_GRADIENT_START       = "#4F46E5"
-HERO_GRADIENT_END         = "#EC4899"
-HERO_GRADIENT_HOVER_START = "#4338CA"
-HERO_GRADIENT_HOVER_END   = "#DB2777"
+# ── Hero banner gradient — blue → cyan ────────────────────────────────────────
+HERO_GRADIENT_START       = "#2563EB"
+HERO_GRADIENT_END         = "#0891B2"
+HERO_GRADIENT_HOVER_START = "#1D4ED8"
+HERO_GRADIENT_HOVER_END   = "#0E7490"
 
 # ── Extra accents ─────────────────────────────────────────────────────────────
 PURPLE       = "#7C3AED";  PURPLE_LIGHT  = "#F5F3FF"
@@ -68,61 +66,61 @@ TEAL         = "#0D9488";  TEAL_LIGHT    = "#F0FDFA"
 ORANGE       = "#EA580C";  ORANGE_LIGHT  = "#FFF7ED"
 PINK         = "#DB2777";  PINK_LIGHT    = "#FDF2F8"
 
-# ── Surfaces — soft violet-white ─────────────────────────────────────────────
-BG                        = "#F7F7FD"
+# ── Surfaces — clean slate white ──────────────────────────────────────────────
+BG                        = "#F8FAFC"
 SURFACE                   = "#FFFFFF"
-SURFACE_ALT               = "#E8E4F7"
+SURFACE_ALT               = "#F1F5F9"
 SURFACE_TINT_START        = "#FFFFFF"
-SURFACE_TINT_END          = "#F1EFFC"
+SURFACE_TINT_END          = "#F1F5F9"
 
 # ── Sidebar — light, matches the page background (not a fixed dark panel) ───
-SIDEBAR_BG                = "#F7F7FD"
-SIDEBAR_TEXT              = "#56526C"
-SIDEBAR_ACTIVE            = "#4F46E5"
+SIDEBAR_BG                = "#F8FAFC"
+SIDEBAR_TEXT              = "#465467"
+SIDEBAR_ACTIVE            = "#2563EB"
 SIDEBAR_ACTIVE_TEXT       = "#FFFFFF"
-SIDEBAR_HOVER             = "#E8E4F7"
+SIDEBAR_HOVER             = "#E2E8F0"
 
 # ── Topbar ────────────────────────────────────────────────────────────────────
 TOPBAR_BG                 = "#FFFFFF"
-TOPBAR_BORDER             = "#E7E5F5"
+TOPBAR_BORDER             = "#E2E8F0"
 
 # ── Text ──────────────────────────────────────────────────────────────────────
-TEXT_PRIMARY              = "#1E1B2E"
-TEXT_SECONDARY            = "#57536E"
-TEXT_MUTED                = "#75718F"
+TEXT_PRIMARY              = "#0F172A"
+TEXT_SECONDARY            = "#475569"
+TEXT_MUTED                = "#637389"
 TEXT_ON_PRIMARY           = "#FFFFFF"
-TEXT_HEADING              = "#120F22"
+TEXT_HEADING              = "#020617"
 
 # ── Borders ───────────────────────────────────────────────────────────────────
-BORDER                    = "#918DB0"
-BORDER_FOCUS              = "#A5B4FC"
-DIVIDER                   = "#F1EFFA"
+BORDER                    = "#8793A1"
+BORDER_FOCUS              = "#2563EB"
+DIVIDER                   = "#E2E8F0"
 
 # ── Shadows ───────────────────────────────────────────────────────────────────
 SHADOW_BLUR_CARD          = 22
 SHADOW_BLUR_ELEVATED      = 40
 SHADOW_OFFSET_Y           = 4
 SHADOW_OFFSET_Y_ELEVATED  = 10
-SHADOW_RGBA_CARD          = (30, 20, 70, 14)
-SHADOW_RGBA_ELEVATED      = (30, 20, 70, 24)
-SHADOW_RGBA_PRIMARY       = (79, 70, 229, 34)
+SHADOW_RGBA_CARD          = (15, 23, 42, 12)
+SHADOW_RGBA_ELEVATED      = (15, 23, 42, 22)
+SHADOW_RGBA_PRIMARY       = (37, 99, 235, 32)
 
 # ── Chart palette ─────────────────────────────────────────────────────────────
 CHART_COLORS = [
-    "#4F46E5",  # indigo
-    "#10B981",  # emerald
-    "#F59E0B",  # amber
-    "#E11D48",  # rose
+    "#2563EB",  # blue
+    "#059669",  # emerald
+    "#D97706",  # amber
+    "#DC2626",  # red
     "#C026D3",  # fuchsia
-    "#06B6D4",  # cyan
+    "#0891B2",  # cyan
     "#EC4899",  # pink
     "#EA580C",  # orange
 ]
 CHART_COLORS_LIGHT = [
-    "#EEF2FF",  # indigo light
+    "#EFF6FF",  # blue light
     "#ECFDF5",  # emerald light
     "#FFFBEB",  # amber light
-    "#FFF1F2",  # rose light
+    "#FEF2F2",  # red light
     "#FDF4FF",  # fuchsia light
     "#ECFEFF",  # cyan light
     "#FDF2F8",  # pink light
@@ -132,20 +130,20 @@ CHART_COLORS_LIGHT = [
 # ── Overlays and focus ────────────────────────────────────────────────────────
 TOOLTIP_BG         = "#1F2430"
 TOOLTIP_FG         = "#F7F8FA"
-FOCUS_RING         = "#01092C"
+FOCUS_RING         = "#071E4F"
 SCRIM              = "rgba(0, 0, 0, 0.55)"
 
 # ── Icons ─────────────────────────────────────────────────────────────────────
-ICON_DEFAULT       = "#56526C"
-ICON_MUTED         = "#55516A"
+ICON_DEFAULT       = "#465467"
+ICON_MUTED         = "#455365"
 ICON_ON_PRIMARY    = "#FFFFFF"
 
 # ── Semantic text colors ──────────────────────────────────────────────────────
-DANGER_TEXT        = "#DE1D47"
-SUCCESS_TEXT       = "#0B835C"
-WARNING_TEXT       = "#A16707"
-INFO_TEXT          = "#048096"
-TEXT_ON_SUCCESS    = "#05261A"
+DANGER_TEXT        = "#DC2323"
+SUCCESS_TEXT       = "#04845D"
+WARNING_TEXT       = "#AF6005"
+INFO_TEXT          = "#077E9B"
+TEXT_ON_SUCCESS    = "#FFFFFF"
 TEXT_ON_DANGER     = "#FFFFFF"
 TEXT_ON_WARNING    = "#2B1A02"
 TEXT_ON_INFO       = "#031B22"

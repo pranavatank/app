@@ -10,8 +10,8 @@ IS_DARK      = True
 EMOJI        = "🌙"
 
 # ── Primary — bright indigo that pops on dark ─────────────────────────────────
-PRIMARY                   = "#818CF8"   # indigo-400
-PRIMARY_DARK              = "#6366F1"   # indigo-500
+PRIMARY                   = "#5563F6"   # was #818CF8 — same reason as Nova
+PRIMARY_DARK              = "#7C7FF3"   # was #6366F1
 PRIMARY_LIGHT             = "#1E1B4B"   # indigo-950 — used as tinted bg
 PRIMARY_TEXT              = "#FFFFFF"
 PRIMARY_GRADIENT_START    = "#818CF8"
@@ -75,7 +75,7 @@ SURFACE_TINT_END          = "#13161F"
 
 # ── Sidebar — deepest layer ───────────────────────────────────────────────────
 SIDEBAR_BG                = "#080A10"
-SIDEBAR_TEXT              = "#4B5563"
+SIDEBAR_TEXT              = "#6D7C90"
 SIDEBAR_ACTIVE            = "#818CF8"
 SIDEBAR_ACTIVE_TEXT       = "#FFFFFF"
 SIDEBAR_HOVER             = "#181C29"
@@ -87,12 +87,12 @@ TOPBAR_BORDER             = "#1F2436"
 # ── Text — light on dark ─────────────────────────────────────────────────────
 TEXT_PRIMARY              = "#E2E8F0"   # slate-200
 TEXT_SECONDARY            = "#94A3B8"   # slate-400
-TEXT_MUTED                = "#374151"   # gray-700
+TEXT_MUTED                = "#70829E"   # was #374151
 TEXT_ON_PRIMARY           = "#FFFFFF"
 TEXT_HEADING              = "#F8FAFC"   # slate-50
 
 # ── Borders ───────────────────────────────────────────────────────────────────
-BORDER                    = "#1F2436"
+BORDER                    = "#5F6579"
 BORDER_FOCUS              = "#818CF8"
 DIVIDER                   = "#151929"
 
@@ -126,3 +126,25 @@ CHART_COLORS_LIGHT = [
     "#2D0020",  # pink dark
     "#2C0A00",  # orange dark
 ]
+
+# ── Overlays and focus ────────────────────────────────────────────────────────
+TOOLTIP_BG         = "#F5F5F7"
+TOOLTIP_FG         = "#14181F"
+FOCUS_RING         = "#CFD3FC"
+SCRIM              = "rgba(0, 0, 0, 0.55)"
+
+# ── Icons ─────────────────────────────────────────────────────────────────────
+ICON_DEFAULT       = "#566171"
+ICON_MUTED         = "#576273"
+ICON_ON_PRIMARY    = "#FFFFFF"
+
+# ── Semantic text colors ──────────────────────────────────────────────────────
+DANGER_TEXT        = "#F86E6E"
+SUCCESS_TEXT       = "#31D298"
+WARNING_TEXT       = "#FCD24A"
+INFO_TEXT          = "#35BCF8"
+TEXT_ON_SUCCESS    = "#05261A"
+TEXT_ON_DANGER     = "#2E0711"
+TEXT_ON_WARNING    = "#2B1A02"
+TEXT_ON_INFO       = "#031B22"
+TEXT_ON_EDIT       = "#2A0630"

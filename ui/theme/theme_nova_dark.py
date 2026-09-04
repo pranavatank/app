@@ -11,8 +11,8 @@ IS_DARK      = True
 EMOJI        = "🌌"
 
 # ── Primary — neon violet that pops on dark ───────────────────────────────────
-PRIMARY                   = "#A78BFA"   # violet-400
-PRIMARY_DARK              = "#8B5CF6"   # violet-500
+PRIMARY                   = "#7D54F8"   # was #A78BFA — pastel primary could not carry white labels (2.72) and made FOCUS_RING unsatisfiable
+PRIMARY_DARK              = "#9C73F7"   # was #8B5CF6
 PRIMARY_LIGHT             = "#241B47"   # tinted bg
 PRIMARY_TEXT              = "#FFFFFF"
 PRIMARY_GRADIENT_START    = "#C4B5FD"
@@ -76,7 +76,7 @@ SURFACE_TINT_END          = "#14101F"
 
 # ── Sidebar — deepest layer ───────────────────────────────────────────────────
 SIDEBAR_BG                = "#060410"
-SIDEBAR_TEXT              = "#5B5678"
+SIDEBAR_TEXT              = "#7B759C"
 SIDEBAR_ACTIVE            = "#A78BFA"
 SIDEBAR_ACTIVE_TEXT       = "#FFFFFF"
 SIDEBAR_HOVER             = "#1A1528"
@@ -88,12 +88,12 @@ TOPBAR_BORDER             = "#241D38"
 # ── Text — light on dark ─────────────────────────────────────────────────────
 TEXT_PRIMARY              = "#E4E1F0"
 TEXT_SECONDARY            = "#9C97B8"
-TEXT_MUTED                = "#4B4568"
+TEXT_MUTED                = "#827AA7"
 TEXT_ON_PRIMARY           = "#FFFFFF"
 TEXT_HEADING              = "#F8F7FC"
 
 # ── Borders ───────────────────────────────────────────────────────────────────
-BORDER                    = "#241D38"
+BORDER                    = "#685F7F"
 BORDER_FOCUS              = "#A78BFA"
 DIVIDER                   = "#1A1528"
 
@@ -127,3 +127,25 @@ CHART_COLORS_LIGHT = [
     "#3B0A24",  # light pink dark
     "#341403",  # orange dark
 ]
+
+# ── Overlays and focus ────────────────────────────────────────────────────────
+TOOLTIP_BG         = "#F5F5F7"
+TOOLTIP_FG         = "#14181F"
+FOCUS_RING         = "#DACEFD"
+SCRIM              = "rgba(0, 0, 0, 0.55)"
+
+# ── Icons ─────────────────────────────────────────────────────────────────────
+ICON_DEFAULT       = "#5F5A7D"
+ICON_MUTED         = "#605B7F"
+ICON_ON_PRIMARY    = "#FFFFFF"
+
+# ── Semantic text colors ──────────────────────────────────────────────────────
+DANGER_TEXT        = "#FB6E82"
+SUCCESS_TEXT       = "#31D298"
+WARNING_TEXT       = "#FBBE21"
+INFO_TEXT          = "#1FD2EE"
+TEXT_ON_SUCCESS    = "#05261A"
+TEXT_ON_DANGER     = "#2E0711"
+TEXT_ON_WARNING    = "#2B1A02"
+TEXT_ON_INFO       = "#031B22"
+TEXT_ON_EDIT       = "#2A0630"

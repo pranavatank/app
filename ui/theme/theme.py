@@ -8,11 +8,11 @@ from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import QPushButton, QGraphicsDropShadowEffect
 
 from . import components as tc
-from . import constants as c   # default (Ocean Blue) values at import time
+from . import constants as c   # default (Aurora) values at import time
 
 
 class Theme:
-    # ── Color tokens (defaults = Ocean Blue, overwritten by ThemeManager) ─────
+    # ── Color tokens (defaults = Aurora, overwritten by ThemeManager) ─────────
     PRIMARY                   = c.PRIMARY
     PRIMARY_DARK              = c.PRIMARY_DARK
     PRIMARY_LIGHT             = c.PRIMARY_LIGHT
@@ -83,6 +83,30 @@ class Theme:
     TEXT_ON_PRIMARY           = c.TEXT_ON_PRIMARY
     TEXT_HEADING              = c.TEXT_HEADING
 
+    # ── Text on colored fills ───────────────────────────────────────────────
+    TEXT_ON_SUCCESS           = c.TEXT_ON_SUCCESS
+    TEXT_ON_DANGER            = c.TEXT_ON_DANGER
+    TEXT_ON_WARNING           = c.TEXT_ON_WARNING
+    TEXT_ON_INFO              = c.TEXT_ON_INFO
+    TEXT_ON_EDIT              = c.TEXT_ON_EDIT
+
+    # ── Semantic text colors ────────────────────────────────────────────────
+    DANGER_TEXT               = c.DANGER_TEXT
+    SUCCESS_TEXT              = c.SUCCESS_TEXT
+    WARNING_TEXT              = c.WARNING_TEXT
+    INFO_TEXT                 = c.INFO_TEXT
+
+    # ── Icon colors ────────────────────────────────────────────────────────
+    ICON_DEFAULT              = c.ICON_DEFAULT
+    ICON_MUTED                = c.ICON_MUTED
+    ICON_ON_PRIMARY           = c.ICON_ON_PRIMARY
+
+    # ── Overlays and focus ────────────────────────────────────────────────
+    TOOLTIP_BG                = c.TOOLTIP_BG
+    TOOLTIP_FG                = c.TOOLTIP_FG
+    FOCUS_RING                = c.FOCUS_RING
+    SCRIM                     = c.SCRIM
+
     BORDER                    = c.BORDER
     BORDER_FOCUS              = c.BORDER_FOCUS
     DIVIDER                   = c.DIVIDER
@@ -141,7 +165,7 @@ class Theme:
             "primary": f"""
                 QPushButton {{
                     background: {t.gradient(t.PRIMARY_GRADIENT_START, t.PRIMARY_GRADIENT_END)};
-                    color: #FFFFFF; border: none; border-radius: 10px;
+                    color: {t.TEXT_ON_PRIMARY}; border: none; border-radius: 10px;
                     padding: 4px 20px; font-size: 13px; font-weight: 700;
                 }}
                 QPushButton:hover  {{ background: {t.gradient(t.PRIMARY_GRADIENT_HOVER_START, t.PRIMARY_GRADIENT_HOVER_END)}; }}
@@ -161,7 +185,7 @@ class Theme:
             "success": f"""
                 QPushButton {{
                     background: {t.gradient(t.SUCCESS_GRADIENT_START, t.SUCCESS_GRADIENT_END)};
-                    color: #FFFFFF; border: none; border-radius: 10px;
+                    color: {t.TEXT_ON_SUCCESS}; border: none; border-radius: 10px;
                     padding: 4px 20px; font-size: 13px; font-weight: 700;
                 }}
                 QPushButton:hover  {{ background: {t.SUCCESS_DARK}; }}
@@ -171,7 +195,7 @@ class Theme:
             "danger": f"""
                 QPushButton {{
                     background: {t.gradient(t.DANGER_GRADIENT_START, t.DANGER_GRADIENT_END)};
-                    color: #FFFFFF; border: none; border-radius: 10px;
+                    color: {t.TEXT_ON_DANGER}; border: none; border-radius: 10px;
                     padding: 4px 20px; font-size: 13px; font-weight: 700;
                 }}
                 QPushButton:hover  {{ background: {t.DANGER_DARK}; }}
@@ -181,7 +205,7 @@ class Theme:
             "warning": f"""
                 QPushButton {{
                     background: {t.gradient(t.WARNING_GRADIENT_START, t.WARNING_GRADIENT_END)};
-                    color: #FFFFFF; border: none; border-radius: 10px;
+                    color: {t.TEXT_ON_WARNING}; border: none; border-radius: 10px;
                     padding: 4px 20px; font-size: 13px; font-weight: 700;
                 }}
                 QPushButton:hover  {{ background: {t.WARNING_DARK}; }}
@@ -190,7 +214,7 @@ class Theme:
             "info": f"""
                 QPushButton {{
                     background: {t.gradient(t.INFO_GRADIENT_START, t.INFO_GRADIENT_END)};
-                    color: #FFFFFF; border: none; border-radius: 10px;
+                    color: {t.TEXT_ON_INFO}; border: none; border-radius: 10px;
                     padding: 4px 20px; font-size: 13px; font-weight: 700;
                 }}
                 QPushButton:hover  {{ background: {t.INFO_DARK}; }}
@@ -199,7 +223,7 @@ class Theme:
             "edit": f"""
                 QPushButton {{
                     background: {t.gradient(t.EDIT_GRADIENT_START, t.EDIT_GRADIENT_END)};
-                    color: #FFFFFF; border: none; border-radius: 10px;
+                    color: {t.TEXT_ON_EDIT}; border: none; border-radius: 10px;
                     padding: 4px 20px; font-size: 13px; font-weight: 700;
                 }}
                 QPushButton:hover  {{ background: {t.EDIT_DARK}; }}
@@ -208,7 +232,7 @@ class Theme:
             "hero": f"""
                 QPushButton {{
                     background: {t.gradient(t.HERO_GRADIENT_START, t.HERO_GRADIENT_END)};
-                    color: #FFFFFF; border: none; border-radius: 12px;
+                    color: {t.TEXT_ON_PRIMARY}; border: none; border-radius: 12px;
                     padding: 4px 26px; font-size: 14px; font-weight: 700;
                 }}
                 QPushButton:hover  {{ background: {t.gradient(t.HERO_GRADIENT_HOVER_START, t.HERO_GRADIENT_HOVER_END)}; }}
@@ -499,28 +523,28 @@ QCalendarWidget QToolButton {{ color: {t.TEXT_PRIMARY}; background: transparent;
 QCalendarWidget QMenu {{ background-color: {t.SURFACE}; color: {t.TEXT_PRIMARY}; }}
 QCalendarWidget QAbstractItemView:enabled {{
     background-color: {t.SURFACE}; color: {t.TEXT_PRIMARY};
-    selection-background-color: {t.PRIMARY}; selection-color: #FFFFFF;
+    selection-background-color: {t.PRIMARY}; selection-color: {t.TEXT_ON_PRIMARY};
 }}
 QCalendarWidget QWidget#qt_calendar_navigationbar {{ background-color: {t.SURFACE_ALT}; }}
 
 /* ═══════════════════════════ BUTTONS ════════════════════════ */
 QPushButton {{
     background: {t.gradient(t.PRIMARY_GRADIENT_START, t.PRIMARY_GRADIENT_END)};
-    color: #FFFFFF; border: none; border-radius: 10px;
+    color: {t.TEXT_ON_PRIMARY}; border: none; border-radius: 10px;
     padding: 8px 18px; font-size: 14px; font-weight: 600; min-height: 22px;
 }}
 QPushButton:hover   {{ background: {t.gradient(t.PRIMARY_GRADIENT_HOVER_START, t.PRIMARY_GRADIENT_HOVER_END)}; }}
 QPushButton:pressed {{ background-color: {t.PRIMARY_DARK}; padding-top: 10px; }}
 QPushButton:disabled {{ background-color: {t.SURFACE_ALT}; color: {t.TEXT_MUTED}; border: 1px solid {t.DIVIDER}; }}
-QPushButton#primaryBtn   {{ background: {t.gradient(t.PRIMARY_GRADIENT_START,  t.PRIMARY_GRADIENT_END)};  color: #FFFFFF; }}
+QPushButton#primaryBtn   {{ background: {t.gradient(t.PRIMARY_GRADIENT_START,  t.PRIMARY_GRADIENT_END)};  color: {t.TEXT_ON_PRIMARY}; }}
 QPushButton#primaryBtn:hover {{ background: {t.gradient(t.PRIMARY_GRADIENT_HOVER_START, t.PRIMARY_GRADIENT_HOVER_END)}; }}
 QPushButton#secondaryBtn {{ background: {t.SURFACE}; color: {t.TEXT_PRIMARY}; border: 1.5px solid {t.BORDER}; }}
 QPushButton#secondaryBtn:hover {{ background: {t.PRIMARY_LIGHT}; border-color: {t.PRIMARY}; color: {t.PRIMARY_DARK}; }}
-QPushButton#successBtn {{ background: {t.gradient(t.SUCCESS_GRADIENT_START, t.SUCCESS_GRADIENT_END)}; color: #FFFFFF; }}
-QPushButton#dangerBtn  {{ background: {t.gradient(t.DANGER_GRADIENT_START,  t.DANGER_GRADIENT_END)};  color: #FFFFFF; }}
-QPushButton#warningBtn {{ background: {t.gradient(t.WARNING_GRADIENT_START, t.WARNING_GRADIENT_END)}; color: #FFFFFF; }}
-QPushButton#infoBtn    {{ background: {t.gradient(t.INFO_GRADIENT_START,    t.INFO_GRADIENT_END)};    color: #FFFFFF; }}
-QPushButton#editBtn    {{ background: {t.gradient(t.EDIT_GRADIENT_START,    t.EDIT_GRADIENT_END)};    color: #FFFFFF; }}
+QPushButton#successBtn {{ background: {t.gradient(t.SUCCESS_GRADIENT_START, t.SUCCESS_GRADIENT_END)}; color: {t.TEXT_ON_SUCCESS}; }}
+QPushButton#dangerBtn  {{ background: {t.gradient(t.DANGER_GRADIENT_START,  t.DANGER_GRADIENT_END)};  color: {t.TEXT_ON_DANGER}; }}
+QPushButton#warningBtn {{ background: {t.gradient(t.WARNING_GRADIENT_START, t.WARNING_GRADIENT_END)}; color: {t.TEXT_ON_WARNING}; }}
+QPushButton#infoBtn    {{ background: {t.gradient(t.INFO_GRADIENT_START,    t.INFO_GRADIENT_END)};    color: {t.TEXT_ON_INFO}; }}
+QPushButton#editBtn    {{ background: {t.gradient(t.EDIT_GRADIENT_START,    t.EDIT_GRADIENT_END)};    color: {t.TEXT_ON_EDIT}; }}
 
 /* ═══════════════════════════ TABLE ══════════════════════════ */
 QTableWidget {{
@@ -567,7 +591,7 @@ QTabBar::tab {{
     margin-right: 3px; font-weight: 500; font-size: 14px;
     border: 1px solid {t.BORDER}; border-bottom: none;
 }}
-QTabBar::tab:selected {{ background-color: {t.PRIMARY}; color: #FFFFFF; font-weight: 700; border-color: {t.PRIMARY}; }}
+QTabBar::tab:selected {{ background-color: {t.PRIMARY}; color: {t.TEXT_ON_PRIMARY}; font-weight: 700; border-color: {t.PRIMARY}; }}
 QTabBar::tab:hover:!selected {{ background-color: {t.PRIMARY_LIGHT}; color: {t.PRIMARY_DARK}; border-color: {t.PRIMARY}; }}
 
 /* ═══════════════════════════ GROUP BOX ══════════════════════ */
@@ -610,14 +634,14 @@ QCalendarWidget QWidget#qt_calendar_navigationbar {{
     min-height: 40px;
 }}
 QCalendarWidget QToolButton {{
-    color: #FFFFFF; background: transparent; border: none;
+    color: {t.TEXT_ON_PRIMARY}; background: transparent; border: none;
     border-radius: 8px; font-size: 13px; font-weight: 700;
     icon-size: 16px, 16px; padding: 4px 8px; margin: 4px 2px;
 }}
 QCalendarWidget QToolButton:hover {{ background: rgba(255,255,255,0.18); }}
 QCalendarWidget QToolButton::menu-indicator {{ image: none; }}
 QCalendarWidget QSpinBox {{
-    color: #FFFFFF; background: rgba(255,255,255,0.12);
+    color: {t.TEXT_ON_PRIMARY}; background: rgba(255,255,255,0.12);
     border: none; border-radius: 6px; padding: 2px 6px; font-weight: 700;
 }}
 QCalendarWidget QMenu {{
@@ -626,7 +650,7 @@ QCalendarWidget QMenu {{
 }}
 QCalendarWidget QAbstractItemView {{
     background-color: {t.SURFACE}; color: {t.TEXT_PRIMARY};
-    selection-background-color: {t.PRIMARY}; selection-color: #FFFFFF;
+    selection-background-color: {t.PRIMARY}; selection-color: {t.TEXT_ON_PRIMARY};
     outline: none; border: none; font-size: 13px;
     gridline-color: transparent;
 }}
@@ -637,7 +661,7 @@ QCalendarWidget QTableView {{ border: none; }}
 QMenu {{ background-color: {t.SURFACE}; color: {t.TEXT_PRIMARY}; border: 1px solid {t.BORDER}; border-radius: 10px; padding: 6px; }}
 QMenu::item {{ padding: 8px 20px; border-radius: 6px; }}
 QMenu::item:selected {{ background-color: {t.PRIMARY_LIGHT}; color: {t.PRIMARY_DARK}; }}
-QToolTip {{ background-color: {t.TEXT_PRIMARY}; color: #FFFFFF; border: none; border-radius: 6px; padding: 6px 10px; font-size: 12px; }}
+QToolTip {{ background-color: {t.TOOLTIP_BG}; color: {t.TOOLTIP_FG}; border: none; border-radius: 6px; padding: 6px 10px; font-size: 12px; }}
 
 /* ═══════════════════════════ SCROLL AREA ════════════════════ */
 QScrollArea {{ border: none; background: transparent; }}

@@ -18,20 +18,24 @@ _CONFIG_FILE = os.path.join(_CONFIG_DIR, "theme_prefs.json")
 
 _THEME_MODULES: dict[str, str] = {
     # Light
-    "Aurora":         "ui.theme.theme_aurora_light",
-    "Ocean Blue":     "ui.theme.theme_ocean_blue",
-    "Arctic Breeze":  "ui.theme.theme_arctic_breeze",
-    "Forest Light":   "ui.theme.theme_forest_light",
-    "Rose Gold Luxe": "ui.theme.theme_rose_gold",
-    "Sunrise Warm":   "ui.theme.theme_sunrise_warm",
+    "Aurora":       "ui.theme.theme_aurora_light",
+    "Slate":        "ui.theme.theme_slate_light",
     # Dark
-    "Nova":           "ui.theme.theme_nova_dark",
-    "Midnight Pro":   "ui.theme.theme_midnight_pro",
-    "Amethyst Dusk":  "ui.theme.theme_amethyst_dusk",
-    "Finance Pro":    "ui.theme.theme_finance_pro",
+    "Nova":         "ui.theme.theme_nova_dark",
+    "Midnight Pro": "ui.theme.theme_midnight_pro",
 }
 
 _DEFAULT_THEME = "Aurora"
+
+_RENAMED_THEMES: dict[str, str] = {
+    "Ocean Blue":     "Slate",
+    "Arctic Breeze":  "Slate",
+    "Forest Light":   "Slate",
+    "Rose Gold Luxe": "Aurora",
+    "Sunrise Warm":   "Aurora",
+    "Amethyst Dusk":  "Nova",
+    "Finance Pro":    "Midnight Pro",
+}
 
 _COLOR_ATTRS = [
     "PRIMARY","PRIMARY_DARK","PRIMARY_LIGHT","PRIMARY_TEXT",
@@ -49,6 +53,14 @@ _COLOR_ATTRS = [
     "SIDEBAR_BG","SIDEBAR_TEXT","SIDEBAR_ACTIVE","SIDEBAR_ACTIVE_TEXT","SIDEBAR_HOVER",
     "TOPBAR_BG","TOPBAR_BORDER",
     "TEXT_PRIMARY","TEXT_SECONDARY","TEXT_MUTED","TEXT_ON_PRIMARY","TEXT_HEADING",
+    # ── Text on colored fills ───────────────────────────────────────────────
+    "TEXT_ON_SUCCESS","TEXT_ON_DANGER","TEXT_ON_WARNING","TEXT_ON_INFO","TEXT_ON_EDIT",
+    # ── Semantic text colors ────────────────────────────────────────────────
+    "DANGER_TEXT","SUCCESS_TEXT","WARNING_TEXT","INFO_TEXT",
+    # ── Icon colors ────────────────────────────────────────────────────────
+    "ICON_DEFAULT","ICON_MUTED","ICON_ON_PRIMARY",
+    # ── Overlays and focus ────────────────────────────────────────────────
+    "TOOLTIP_BG","TOOLTIP_FG","FOCUS_RING","SCRIM",
     "BORDER","BORDER_FOCUS","DIVIDER",
     "SHADOW_BLUR_CARD","SHADOW_BLUR_ELEVATED",
     "SHADOW_OFFSET_Y","SHADOW_OFFSET_Y_ELEVATED",
@@ -217,6 +229,10 @@ class ThemeManager:
             with open(_CONFIG_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
             name = data.get("theme", _DEFAULT_THEME)
+            # Check if it's a renamed theme
+            if name in _RENAMED_THEMES:
+                return _RENAMED_THEMES[name]
+            # Return if valid, else fall back to default
             return name if name in _THEME_MODULES else _DEFAULT_THEME
         except Exception:
             return _DEFAULT_THEME
