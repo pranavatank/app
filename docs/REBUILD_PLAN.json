@@ -1,0 +1,1478 @@
+{
+  "meta": {
+    "document": "Rebuild Plan — Personal Financial Manager",
+    "version": "2.0",
+    "created": "2026-09-04",
+    "supersedes": ["docs/FRONTEND_REBUILD_PLAN.json"],
+    "narrative_background": "docs/AUDIT_AND_REBUILD_PLAN.md — full prose audit with worked examples. This JSON is the executable plan; the .md is the reasoning behind it.",
+    "scope": "Single unified plan covering the data/engine layer AND the frontend. They are merged because the dependency graph is interleaved: screen rebuilds are views of engine output and cannot be sequenced independently.",
+    "app": {
+      "language": "Python 3.12",
+      "ui": "PyQt6 6.11",
+      "db": "SQLite (plaintext — see T060)",
+      "entry": "main.py",
+      "domain": "Indian personal income tax and banking, FY 2026-27 (AY 2027-28)"
+    }
+  },
+
+  "read_this_first": {
+    "audience": "An AI coding agent that will execute these tasks directly.",
+    "how_to_work": [
+      "Work one task at a time, in the order given by `recommended_sequence`.",
+      "Before starting a task, read its `evidence` id in the `evidence.measurements` array and run its `reproduce` command. If the reproduction does not match the stated `result`, STOP and report — the codebase has moved since this plan was written.",
+      "A task is complete only when every string in `acceptance` is objectively true. Prefer encoding each as a test.",
+      "After each task, run the regression suite (T004). Do not proceed on a red suite.",
+      "Never mark a task done by inspection alone. Run something."
+    ],
+    "safety_rules": [
+      "NEVER run `git push`, `git push --force`, or `git filter-repo` without explicit human approval in the current session. Tasks that need them are flagged `requires_human_confirmation: true`.",
+      "NEVER delete or modify any file under `data/PersonalData/` — those are the owner's real financial documents and the regression fixtures. They may be REMOVED FROM GIT TRACKING (T001) but must remain on disk.",
+      "NEVER commit `data/PersonalData/password.txt` or any file containing a PAN, Aadhaar number, account number, or password.",
+      "Before deleting any source file, confirm it is committed to git so the deletion is reversible, and state in your commit message what was deleted and why.",
+      "Do not edit `data/financial.db` directly. Use the model layer.",
+      "Do not add a dependency to requirements.txt without pinning a minimum version and confirming it installs on a clean venv.",
+      "If a task's instructions conflict with what you find in the code, trust the code and report the discrepancy rather than forcing the instruction."
+    ],
+    "do_not_do": [
+      "Do not rebuild any screen before its backend phase has landed — you would be building a careful UI for wrong numbers. Each screen task lists `backend_dependency`.",
+      "Do not introduce a raw hex colour anywhere in `ui/` outside `ui/theme/`.",
+      "Do not add features not listed here. Several existing features are being REMOVED, not extended.",
+      "Do not 'fix' the Old Regime tax code. It is being deleted — the owner has irrevocably opted into the New Regime (he has professional income under s.194J, so the one-time switch rule in Form 10-IEA applies to him).",
+      "Do not treat AIS Part B1 and Part B2 as separate income. They report the same money twice."
+    ],
+    "retracted_claims": [
+      "An earlier draft claimed `BankAccount.current_balance` is never populated. FALSE — `add_account()` seeds it from `opening_balance`. The zero balance seen in an early test capture was a fault in the test harness. What IS true: `engines/balance_engine.py` is never called from anywhere, so balances never re-derive from imported transactions (see T036).",
+      "An earlier draft claimed the app launches and only fails when Statement Import is clicked. FALSE and understated — all 11 screens are built eagerly at login, so the app dies immediately after a correct password (see M1)."
+    ],
+    "known_environment_issue": {
+      "symptom": "`ModuleNotFoundError: No module named 'PyQt6.QtWidgets'` while `import PyQt6` appears to succeed.",
+      "cause": "A partial install left only the `PyQt6/Qt6/` runtime directory with no bindings, so Python resolves `PyQt6` as an empty namespace package (`PyQt6.__file__` is None). Common on Microsoft Store Python.",
+      "fix": "python -m pip install --force-reinstall --no-cache-dir PyQt6 qtawesome  — if that fails, install Python from python.org and use a venv."
+    }
+  },
+
+  "execution_model": {
+    "principle": "Backend correctness first for anything that produces a NUMBER. Frontend foundation runs in parallel because it depends on no engine. Screens come last because they render both.",
+    "tracks": [
+      {
+        "id": "TRACK-A",
+        "name": "Engine correctness",
+        "phases": ["P1", "P2", "P3", "P4", "P5"],
+        "depends_on_phase": "P0",
+        "note": "Testable headlessly against data/PersonalData/. Does not need the GUI to run."
+      },
+      {
+        "id": "TRACK-B",
+        "name": "Frontend foundation",
+        "phases": ["P6", "P7"],
+        "depends_on_phase": "P0",
+        "note": "Design system, theming engine, component library. ZERO backend dependency — run this concurrently with TRACK-A rather than queueing it behind months of engine work."
+      },
+      {
+        "id": "TRACK-C",
+        "name": "Screens",
+        "phases": ["P8", "P9", "P10", "P11"],
+        "depends_on_phase": "TRACK-A and TRACK-B both complete",
+        "note": "Each screen renders engine output through the design system, so it needs both tracks."
+      }
+    ],
+    "critical_path": "P0 -> TRACK-A(P1,P2,P3,P4) -> P9 screens. TRACK-B is off the critical path and should be run in parallel by a second agent or interleaved when TRACK-A is blocked.",
+    "if_only_one_agent": "Follow `recommended_sequence`, which interleaves the tracks so nothing is blocked."
+  },
+
+  "evidence": {
+    "method": "Every measurement below was produced by running this repository's own code against the owner's real documents in data/PersonalData/Pranav/ (26AS.pdf, AIS.pdf, TIS.pdf, Data 26-27.xlsx, and 4 bank statements), or by rendering the real app offscreen under PyQt6 6.11 with a seeded database.",
+    "passwords_for_fixtures": {
+      "note": "Required to open the fixtures. Read them from an environment variable or an untracked local file. NEVER commit them.",
+      "ais_tis_pdf": "see data/PersonalData/Pranav/password.txt",
+      "equitas_statement_pdf": "see data/PersonalData/Pranav/password.txt"
+    },
+    "caveats": [
+      "The offscreen Qt platform plugin exposed ZERO font families, so all screenshot captures rendered in a capitals-only fallback face. That is a HARNESS ARTEFACT. No typography, letterform, or text-truncation conclusion was drawn from the images. Layout, spacing, density, colour, timing and widget behaviour are unaffected and were assessed normally.",
+      "Line numbers were verified on 2026-09-04 against commit 49860a5. If they have drifted, locate by symbol name instead."
+    ],
+    "measurements": [
+      {
+        "id": "M1",
+        "claim": "The app is unusable immediately after a correct password.",
+        "detail": "DashboardScreen._build_content_area() (ui/dashboard_screen.py:516) eagerly constructs all 11 screens. StatementImportScreen (imported at line 541) imports engines.statement_parser at its own module top level (ui/statement_import_screen_modern.py:39). That triggers engines/statement_parser.py:20 -> engines/bank_parsers/__init__.py -> yes_bank_statement_parser.py:19, which imports back into the partially-initialised statement_parser. engines.bank_parsers is imported from exactly one place in the whole repo, so nothing pre-loads it to break the cycle. sbi_statement_parser.py:140 does the same import INSIDE a function, which is why SBI never triggered it.",
+        "introduced_by": "commit 9107bf0 'feat: added hdfc and yes bank parser and fixies import staement' (23 Aug 2026)",
+        "reproduce": "python -c \"import sys; sys.path.insert(0,'.'); from ui.statement_import_screen_modern import StatementImportScreen\"",
+        "result": "ImportError: cannot import name '_extract_reference_no' from partially initialized module 'engines.statement_parser'"
+      },
+      {
+        "id": "M2",
+        "claim": "Real personal data and cleartext passwords are committed to git.",
+        "detail": ".gitignore has `data/*.pdf`, which does not match a subdirectory, so nothing under data/PersonalData/ is excluded.",
+        "reproduce": "git ls-files data/PersonalData/ && git check-ignore data/PersonalData/Pranav/password.txt",
+        "result": "9 files tracked including 26AS.pdf (PAN, address), AIS.pdf (PAN, partial Aadhaar, 65 deposit account numbers), 4 full bank statements, and password.txt in cleartext. check-ignore reports NOT ignored."
+      },
+      {
+        "id": "M3",
+        "claim": "Transaction income/expense direction is 27%-59% wrong across the four banks.",
+        "detail": "Measured by comparing each parsed row's assigned type against the sign of the change in the statement's own running balance, which the parser itself extracted. Rows whose balances do not tie out were excluded, so this is a conservative floor. Root cause: the two-date branch of GenericPDFParser._parse_line has no balance-delta fallback and defaults to 'Expense'; and the three-number branch detects WHICH of the Debit/Credit columns was populated then discards that fact without setting txn_type.",
+        "result": "Equitas 51.6% wrong (42 rows), IDFC 27.0% (377 rows), Jana 46.9% (65 rows), Ujjivan 59.1% (27 rows). Ujjivan produced ZERO income rows despite its statement being almost entirely FD closure credits. IDFC's own header reads Total Debit 4,80,013.35 vs Total Credit 4,67,264.82 — near parity — yet the parser returned 14 income vs 363 expense."
+      },
+      {
+        "id": "M4",
+        "claim": "The description cleaner deletes the FD account number that links a statement row to AIS.",
+        "detail": "_clean_pdf_description() strips \\b\\d{10,}\\b (any run of 10+ digits).",
+        "result": "'4483130330001450 : Closure Proceeds' becomes ': Closure Proceeds'. That number appears verbatim in AIS carrying 3,387 of interest. Also observed: page-footer text bleeding into descriptions, and an invented transaction dated 2022-11-15 for 13,631.64 assembled from the account opening date and opening balance."
+      },
+      {
+        "id": "M5",
+        "claim": "FD category rules are mis-ordered, so interest is booked as maturity.",
+        "detail": "_guess_fd_category() tests 'AUTO REDEEM' before 'INT AUTO REDEEM', so the broader pattern shadows the narrower one and the FD Interest branch is unreachable.",
+        "result": "Jana 'INT AUTO REDEEM PRANAV 4522030015435122/1' (8,511 of taxable INTEREST) is categorised as 'FD Maturity' (return of principal, not income). This corrupts the tax figure directly."
+      },
+      {
+        "id": "M6",
+        "claim": "AIS extraction misses 60,091 of 4,10,549 income (14.6%) and overstates TDS by 43%.",
+        "detail": "summary_re only matches rows whose code starts 'TDS-', so every SFT row is invisible — all savings-bank interest, all dividend, and the FD interest of AU (9,710) and IDFC (1,543) which have no TDS entry because Form 15G was filed. detail_re matches Active AND Inactive rows alike and sums TDS from both; AIS rows 60-102 for Jana are superseded Inactive entries.",
+        "result": "FD interest 2,45,389 (true 2,56,642). Savings interest 0 (true 46,183). Dividend 0 (true 2,655). TDS 19,194 (true 13,367)."
+      },
+      {
+        "id": "M7",
+        "claim": "TIS extraction fabricates 26 lakh of income.",
+        "detail": "The SFT-005 'Purchase of time deposits' line — money the owner INVESTED, not income — is counted as income, and counted twice (page-1 summary plus annexure).",
+        "result": "other_income parsed as 27,05,069 (= 13,00,000 x 2 + 1,05,069); true value 1,05,069. other_interest 3,49,008 (true 0). dividend 5,310 (true 2,655)."
+      },
+      {
+        "id": "M8",
+        "claim": "26AS extraction recovers 14% of the TDS and invents a section code.",
+        "detail": "It searches for the literal strings 'PART A'/'PART B' but 26AS uses 'PART-I'/'PART-II', so the section state machine never exits and ingests the legend pages. It requires a TAN on the line, so detail rows are never read. It parses dates as dd/mm/yyyy while 26AS prints 31-Mar-2026. re.search(r'19[0-9][A-Z]?') matched '194BA' in the legend. Part II (15G/15H) is not handled at all — that is 2,23,133 of the owner's interest income. Reversal entries (Remarks B/G, negative amounts) are never netted.",
+        "result": "6 records from a document with 200+ detail rows. TDS sum 1,847 (true 13,367). Section '194B' (lottery winnings) recorded. All transaction dates empty. Name extracted as 'AZIPT9702H Assessee Name'."
+      },
+      {
+        "id": "M9",
+        "claim": "The FD 'Bank Style' maturity option is inert, and financial-year allocation is wrong.",
+        "detail": "calculate_fd_maturity_bank_style() short-circuits to the formula method when tenure_days > 0 and years == 0 and months == 0 — which is every FD this owner holds. Separately, allocate_fd_interest_to_fy() assigns a whole compounding quarter to the FY in which the quarter ENDS, so a quarter straddling 31 March lands entirely in the later year.",
+        "result": "For a 201-day FD (1,00,000 @ 8%): app returns 4,458.54 for BOTH methods; the owner's spreadsheet gives 4,455 (formula) and 4,496 (bank). For a 501-day FD the FY split is app 0 / 8,219.09 / 3,262.91 versus correct 789 / 8,279 / 2,414 across FY2025-26 / 26-27 / 27-28 — 789 of income placed in the wrong year on a single deposit."
+      },
+      {
+        "id": "M10",
+        "claim": "The tax engine is two budgets out of date.",
+        "detail": "NEW_REGIME_SLABS still encodes FY 2023-24 (3/6/9/12/15 lakh); the 87A rebate is capped at 25,000 up to taxable income 7,00,000; the 75,000 standard deduction is applied unconditionally rather than only against salary. Surcharge, marginal relief, and the exclusion of special-rate income from 87A are all absent.",
+        "reproduce": "python -c \"import sys;sys.path.insert(0,'.');from engines.tax_engine import *;print(calculate_tax_by_slabs(1500000,NEW_REGIME_SLABS));print(calculate_new_regime_tax(1275000))\"",
+        "result": "Slab tax on taxable 15,00,000 returns 150000.0; correct for FY2026-27 is 105000.0. A salaried gross of 12,75,000 — the headline tax-free figure for this regime — is charged 93,600 (taxable 12,00,000, base tax 90,000, rebate 0)."
+      },
+      {
+        "id": "M11",
+        "claim": "The tax screen discards roughly two-thirds of its own inputs.",
+        "detail": "ui/tax_screen.py builds ~30 input fields and sums them into the on-screen 'Gross Income' label in _update_gross() (line 591). calculate_and_save_tax (called at line 779) accepts only 8 income/deduction arguments. Silently dropped: presumptive_income (44AD/44ADA — the owner's ENTIRE professional income), manufacturing_income, other_business_income, all five capital-gains fields, all five house-property fields, deduction_80tta, deduction_80ttb.",
+        "result": "The Gross Income shown on screen and the gross actually taxed are two different numbers on the same screen."
+      },
+      {
+        "id": "M12",
+        "claim": "Savings interest is never computed anywhere.",
+        "detail": "calculate_savings_interest_for_fy and allocate_savings_interest_to_fy are dead code. The algorithm is also wrong: _average_monthly_balance averages the balance_after of TRANSACTIONS within each month, so a month with one large transaction and 29 quiet days averages to the large figure. Since 1 April 2010 the RBI requires savings interest on the daily closing balance.",
+        "reproduce": "grep -rn 'allocate_savings_interest_to_fy\\|calculate_savings_interest_for_fy' --include=*.py .",
+        "result": "Definitions only, zero call sites. SavingsInterestRecord is never populated, so get_total_savings_interest() always returns 0. For this owner that is 46,183 of real taxable income."
+      },
+      {
+        "id": "M13",
+        "claim": "SummaryPanel.clear_stats() leaves ghost widgets that keep painting.",
+        "detail": "clear_stats() (ui/widgets/summary_panel.py:243) removes items from the layout with takeAt() and calls deleteLater(), but never re-parents. The widget remains a child of the panel and continues to render at its last geometry.",
+        "reproduce": "Construct SummaryPanel, run clear_stats()+add_stat() three times, count matching QLabels.",
+        "result": "3 copies remain (expected 1), for both scrollable=True and scrollable=False. Visible on the Overview screen as overlapping, garbled text in the Bank Accounts panel every time the person/account/FY selector changes."
+      },
+      {
+        "id": "M14",
+        "claim": "56 of 140 WCAG AA contrast checks fail (40%). Every theme fails at least 4.",
+        "detail": "14 colour pairs x 10 themes, computed from the theme modules directly.",
+        "result": "Systematic failures: TEXT_MUTED on SURFACE fails in ALL 10 themes (1.51-2.80, needs 4.5). BORDER on SURFACE fails in ALL 10 (1.10-1.45, needs 3.0), so input and card outlines are nearly invisible. Semantic colours fail on light themes (warning #F59E0B on white is 2.15). Per-theme failure counts: Aurora 5, Ocean Blue 5, Arctic Breeze 6, Forest Light 5, Rose Gold 4, Sunrise 5, Nova 6, Midnight Pro 6, Amethyst Dusk 6, Finance Pro 8."
+      },
+      {
+        "id": "M15",
+        "claim": "Tooltips are unreadable in all four dark themes.",
+        "detail": "ui/theme/theme.py:640 sets `QToolTip { background-color: TEXT_PRIMARY; color: #FFFFFF; }`. In dark themes TEXT_PRIMARY is near-white (Nova #E4E1F0), giving white on white.",
+        "result": "Contrast: Nova 1.29, Midnight Pro 1.23, Amethyst Dusk 1.36, Finance Pro 1.45."
+      },
+      {
+        "id": "M16",
+        "claim": "Hard-coded white button labels fail contrast on 6 of 10 themes.",
+        "detail": "Theme.btn() and the global QSS both hard-code `color: #FFFFFF` on filled buttons; dark themes use pastel 400-level primaries.",
+        "result": "Nova #A78BFA 2.72, Amethyst 2.72, Midnight 2.98, Finance Pro 2.30, Forest Light 3.30, Sunrise 3.39 — all below 4.5."
+      },
+      {
+        "id": "M17",
+        "claim": "A theme switch blocks the UI thread for 1.5-1.8 seconds.",
+        "detail": "ThemeManager._deep_refresh() walks every live QWidget calling unpolish/polish/update, twice, with processEvents between. The tree is large because all 11 screens are built eagerly. ui/settings_screen.py:465 shows an 'Applying theme...' loader that cannot animate because the work runs on the thread it is trying to animate on; the code comment there admits the slowness.",
+        "result": "apply('Nova') blocked 1.54s, apply('Aurora') 1.75s, with 1,079 live widgets. DashboardScreen construction 2.93s."
+      },
+      {
+        "id": "M18",
+        "claim": "469 inline setStyleSheet() calls put styling outside the layer Qt can re-polish.",
+        "detail": "Colours are baked into strings at construction, so a theme switch cannot update them; each screen hand-maintains a bespoke refresh_theme(). Screens that happen to rebuild their content on refresh get away with it; screens that do not, go stale.",
+        "result": "469 total. tax_screen.py 58 (re-styles ~11 on theme change), chatbot 48, accounts 47, settings 33, dashboard 31, reconciliation 24, fixed_deposits 24, statement_import 22."
+      },
+      {
+        "id": "M19",
+        "claim": "All document parsing runs on the UI thread, freezing the window.",
+        "detail": "ui/statement_import_screen_modern.py:684,717,754 and ui/ais_tis_import_screen_v2.py:435,615,713,915 call parsers directly from slots. The threaded helper Loader.run() exists (ui/widgets/loader.py:297) but is used once (login); the AIS screen uses the BLOCKING `with Loader(...)` form, so its spinner is frozen too.",
+        "result": "1 threaded use vs 3 blocking uses. A 17-page IDFC statement takes seconds; the AI parser path has a 60s timeout."
+      },
+      {
+        "id": "M20",
+        "claim": "171 blocking modal message boxes.",
+        "result": "84 QMessageBox.warning, 54 .information, 19 .question, 14 .critical. The 138 warning+information calls are acknowledgements that should be inline."
+      },
+      {
+        "id": "M21",
+        "claim": "The floating AI button sits on top of the primary action button.",
+        "detail": "DashboardScreen._position_chat_launcher() (ui/dashboard_screen.py:120) moves a 58x58 QPushButton to (width-82, height-82) of the main window and raise_()s it. On Statement Import that is exactly where 'Parse Statement' sits.",
+        "result": "Confirmed in screenshot capture of the Statement Import screen."
+      },
+      {
+        "id": "M22",
+        "claim": "Navigation is 11 unlabelled icons with no tooltips, and is not made of real buttons.",
+        "detail": "The sidebar defaults to collapsed (76px, icons only). Only 3 setToolTip calls exist in the whole dashboard, none on nav. Nav items are plain QWidgets with monkey-patched mousePressEvent and keyPressEvent, so they activate on PRESS rather than release (press-and-drag-away still navigates) and expose no button role to assistive technology. Nav icons take ~96 hard-coded hex colours from ui/icons.py so they never follow the theme.",
+        "result": "3 tooltips total, 0 on navigation."
+      },
+      {
+        "id": "M23",
+        "claim": "qfluentwidgets, the declared PRIMARY icon source, is not in requirements.txt.",
+        "detail": "ui/icons.py documents Fluent icons as primary with qtawesome as fallback. On any clean install the Fluent path is dead and everything silently falls back.",
+        "reproduce": "grep -i fluent requirements.txt",
+        "result": "No match."
+      },
+      {
+        "id": "M24",
+        "claim": "No focus indicator on any button; scrollbars below the minimum target size; buttons shift on press.",
+        "detail": "The global QSS defines :focus only for QLineEdit/QTextEdit/QComboBox/QSpinBox/QDateEdit. QPushButton has :hover/:pressed/:disabled but no :focus. Scrollbars are 7px against the WCAG 2.2 SC 2.5.8 minimum of 24x24. QPushButton:pressed changes padding-top (10px global, 3px in Theme.btn), moving the label on click."
+      },
+      {
+        "id": "M25",
+        "claim": "engines/balance_engine.py is never called from anywhere.",
+        "reproduce": "grep -rn 'balance_engine' --include=*.py . | grep -v '^./engines/balance_engine.py'",
+        "result": "Two comments only, zero call sites. Account balances never re-derive from imported transactions. (Note: add_account() DOES seed current_balance from opening_balance — an earlier claim to the contrary is retracted.)"
+      },
+      {
+        "id": "M26",
+        "claim": "The README makes a false security claim.",
+        "detail": "It states 'AES-256 database encryption'. core/database.py opens a plaintext SQLite file via sqlite3.connect(). Only two FIELDS are encrypted (statement_password_enc, ais_tis_password_enc)."
+      },
+      {
+        "id": "M27",
+        "claim": "config.py names a tax form that does not exist.",
+        "detail": "config.py:28 sets FD_TDS_FORM_NAME = 'Form 121'. The correct forms are 15G (under 60) and 15H (senior citizen). The owner has in fact filed 15G — 26AS Part II shows 2,23,133 of interest with nil TDS."
+      }
+    ]
+  },
+
+  "domain_spec": {
+    "note": "Authoritative constants so no agent has to re-derive or re-research them. Verified against ClearTax, Tax2win, incometax.gov.in and RBI/bank sources on 2026-09-03.",
+    "new_regime_slabs": {
+      "applies_to": ["FY 2025-26", "FY 2026-27"],
+      "identical_between_those_years": true,
+      "bands": [
+        { "upto": 400000, "rate": 0 },
+        { "upto": 800000, "rate": 5 },
+        { "upto": 1200000, "rate": 10 },
+        { "upto": 1600000, "rate": 15 },
+        { "upto": 2000000, "rate": 20 },
+        { "upto": 2400000, "rate": 25 },
+        { "upto": null, "rate": 30 }
+      ]
+    },
+    "rebate_87a": {
+      "max": 60000,
+      "total_income_ceiling": 1200000,
+      "basis": "lower of tax on normal income or 60,000, where total income EXCLUDING special-rate income is <= 12,00,000",
+      "applied": "before surcharge and cess",
+      "marginal_relief": "above 12,00,000 the tax payable is capped so it never exceeds the income earned above 12,00,000",
+      "excluded_income": "NOT available against special-rate income under s.111A (STCG on equity), s.112 and s.112A (LTCG), regardless of total income. Made explicit by Finance Act 2025."
+    },
+    "standard_deduction": { "amount": 75000, "applies_only_to": "salary or pension income", "note": "Must be min(75000, salary + pension). This owner has NO salary." },
+    "cess": { "rate": 4, "base": "tax - rebate + surcharge" },
+    "surcharge_new_regime": [
+      { "above": 5000000, "rate": 10 },
+      { "above": 10000000, "rate": 15 },
+      { "above": 20000000, "rate": 25 },
+      { "note": "capped at 15% for income under s.111A/112A; has its own marginal relief" }
+    ],
+    "tds": {
+      "s194A_interest": { "rate_with_pan": 10, "rate_without_pan": 20, "threshold_non_senior": 50000, "threshold_senior": 100000, "applied": "per bank, aggregating all branches", "from_fy": "2025-26" },
+      "s194J_professional": { "rate": 10 },
+      "form_15G": "individuals under 60 whose total income is below the taxable limit",
+      "form_15H": "senior citizens (60+)"
+    },
+    "s44ADA_presumptive": {
+      "eligible": "resident individual or firm (not LLP) in a specified profession",
+      "gross_receipts_limit": 5000000,
+      "gross_receipts_limit_if_cash_under_5pct": 7500000,
+      "deemed_profit_pct": 50,
+      "itr_form": "ITR-4",
+      "advance_tax": "may be paid in a SINGLE instalment by 15 March, overriding the normal four-instalment schedule"
+    },
+    "advance_tax_normal": {
+      "schedule": [
+        { "due": "15 Jun", "cumulative_pct": 15, "s234C_safe_harbour_pct": 12, "interest_months": 3 },
+        { "due": "15 Sep", "cumulative_pct": 45, "s234C_safe_harbour_pct": 36, "interest_months": 3 },
+        { "due": "15 Dec", "cumulative_pct": 75, "s234C_safe_harbour_pct": 75, "interest_months": 3 },
+        { "due": "15 Mar", "cumulative_pct": 100, "s234C_safe_harbour_pct": 100, "interest_months": 1 }
+      ],
+      "no_liability_below": 10000,
+      "exempt": "resident senior citizens without business income"
+    },
+    "fd_interest_maths": {
+      "under_183_days": "SIMPLE interest: P * r * d / 365",
+      "183_days_and_over": "quarterly compounding for COMPLETED quarters, then SIMPLE interest on the accumulated balance for the broken period: P*(1+r/4)^q * (d/365) * r",
+      "day_count": "Actual/365 (366 for days falling in a leap year)",
+      "fy_allocation_for_tax": "ACCRUAL basis — cumulative interest to 31 March minus cumulative interest to the previous 31 March. NOT credit-event basis."
+    },
+    "savings_interest_maths": {
+      "basis": "daily closing balance ('daily product'), mandatory since 1 April 2010",
+      "credited": "quarterly or more frequently",
+      "formula": "sum(daily closing balance) * rate / days_in_year, accumulated per quarter",
+      "note": "The app already stores balance_after per transaction, so the daily series can be reconstructed by carrying the last known balance forward across quiet days."
+    },
+    "three_documents": {
+      "form_26AS": { "source": "TRACES", "authority_on": "TDS/TCS credit, advance tax, refunds", "parts": "I (TDS), II (TDS for 15G/15H — nil TDS but REAL income), III-V, VI (TCS), VII (refunds paid), VIII-IX, X (defaults)", "booking_status": "F Final, M Matched, U Unmatched, P Provisional, O Overbooked, Z Mismatch — treat only F and M as reliable credit", "reversals": "Its own legend states 'Figures in brackets represent reversal (negative) entries'. Remarks B = rectification by deductor, G = reprocessing. NET them; prefer the deductor header total." },
+      "AIS": { "source": "Compliance Portal", "authority_on": "per-source detail", "duplicates": "YES — the same interest is reported twice, once as TDS-194A (Part B1) and once as SFT-016(TD) (Part B2). NEVER add them.", "status": "Only rows marked 'Active' count. Superseded rows are 'Inactive'. The summary COUNT equals the number of Active rows exactly — use it to validate.", "gold": "SFT-016(TD) lists each deposit ACCOUNT NUMBER with its interest. This is the reconciliation key to FixedDeposit records." },
+      "TIS": { "source": "Compliance Portal", "authority_on": "income totals for the ITR", "duplicates": "NO — it is de-duplicated. Where SFT and TDS report the same money it keeps the SFT figure and marks the TDS row '-'.", "read_from": "the 'Accepted by taxpayer' column on page 1 only; do NOT re-add the annexure." },
+      "non_income_codes": ["SFT-005 (purchase of time deposits)", "SFT-004", "SFT-012"],
+      "nesting_check": "AIS per-bank total = 26AS Part I + 26AS Part II. Verified: Jana 93,604 = 2,859 + 90,745; Equitas 72,708 = 19,397 + 53,311; Ujjivan 79,077 = 0 + 79,077."
+    },
+    "owner_ground_truth_FY2025_26": {
+      "source": "the TIS document itself",
+      "dividend": 2655,
+      "interest_from_savings_bank": 46183,
+      "interest_from_deposit": 256642,
+      "business_receipts_194J": 105069,
+      "total_income_reported": 410549,
+      "purchase_of_time_deposits_NOT_INCOME": 1300000,
+      "tds_deducted": 13367,
+      "correct_computation": {
+        "presumptive_profit_44ADA_at_50pct": 52535,
+        "total_income": 358015,
+        "standard_deduction": 0,
+        "reason_nil_tax": "total income is below the 4,00,000 basic exemption, so the 87A rebate is not even reached",
+        "tax_payable": 0,
+        "refund_due": 13367
+      },
+      "note": "The owner's income is professional fees under s.194J, filed under 'Business receipts' in AIS. He files ITR-3, or ITR-4 under 44ADA. He gets NO standard deduction."
+    },
+    "owner_spreadsheet_model": {
+      "file": "data/PersonalData/Pranav/Data 26-27.xlsx",
+      "entities": ["BAT", "PAT", "Pranav", "HUF"],
+      "banks": ["Unity", "Jana", "Ujjivan", "Equitas", "IDFC", "HDFC", "SBI", "YES", "AU", "BOI", "RNSB"],
+      "joint_accounts_exist": "yes — B+P+Pranav, A+B+P, A+P+Pranav, Pranav+B. BankAccount.person_id is a single FK and cannot represent these.",
+      "fd_columns": { "D": "tenure in DAYS", "E": "maturity = start + days", "H": "total interest, formula method: ROUNDUP(F*(1+G/400)^(4*(E-C)/365),0)-F-4", "P_Q_R": "per-FY interest by cumulative-accrual difference", "U_to_Z": "bank-style: q=INT(days/30.433/3); W=(1+r/4)^q*P-P; X=(1+r/4)^q*P*(d/365)*r; Z=ROUND(W+X)" },
+      "the_minus_4_in_column_H": "an empirical calibration to match the bank's actual figure. Make it a per-bank setting (BankFDConvention.rounding_adjustment), do not hard-code it.",
+      "salary_sheet": "expected vs actual per person per month for FY 2026-27. BAT 41,600/mo, PAT 31,600/mo, Pranav 21,500 Apr-Jul then 25,000 Aug-Mar. The mid-year step means expectations must be stored per occurrence, which IncomeExpectation already supports.",
+      "known_defects_in_the_workbook_itself": ["the Q$23 reference in column Q is stale and always false", "the two branches of the inner IF in column Q are identical", "the M<=365 branch of column P charges a full year of compounding for tenures between 184 and 365 days"]
+    }
+  },
+
+  "design_system": {
+    "principle": "Tokens define colour. QSS applies it. Python never concatenates a colour into a style string outside ui/theme/.",
+    "theme_consolidation": {
+      "from": 10,
+      "to": 4,
+      "keep": ["Aurora (light, indigo, default)", "Slate (light, neutral — NEW)", "Nova (dark, violet)", "Midnight Pro (dark, neutral)"],
+      "delete_modules": ["ui/theme/theme_ocean_blue.py", "ui/theme/theme_arctic_breeze.py", "ui/theme/theme_forest_light.py", "ui/theme/theme_rose_gold.py", "ui/theme/theme_sunrise_warm.py", "ui/theme/theme_amethyst_dusk.py", "ui/theme/theme_finance_pro.py"],
+      "rationale": "Maintaining ten hand-tuned palettes is the direct cause of 56 contrast failures — none were ever validated. Four validated themes are strictly better than ten broken ones.",
+      "migration_requirement": "ThemeManager._read_pref() must map a saved preference naming a deleted theme onto its nearest survivor, so no existing user is stranded on a missing module."
+    },
+    "token_contract": {
+      "required_pairs": [
+        { "fg": "TEXT_PRIMARY", "bg": "BG", "min": 4.5 },
+        { "fg": "TEXT_PRIMARY", "bg": "SURFACE", "min": 4.5 },
+        { "fg": "TEXT_SECONDARY", "bg": "SURFACE", "min": 4.5 },
+        { "fg": "TEXT_MUTED", "bg": "SURFACE", "min": 4.5, "currently": "fails in all 10 themes" },
+        { "fg": "TEXT_ON_PRIMARY", "bg": "PRIMARY", "min": 4.5, "currently": "hard-coded #FFFFFF, fails on 6 themes" },
+        { "fg": "PRIMARY_DARK", "bg": "PRIMARY_LIGHT", "min": 4.5 },
+        { "fg": "TOOLTIP_FG", "bg": "TOOLTIP_BG", "min": 4.5, "currently": "inverted in all 4 dark themes" },
+        { "fg": "SIDEBAR_TEXT", "bg": "SIDEBAR_BG", "min": 4.5 },
+        { "fg": "TEXT_SECONDARY", "bg": "SURFACE_ALT", "min": 4.5 },
+        { "fg": "BORDER", "bg": "SURFACE", "min": 3.0, "currently": "fails in all 10 themes" },
+        { "fg": "FOCUS_RING", "bg": "SURFACE", "min": 3.0 },
+        { "fg": "FOCUS_RING", "bg": "PRIMARY", "min": 3.0 },
+        { "fg": "DANGER_TEXT", "bg": "SURFACE", "min": 4.5 },
+        { "fg": "SUCCESS_TEXT", "bg": "SURFACE", "min": 4.5 },
+        { "fg": "WARNING_TEXT", "bg": "SURFACE", "min": 4.5 },
+        { "fg": "INFO_TEXT", "bg": "SURFACE", "min": 4.5 },
+        { "fg": "ICON_DEFAULT", "bg": "SIDEBAR_BG", "min": 3.0 }
+      ],
+      "new_tokens": ["TEXT_ON_PRIMARY", "TEXT_ON_SUCCESS", "TEXT_ON_DANGER", "TEXT_ON_WARNING", "TOOLTIP_BG", "TOOLTIP_FG", "FOCUS_RING", "ICON_DEFAULT", "ICON_MUTED", "ICON_ON_PRIMARY", "SCRIM", "DANGER_TEXT", "SUCCESS_TEXT", "WARNING_TEXT", "INFO_TEXT"],
+      "rule": "A colour readable as a chip BACKGROUND is usually not readable as body TEXT. Split every semantic colour into a fill variant and a *_TEXT variant."
+    },
+    "spacing_scale_px": [4, 8, 12, 16, 24, 32, 48],
+    "radius_px": { "control": 8, "card": 12, "modal": 16, "pill": 999 },
+    "type_scale_px": { "display": 24, "title": 20, "section": 16, "body": 14, "small": 12, "micro": 11 },
+    "type_unit_conflict": "main.py sets QFont('Segoe UI', 10) in POINTS while the QSS sets sizes in PIXELS. Pick px throughout; keep setFont only as a family hint.",
+    "elevation": "Two levels only: card (subtle) and modal/overlay (pronounced). Each QGraphicsDropShadowEffect forces an offscreen render pass — prefer a border where it reads the same."
+  },
+
+  "information_architecture": {
+    "nav_from": ["Overview", "Accounts", "Transactions", "Income Management", "Fixed Deposits", "Statement Import", "AIS/TIS Import", "Tax", "26AS vs AIS", "Reports", "Settings"],
+    "nav_to": ["Overview", "Accounts", "Transactions", "Income & Expectations", "Fixed Deposits", "Statement Import", "Tax Documents", "Tax", "Settings"],
+    "verdicts": [
+      { "screen": "Overview", "verdict": "keep, redesign", "why": "A landing screen that answers 'where do I stand' is the right anchor, but today it is four text-only panels in a 2x2 grid with large empty voids, a purely decorative 70px gradient banner, and Old Regime rows." },
+      { "screen": "Accounts", "verdict": "keep", "why": "Distinct entity management; the card grid is appropriate. Needs joint-holder support and better use of space when few accounts exist." },
+      { "screen": "Transactions", "verdict": "keep", "why": "Core ledger." },
+      { "screen": "Income Management", "verdict": "rename and rebuild as 'Income & Expectations'", "why": "Becomes the expected-income visualisation the owner asked for; takes the nav slot freed by deleting 26AS vs AIS." },
+      { "screen": "Fixed Deposits", "verdict": "keep", "why": "Core to this owner — dozens of FDs across five banks." },
+      { "screen": "Statement Import", "verdict": "keep, redesign", "why": "Primary data-entry path, but three stacked cards each holding one dropdown waste ~40% of the viewport, and Ollama controls are exposed as primary UI." },
+      { "screen": "AIS/TIS Import", "verdict": "replace with 'Tax Documents'", "why": "26AS, AIS and TIS are three views of one year; importing them separately and comparing on a fourth screen is what made the flow wrong." },
+      { "screen": "Tax", "verdict": "keep, rebuild", "why": "The output the whole app exists to produce." },
+      { "screen": "26AS vs AIS", "verdict": "DELETE", "why": "The owner asked for its removal, and it was never sound: it compares 26AS TDS against AIS TDS by TAN, but 26AS is the authority on tax CREDIT while AIS is the authority on INCOME. The two measure different things, so its 'mismatches' were mostly noise." },
+      { "screen": "Reports", "verdict": "DELETE, redistribute", "why": "Five tabs each holding one chart, all duplicating data shown elsewhere. Overview duplicates the dashboard; Monthly and Categories belong on Transactions; Bank-wise on Accounts; Interest Trend on Fixed Deposits. A separate analytics silo makes users hunt for a chart about data they are already looking at." },
+      { "screen": "Settings", "verdict": "keep", "why": "Legitimate. Theme picker drops from 10 cards to 4; absorbs the AI/Ollama configuration." },
+      { "screen": "Chatbot (floating AI button)", "verdict": "DELETE, or rebuild with data access", "why": "1,152 lines of generic Ollama chat with NO access to the user's financial data — it builds its prompt from the message list alone. It needs a separate Ollama install and a 7B model, and its launcher covers the primary action on other screens. It contributes nothing to importing statements, managing FDs, or filing tax." }
+    ],
+    "dialog_policy": {
+      "current": "23 QDialog subclasses split between ui/dialogs/ (7 files) and classes defined inline in screen modules. Manager-dialogs open editor-dialogs (AccountManagementDialog -> AccountDialog; PersonManagementDialog -> PersonDialog; BankManagementDialog -> BankDialog), stacking modals two deep.",
+      "rules": [
+        "INLINE (in-screen panel or expanding row): anything done repeatedly, or that needs surrounding data visible — editing a transaction, linking an FD, viewing account detail.",
+        "MODAL: a short self-contained decision that must complete before continuing — destructive confirmation, password entry, column mapping.",
+        "NEVER stack modals. Replace manager->editor with a management screen or an inline master-detail panel.",
+        "NEVER use a modal for a success message. Use a non-blocking toast.",
+        "Every dialog class lives in ui/dialogs/ so its location is predictable."
+      ]
+    }
+  },
+
+  "phases": [
+    { "id": "P0", "track": "shared", "name": "Stop the bleeding", "goal": "The app runs, secrets are out of git, nothing renders corrupted, and a regression suite exists." },
+    { "id": "P1", "track": "A", "name": "Statement parsing rebuilt", "goal": "Transactions are extracted correctly and provably." },
+    { "id": "P2", "track": "A", "name": "Tax document import", "goal": "26AS/AIS/TIS produce the owner's true figures." },
+    { "id": "P3", "track": "A", "name": "Interest engines", "goal": "FD and savings interest land in the right financial year." },
+    { "id": "P4", "track": "A", "name": "Tax engine", "goal": "Current-year law, new regime only, every input used." },
+    { "id": "P5", "track": "A", "name": "Data model", "goal": "Joint accounts, HUF, deposit-account keys, per-bank conventions." },
+    { "id": "P6", "track": "B", "name": "Design system foundation", "goal": "Validated tokens, 4 themes, contrast gate in CI." },
+    { "id": "P7", "track": "B", "name": "Theming engine and components", "goal": "QSS-first styling, instant theme switch, one correct implementation of every control, no UI freezing." },
+    { "id": "P8", "track": "C", "name": "Information architecture", "goal": "Nine screens, predictable dialogs, discoverable navigation." },
+    { "id": "P9", "track": "C", "name": "Screen rebuilds", "goal": "The screens the owner asked for, rendering correct numbers." },
+    { "id": "P10", "track": "C", "name": "Accessibility and polish", "goal": "Keyboard-usable, WCAG AA, internally consistent." },
+    { "id": "P11", "track": "C", "name": "Security and honesty", "goal": "The README matches what the code does." }
+  ],
+
+  "tasks": [
+    {
+      "id": "T001",
+      "phase": "P0",
+      "title": "Remove personal data and cleartext passwords from git",
+      "severity": "blocker",
+      "evidence": "M2",
+      "requires_human_confirmation": true,
+      "confirmation_reason": "History rewriting is irreversible and breaks every existing clone. If the repo was ever pushed, the secrets must also be rotated. Ask the human before running filter-repo or any force-push.",
+      "files": [".gitignore"],
+      "change": [
+        "Add `data/PersonalData/` to .gitignore.",
+        "Run `git rm -r --cached data/PersonalData/` — this untracks WITHOUT deleting from disk. The files must remain on disk; they are the regression fixtures.",
+        "Commit that change.",
+        "THEN STOP and ask the human before purging history. Only with explicit approval, run `git filter-repo --path data/PersonalData --invert-paths` (or BFG), and advise rotating the AIS/TIS and Equitas statement passwords if the repo was ever pushed anywhere."
+      ],
+      "acceptance": [
+        "`git check-ignore data/PersonalData/Pranav/password.txt` exits 0.",
+        "`git ls-files data/PersonalData/` returns nothing.",
+        "`ls data/PersonalData/Pranav/` still lists all 6 entries — the files are untracked, not deleted."
+      ],
+      "depends_on": []
+    },
+    {
+      "id": "T002",
+      "phase": "P0",
+      "title": "Fix the circular import that crashes login",
+      "severity": "blocker",
+      "evidence": "M1",
+      "files": ["engines/parser_utils.py (new)", "engines/statement_parser.py", "engines/bank_parsers/yes_bank_statement_parser.py", "engines/bank_parsers/sbi_statement_parser.py"],
+      "change": [
+        "Create engines/parser_utils.py containing _extract_reference_no, _append_issue and _guess_fd_category, importing nothing from statement_parser.",
+        "Move those three functions out of engines/statement_parser.py and re-import them there from parser_utils (keep the names exported so existing imports still resolve).",
+        "Point yes_bank_statement_parser.py:19 and sbi_statement_parser.py:140 at engines.parser_utils.",
+        "This removes the cycle structurally. Do NOT 'fix' it by moving the import inside a function — that hides the cycle rather than removing it."
+      ],
+      "acceptance": [
+        "`python -c \"import engines.statement_parser\"` succeeds from a cold interpreter.",
+        "`python -c \"import sys;sys.path.insert(0,'.');from ui.statement_import_screen_modern import StatementImportScreen\"` succeeds.",
+        "DashboardScreen() constructs without raising.",
+        "Existing tests in tests/ still pass."
+      ],
+      "depends_on": []
+    },
+    {
+      "id": "T003",
+      "phase": "P0",
+      "title": "Fix SummaryPanel.clear_stats() ghost widgets",
+      "severity": "blocker",
+      "evidence": "M13",
+      "files": ["ui/widgets/summary_panel.py"],
+      "change": [
+        "In clear_stats() (line 243), re-parent before deleting: `w = item.widget()` then `if w: w.setParent(None); w.deleteLater()`.",
+        "Search ui/ for every other takeAt()+deleteLater() loop and apply the same fix.",
+        "Add a unit test asserting N clear+add cycles leave exactly one matching child."
+      ],
+      "acceptance": [
+        "Three clear_stats()+add_stat() cycles leave exactly 1 matching QLabel (currently 3), for both scrollable=True and scrollable=False.",
+        "Changing the person selector on Overview three times leaves no overlapping text in the Bank Accounts panel."
+      ],
+      "depends_on": ["T002"]
+    },
+    {
+      "id": "T004",
+      "phase": "P0",
+      "title": "Build the regression suite against the owner's real documents",
+      "severity": "blocker",
+      "evidence": "M3, M6, M7, M8, M9, M10",
+      "why": "Everything after this is verified against it. Without it you cannot tell a fix from a regression.",
+      "files": ["tests/test_real_documents.py (new)", "tests/conftest.py"],
+      "change": [
+        "Add tests that parse the 4 statements and the 3 tax PDFs in data/PersonalData/Pranav/ and assert the figures in domain_spec.owner_ground_truth_FY2025_26 and in the M3/M9 measurements.",
+        "Read the PDF passwords from an environment variable or an untracked local file. NEVER hard-code or commit them.",
+        "Skip (do not fail) with a clear message if the fixture directory is absent, so the suite still runs on a machine without the owner's data.",
+        "Include the direction-accuracy harness from M3: parse each statement, compare each row's type against the sign of its own running-balance delta, and assert the error rate."
+      ],
+      "acceptance": [
+        "The suite runs and currently FAILS with the deltas in M3, M6, M7, M8, M9 and M10 — that red state is the recorded baseline.",
+        "No password appears in any committed file.",
+        "The suite skips cleanly when data/PersonalData/ is missing."
+      ],
+      "depends_on": ["T002"]
+    },
+    {
+      "id": "T005",
+      "phase": "P0",
+      "title": "Fix config.py tax constants",
+      "severity": "high",
+      "evidence": "M27",
+      "files": ["config.py"],
+      "change": [
+        "FD_TDS_FORM_NAME = \"Form 15G\"",
+        "Add FD_TDS_FORM_NAME_SENIOR = \"Form 15H\" and FD_TDS_THRESHOLD_SENIOR = 100_000.",
+        "Update the surrounding comment, which currently says 'Filing FD_TDS_FORM_NAME with the bank'."
+      ],
+      "acceptance": ["`grep -rn 'Form 121' .` returns nothing."],
+      "depends_on": []
+    },
+    {
+      "id": "T006",
+      "phase": "P0",
+      "title": "Centralise table creation",
+      "severity": "medium",
+      "files": ["core/database.py", "models/form26as.py", "models/income_source.py", "models/ais_tis_import.py", "models/income_expectation.py", "models/bank.py"],
+      "change": [
+        "Move every CREATE TABLE statement into initialise_database(); delete the ad-hoc creators in the model modules.",
+        "Tables currently created outside core/database.py: Form26ASImport, Form26ASRecord, IncomeSource, AISTISImportLine, AISTISImportRecord, and duplicate definitions of Bank and IncomeExpectation."
+      ],
+      "acceptance": [
+        "Deleting data/financial.db and starting the app creates every table.",
+        "`grep -rn 'CREATE TABLE' models/` returns nothing."
+      ],
+      "depends_on": ["T002"]
+    },
+    {
+      "id": "T007",
+      "phase": "P0",
+      "title": "Add a startup dependency check",
+      "severity": "medium",
+      "files": ["main.py"],
+      "change": ["Verify pdfplumber, pandas, openpyxl, pypdf, dateutil and PyQt6.QtWidgets are importable; show a readable dialog naming the pip command if not.", "Detect the namespace-package failure mode described in read_this_first.known_environment_issue and name it explicitly."],
+      "acceptance": ["Running with a missing dependency shows a readable message, not a traceback."],
+      "depends_on": []
+    },
+    {
+      "id": "T008",
+      "phase": "P0",
+      "title": "Resolve the undeclared icon dependency",
+      "severity": "medium",
+      "evidence": "M23",
+      "files": ["requirements.txt", "ui/icons.py"],
+      "change": ["Decide one way: add PyQt6-Fluent-Widgets to requirements.txt, or delete the Fluent branch and make qtawesome the documented primary.", "Recommendation: drop Fluent. qtawesome mdi6 alone covers the registry and one icon source is easier to keep theme-consistent."],
+      "acceptance": ["A clean `pip install -r requirements.txt` produces the same icons the developer sees.", "The ui/icons.py module docstring matches the actual resolution order."],
+      "depends_on": []
+    },
+    {
+      "id": "T009",
+      "phase": "P0",
+      "title": "Stop the floating AI button covering primary actions",
+      "severity": "high",
+      "evidence": "M21",
+      "files": ["ui/dashboard_screen.py"],
+      "change": ["Preferred: remove the FAB together with the chatbot (see information_architecture verdict).", "If the chatbot is retained, dock it as a collapsible right-hand panel inside the content area so it participates in layout instead of floating over it."],
+      "acceptance": ["No widget overlaps the primary action button on any screen at 1280x720, 1600x900 and 1920x1080.", "The Statement Import capture shows an unobstructed 'Parse Statement' button."],
+      "depends_on": ["T002"]
+    },
+
+    {
+      "id": "T010",
+      "phase": "P1",
+      "title": "Replace text-regex parsing with coordinate-based column extraction",
+      "severity": "blocker",
+      "evidence": "M3",
+      "why": "Almost every direction error, lost FD number and mangled narration traces back to flattening a table into a line of text and then guessing which number came from which column.",
+      "files": ["engines/statement/ (new package)"],
+      "change": [
+        "Create engines/statement/ with: extract.py (pdfplumber extract_words with x0/x1/top/bottom), rows.py (cluster words into visual rows by `top`, tolerance ~3px), columns.py (detect the header row, derive x-ranges, assign each word by x-midpoint), schema.py (map detected headers to canonical fields via a synonym table), assemble.py (merge continuation rows per column), validate.py (running-balance walk).",
+        "Keep the existing GenericPDFParser in place until the new path passes T004, then delete it."
+      ],
+      "acceptance": ["For each of the 4 statements, every parsed row's amount is attributed to an identified Debit or Credit column."],
+      "depends_on": ["T004"]
+    },
+    {
+      "id": "T011",
+      "phase": "P1",
+      "title": "Derive direction from the column, never from keywords",
+      "severity": "blocker",
+      "evidence": "M3",
+      "files": ["engines/statement/columns.py", "engines/statement/schema.py"],
+      "change": [
+        "A value in the Debit/Withdrawal column is an Expense; a value in the Credit/Deposit column is Income. Full stop.",
+        "Use narration keywords for CATEGORY only, never for direction.",
+        "Remove _infer_txn_type_from_desc from the direction path entirely.",
+        "Note that column ORDER differs between banks — Jana prints Deposits before Withdrawal; Equitas, IDFC and Ujjivan print Withdrawal/Debit first. Resolve by header name, not position."
+      ],
+      "acceptance": ["The T004 direction harness reports 0 errors on all four statements (baseline: Equitas 51.6%, IDFC 27.0%, Jana 46.9%, Ujjivan 59.1%)."],
+      "depends_on": ["T010"]
+    },
+    {
+      "id": "T012",
+      "phase": "P1",
+      "title": "Validate every parse against the running balance",
+      "severity": "high",
+      "evidence": "M3",
+      "files": ["engines/statement/validate.py"],
+      "change": [
+        "After parsing, assert balance[n] - balance[n-1] == +/- amount[n] for every row.",
+        "Detect statement ordering by comparing first and last dates and normalise to ascending BEFORE any balance reasoning — Jana prints newest-first.",
+        "Reconcile against printed control totals where present (IDFC gives Opening Balance / Total Debit / Total Credit / Closing Balance).",
+        "Emit a confidence score; refuse to import below a threshold rather than importing wrong data silently."
+      ],
+      "acceptance": ["All four statements validate at 99% or better.", "IDFC's parsed totals match its printed Total Debit 4,80,013.35 and Total Credit 4,67,264.82."],
+      "depends_on": ["T011"]
+    },
+    {
+      "id": "T013",
+      "phase": "P1",
+      "title": "Preserve narration and extract identifiers additively",
+      "severity": "high",
+      "evidence": "M4",
+      "files": ["engines/statement/assemble.py", "core/database.py", "models/transaction.py"],
+      "change": [
+        "Stop stripping \\d{10,} from descriptions. Keep description_raw verbatim.",
+        "Add a deposit_account_no column to Transactions and to FixedDeposit, plus an index on FixedDeposit(deposit_account_no).",
+        "Extract identifiers into reference_no and deposit_account_no WITHOUT removing them from the narration.",
+        "Normalisation rules that map a statement narration to an AIS account number: Jana '4522030015435122/1' -> remove '/' -> '45220300154351221'; Ujjivan '4483130330001450' -> exact; Equitas 'FD300014105382' -> strip 'FD' -> prefix-match '3000141053821'.",
+        "Also fix _extract_reference_no: its \\b[A-Z0-9]{12,}\\b pattern matches long hex narration fragments and often returns noise instead of a real UTR."
+      ],
+      "acceptance": [
+        "The Ujjivan row retains 4483130330001450 and populates deposit_account_no.",
+        "No parsed description contains bank footer or page-header text.",
+        "No invented transaction is produced from the account opening date and opening balance."
+      ],
+      "depends_on": ["T012"]
+    },
+    {
+      "id": "T014",
+      "phase": "P1",
+      "title": "Reassemble multi-line rows by column",
+      "severity": "high",
+      "evidence": "M4",
+      "files": ["engines/statement/assemble.py"],
+      "change": ["Merge continuation rows (no date, no amount) into the preceding logical row PER COLUMN using x-ranges. Jana prints one logical row across three physical lines with the amounts line in the middle; line-based merging cannot recover this."],
+      "acceptance": [
+        "Jana yields 'CASA CREDIT INTEREST CAPITALIZED' as one description with reference CHBATCH4522010044796705C260331.",
+        "No description mixes reference fragments from two different transactions."
+      ],
+      "depends_on": ["T013"]
+    },
+    {
+      "id": "T015",
+      "phase": "P1",
+      "title": "Move bank quirks into data-driven profiles",
+      "severity": "medium",
+      "files": ["engines/statement/profiles/*.yaml (new)"],
+      "change": [
+        "One profile per bank holding column synonyms, date formats, row ordering, narration vocabulary and FD conventions. Seed: jana, ujjivan, equitas, idfc, hdfc, yes, sbi, plus a generic fallback.",
+        "The owner's actual banks are Equitas, IDFC, Jana and Ujjivan — none of which has a dedicated parser today; the three that exist (SBI, HDFC, YES) are for banks whose statements were not supplied."
+      ],
+      "acceptance": ["Adding a bank requires only a new YAML file, no Python.", "All four supplied statements parse via profiles."],
+      "depends_on": ["T014"]
+    },
+    {
+      "id": "T016",
+      "phase": "P1",
+      "title": "Fix FD categorisation ordering and vocabulary",
+      "severity": "high",
+      "evidence": "M5",
+      "files": ["engines/parser_utils.py", "engines/statement/profiles/*.yaml"],
+      "change": [
+        "Match longest-pattern-first with an explicit priority order so a broad pattern can never shadow a narrow one. 'PRINC AND INT AUTO REDEEM' before 'INT AUTO REDEEM' before 'AUTO REDEEM'.",
+        "Seed vocabulary: fd_booking = TD. GENERIC PAYIN DEBIT, INITIAL PAYIN, PAYIN DEBIT, FIXED DEPOSIT, TERM DEPOSIT, FD BOOKING. fd_maturity = PRINC AND INT AUTO REDEEM, CLOSURE PROCEEDS, FD CR, MATURITY, MATURED, REDEMPTION, REDEEMED. fd_interest = INT AUTO REDEEM, FD INTEREST, INTEREST ON DEPOSIT. savings_interest = CREDIT INTEREST CAPITALISED, CASA CREDIT INTEREST, CREDIT INTEREST CAPITALIZED. bank_charges = SMS ALERTS CHARGES, GOODS AND SERVICES TAX, AMB CHARGES."
+      ],
+      "acceptance": [
+        "Jana 'INT AUTO REDEEM' categorises as FD Interest, not FD Maturity.",
+        "Ujjivan 'Closure Proceeds' categorises as FD Maturity.",
+        "Equitas 'INITIAL PAYIN' categorises as FD Principal.",
+        "Jana 'CREDIT INTEREST CAPITALISED' categorises as Savings Interest."
+      ],
+      "depends_on": ["T015"]
+    },
+
+    {
+      "id": "T017",
+      "phase": "P2",
+      "title": "Rewrite the Form 26AS parser",
+      "severity": "blocker",
+      "evidence": "M8",
+      "files": ["engines/taxdocs/form26as.py (new)", "engines/form26as_parser.py (delete after)"],
+      "change": [
+        "Use pdfplumber table extraction, not line regex — these are real ruled tables.",
+        "Handle PART-I through PART-X (note the hyphen and Roman numerals; the current code looks for 'PART A'/'PART B' which never match).",
+        "Parse dates as dd-MMM-yyyy (31-Mar-2026).",
+        "Net reversal entries: sum signed amounts, and prefer the deductor header total as authoritative.",
+        "Parse PART-II (15G/15H) separately — nil TDS but REAL income, worth 2,23,133 to this owner.",
+        "Capture Part VII refunds and the booking status code per row."
+      ],
+      "acceptance": [
+        "Total TDS = 13,367 (currently 1,847).",
+        "Deductors: Enlightvision 1,05,069 / 10,508; Jana Part-I 2,859; Equitas Part-I 19,397 / 0; Part-II Jana 90,745, Equitas 53,311, Ujjivan 79,077.",
+        "No section code '194B' appears.",
+        "Name parses as 'PRANAV ARVINDBHAI TANK'.",
+        "Every detail row has a non-empty transaction date."
+      ],
+      "depends_on": ["T004"]
+    },
+    {
+      "id": "T018",
+      "phase": "P2",
+      "title": "Rewrite the AIS parser",
+      "severity": "blocker",
+      "evidence": "M6",
+      "files": ["engines/taxdocs/ais.py (new)"],
+      "change": [
+        "Parse Part B1 (TDS-*) AND Part B2 (SFT-*).",
+        "SKIP every row whose status is 'Inactive'. Validate the Active count against the summary COUNT column — they match exactly.",
+        "Capture per-account detail from SFT-016(SB) and SFT-016(TD), including the account number.",
+        "Maintain an explicit non-income code list (SFT-005, SFT-004, SFT-012). Surface them separately; never add them to income.",
+        "Map TDS-194J to a business_receipts bucket, not other_income.",
+        "Store one row per source per section with TAN, account number, quarter, amount and status so the UI can drill down."
+      ],
+      "acceptance": [
+        "FD interest 2,56,642; savings 46,183; dividend 2,655; business receipts 1,05,069; TDS 13,367.",
+        "SFT-005 of 13,00,000 is flagged non-income and excluded from every income total.",
+        "Per-account rows recovered for all 65 deposit accounts."
+      ],
+      "depends_on": ["T004"]
+    },
+    {
+      "id": "T019",
+      "phase": "P2",
+      "title": "Rewrite the TIS parser",
+      "severity": "blocker",
+      "evidence": "M7",
+      "files": ["engines/taxdocs/tis.py (new)"],
+      "change": [
+        "Read the five category totals from the 'Accepted by taxpayer' column on page 1 ONLY. Do not re-add the annexure — that is the double-count.",
+        "Exclude non-income categories."
+      ],
+      "acceptance": [
+        "Produces exactly dividend 2,655, savings 46,183, deposits 2,56,642, business receipts 1,05,069, and purchase_of_time_deposits 13,00,000 flagged non-income.",
+        "The values 27,05,069 and 3,49,008 appear nowhere."
+      ],
+      "depends_on": ["T004"]
+    },
+    {
+      "id": "T020",
+      "phase": "P2",
+      "title": "Merge the three documents into one FY position",
+      "severity": "high",
+      "files": ["engines/taxdocs/merge.py (new)"],
+      "change": [
+        "Income from TIS. Tax credit from 26AS. Per-source detail from AIS.",
+        "NEVER sum AIS Part B1 and Part B2 — they report the same money.",
+        "Produce a per-category variance against the app's own figures."
+      ],
+      "acceptance": ["Produces the domain_spec.owner_ground_truth_FY2025_26.correct_computation table, including a refund due of 13,367."],
+      "depends_on": ["T017", "T018", "T019"]
+    },
+    {
+      "id": "T021",
+      "phase": "P2",
+      "title": "Match AIS deposit accounts to FD records",
+      "severity": "high",
+      "files": ["engines/taxdocs/merge.py", "models/fixed_deposit.py"],
+      "change": ["Join AIS SFT-016(TD) account numbers to FixedDeposit.deposit_account_no using the normalisation rules in T013."],
+      "acceptance": ["Jana statement reference 4522030015435122/1 matches AIS account 45220300154351221.", "Unmatched AIS accounts are reported as 'FD not in app'."],
+      "depends_on": ["T020", "T013"]
+    },
+    {
+      "id": "T022",
+      "phase": "P2",
+      "title": "Delete the reconciliation engine",
+      "severity": "low",
+      "files": ["engines/reconciliation_engine.py"],
+      "change": ["Delete the module. Its UI counterpart is removed in T045."],
+      "acceptance": ["No import of reconciliation_engine remains."],
+      "depends_on": ["T020"]
+    },
+
+    {
+      "id": "T023",
+      "phase": "P3",
+      "title": "Replace three FD allocation methods with one correct accrual function",
+      "severity": "blocker",
+      "evidence": "M9",
+      "files": ["engines/interest_engine.py"],
+      "change": [
+        "Implement fd_interest_accrued_to(fd, as_of) per domain_spec.fd_interest_maths: simple interest below the bank's simple_below_days threshold, otherwise quarterly compounding for completed quarters plus simple interest on the broken period.",
+        "Implement fd_interest_for_fy(fd, fy) by difference: accrued_to(fy_end) - accrued_to(previous_fy_end).",
+        "DELETE calculate_fd_interest_for_fy (straight-line by days) and calculate_fd_interest_quarterly_for_fy (straight-line into quarters). Three mutually inconsistent methods currently coexist in this one file."
+      ],
+      "acceptance": ["The 501-day FD (1,00,000 @ 8%, 24-Feb-2026 to 10-Jul-2027, total interest 11,482) splits 789 / 8,279 / 2,414 across FY2025-26 / 26-27 / 27-28, matching the owner's spreadsheet exactly. Current output is 0 / 8,219.09 / 3,262.91."],
+      "depends_on": ["T004"]
+    },
+    {
+      "id": "T024",
+      "phase": "P3",
+      "title": "Make the Bank Style maturity method real",
+      "severity": "high",
+      "evidence": "M9",
+      "files": ["engines/interest_engine.py", "core/database.py"],
+      "change": [
+        "Remove the `tenure_days > 0 and years == 0 and months == 0` short-circuit that makes bank-style identical to formula.",
+        "Implement the spreadsheet's U-Z method: q = INT(days/30.433/3); W = (1+r/4)^q * P - P; X = (1+r/4)^q * P * (d/365) * r; result = ROUND(W + X).",
+        "Add a BankFDConvention table (bank_id, compounding, simple_below_days default 183, day_count, rounding_adjustment) so the spreadsheet's empirical '-4' becomes a per-bank setting rather than a constant."
+      ],
+      "acceptance": ["The 201-day FD returns 4,496 bank-style and 4,455 formula. Both currently return 4,458.54."],
+      "depends_on": ["T023"]
+    },
+    {
+      "id": "T025",
+      "phase": "P3",
+      "title": "Compute savings interest on a daily-product basis and actually call it",
+      "severity": "high",
+      "evidence": "M12",
+      "files": ["engines/interest_engine.py", "core/database.py", "ui/statement_import_screen_modern.py"],
+      "change": [
+        "Rewrite calculate_savings_interest_for_fy to reconstruct the daily closing balance from balance_after, carrying the last known balance forward across quiet days; accumulate per quarter per domain_spec.savings_interest_maths.",
+        "DELETE _average_monthly_balance.",
+        "CALL the function — from statement import and from the FY refresh. It is currently dead code with zero call sites.",
+        "Add quarter, daily_product and calculation_basis columns to SavingsInterestRecord."
+      ],
+      "acceptance": [
+        "The function has at least one non-test call site.",
+        "Jana savings interest for FY2025-26 lands within a few rupees of the AIS figure of 4,010, against observed credits of 2,495 (01-Oct) and 1,504 (01-Jan)."
+      ],
+      "depends_on": ["T023", "T016"]
+    },
+    {
+      "id": "T026",
+      "phase": "P3",
+      "title": "Correct the FD TDS threshold check",
+      "severity": "medium",
+      "files": ["engines/interest_engine.py", "config.py"],
+      "change": [
+        "Use FD_TDS_THRESHOLD_SENIOR when the person turns 60 at any point in the FY.",
+        "Report Form 15G or 15H by age.",
+        "Suppress the warning where a 15G/15H is already recorded as filed with that bank.",
+        "Keep the existing per-bank, quarter-cumulative logic — that part is correct."
+      ],
+      "acceptance": ["For FY2025-26 the owner's Jana, Equitas and Ujjivan entries show '15G on file' rather than a TDS warning."],
+      "depends_on": ["T025", "T005"]
+    },
+
+    {
+      "id": "T027",
+      "phase": "P4",
+      "title": "Move tax slabs and parameters into per-FY configuration",
+      "severity": "blocker",
+      "evidence": "M10",
+      "files": ["core/database.py", "engines/tax_engine.py"],
+      "change": [
+        "Create TaxSlabConfig(financial_year, regime, upper_limit, rate, sort_order) and TaxParams(financial_year, rebate_87a_limit, rebate_87a_max, standard_deduction, cess_rate, fd_tds_threshold, fd_tds_threshold_senior).",
+        "Seed FY2025-26 and FY2026-27 from domain_spec.new_regime_slabs and domain_spec.rebate_87a.",
+        "Read them by FY. Delete the hard-coded NEW_REGIME_SLABS and OLD_REGIME_SLABS constants."
+      ],
+      "acceptance": ["Slab tax on taxable 15,00,000 for FY2026-27 returns 105,000 (currently 150,000), plus 4% cess = 109,200."],
+      "depends_on": ["T004"]
+    },
+    {
+      "id": "T028",
+      "phase": "P4",
+      "title": "Implement 87A, marginal relief, surcharge and cess correctly",
+      "severity": "blocker",
+      "evidence": "M10",
+      "files": ["engines/tax_engine.py"],
+      "change": [
+        "87A = min(tax on normal income, 60,000) when total income EXCLUDING special-rate income is <= 12,00,000, applied before surcharge and cess.",
+        "Marginal relief above 12,00,000: cap tax so it never exceeds the income earned above 12,00,000.",
+        "Exclude s.111A / s.112 / s.112A income from the rebate entirely.",
+        "Surcharge per domain_spec.surcharge_new_regime, with its own marginal relief.",
+        "Cess 4% last, on (tax - rebate + surcharge)."
+      ],
+      "acceptance": [
+        "A salaried gross of 12,75,000 yields tax of 0 (currently 93,600).",
+        "Taxable 12,00,000 yields 0; taxable 12,10,000 yields approximately 10,000 via marginal relief.",
+        "Taxable 12,00,000 that includes 2,00,000 of s.111A gains applies the rebate only to the non-special portion."
+      ],
+      "depends_on": ["T027"]
+    },
+    {
+      "id": "T029",
+      "phase": "P4",
+      "title": "Apply the standard deduction only against salary",
+      "severity": "high",
+      "evidence": "M10",
+      "files": ["engines/tax_engine.py"],
+      "change": ["standard_deduction = min(75_000, salary_income + pension_income). It is currently applied unconditionally at 75,000 in the engine and shown hard-coded as 50,000 in the UI."],
+      "acceptance": ["The owner's FY2025-26 position yields total income 358,015, tax nil, refund 13,367, with NO standard deduction applied."],
+      "depends_on": ["T028"]
+    },
+    {
+      "id": "T030",
+      "phase": "P4",
+      "title": "Remove the Old Regime from the engine",
+      "severity": "medium",
+      "files": ["engines/tax_engine.py", "models/tax_profile.py"],
+      "change": [
+        "Delete calculate_old_regime_tax and the old-vs-new comparison and recommendation.",
+        "KEEP the *_old DB columns so historical rows still load — do not drop them.",
+        "Context: the owner has professional income under s.194J, so the one-time Form 10-IEA switch rule genuinely applies to him. (For a purely salaried person the choice is annual — worth a code comment, but the decision here is to remove it.)"
+      ],
+      "acceptance": ["No old-regime calculation path remains.", "Loading an existing TaxProfile row does not raise."],
+      "depends_on": ["T029"]
+    },
+    {
+      "id": "T031",
+      "phase": "P4",
+      "title": "Wire every tax input through to the engine",
+      "severity": "blocker",
+      "evidence": "M11",
+      "files": ["engines/tax_engine.py", "ui/tax_screen.py"],
+      "change": [
+        "Extend calculate_and_save_tax to accept business/presumptive income, capital gains AT THEIR SPECIAL RATES (not folded into slab income), and house property.",
+        "Make _update_gross() (ui/tax_screen.py:591) and the engine share ONE function so the displayed gross is by construction the gross that is taxed.",
+        "Either wire a field through or delete it — no field may be collected, displayed in the gross, and then dropped."
+      ],
+      "acceptance": [
+        "Entering 52,535 of 44ADA presumptive income changes the computed tax.",
+        "The on-screen Gross Income always equals the engine's gross_total_income.",
+        "Capital gains under s.111A/112A are taxed at their own rates, not at slab rates."
+      ],
+      "depends_on": ["T030"]
+    },
+    {
+      "id": "T032",
+      "phase": "P4",
+      "title": "Correct the advance tax engine",
+      "severity": "medium",
+      "files": ["engines/advance_tax_engine.py"],
+      "change": [
+        "Accumulate payments per instalment — total_paid is currently constant across all four rows.",
+        "Use the s.234C safe harbours 12% / 36% / 75% / 100%, not 15% / 45% / 75% / 100%.",
+        "Charge 1 month of interest on the 15-March shortfall, not 3.",
+        "Implement the s.44ADA single-instalment rule (100% by 15 March) — this is the owner's case, so the app currently flags him overdue for Q1-Q3 incorrectly.",
+        "Implement the senior-citizen exemption the docstring already claims."
+      ],
+      "acceptance": ["A 44ADA taxpayer shows one instalment due 15 March, not four overdue ones."],
+      "depends_on": ["T031"]
+    },
+    {
+      "id": "T033",
+      "phase": "P4",
+      "title": "Derive ITR form guidance from the income mix",
+      "severity": "low",
+      "files": ["engines/tax_engine.py"],
+      "change": ["Business or professional income present -> ITR-3, or ITR-4 if 44ADA is elected. Interest and dividend only -> ITR-1."],
+      "acceptance": ["The owner's profile suggests ITR-4 (44ADA) or ITR-3, never ITR-1."],
+      "depends_on": ["T031"]
+    },
+
+    {
+      "id": "T034",
+      "phase": "P5",
+      "title": "Support joint accounts and the HUF",
+      "severity": "high",
+      "files": ["core/database.py", "models/bank_account.py", "models/person.py", "ui/dialogs/account_dialog.py"],
+      "change": [
+        "Add AccountHolder(account_id, person_id, is_primary) with a composite primary key; the primary holder declares the interest.",
+        "Add Person.entity_type ('Individual' | 'HUF') and Person.date_of_birth (drives 15G vs 15H).",
+        "Migrate existing BankAccount.person_id rows into AccountHolder as primary. Keep the column for now to avoid breaking queries; deprecate it in a later pass.",
+        "Update the account dialog for multiple holders."
+      ],
+      "acceptance": ["The spreadsheet's B+P+Pranav account can be represented.", "HUF appears as a separate tax entity with its own PAN."],
+      "depends_on": ["T006"]
+    },
+    {
+      "id": "T035",
+      "phase": "P5",
+      "title": "Backfill deposit account numbers on existing data",
+      "severity": "medium",
+      "files": ["models/transaction.py", "models/fixed_deposit.py"],
+      "change": ["Backfill deposit_account_no from existing transaction descriptions using the T013 normalisation rules."],
+      "acceptance": ["T021's matching works against pre-existing records, not only newly imported ones."],
+      "depends_on": ["T013", "T021"]
+    },
+    {
+      "id": "T036",
+      "phase": "P5",
+      "title": "Wire up the balance engine",
+      "severity": "medium",
+      "evidence": "M25",
+      "files": ["engines/balance_engine.py", "ui/statement_import_screen_modern.py"],
+      "change": ["Call the balance engine after a statement import so current_balance re-derives from transactions. It currently has zero call sites, so balances drift from the ledger after every import."],
+      "acceptance": ["After importing a statement, each account's current_balance equals the closing balance of its last transaction."],
+      "depends_on": ["T012"]
+    },
+
+    {
+      "id": "T037",
+      "phase": "P6",
+      "title": "Introduce the semantic token contract",
+      "severity": "high",
+      "evidence": "M15, M16, M22",
+      "track_note": "TRACK-B. No backend dependency — start this in parallel with P1.",
+      "files": ["ui/theme/constants.py", "ui/theme/theme.py", "ui/theme/theme_manager.py", "ui/theme/theme_*.py"],
+      "change": [
+        "Add every token in design_system.token_contract.new_tokens to constants.py, each surviving theme module, and ThemeManager._COLOR_ATTRS.",
+        "Split each semantic colour into a fill variant and a *_TEXT variant.",
+        "Replace every hard-coded #FFFFFF in Theme.btn() and get_stylesheet() with the appropriate TEXT_ON_* token.",
+        "Replace the QToolTip rule at ui/theme/theme.py:640 with TOOLTIP_BG / TOOLTIP_FG."
+      ],
+      "acceptance": ["No literal #FFFFFF or 'white' remains in ui/theme/theme.py.", "A test asserts every _COLOR_ATTRS token is defined by every registered theme module."],
+      "depends_on": ["T002"]
+    },
+    {
+      "id": "T038",
+      "phase": "P6",
+      "title": "Add an automated WCAG contrast gate",
+      "severity": "high",
+      "evidence": "M14",
+      "why": "Without an automated gate the next palette will fail too. This is the highest-leverage frontend quality change.",
+      "files": ["tests/test_theme_contrast.py (new)", ".github/workflows/"],
+      "change": ["Implement WCAG relative-luminance contrast; assert every pair in design_system.token_contract.required_pairs for every registered theme; run it in CI."],
+      "acceptance": ["The test exists and currently FAILS with 56 violations — that is the recorded baseline.", "After T039 it passes with zero violations."],
+      "depends_on": ["T037"]
+    },
+    {
+      "id": "T039",
+      "phase": "P6",
+      "title": "Consolidate to four contrast-validated themes",
+      "severity": "high",
+      "evidence": "M14",
+      "files": ["ui/theme/theme_manager.py", "ui/theme/theme_aurora_light.py", "ui/theme/theme_nova_dark.py", "ui/theme/theme_midnight_pro.py", "ui/theme/theme_slate_light.py (new)"],
+      "change": [
+        "Keep and fix Aurora and Nova; keep Midnight Pro; add Slate (light, neutral).",
+        "Delete the 7 modules listed in design_system.theme_consolidation.delete_modules. Confirm they are committed first so the deletion is reversible.",
+        "Fix the systematic failures in the survivors: raise TEXT_MUTED until it clears 4.5 on SURFACE; raise BORDER until it clears 3.0 on SURFACE; add readable *_TEXT variants for success/warning/info on light themes; set TEXT_ON_PRIMARY per theme rather than assuming white.",
+        "In ThemeManager._read_pref(), map a saved preference naming a deleted theme onto its nearest survivor."
+      ],
+      "acceptance": [
+        "ThemeManager.theme_names() returns exactly 4 names.",
+        "tests/test_theme_contrast.py passes with 0 violations.",
+        "Loading a preference file containing 'Rose Gold Luxe' resolves to a valid theme without raising."
+      ],
+      "depends_on": ["T038"]
+    },
+    {
+      "id": "T040",
+      "phase": "P6",
+      "title": "Make icons theme-aware",
+      "severity": "medium",
+      "evidence": "M22",
+      "files": ["ui/icons.py"],
+      "change": [
+        "Replace the per-icon hex colour in the registry with a semantic role: default, muted, on_primary, success, danger, warning, info.",
+        "Resolve the role against Theme at render time.",
+        "Keep an accent colour only where an icon is genuinely categorical, and take it from Theme.CHART_COLORS.",
+        "Bound the icon cache — it is keyed by (name, colour, size) and grows with every theme switch."
+      ],
+      "acceptance": ["No hard-coded hex colour remains in the ui/icons.py registry.", "Switching light to dark visibly recolours the sidebar icons.", "ICON_DEFAULT on SIDEBAR_BG passes 3.0 in all 4 themes."],
+      "depends_on": ["T039"]
+    },
+
+    {
+      "id": "T041",
+      "phase": "P7",
+      "title": "Move styling from inline calls into the global QSS",
+      "severity": "high",
+      "evidence": "M18",
+      "files": ["ui/theme/theme.py", "all files in ui/"],
+      "change": [
+        "Express component variants as object names and dynamic properties (setObjectName, setProperty('variant',...), setProperty('state',...)) and define the rules once in get_stylesheet().",
+        "Where a property changes at runtime, call style().unpolish(w); style().polish(w) on that widget only.",
+        "Migrate screen by screen, highest count first: tax_screen 58, chatbot 48, accounts 47, settings 33, dashboard 31.",
+        "Delete each screen's refresh_theme() as its inline styles disappear."
+      ],
+      "acceptance": [
+        "Inline setStyleSheet() calls in ui/ excluding ui/theme/ drop below 60, from 469.",
+        "No more than 3 refresh_theme() implementations remain (canvas-backed widgets legitimately need one).",
+        "Every screen renders correctly after a theme switch with no manual refresh."
+      ],
+      "depends_on": ["T039"]
+    },
+    {
+      "id": "T042",
+      "phase": "P7",
+      "title": "Make theme switching instant",
+      "severity": "high",
+      "evidence": "M17",
+      "files": ["ui/theme/theme_manager.py", "ui/settings_screen.py"],
+      "change": [
+        "Once T041 lands, a switch is just app.setStyleSheet(...) — Qt re-polishes automatically. DELETE _deep_refresh() entirely.",
+        "Keep the listener hook only for widgets QSS cannot style (matplotlib canvases).",
+        "Remove the 'Applying theme...' loader at ui/settings_screen.py:465; it exists only to mask the slowness."
+      ],
+      "acceptance": ["ThemeManager.apply() completes in under 150ms with all screens constructed (currently 1,540-1,750ms).", "No loader appears during a theme switch.", "_deep_refresh no longer exists."],
+      "depends_on": ["T041"]
+    },
+    {
+      "id": "T043",
+      "phase": "P7",
+      "title": "Build screens lazily",
+      "severity": "medium",
+      "evidence": "M1, M17",
+      "files": ["ui/dashboard_screen.py"],
+      "change": [
+        "Insert a lightweight placeholder per stack page; construct the real screen on first navigation and cache it.",
+        "Wrap each screen's construction in try/except so one failure shows an inline error panel on that page instead of aborting login — this is what turned T002's import bug into a total outage."
+      ],
+      "acceptance": ["DashboardScreen construction drops below 800ms (currently 2.93s).", "Live QWidget count right after login is under 300 (currently 1,079).", "Deliberately raising in one screen's __init__ still lets the rest of the app run."],
+      "depends_on": ["T002"]
+    },
+    {
+      "id": "T044",
+      "phase": "P7",
+      "title": "Move all parsing off the UI thread",
+      "severity": "high",
+      "evidence": "M19",
+      "files": ["ui/statement_import_screen_modern.py", "ui/ais_tis_import_screen_v2.py", "ui/widgets/loader.py"],
+      "change": [
+        "Route every parse through the existing threaded Loader.run() (ui/widgets/loader.py:297), which already does the QThread handoff correctly.",
+        "Remove the blocking `with Loader(...)` form from parsing paths, or delete that context-manager API so it cannot be misused.",
+        "Report progress per page or section.",
+        "Disable the relevant controls while a parse is in flight rather than blocking the whole window."
+      ],
+      "acceptance": ["Parsing the 17-page IDFC statement keeps the window responsive and the spinner animating.", "No parse function is called directly from a slot on the UI thread.", "Importing all three tax PDFs never shows a 'Not Responding' title bar."],
+      "depends_on": ["T002"]
+    },
+    {
+      "id": "T045",
+      "phase": "P7",
+      "title": "Add visible keyboard focus to every interactive control",
+      "severity": "high",
+      "evidence": "M24",
+      "files": ["ui/theme/theme.py"],
+      "change": ["Apply a consistent 2px FOCUS_RING outline on :focus to QPushButton, nav items, cards, checkboxes, radios and table cells. Draw it outside the control's own border so it stays visible on filled buttons."],
+      "acceptance": ["Tabbing through any screen always shows where focus is.", "FOCUS_RING passes 3.0 against SURFACE and against PRIMARY in all 4 themes."],
+      "depends_on": ["T039"]
+    },
+    {
+      "id": "T046",
+      "phase": "P7",
+      "title": "Make navigation items real buttons and label them",
+      "severity": "high",
+      "evidence": "M22",
+      "files": ["ui/dashboard_screen.py", "core/session.py"],
+      "change": [
+        "Replace the QWidget containers with QToolButton or QPushButton in checkable/autoExclusive mode.",
+        "DELETE both monkey-patched event handlers (mousePressEvent, keyPressEvent); connect to `clicked`.",
+        "Style active/hover/focus through QSS with a dynamic property, not by re-assigning stylesheets in _set_nav_active.",
+        "Add setToolTip(label) to every nav item so the collapsed rail is usable.",
+        "Default the sidebar to EXPANDED on first run and persist the choice to disk — it currently lives only in the in-memory session and resets every launch.",
+        "Keep 248px expanded / 76px rail; both sit in the accepted range for desktop sidebars."
+      ],
+      "acceptance": [
+        "No assignment to .mousePressEvent or .keyPressEvent remains in ui/dashboard_screen.py.",
+        "Pressing a nav item and dragging away before release does NOT navigate.",
+        "Every nav item has a tooltip and reports a button role via QAccessible.",
+        "The sidebar state survives a restart."
+      ],
+      "depends_on": ["T041"]
+    },
+    {
+      "id": "T047",
+      "phase": "P7",
+      "title": "Replace acknowledgement modals with inline feedback",
+      "severity": "medium",
+      "evidence": "M20",
+      "files": ["ui/widgets/toast.py (new)", "all screens"],
+      "change": [
+        "Add a non-blocking Toast anchored to the content area, with success/info/warning/danger variants and auto-dismiss.",
+        "Convert every QMessageBox.information to a toast.",
+        "Convert validation warnings to inline field-level errors beside the offending input.",
+        "Keep modals only for destructive confirmation (.question) and unrecoverable errors (.critical)."
+      ],
+      "acceptance": ["QMessageBox.information call sites drop from 54 to 0.", "QMessageBox.warning call sites drop from 84 to under 10.", "Importing a statement shows a toast, not a modal."],
+      "depends_on": ["T041"]
+    },
+    {
+      "id": "T048",
+      "phase": "P7",
+      "title": "Fix control sizing and press behaviour",
+      "severity": "medium",
+      "evidence": "M24",
+      "files": ["ui/theme/theme.py"],
+      "change": [
+        "Widen scrollbars to 12px with a 24px effective hit area.",
+        "Enlarge spinbox buttons to a 24px combined target.",
+        "Replace padding shifts on :pressed with a background or border change so text never moves."
+      ],
+      "acceptance": ["No interactive target is smaller than 24x24 effective pixels.", "No :pressed rule changes padding or margin.", "Scrollbar handles are grabbable on the first attempt at 1920x1080."],
+      "depends_on": ["T039"]
+    },
+    {
+      "id": "T049",
+      "phase": "P7",
+      "title": "Standardise empty, loading and error states",
+      "severity": "medium",
+      "files": ["ui/widgets/states.py (new)"],
+      "change": [
+        "Add EmptyState (icon, headline, one-line explanation, primary action), LoadingState and ErrorState (message + retry).",
+        "Use them everywhere; remove hand-rolled empty strings. Passing empty-state text through add_stat() is what made the T003 ghost bug visible.",
+        "Every empty state must offer the action that resolves it."
+      ],
+      "acceptance": ["Every screen shows a designed empty state with a call to action when it has no data.", "No empty-state text is passed through add_stat()."],
+      "depends_on": ["T003", "T041"]
+    },
+    {
+      "id": "T050",
+      "phase": "P7",
+      "title": "Replace fixed pixel sizes with adaptive layout",
+      "severity": "medium",
+      "files": ["ui/dashboard_screen.py", "all screens"],
+      "change": [
+        "Replace setFixedHeight/setFixedWidth (86 and 142 call sites) with minimum sizes plus layout stretch, except where a square icon needs a fixed box.",
+        "Replace the fixed-width top-bar selectors (155/200/95px) with an expanding size policy plus elide-on-overflow and a tooltip carrying the full value.",
+        "Verify at 100%, 125% and 150% Windows display scaling."
+      ],
+      "acceptance": ["No text is clipped at 125% or 150% scaling.", "Long bank names such as 'Rajkot Nagarik Sahakari Bank Limited' are fully shown or elided with a tooltip."],
+      "depends_on": ["T041"]
+    },
+
+    {
+      "id": "T051",
+      "phase": "P8",
+      "title": "Delete the reconciliation screen and the Reports silo",
+      "severity": "medium",
+      "files": ["ui/reconciliation_screen.py", "ui/reports_screen.py", "ui/dashboard_screen.py"],
+      "change": [
+        "Delete reconciliation_screen.py and remove its nav entry and the 'reconciliation' icon.",
+        "Move the Monthly and Categories charts onto Transactions, Bank-wise onto Accounts, and Interest Trend onto Fixed Deposits, THEN delete reports_screen.py. Do not delete the charts — relocate them first and verify they render.",
+        "Update _NAV_ITEMS to the 9-item target list."
+      ],
+      "acceptance": ["No import of reconciliation_screen or reports_screen remains.", "_NAV_ITEMS has 9 entries.", "Every relocated chart is reachable from the screen whose data it describes."],
+      "depends_on": ["T022", "T043"]
+    },
+    {
+      "id": "T052",
+      "phase": "P8",
+      "title": "Apply the dialog policy",
+      "severity": "medium",
+      "files": ["ui/dialogs/", "ui/accounts_screen.py", "ui/fixed_deposits_screen.py", "ui/transactions_screen.py", "ui/income_management_screen.py", "ui/ais_tis_import_screen_v2.py"],
+      "change": [
+        "Move every inline-defined QDialog subclass into ui/dialogs/. Currently inline: AccountDetailsDialog, FDDialog, LinkFDTransactionDialog, TransactionDialog, IncomeExpectationDialog, LinkActualDialog, RecordsPreviewDialog, NewSourceDialog.",
+        "Replace the three manager->editor modal pairs with inline master-detail panels.",
+        "Convert AccountDetailsDialog and RecordsPreviewDialog into in-screen detail panels — they are read-heavy and benefit from surrounding context."
+      ],
+      "acceptance": ["No QDialog subclass is defined outside ui/dialogs/.", "No code path can open a modal from within a modal.", "Viewing account details does not block the rest of the UI."],
+      "depends_on": ["T047"]
+    },
+
+    {
+      "id": "T053",
+      "phase": "P9",
+      "title": "Rebuild the Overview screen",
+      "severity": "medium",
+      "files": ["ui/dashboard_screen.py"],
+      "change": [
+        "Replace the 2x2 text grid with a KPI strip of 4-6 tiles, each carrying one number, one comparison and one sparkline.",
+        "Below it: a 12-month income-vs-expense chart and a bank-balance distribution chart.",
+        "Delete the decorative 70px gradient banner; fold FY/AY into the KPI strip.",
+        "Remove the Old Regime and Recommended Regime rows.",
+        "Panels size to content rather than stretching to fill."
+      ],
+      "acceptance": ["No Old Regime figure appears on Overview.", "The screen shows at least two charts.", "With one account and five transactions, no panel contains more than 120px of empty vertical space."],
+      "depends_on": ["T003", "T049", "T051", "T030"],
+      "backend_dependency": "T030 (old regime removed from the engine)."
+    },
+    {
+      "id": "T054",
+      "phase": "P9",
+      "title": "Build the Income & Expectations screen",
+      "severity": "high",
+      "why": "This is what the owner explicitly asked for in place of the reconciliation screen: expected income for the year, visualised. It is the Data 26-27.xlsx workbook made live.",
+      "files": ["ui/income_management_screen.py"],
+      "change": [
+        "Header: FY selector, person selector (including HUF and All), and four KPI tiles — Expected income, Received to date with %, Still expected, Projected tax.",
+        "Panel 1 — Expected vs Actual by month: grouped bars over 12 months. Expected from IncomeExpectation, actual from matched Transactions. Must render Pranav's mid-year step from 21,500 to 25,000 in August.",
+        "Panel 2 — Income composition: stacked bars by FY or a donut for one FY. Segments: Professional/Business receipts, FD interest, Savings interest, Dividend, Salary, Other.",
+        "Panel 3 — FD interest runway: interest accruing per FY across all live FDs, current FY marked. This is the workbook's P/Q/R columns as a chart.",
+        "Panel 4 — Per-bank TDS threshold gauges against 50,000 (or 100,000 for seniors), labelled with the crossing quarter, badged where a 15G/15H is on file.",
+        "Panel 5 — Expectation ledger: Month, Type, Source, Expected, Actual, Variance, Status, Matched transaction. Inline edit plus Auto-match.",
+        "Charts: rupee axes with Indian digit grouping, at most 6 categorical colours from Theme.CHART_COLORS, direct labels rather than legends at 4 or fewer series, readable in light and dark."
+      ],
+      "acceptance": [
+        "With the workbook's data loaded, the monthly chart reproduces the Salary sheet including the August step.",
+        "The TDS panel badges Jana, Equitas and Ujjivan as '15G on file' rather than warning.",
+        "All five panels render in both light and dark themes with no contrast violations."
+      ],
+      "depends_on": ["T026", "T049", "T051"],
+      "backend_dependency": "T023-T026 (interest engines) for panels 3 and 4."
+    },
+    {
+      "id": "T055",
+      "phase": "P9",
+      "title": "Build the Tax Documents screen",
+      "severity": "high",
+      "files": ["ui/tax_documents_screen.py (new)", "ui/ais_tis_import_screen_v2.py (delete after)"],
+      "change": [
+        "Three labelled drop zones (26AS, AIS, TIS), each showing parse status and the detected FY.",
+        "One reconciled position table: Category / TIS / AIS / 26AS / In app / Status.",
+        "A 'Reported, not income' panel listing SFT-005 style disclosures, so 13,00,000 of time deposits is visible but never counted as income.",
+        "A per-FD drill-down matching AIS SFT-016(TD) account numbers against FixedDeposit records.",
+        "Parsing runs through Loader.run() per T044."
+      ],
+      "acceptance": [
+        "Importing the three real PDFs produces TIS totals of 2,655 / 46,183 / 2,56,642 / 1,05,069 and a claimable TDS credit of 13,367.",
+        "The screen never displays 27,05,069 or 3,49,008.",
+        "Jana deposit 4522030015435122/1 matches AIS account 45220300154351221 in the drill-down."
+      ],
+      "depends_on": ["T021", "T044", "T051"],
+      "backend_dependency": "T017-T021 must land first; this screen only presents what those parsers produce."
+    },
+    {
+      "id": "T056",
+      "phase": "P9",
+      "title": "Rebuild the Tax screen for the new regime only",
+      "severity": "high",
+      "evidence": "M11",
+      "files": ["ui/tax_screen.py"],
+      "change": [
+        "Delete every Old Regime field and card and the comparison/recommendation block.",
+        "Delete 80C, 80D, 80TTA, 80TTB, HRA and home-loan inputs — none are available in the new regime.",
+        "Group the remainder into Salary, Business/Professional, Capital gains, Other sources, Taxes paid. Collapse each section by default and expand only those with values — this owner currently scrolls past ~30 spinboxes for income types he does not have.",
+        "The standard-deduction row is hard-coded to 50,000 in both label and value; it is 75,000 and salary-only.",
+        "Replace the results panel with an auditable waterfall: Gross -> deductions -> Taxable -> Slab tax -> 87A rebate -> Marginal relief -> Surcharge -> Cess -> Total -> less TDS -> Payable/Refund.",
+        "Add the ITR form hint from T033."
+      ],
+      "acceptance": [
+        "No Old Regime control or card remains.",
+        "The standard-deduction row reads 75,000 and shows 0 when there is no salary income.",
+        "Entering 52,535 of 44ADA presumptive income changes the computed tax.",
+        "The on-screen Gross Income always equals the engine's gross.",
+        "The screen suggests ITR-4 (44ADA) or ITR-3 for this owner, never ITR-1."
+      ],
+      "depends_on": ["T031", "T032", "T033", "T049"],
+      "backend_dependency": "T027-T033 (the entire tax engine phase)."
+    },
+    {
+      "id": "T057",
+      "phase": "P9",
+      "title": "Rebuild the Statement Import screen",
+      "severity": "medium",
+      "files": ["ui/statement_import_screen_modern.py", "ui/settings_screen.py", "README.md"],
+      "change": [
+        "Compress Select Person, Select Bank Account and Choose File into a single form card — three stacked cards each holding one dropdown waste ~40% of the viewport.",
+        "Remove the duplicated page title (the top bar already shows it).",
+        "Move the AI status badge, 'AI Check' and 'Warm Up AI' into Settings; parser mode is configuration, not part of the import flow.",
+        "Add a drag-and-drop file target.",
+        "End on a confidence summary from T012: rows parsed, balance-validation pass rate, rows needing review — and block a low-confidence import.",
+        "Correct the README, which describes a 5-step wizard where 2 steps exist."
+      ],
+      "acceptance": ["The select step fits above the fold at 1280x720 with no card taller than 140px.", "No AI control appears on the import screen.", "Importing a deliberately corrupted statement is blocked with a stated reason."],
+      "depends_on": ["T009", "T012", "T044", "T049"],
+      "backend_dependency": "T012 supplies the confidence score."
+    },
+
+    {
+      "id": "T058",
+      "phase": "P10",
+      "title": "Complete the accessibility pass",
+      "severity": "medium",
+      "files": ["ui/"],
+      "change": [
+        "Verify a sensible tab order on every screen with no traps.",
+        "Give every icon-only button an accessible name and a tooltip.",
+        "Ensure table headers are announced and the checkbox column has a name.",
+        "Ensure no information is conveyed by colour alone — status chips need a label or icon as well as a hue."
+      ],
+      "acceptance": ["Every screen is fully operable by keyboard alone.", "Every interactive element has an accessible name.", "Status is never encoded by colour alone."],
+      "depends_on": ["T045", "T046", "T048"]
+    },
+    {
+      "id": "T059",
+      "phase": "P10",
+      "title": "Clean up remaining inconsistencies",
+      "severity": "low",
+      "files": ["ui/dashboard_screen.py", "config.py", "README.md", "main.py", "ui/widgets/chart_widget.py"],
+      "change": [
+        "Three version strings exist: ui/dashboard_screen.py hard-codes 'v1.0', config.APP_VERSION is '1.0.0', README says 2.0.0. Read one value from config.",
+        "main.py installs a Qt message handler that swallows 'QFont::setPointSize: Point size <= 0'. Find and fix the cause rather than hiding the warning.",
+        "chart_widget.py emits 'Glyph 128202 (BAR CHART) missing from font(s) DejaVu Sans' — an emoji in a chart string renders as a missing-glyph box. Replace chart emoji with drawn icons or plain text.",
+        "Reconcile the README with reality: it documents a 5-step import wizard, 10 themes, and AES-256 database encryption, none of which match the code."
+      ],
+      "acceptance": ["One version string, sourced from config.", "No suppressed Qt warnings in main.py.", "No missing-glyph warnings during a chart render.", "README statements match shipped behaviour."],
+      "depends_on": ["T039", "T057"]
+    },
+    {
+      "id": "T060",
+      "phase": "P11",
+      "title": "Resolve the database encryption claim",
+      "severity": "high",
+      "evidence": "M26",
+      "requires_human_confirmation": true,
+      "confirmation_reason": "Adopting SQLCipher changes the on-disk format and requires a migration of any existing database. Confirm which option the owner wants before implementing.",
+      "files": ["core/database.py", "README.md", "requirements.txt"],
+      "change": [
+        "Option A: integrate SQLCipher (sqlcipher3) keyed from the master password, and migrate any existing plaintext database on first run after backing it up.",
+        "Option B: amend the README to state that field-level encryption protects stored passwords while the database file itself is not encrypted.",
+        "Do NOT leave the current claim standing either way."
+      ],
+      "acceptance": ["The README matches what the code does.", "If option A: an existing plaintext DB is migrated without data loss, and a backup is written first."],
+      "depends_on": ["T006"]
+    }
+  ],
+
+  "recommended_sequence": [
+    "T001", "T002", "T003", "T004", "T005", "T006", "T007", "T008", "T009",
+    "T037", "T038", "T039", "T040",
+    "T010", "T011", "T012", "T013", "T014", "T015", "T016",
+    "T041", "T042", "T043", "T044", "T045", "T046", "T047", "T048", "T049", "T050",
+    "T017", "T018", "T019", "T020", "T021", "T022",
+    "T023", "T024", "T025", "T026",
+    "T027", "T028", "T029", "T030", "T031", "T032", "T033",
+    "T034", "T035", "T036",
+    "T051", "T052",
+    "T053", "T054", "T055", "T056", "T057",
+    "T058", "T059", "T060"
+  ],
+
+  "sequence_rationale": "P0 first — the app does not run and secrets are exposed. Then the design-system foundation (T037-T040), because it is cheap, unblocks all later UI work, and has no backend dependency. Then statement parsing (P1), because every downstream number depends on transactions being right. Then the rest of the frontend foundation (T041-T050) while parsing settles. Then tax documents, interest, tax engine, data model in dependency order. Screens last, once the numbers they display are correct.",
+
+  "acceptance_harness": {
+    "purpose": "Render the real app offscreen, screenshot every screen, and time theme switching. Use it to verify T042, T043 and every P9 task.",
+    "create_at": "tests/ui_harness.py",
+    "environment": { "QT_QPA_PLATFORM": "offscreen" },
+    "steps": [
+      "Redirect config.DATA_DIR and config.DB_PATH to a temp directory so the owner's database is untouched. Also patch core.database.DB_PATH and DATA_DIR — the module captures them at import.",
+      "initialise_database(); setup_master_password(); session.login().",
+      "Seed at least 1 person, 2 accounts, 5 transactions spanning two financial years, and 1 FD.",
+      "Construct DashboardScreen, resize to 1600x950, show, processEvents.",
+      "Iterate _NAV_ITEMS calling _navigate(i) and dash.grab().save(...).",
+      "Time ThemeManager.apply() for each theme."
+    ],
+    "pitfalls_learned_the_hard_way": [
+      "The offscreen plugin may expose ZERO font families, making every capture render in a capitals-only fallback face. Assert QFontDatabase.families() is non-empty before drawing ANY typography conclusion; if it is empty, treat the captures as layout-only evidence.",
+      "Guard the seed block on the ACCOUNTS table, not the persons table. If a seeding run crashes midway, a persons-only guard silently skips all later seeding on the next run and produces misleading empty screens that look like app bugs.",
+      "matplotlib builds its font cache on first import — discard the first timing run (it inflated one measurement from 2.93s to 12.57s).",
+      "Pre-import engines.bank_parsers before any ui import until T002 lands, or the harness itself hits the circular import."
+    ]
+  },
+
+  "priority_if_time_is_limited": [
+    "T001 — real PAN, account numbers and cleartext passwords are committed to git",
+    "T002 — the app does not run at all",
+    "T003 — the dashboard renders corrupted overlapping text",
+    "T004 — without the regression suite you cannot tell a fix from a regression",
+    "T010-T012 — direction from columns plus balance validation removes a 27-59% error rate",
+    "T017-T019 — correct income and TDS; stops 26 lakh of phantom income reaching the tax screen",
+    "T027-T029 — current-year law; a tax-free salary is currently charged 93,600",
+    "T023-T024 — FD interest in the right financial year",
+    "T038-T039 — the contrast gate and 4 validated themes fix 56 accessibility failures at the source",
+    "T054-T055 — the two screens the owner actually asked for"
+  ]
+}
