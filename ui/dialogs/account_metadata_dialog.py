@@ -102,7 +102,8 @@ class AccountMetadataDialog(QDialog):
             "Use the checkbox below if you want to skip updates."
         )
         info_text.setWordWrap(True)
-        info_text.setStyleSheet(Theme.text_style(color=Theme.INFO_DARK, size=13) + " border: none;")
+        info_text.setProperty("textrole", "body-md")
+        info_text.setProperty("color", "info")
         info_layout.addWidget(info_text, stretch=1)
         top_row.addWidget(info_frame, 2)
 
@@ -116,11 +117,11 @@ class AccountMetadataDialog(QDialog):
         stats_layout.setSpacing(6)
 
         stats_title = QLabel("Quick Summary")
-        stats_title.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=12, weight=700))
+        stats_title.setProperty("textrole", "emphasis-md")
         stats_layout.addWidget(stats_title)
 
         stats_values = QLabel(f"Fields detected: {total_detected}")
-        stats_values.setStyleSheet(Theme.text_style(color=Theme.TEXT_SECONDARY, size=12))
+        stats_values.setProperty("textrole", "secondary-sm")
         stats_layout.addWidget(stats_values)
 
         top_row.addWidget(stats_frame, 1)
@@ -196,7 +197,7 @@ class AccountMetadataDialog(QDialog):
             # Section title
             section_label = QLabel(section_title)
             section_label.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
-            section_label.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=13, weight=700))
+            section_label.setProperty("textrole", "emphasis-md")
             section_layout.addWidget(section_label)
 
             # Divider
@@ -219,7 +220,7 @@ class AccountMetadataDialog(QDialog):
 
                 # Label
                 field_label = QLabel(f"{label}:")
-                field_label.setStyleSheet(Theme.section_label_style())
+                field_label.setProperty("textrole", "section-label")
                 field_label.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
                 grid.addWidget(field_label, row, 0)
 
@@ -259,7 +260,7 @@ class AccountMetadataDialog(QDialog):
         # Update checkbox
         self.update_check = QCheckBox("Update account with these details")
         self.update_check.setChecked(True)
-        self.update_check.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=13, weight=600))
+        self.update_check.setProperty("textrole", "emphasis-md")
         self.update_check.setAccessibleName("Update account checkbox")
         footer_layout.addWidget(self.update_check)
 

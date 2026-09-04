@@ -65,7 +65,7 @@ class PasswordDialog(QDialog):
         title_row.addWidget(icon_label("password", size=20, color=Theme.PRIMARY))
         title_lbl = QLabel(title)
         title_lbl.setFont(QFont("Segoe UI", 15, QFont.Weight.Bold))
-        title_lbl.setStyleSheet(Theme.title_style(15))
+        title_lbl.setProperty("textrole", "title-md")
         title_row.addWidget(title_lbl)
         title_row.addStretch()
         layout.addLayout(title_row)
@@ -75,10 +75,10 @@ class PasswordDialog(QDialog):
             info.setWordWrap(True)
             info.setAccessibleName("Password dialog information")
             info.setAccessibleDescription("Explains why the password is needed.")
+            info.setProperty("textrole", "body-md")
             info.setStyleSheet(
-                Theme.text_style(color=Theme.TEXT_PRIMARY, size=13)
-                + f" background: {Theme.PRIMARY_LIGHT}; border: 1px solid {Theme.INFO}; "
-                  f"border-radius: 8px; padding: 12px;"
+                f" background: {Theme.PRIMARY_LIGHT}; border: 1px solid {Theme.INFO}; "
+                f"border-radius: 8px; padding: 12px;"
             )
             layout.addWidget(info)
 
@@ -86,7 +86,7 @@ class PasswordDialog(QDialog):
             note = QLabel("Saved password found. Edit to update if needed.")
             note.setWordWrap(True)
             note.setAccessibleName("Saved password note")
-            note.setStyleSheet(Theme.muted_style(11))
+            note.setProperty("textrole", "muted-sm")
             layout.addWidget(note)
 
         form = QFormLayout()
@@ -106,7 +106,7 @@ class PasswordDialog(QDialog):
         form.addRow("Password:", self.password_input)
 
         self.show_check = QCheckBox("Show password")
-        self.show_check.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=13))
+        self.show_check.setProperty("textrole", "body-md")
         self.show_check.stateChanged.connect(self._toggle_visibility)
         self.show_check.setAccessibleName("Show password toggle")
         self.show_check.setAccessibleDescription("Toggle whether the password is visible.")
@@ -116,7 +116,7 @@ class PasswordDialog(QDialog):
         if self._save_label:
             self.save_check = QCheckBox(self._save_label)
             self.save_check.setChecked(save_checked)
-            self.save_check.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=12))
+            self.save_check.setProperty("textrole", "body-sm")
             self.save_check.setAccessibleName("Save password toggle")
             self.save_check.setAccessibleDescription("Toggle whether the password should be saved for later use.")
             layout.addWidget(self.save_check)
@@ -126,10 +126,10 @@ class PasswordDialog(QDialog):
         if hint_text:
             hint = QLabel(hint_text)
             hint.setWordWrap(True)
+            hint.setProperty("textrole", "secondary-sm")
             hint.setStyleSheet(
-                Theme.text_style(color=Theme.TEXT_SECONDARY, size=12)
-                + f" background: {Theme.SURFACE_ALT}; border: 1px solid {Theme.BORDER}; "
-                  f"border-radius: 8px; padding: 10px;"
+                f" background: {Theme.SURFACE_ALT}; border: 1px solid {Theme.BORDER}; "
+                f"border-radius: 8px; padding: 10px;"
             )
             layout.addWidget(hint)
 

@@ -17,7 +17,7 @@ class OnboardingDialog(QDialog):
         root.setSpacing(12)
 
         title = QLabel("Welcome! Here's a quick tour")
-        title.setStyleSheet(Theme.title_style(18))
+        title.setProperty("textrole", "title-xl")
         title.setAlignment(Qt.AlignmentFlag.AlignLeft)
         root.addWidget(title)
 
@@ -30,7 +30,7 @@ class OnboardingDialog(QDialog):
         ]
         for s in steps:
             lbl = QLabel(s)
-            lbl.setStyleSheet(Theme.text_style(size=13))
+            lbl.setProperty("textrole", "body-md")
             lbl.setWordWrap(True)
             root.addWidget(lbl)
 

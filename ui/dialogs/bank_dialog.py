@@ -39,7 +39,7 @@ class BankManagementDialog(QDialog):
         header.setSpacing(10)
         header.addWidget(icon_label("bank", size=20, color=Theme.PRIMARY))
         title = QLabel("Banks")
-        title.setStyleSheet(Theme.title_style(14))
+        title.setProperty("textrole", "title-sm")
         header.addWidget(title)
         header.addStretch()
         btn_add = _btn("  Add Bank", "primary")

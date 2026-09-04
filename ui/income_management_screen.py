@@ -45,7 +45,7 @@ class IncomeManagementScreen(QWidget):
         header = QHBoxLayout()
         self._title_lbl = title = QLabel("Income Management")
         title.setFont(QFont("Segoe UI", 15, QFont.Weight.Bold))
-        title.setStyleSheet(Theme.title_style(15))
+        title.setProperty("textrole", "title-md")
         header.addWidget(title)
         header.addStretch()
 
@@ -146,7 +146,7 @@ class IncomeManagementScreen(QWidget):
 
         def lbl(t):
             l = QLabel(t)
-            l.setStyleSheet(Theme.section_label_style())
+            l.setProperty("textrole", "section-label")
             return l
 
         layout.addWidget(lbl("Person"))
@@ -229,7 +229,7 @@ class IncomeManagementScreen(QWidget):
         layout.setSpacing(6)
 
         lbl_title = QLabel(title)
-        lbl_title.setStyleSheet(Theme.section_label_style())
+        lbl_title.setProperty("textrole", "section-label")
         layout.addWidget(lbl_title)
 
         lbl_value = QLabel(value)
@@ -255,7 +255,7 @@ class IncomeManagementScreen(QWidget):
             if value_lbl:
                 value_lbl.setStyleSheet(Theme.text_style(color=color, size=20, weight=700))
         if hasattr(self, "_title_lbl"):
-            self._title_lbl.setStyleSheet(Theme.title_style(15))
+            self._title_lbl.setProperty("textrole", "title-md")
         if hasattr(self, "_filter_bar"):
             self._filter_bar.setStyleSheet(Theme.filter_bar_style())
         if hasattr(self, "table_widget") and self.table_widget:

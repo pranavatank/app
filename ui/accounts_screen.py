@@ -46,7 +46,7 @@ class AccountsScreen(QWidget):
         header = QHBoxLayout()
         title = QLabel("Bank Accounts")
         title.setFont(QFont("Segoe UI", 18, QFont.Weight.Bold))
-        title.setStyleSheet(Theme.title_style(18))
+        title.setProperty("textrole", "title-xl")
         header.addWidget(title)
         header.addStretch()
 
@@ -172,7 +172,8 @@ class AccountsScreen(QWidget):
         # Bank header
         header = QLabel(bank_name)
         header.setFont(QFont("Segoe UI", 15, QFont.Weight.Bold))
-        header.setStyleSheet(Theme.text_style(color=Theme.PRIMARY, size=15, weight=700))
+        header.setProperty("textrole", "label")
+        header.setProperty("color", "primary")
         layout.addWidget(header)
 
         # Accounts under this bank
@@ -211,16 +212,16 @@ class AccountsScreen(QWidget):
         
         bank_lbl = QLabel(account.get("bank_display_name", account["bank_name"]))
         bank_lbl.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
-        bank_lbl.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=14, weight=700))
+        bank_lbl.setProperty("textrole", "emphasis-lg")
         left.addWidget(bank_lbl)
 
         if self.selected_person_id is None:
             person_lbl = QLabel(account.get('person_name', '—'))
-            person_lbl.setStyleSheet(Theme.text_style(color=Theme.TEXT_SECONDARY, size=12))
+            person_lbl.setProperty("textrole", "secondary-sm")
             left.addWidget(person_lbl)
 
         type_lbl = QLabel(f"{account['account_type']}  •  {account.get('account_number_masked', '—')}")
-        type_lbl.setStyleSheet(Theme.text_style(color=Theme.TEXT_MUTED, size=12))
+        type_lbl.setProperty("textrole", "muted-md")
         left.addWidget(type_lbl)
 
         layout.addLayout(left, 3)
@@ -233,11 +234,11 @@ class AccountsScreen(QWidget):
         bal_box = QVBoxLayout()
         bal_box.setSpacing(2)
         bal_label = QLabel("Current Balance")
-        bal_label.setStyleSheet(Theme.text_style(color=Theme.TEXT_MUTED, size=11))
+        bal_label.setProperty("textrole", "muted-sm")
         bal_box.addWidget(bal_label)
         bal_val = QLabel(f"₹ {account['current_balance']:,.0f}")
         bal_val.setFont(QFont("Segoe UI", 15, QFont.Weight.Bold))
-        bal_val.setStyleSheet(Theme.text_style(color=Theme.SUCCESS, size=15, weight=700))
+        bal_val.setProperty("textrole", "metric")
         bal_box.addWidget(bal_val)
         metrics.addLayout(bal_box)
 
@@ -245,11 +246,11 @@ class AccountsScreen(QWidget):
         fd_box = QVBoxLayout()
         fd_box.setSpacing(2)
         fd_label = QLabel("Open FDs")
-        fd_label.setStyleSheet(Theme.text_style(color=Theme.TEXT_MUTED, size=11))
+        fd_label.setProperty("textrole", "muted-sm")
         fd_box.addWidget(fd_label)
         fd_val = QLabel(f"₹ {fd_value:,.0f}")
         fd_val.setFont(QFont("Segoe UI", 15, QFont.Weight.Bold))
-        fd_val.setStyleSheet(Theme.text_style(color=Theme.WARNING, size=15, weight=700))
+        fd_val.setProperty("textrole", "metric")
         fd_box.addWidget(fd_val)
         metrics.addLayout(fd_box)
 
@@ -257,11 +258,11 @@ class AccountsScreen(QWidget):
         fdi_box = QVBoxLayout()
         fdi_box.setSpacing(2)
         fdi_label = QLabel(f"FD Interest ({self.selected_fy})")
-        fdi_label.setStyleSheet(Theme.text_style(color=Theme.TEXT_MUTED, size=11))
+        fdi_label.setProperty("textrole", "muted-sm")
         fdi_box.addWidget(fdi_label)
         fdi_val = QLabel(f"₹ {fd_interest:,.0f}")
         fdi_val.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
-        fdi_val.setStyleSheet(Theme.text_style(color=Theme.INFO, size=14, weight=700))
+        fdi_val.setProperty("textrole", "metric")
         fdi_box.addWidget(fdi_val)
         metrics.addLayout(fdi_box)
 
@@ -269,11 +270,11 @@ class AccountsScreen(QWidget):
         si_box = QVBoxLayout()
         si_box.setSpacing(2)
         si_label = QLabel(f"Savings Interest ({self.selected_fy})")
-        si_label.setStyleSheet(Theme.text_style(color=Theme.TEXT_MUTED, size=11))
+        si_label.setProperty("textrole", "muted-sm")
         si_box.addWidget(si_label)
         si_val = QLabel(f"₹ {savings_interest:,.0f}")
         si_val.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
-        si_val.setStyleSheet(Theme.text_style(color=Theme.TEAL, size=14, weight=700))
+        si_val.setProperty("textrole", "metric")
         si_box.addWidget(si_val)
         metrics.addLayout(si_box)
 
@@ -306,7 +307,7 @@ class AccountsScreen(QWidget):
         header = QHBoxLayout()
         bank_label = QLabel(account.get('bank_display_name', account['bank_name']))
         bank_label.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
-        bank_label.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=14, weight=700))
+        bank_label.setProperty("textrole", "emphasis-lg")
         header.addWidget(bank_label)
         header.addStretch()
 
@@ -328,12 +329,12 @@ class AccountsScreen(QWidget):
 
         # Type + person
         info = QLabel(f"{account['account_type']}  ·  {account.get('person_name','—')}")
-        info.setStyleSheet(Theme.text_style(color=Theme.TEXT_SECONDARY, size=13))
+        info.setProperty("textrole", "secondary-md")
         layout.addWidget(info)
 
         if account.get("account_number_masked"):
             acc_lbl = QLabel(f"Account: {account['account_number_masked']}")
-            acc_lbl.setStyleSheet(Theme.text_style(color=Theme.TEXT_MUTED, size=12))
+            acc_lbl.setProperty("textrole", "muted-md")
             layout.addWidget(acc_lbl)
 
         # Divider
@@ -345,12 +346,12 @@ class AccountsScreen(QWidget):
         # Balance
         bal_row = QHBoxLayout()
         bal_lbl = QLabel("Current Balance")
-        bal_lbl.setStyleSheet(Theme.text_style(color=Theme.TEXT_MUTED, size=11))
+        bal_lbl.setProperty("textrole", "muted-sm")
         bal_row.addWidget(bal_lbl)
         bal_row.addStretch()
         bal_val = QLabel(f"₹ {account['current_balance']:,.2f}")
         bal_val.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
-        bal_val.setStyleSheet(Theme.text_style(color=Theme.SUCCESS, size=16, weight=700))
+        bal_val.setProperty("textrole", "metric")
         bal_row.addWidget(bal_val)
         layout.addLayout(bal_row)
 
@@ -360,13 +361,14 @@ class AccountsScreen(QWidget):
         if account.get("branch_name"):  parts.append(account["branch_name"])
         if parts:
             det = QLabel("  ·  ".join(parts))
-            det.setStyleSheet(Theme.text_style(color=Theme.TEXT_MUTED, size=11))
+            det.setProperty("textrole", "muted-sm")
             det.setWordWrap(True)
             layout.addWidget(det)
 
         if account.get("debit_card_enabled"):
             dc = QLabel(f"Debit Card — ₹{account.get('debit_card_charges',0):.0f}/yr")
-            dc.setStyleSheet(Theme.text_style(color=Theme.WARNING, size=11, weight=600))
+            dc.setProperty("textrole", "emphasis-sm")
+            dc.setProperty("color", "warning")
             layout.addWidget(dc)
 
         layout.addStretch()
@@ -516,7 +518,7 @@ class AccountDetailsDialog(QDialog):
         hl.setContentsMargins(28, 0, 28, 0)
         title = QLabel(self.account.get('bank_display_name', self.account['bank_name']))
         title.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
-        title.setStyleSheet(Theme.text_style(color=Theme.PRIMARY_TEXT, size=16, weight=700))
+        title.setProperty("textrole", "title-lg")
         hl.addWidget(title)
         hl.addStretch()
         status = self.account.get("account_status", "Active")
@@ -641,7 +643,7 @@ class AccountDetailsDialog(QDialog):
 
         t = QLabel(title)
         t.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
-        t.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=13, weight=700))
+        t.setProperty("textrole", "emphasis-md")
         sl.addWidget(t)
 
         div = QFrame()
@@ -654,9 +656,9 @@ class AccountDetailsDialog(QDialog):
         form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         for field in fields:
             lbl = QLabel(f"{field[0]}:")
-            lbl.setStyleSheet(Theme.section_label_style())
+            lbl.setProperty("textrole", "section-label")
             val = QLabel(field[1])
-            val.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=13))
+            val.setProperty("textrole", "body-md")
             if len(field) == 3 and field[2]:
                 val.setWordWrap(True)
             form.addRow(lbl, val)

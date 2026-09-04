@@ -384,7 +384,7 @@ class StatementImportScreen(QWidget):
         
         type_row = QHBoxLayout()
         type_lbl = QLabel("File Type:")
-        type_lbl.setStyleSheet(Theme.section_label_style())
+        type_lbl.setProperty("textrole", "section-label")
         type_row.addWidget(type_lbl)
         
         self.file_type_combo = QComboBox()
@@ -400,7 +400,7 @@ class StatementImportScreen(QWidget):
         # AI parser status
         self.ai_status_lbl = QLabel("")
         self.ai_status_lbl.setFixedHeight(22)
-        self.ai_status_lbl.setStyleSheet(Theme.muted_style(11))
+        self.ai_status_lbl.setProperty("textrole", "muted-sm")
         type_row.addWidget(self.ai_status_lbl)
 
         btn_ai_check = Theme.btn("AI Check", "secondary", height=28, min_width=90)
@@ -630,7 +630,7 @@ class StatementImportScreen(QWidget):
             self._step_dots.append(dot)
 
             txt = QLabel(step_label)
-            txt.setStyleSheet(Theme.muted_style(11))
+            txt.setProperty("textrole", "muted-sm")
             row.addWidget(txt)
 
             if i == 1:
@@ -674,7 +674,7 @@ class StatementImportScreen(QWidget):
     def _card_title(self, text: str) -> QLabel:
         lbl = QLabel(text)
         lbl.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
-        lbl.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=13, weight=700))
+        lbl.setProperty("textrole", "emphasis-md")
         return lbl
 
     def _card_title_row(self, icon_name: str, text: str) -> QWidget:
@@ -697,7 +697,7 @@ class StatementImportScreen(QWidget):
 
     def _card_subtitle(self, text: str) -> QLabel:
         lbl = QLabel(text)
-        lbl.setStyleSheet(Theme.muted_style(12))
+        lbl.setProperty("textrole", "muted-md")
         return lbl
 
     def _on_person_changed(self):

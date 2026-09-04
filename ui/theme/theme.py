@@ -875,4 +875,50 @@ QFrame#setupStrengthBar[strength="weak"] {{ background: {t.gradient(t.DANGER_GRA
 QFrame#setupStrengthBar[strength="moderate"] {{ background: {t.gradient(t.WARNING_GRADIENT_START, t.WARNING_GRADIENT_END)}; border-radius: 2px; }}
 QFrame#setupStrengthBar[strength="strong"] {{ background: {t.gradient(t.SUCCESS_GRADIENT_START, t.SUCCESS_GRADIENT_END)}; border-radius: 2px; }}
 QCheckBox#setupTotpCheck {{ color: {t.TEXT_SECONDARY}; font-size: 12px; }}
+
+/* ═══════════════════════════ TEXT ROLES ════════════════════════════ */
+/* Title variants */
+QLabel[textrole="title-sm"] {{ color: {t.TEXT_HEADING}; font-size: 14px; font-weight: 700; }}
+QLabel[textrole="title-md"] {{ color: {t.TEXT_HEADING}; font-size: 15px; font-weight: 700; }}
+QLabel[textrole="title-lg"] {{ color: {t.TEXT_HEADING}; font-size: 16px; font-weight: 700; }}
+QLabel[textrole="title-xl"] {{ color: {t.TEXT_HEADING}; font-size: 18px; font-weight: 700; }}
+
+/* Section/label roles */
+QLabel[textrole="section-label"] {{ color: {t.TEXT_SECONDARY}; font-size: 12px; font-weight: 600; }}
+
+/* Muted text roles */
+QLabel[textrole="muted-sm"] {{ color: {t.TEXT_MUTED}; font-size: 11px; font-weight: 400; }}
+QLabel[textrole="muted-md"] {{ color: {t.TEXT_MUTED}; font-size: 12px; font-weight: 400; }}
+QLabel[textrole="muted-lg"] {{ color: {t.TEXT_MUTED}; font-size: 14px; font-weight: 400; }}
+
+/* Secondary text roles */
+QLabel[textrole="secondary-sm"] {{ color: {t.TEXT_SECONDARY}; font-size: 12px; font-weight: 400; }}
+QLabel[textrole="secondary-md"] {{ color: {t.TEXT_SECONDARY}; font-size: 13px; font-weight: 400; }}
+QLabel[textrole="secondary-lg"] {{ color: {t.TEXT_SECONDARY}; font-size: 14px; font-weight: 400; }}
+
+/* Body/primary text roles */
+QLabel[textrole="body-sm"] {{ color: {t.TEXT_PRIMARY}; font-size: 11px; font-weight: 400; }}
+QLabel[textrole="body-md"] {{ color: {t.TEXT_PRIMARY}; font-size: 13px; font-weight: 400; }}
+QLabel[textrole="body-lg"] {{ color: {t.TEXT_PRIMARY}; font-size: 14px; font-weight: 400; }}
+
+/* Emphasis text roles */
+QLabel[textrole="emphasis-sm"] {{ color: {t.TEXT_PRIMARY}; font-size: 11px; font-weight: 600; }}
+QLabel[textrole="emphasis-md"] {{ color: {t.TEXT_PRIMARY}; font-size: 13px; font-weight: 700; }}
+QLabel[textrole="emphasis-lg"] {{ color: {t.TEXT_PRIMARY}; font-size: 14px; font-weight: 700; }}
+QLabel[textrole="emphasis-xl"] {{ color: {t.TEXT_PRIMARY}; font-size: 16px; font-weight: 700; }}
+
+/* Metric value roles - base and semantic variants */
+QLabel[textrole="metric"] {{ color: {t.TEXT_SECONDARY}; font-size: 15px; font-weight: 700; }}
+QLabel[textrole="metric"][color="success"] {{ color: {t.SUCCESS}; }}
+QLabel[textrole="metric"][color="danger"] {{ color: {t.DANGER}; }}
+QLabel[textrole="metric"][color="warning"] {{ color: {t.WARNING}; }}
+QLabel[textrole="metric"][color="info"] {{ color: {t.INFO}; }}
+QLabel[textrole="metric"][color="teal"] {{ color: {t.TEAL}; }}
+QLabel[textrole="metric"][color="primary"] {{ color: {t.PRIMARY}; }}
+
+/* Semantic text colors (for dynamic labels) */
+QLabel[textrole="label"][color="danger"] {{ color: {t.DANGER}; }}
+QLabel[textrole="label"][color="success"] {{ color: {t.SUCCESS}; }}
+QLabel[textrole="label"][color="warning"] {{ color: {t.WARNING}; }}
+QLabel[textrole="label"][color="primary"] {{ color: {t.PRIMARY}; }}
 """

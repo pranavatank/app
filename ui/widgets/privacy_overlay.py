@@ -30,12 +30,12 @@ class PrivacyPinDialog(QDialog):
         title = QLabel("Privacy Mode Active")
         title.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=13, weight=700))
+        title.setProperty("textrole", "emphasis-md")
         layout.addWidget(title)
 
         info = QLabel("Enter your master password to reveal amounts.")
         info.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        info.setStyleSheet(Theme.muted_style(12))
+        info.setProperty("textrole", "muted-md")
         layout.addWidget(info)
 
         self.pin_input = QLineEdit()

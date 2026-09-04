@@ -193,7 +193,7 @@ class TransactionsScreen(QWidget):
         layout.setSpacing(10)
 
         self.unsaved_label = QLabel("Unsaved changes. Save to keep edits.")
-        self.unsaved_label.setStyleSheet(Theme.text_style(color=Theme.TEXT_SECONDARY, size=12, weight=600))
+        self.unsaved_label.setProperty("textrole", "emphasis-sm")
         layout.addWidget(self.unsaved_label)
         layout.addStretch()
 
@@ -237,7 +237,7 @@ class TransactionsScreen(QWidget):
 
         def lbl(t):
             l = QLabel(t)
-            l.setStyleSheet(Theme.section_label_style())
+            l.setProperty("textrole", "section-label")
             return l
 
         layout.addWidget(lbl("Person"))

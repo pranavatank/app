@@ -36,7 +36,7 @@ class TransactionEditDialog(QDialog):
         title_row.addWidget(icon_label("edit", size=20, color=Theme.PRIMARY))
         title = QLabel("Edit Transaction")
         title.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
-        title.setStyleSheet(Theme.title_style(14))
+        title.setProperty("textrole", "title-sm")
         title_row.addWidget(title)
         title_row.addStretch()
         layout.addLayout(title_row)
@@ -170,7 +170,7 @@ class TransactionEditDialog(QDialog):
 
     def _label(self, text: str) -> QLabel:
         lbl = QLabel(text)
-        lbl.setStyleSheet(Theme.section_label_style())
+        lbl.setProperty("textrole", "section-label")
         return lbl
 
     def _on_type_changed(self, txn_type: str):

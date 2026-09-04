@@ -1395,3 +1395,36 @@ text token against every stop of its family including hover stops. Worst value
 across all four themes is 4.52 against a 4.5 minimum. This is what stops the
 next palette from regressing the same way; the original gate only tested flat
 PRIMARY, which is why it never caught this.
+
+## Z17. T041 reached 143 inline setStyleSheet calls, not the target of 60 (OPEN)
+Three staged passes took inline `setStyleSheet()` calls outside `ui/theme/`
+from 373 to 143. The acceptance target is under 60, so a gap of ~83 remains.
+
+What moved: static styles are now object-name rules in `get_stylesheet()`,
+repeated variants are dynamic properties with unpolish/polish, and the
+parameterised `Theme.text_style()` pattern that dominated the two worst files
+was largely replaced by `textrole` QSS classes (title/section/muted/secondary/
+body/emphasis/metric, with semantic colour variants).
+
+What remains, by category:
+  ~30  compound style helpers (Theme.filter_bar_style, card_style, stat_tile_style)
+  ~25  colours genuinely determined at runtime from data
+  ~20  per-widget CSS helper methods (_icon_css, _error_css, _card_css)
+  ~20  background-only styles
+  ~48  component-specific one-offs
+Closing the rest means decomposing the compound style helpers into QSS rules
+and giving every runtime colour a property, which is a deeper change than a
+styling relocation and carries real regression risk across every screen.
+
+13 refresh_theme() implementations remain against a target of 3. Several are
+now legitimate — accounts, transactions and fixed_deposits each host a
+relocated matplotlib ChartWidget that QSS cannot style — but not 13 of them.
+
+RISK OBSERVED: the stage-3 pass introduced 6 NameError/TypeError defects of the
+form `label.setProperty(...)` where `self.label` was meant, plus two
+`setStyleSheet("textrole", ...)` calls with a property-setter signature. All
+six crashed a screen at construction and only one was caught by an existing
+test, because lazily-built screens hide constructor errors until visited. They
+were found by an explicit sweep of the diff and are fixed, with all 9 screens
+now construction-tested under all 4 themes. Any further pass at this task
+should keep that sweep.

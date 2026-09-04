@@ -71,8 +71,7 @@ class SummaryPanel(QFrame):
 
         self._title_lbl = QLabel(title)
         self._title_lbl.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
-        self._title_lbl.setStyleSheet(
-            Theme.text_style(color=Theme.TEXT_PRIMARY, size=12, weight=700))
+        self._title_lbl.setProperty("textrole", "emphasis-md")
         header_row.addWidget(self._title_lbl)
         header_row.addStretch()
         outer.addLayout(header_row)
@@ -149,14 +148,13 @@ class SummaryPanel(QFrame):
             self._render_icon()
             self._icon_bg.setStyleSheet(self._icon_css())
         if self._title_lbl:
-            self._title_lbl.setStyleSheet(
-                Theme.text_style(color=Theme.TEXT_PRIMARY, size=12, weight=700))
+            self._title_lbl.setProperty("textrole", "emphasis-md")
         if self._div:
             self._div.setStyleSheet(f"background: {Theme.DIVIDER};")
         for div in self._dividers:
             div.setStyleSheet(f"background: {Theme.DIVIDER};")
         for key, meta in self._row_meta.items():
-            meta["label_widget"].setStyleSheet(Theme.text_style(color=Theme.TEXT_SECONDARY, size=12))
+            meta["label_widget"].setProperty("textrole", "secondary-sm")
             val = self._rows.get(key)
             if val is None:
                 continue
@@ -195,7 +193,7 @@ class SummaryPanel(QFrame):
         row.setSpacing(6)
 
         lbl = QLabel(label)
-        lbl.setStyleSheet(Theme.text_style(color=Theme.TEXT_SECONDARY, size=12))
+        lbl.setProperty("textrole", "secondary-sm")
         lbl.setWordWrap(False)
 
         color = (getattr(Theme, value_color_role, None) if value_color_role else None) \

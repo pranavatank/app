@@ -1087,7 +1087,7 @@ class RecordsPreviewDialog(QDialog):
 
         t = QLabel(title)
         t.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
-        t.setStyleSheet(Theme.title_style(14))
+        t.setProperty("textrole", "title-sm")
         layout.addWidget(t)
 
         sub_text = subtitle or (
@@ -1097,7 +1097,7 @@ class RecordsPreviewDialog(QDialog):
         )
         s = QLabel(sub_text)
         s.setWordWrap(True)
-        s.setStyleSheet(Theme.muted_style(12))
+        s.setProperty("textrole", "muted-md")
         layout.addWidget(s)
 
         self.table_widget = ExcelTableWithStats(show_checkboxes=True)
@@ -1110,7 +1110,7 @@ class RecordsPreviewDialog(QDialog):
 
         btn_row = QHBoxLayout()
         self.count_lbl = QLabel("")
-        self.count_lbl.setStyleSheet(Theme.muted_style(11))
+        self.count_lbl.setProperty("textrole", "muted-sm")
         btn_row.addWidget(self.count_lbl)
         btn_row.addStretch()
         btn_cancel = Theme.btn("Cancel", "secondary", height=38, min_width=110)
@@ -1180,7 +1180,7 @@ class NewSourceDialog(QDialog):
 
         title = QLabel(f"New TANs found in {self.source_type}")
         title.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
-        title.setStyleSheet(Theme.title_style(14))
+        title.setProperty("textrole", "title-sm")
         layout.addWidget(title)
         
         info = QLabel(
@@ -1188,7 +1188,7 @@ class NewSourceDialog(QDialog):
             "Please select the type of income source for each:"
         )
         info.setWordWrap(True)
-        info.setStyleSheet(Theme.text_style(size=12))
+        info.setProperty("textrole", "body-sm")
         layout.addWidget(info)
         
         # Form for each record
@@ -1206,7 +1206,7 @@ class NewSourceDialog(QDialog):
                 name = rec.get("information_source", "Unknown")
             
             label = QLabel(f"{name}\n{tan}")
-            label.setStyleSheet(Theme.text_style(size=11))
+            label.setProperty("textrole", "muted-sm")
             
             combo = QComboBox()
             combo.addItems(SOURCE_TYPES)
@@ -1220,7 +1220,7 @@ class NewSourceDialog(QDialog):
         
         if len(self.records) > 10:
             note = QLabel(f"Note: Showing first 10 of {len(self.records)} new sources.")
-            note.setStyleSheet(Theme.muted_style(11))
+            note.setProperty("textrole", "muted-sm")
             layout.addWidget(note)
         
         # Buttons

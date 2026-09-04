@@ -221,10 +221,7 @@ class Loader(QWidget):
         self._msg_label.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
         self._msg_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._msg_label.setWordWrap(True)
-        self._msg_label.setStyleSheet(
-            Theme.text_style(color=Theme.TEXT_PRIMARY, size=13, weight=700) +
-            " background: transparent; border: none;"
-        )
+        self._msg_label.setProperty("textrole", "emphasis-md")
         card_layout.addWidget(self._msg_label)
 
         # Subtitle — always created (even if empty) so set_subtitle() can
@@ -233,7 +230,7 @@ class Loader(QWidget):
         self._sub_label = QLabel(self._subtitle)
         self._sub_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._sub_label.setWordWrap(True)
-        self._sub_label.setStyleSheet(Theme.muted_style(11) + " background: transparent; border: none;")
+        self._sub_label.setProperty("textrole", "muted-sm")
         self._sub_label.setVisible(bool(self._subtitle))
         card_layout.addWidget(self._sub_label)
 

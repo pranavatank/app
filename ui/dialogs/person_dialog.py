@@ -41,7 +41,7 @@ class PersonManagementDialog(QDialog):
         header.setSpacing(10)
         header.addWidget(icon_label("persons", size=20, color=Theme.PRIMARY))
         title = QLabel("Family Members")
-        title.setStyleSheet(Theme.title_style(14))
+        title.setProperty("textrole", "title-sm")
         header.addWidget(title)
         header.addStretch()
         btn_add = _btn("  Add Person", "primary")

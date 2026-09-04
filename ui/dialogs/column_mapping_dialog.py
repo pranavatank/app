@@ -40,7 +40,7 @@ class ColumnMappingDialog(QDialog):
         title_row.addWidget(icon_label("list_view", size=20, color=Theme.PRIMARY))
         title = QLabel("Map Columns")
         title.setFont(QFont("Segoe UI", 15, QFont.Weight.Bold))
-        title.setStyleSheet(Theme.title_style(15))
+        title.setProperty("textrole", "title-md")
         title_row.addWidget(title)
         title_row.addStretch()
         layout.addLayout(title_row)

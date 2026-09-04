@@ -60,18 +60,18 @@ class TaxScreen(QWidget):
         head_left = QVBoxLayout()
         title = QLabel("Tax Planner")
         title.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
-        title.setStyleSheet(Theme.title_style(16))
+        title.setProperty("textrole", "title-lg")
         head_left.addWidget(title)
 
         self.person_label = QLabel("Select a person from the top bar")
         self.person_label.setFont(QFont("Segoe UI", 12, QFont.Weight.DemiBold))
-        self.person_label.setStyleSheet(Theme.text_style(color=Theme.TEXT_SECONDARY, size=12, weight=600))
+        self.person_label.setProperty("textrole", "emphasis-sm")
         head_left.addWidget(self.person_label)
         header_layout.addLayout(head_left)
         header_layout.addStretch()
 
         source_label = QLabel("Data Source")
-        source_label.setStyleSheet(Theme.section_label_style())
+        source_label.setProperty("textrole", "section-label")
         header_layout.addWidget(source_label)
 
         self.source_combo = QComboBox()
@@ -155,7 +155,7 @@ class TaxScreen(QWidget):
         layout.setSpacing(8)
 
         title = QLabel("Current Context")
-        title.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=12, weight=700))
+        title.setProperty("textrole", "emphasis-md")
         layout.addWidget(title)
 
         row1 = QHBoxLayout(); row1.setSpacing(8)
@@ -219,7 +219,8 @@ class TaxScreen(QWidget):
         self.pan_label       = QLabel("—"); layout.addRow("PAN:", self.pan_label)
         self.taxpayer_label  = QLabel("—"); layout.addRow("Name of Taxpayer:", self.taxpayer_label)
         self.ay_label        = QLabel("—")
-        self.ay_label.setStyleSheet(Theme.text_style(color=Theme.PRIMARY, weight=600))
+        self.ay_label.setProperty("textrole", "emphasis-sm")
+        self.ay_label.setProperty("color", "primary")
         layout.addRow("Assessment Year:", self.ay_label)
         self.category_label  = QLabel("Individual"); layout.addRow("Taxpayer Category:", self.category_label)
         self.age_label       = QLabel("Below 60 years"); layout.addRow("Your Age:", self.age_label)
@@ -281,7 +282,8 @@ class TaxScreen(QWidget):
         self.other_income_input      = self._spin(); layout.addRow("Any Other Income:", self.other_income_input)
         self.gross_income_label = QLabel("₹ 0.00")
         self.gross_income_label.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
-        self.gross_income_label.setStyleSheet(Theme.text_style(color=Theme.PRIMARY, size=14, weight=700))
+        self.gross_income_label.setProperty("textrole", "emphasis-lg")
+        self.gross_income_label.setProperty("color", "primary")
         layout.addRow("Gross Total Income:", self.gross_income_label)
         return group
 
@@ -293,7 +295,8 @@ class TaxScreen(QWidget):
             "standard deduction (₹75,000) and 80CCD(2) employer NPS apply."
         )
         note_top.setWordWrap(True)
-        note_top.setStyleSheet(Theme.text_style(color=Theme.WARNING_DARK, size=11, weight=600))
+        note_top.setProperty("textrole", "emphasis-sm")
+        note_top.setProperty("color", "warning")
         layout.addRow("", note_top)
         self.deduction_80c    = self._spin(); layout.addRow("80C — LIC, PF, PPF, NSC (max ₹1.5L):", self.deduction_80c)
         self.deduction_80ccc  = self._spin(); layout.addRow("80CCC — Pension Fund:", self.deduction_80ccc)
@@ -310,7 +313,7 @@ class TaxScreen(QWidget):
         self.hra_exemption    = self._spin(); layout.addRow("HRA Exemption:", self.hra_exemption)
         note = QLabel("Old-regime standard deduction (₹50,000) is applied automatically in the salary section.")
         note.setWordWrap(True)
-        note.setStyleSheet(Theme.text_style(color=Theme.TEXT_MUTED, size=12))
+        note.setProperty("textrole", "muted-md")
         layout.addRow("", note)
         return group
 
@@ -319,7 +322,7 @@ class TaxScreen(QWidget):
         layout = QFormLayout(group); layout.setSpacing(12)
         note = QLabel("Used to work out what you still owe, or your refund, below.")
         note.setWordWrap(True)
-        note.setStyleSheet(Theme.muted_style(11))
+        note.setProperty("textrole", "muted-sm")
         layout.addRow("", note)
         self.tds_salary          = self._spin(); layout.addRow("TDS on Salary:", self.tds_salary)
         self.tds_other           = self._spin(); layout.addRow("TDS on Other Income:", self.tds_other)
@@ -353,23 +356,23 @@ class TaxScreen(QWidget):
         net_card.setObjectName("NetPayableCard")
         net_layout = QVBoxLayout(net_card); net_layout.setSpacing(6)
         net_title = QLabel("Net Result — New Regime")
-        net_title.setStyleSheet(Theme.section_label_style())
+        net_title.setProperty("textrole", "section-label")
         net_layout.addWidget(net_title)
         self.net_payable_label = QLabel("Calculate to see payable / refund")
         self.net_payable_label.setFont(QFont("Segoe UI", 17, QFont.Weight.Bold))
         self.net_payable_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.net_payable_label.setWordWrap(True)
-        self.net_payable_label.setStyleSheet(Theme.text_style(color=Theme.TEXT_SECONDARY, size=15, weight=700))
+        self.net_payable_label.setProperty("textrole", "metric")
         net_layout.addWidget(self.net_payable_label)
         self.taxes_paid_label = QLabel("Taxes paid so far: ₹ 0.00")
         self.taxes_paid_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.taxes_paid_label.setStyleSheet(Theme.muted_style(11))
+        self.taxes_paid_label.setProperty("textrole", "muted-sm")
         net_layout.addWidget(self.taxes_paid_label)
         layout.addWidget(net_card)
 
         helper = QLabel("New Regime is the default since FY 2023-24. Use App Actual Data when AIS/TIS is outdated.")
         helper.setWordWrap(True)
-        helper.setStyleSheet(Theme.muted_style(11))
+        helper.setProperty("textrole", "muted-sm")
         layout.addWidget(helper)
         return group
 
@@ -380,7 +383,7 @@ class TaxScreen(QWidget):
 
         self.proj_subtitle = QLabel("Select a person to project next year")
         self.proj_subtitle.setWordWrap(True)
-        self.proj_subtitle.setStyleSheet(Theme.muted_style(11))
+        self.proj_subtitle.setProperty("textrole", "muted-sm")
         layout.addWidget(self.proj_subtitle)
 
         form = QFormLayout(); form.setSpacing(6)
@@ -406,12 +409,12 @@ class TaxScreen(QWidget):
         self.proj_slab_label.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
         self.proj_slab_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.proj_slab_label.setWordWrap(True)
-        self.proj_slab_label.setStyleSheet(Theme.text_style(color=Theme.TEXT_SECONDARY, size=14, weight=700))
+        self.proj_slab_label.setProperty("textrole", "metric")
         slab_l.addWidget(self.proj_slab_label)
         self.proj_slab_sub = QLabel("")
         self.proj_slab_sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.proj_slab_sub.setWordWrap(True)
-        self.proj_slab_sub.setStyleSheet(Theme.muted_style(11))
+        self.proj_slab_sub.setProperty("textrole", "muted-sm")
         slab_l.addWidget(self.proj_slab_sub)
         layout.addWidget(self._proj_slab_card)
 
@@ -420,7 +423,7 @@ class TaxScreen(QWidget):
             "Salary and savings interest are projected — treat the total as an estimate."
         )
         note.setWordWrap(True)
-        note.setStyleSheet(Theme.muted_style(11))
+        note.setProperty("textrole", "muted-sm")
         layout.addWidget(note)
         return group
 
@@ -433,7 +436,7 @@ class TaxScreen(QWidget):
                       self.proj_gross, self.proj_taxable, self.proj_tax):
                 l.setText("—")
             self.proj_slab_label.setText("—")
-            self.proj_slab_label.setStyleSheet(Theme.text_style(color=Theme.TEXT_SECONDARY, size=14, weight=700))
+            self.proj_slab_label.setProperty("textrole", "metric")
             self.proj_slab_sub.setText("")
             return
 
@@ -453,7 +456,8 @@ class TaxScreen(QWidget):
         rate = slab["current_rate"]
         if slab["is_top_slab"]:
             self.proj_slab_label.setText(f"Top slab — {rate}% marginal rate")
-            self.proj_slab_label.setStyleSheet(Theme.text_style(color=Theme.DANGER, size=14, weight=700))
+            self.proj_slab_label.setProperty("textrole", "metric")
+            self.proj_slab_label.setProperty("color", "danger")
             self.proj_slab_sub.setText("Projected income is in the highest New Regime bracket.")
         else:
             to_next = slab["amount_to_next_slab"] or 0
@@ -461,12 +465,13 @@ class TaxScreen(QWidget):
             self.proj_slab_label.setText(f"{rate}% slab  ·  ₹ {to_next:,.0f} to the {next_rate}% slab")
             # Less headroom before the next bracket → warmer colour.
             if to_next <= 50000:
-                color = Theme.DANGER
+                color_role = "danger"
             elif to_next <= 150000:
-                color = Theme.WARNING
+                color_role = "warning"
             else:
-                color = Theme.SUCCESS
-            self.proj_slab_label.setStyleSheet(Theme.text_style(color=color, size=14, weight=700))
+                color_role = "success"
+            self.proj_slab_label.setProperty("textrole", "metric")
+            self.proj_slab_label.setProperty("color", color_role)
             ceiling = slab["slab_ceiling"] or 0
             self.proj_slab_sub.setText(
                 f"Cross ₹ {ceiling:,.0f} taxable income and your marginal rate rises to {next_rate}%.")
@@ -523,15 +528,11 @@ class TaxScreen(QWidget):
     def _result_lbl(self, bold=False) -> QLabel:
         l = QLabel("—")
         if bold:
-            l.setStyleSheet(
-                Theme.text_style(color=Theme.TEXT_PRIMARY, size=14, weight=700)
-                + " border: none; background: transparent; padding: 0; margin: 0;"
-            )
+            l.setProperty("textrole", "emphasis-lg")
+            l.setStyleSheet(" border: none; background: transparent; padding: 0; margin: 0;")
         else:
-            l.setStyleSheet(
-                Theme.text_style(color=Theme.TEXT_PRIMARY, size=13, weight=400)
-                + " border: none; background: transparent; padding: 0; margin: 0;"
-            )
+            l.setProperty("textrole", "body-md")
+            l.setStyleSheet(" border: none; background: transparent; padding: 0; margin: 0;")
         return l
 
     def _connect_signals(self):
@@ -604,7 +605,8 @@ class TaxScreen(QWidget):
         self._update_projection()
         if not pid:
             self.person_label.setText("Please select a person from the top bar")
-            self.person_label.setStyleSheet(Theme.text_style(color=Theme.WARNING, size=13, weight=600))
+            self.person_label.setProperty("textrole", "emphasis-md")
+            self.person_label.setProperty("color", "warning")
             self._clear_inputs()
             self.advance_tax_banner.clear()
             return
@@ -612,7 +614,7 @@ class TaxScreen(QWidget):
         if person:
             ay = get_assessment_year(fy)
             self.person_label.setText(f"Tax Estimator for {person['full_name']}  ·  FY {fy}")
-            self.person_label.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=13, weight=700))
+            self.person_label.setProperty("textrole", "emphasis-md")
             self.taxpayer_label.setText(person["full_name"])
             self.pan_label.setText(person.get("pan_number","—"))
             self.ay_label.setText(ay)
@@ -689,7 +691,7 @@ class TaxScreen(QWidget):
         for l in [self.new_taxable, self.new_tax, self.new_rebate, self.new_cess, self.new_total]:
             l.setText("—")
         self.net_payable_label.setText("Calculate to see payable / refund")
-        self.net_payable_label.setStyleSheet(Theme.text_style(color=Theme.TEXT_SECONDARY, size=15, weight=700))
+        self.net_payable_label.setProperty("textrole", "metric")
         self.taxes_paid_label.setText("Taxes paid so far: ₹ 0.00")
 
     def _on_calculate(self):
@@ -763,15 +765,18 @@ class TaxScreen(QWidget):
 
         self.taxes_paid_label.setText(f"Taxes paid so far: ₹ {taxes_paid:,.2f}")
         net_new = new["total_tax"] - taxes_paid
+        self.net_payable_label.setProperty("textrole", "metric")
         if net_new > 0.005:
             self.net_payable_label.setText(f"Amount Payable: ₹ {net_new:,.2f}")
-            self.net_payable_label.setStyleSheet(Theme.text_style(color=Theme.DANGER, size=15, weight=700))
+            self.net_payable_label.setProperty("color", "danger")
         elif net_new < -0.005:
             self.net_payable_label.setText(f"Refund Due: ₹ {abs(net_new):,.2f}")
-            self.net_payable_label.setStyleSheet(Theme.text_style(color=Theme.SUCCESS, size=15, weight=700))
+            self.net_payable_label.setProperty("color", "success")
         else:
             self.net_payable_label.setText("Fully settled — nothing payable, no refund due")
-            self.net_payable_label.setStyleSheet(Theme.text_style(color=Theme.TEXT_SECONDARY, size=15, weight=700))
+            self.net_payable_label.setProperty("color", None)
+        self.net_payable_label.style().unpolish(self.net_payable_label)
+        self.net_payable_label.style().polish(self.net_payable_label)
 
     def _update_advance_tax_banner(self):
         """Calculate and display advance tax reminder."""

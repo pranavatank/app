@@ -352,13 +352,13 @@ class SettingsScreen(QWidget):
         ic.setObjectName("transparentSurface"); hdr.addWidget(ic)
         title = QLabel("Color Theme")
         title.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
-        title.setStyleSheet(Theme.text_style(color=Theme.TEXT_HEADING, size=14, weight=700))
+        title.setProperty("textrole", "title-sm")
         hdr.addWidget(title); hdr.addSpacing(10)
         live = QLabel("● Live — no restart needed")
         live.setObjectName("themeLiveIndicator")
         hdr.addWidget(live); hdr.addStretch()
         sub = QLabel("Click any card to switch instantly")
-        sub.setStyleSheet(Theme.muted_style(12)); hdr.addWidget(sub)
+        sub.setProperty("textrole", "muted-md"); hdr.addWidget(sub)
         vl.addLayout(hdr)
 
         # Container
@@ -395,7 +395,7 @@ class SettingsScreen(QWidget):
             cell.addWidget(card, alignment=Qt.AlignmentFlag.AlignHCenter)
             n = QLabel(f"{info.get('emoji','🎨')} {info['name']}")
             n.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            n.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=11, weight=600))
+            n.setProperty("textrole", "emphasis-sm")
             cell.addWidget(n)
 
             (light_row if not info["is_dark"] else dark_row).addWidget(cell_w)
@@ -433,11 +433,11 @@ class SettingsScreen(QWidget):
         info = themes.get(name, {})
         if self._theme_name_lbl:
             self._theme_name_lbl.setText(f"{info.get('emoji','🎨')}  {name}")
-            self._theme_name_lbl.setStyleSheet(
-                Theme.text_style(color=Theme.PRIMARY, size=12, weight=700))
+            self._theme_name_lbl.setProperty("textrole", "emphasis-md")
+            self._theme_name_lbl.setProperty("color", "primary")
         if self._theme_desc_lbl:
             self._theme_desc_lbl.setText(info.get("description", ""))
-            self._theme_desc_lbl.setStyleSheet(Theme.muted_style(12))
+            self._theme_desc_lbl.setProperty("textrole", "muted-md")
         if self._theme_mode_badge:
             self._theme_mode_badge.setText("🌙 Dark" if info.get("is_dark") else "☀️ Light")
             self._theme_mode_badge.setStyleSheet(
@@ -549,7 +549,8 @@ class SettingsScreen(QWidget):
         c2 = self._card(); l2 = QVBoxLayout(c2)
         l2.addWidget(self._card_title("Restore from Backup"))
         w = QLabel("⚠  Replaces your current database — all data will be lost!")
-        w.setStyleSheet(Theme.text_style(color=Theme.WARNING_DARK, size=12, weight=600))
+        w.setProperty("textrole", "emphasis-sm")
+        w.setProperty("color", "warning")
         l2.addWidget(w)
         b2 = Theme.btn("  Restore Backup", "danger", height=36, min_width=155)
         b2.setIcon(app_icon("restore", color="#FFFFFF", size=16))
@@ -565,9 +566,8 @@ class SettingsScreen(QWidget):
         fl.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         info = _device_info()
         dev = QLabel(info["device_id"][:34] + "…")
-        dev.setStyleSheet(
-            Theme.text_style(color=Theme.TEXT_PRIMARY, size=11) +
-            " font-family: 'Consolas','Courier New',monospace; background:transparent;")
+        dev.setProperty("textrole", "body-sm")
+        dev.setStyleSheet(f"font-family: 'Consolas','Courier New',monospace; background:transparent;")
         fl.addRow(self._form_lbl("Device ID"), dev)
         fl.addRow(self._form_lbl("Platform"),  QLabel(info["platform"][:60]))
         fl.addRow(self._form_lbl("Hostname"),  QLabel(info.get("hostname","—")))
@@ -592,18 +592,18 @@ class SettingsScreen(QWidget):
 
     def _card_title(self, text: str) -> QLabel:
         l = QLabel(text); l.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
-        l.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=11, weight=700))
+        l.setProperty("textrole", "emphasis-sm")
         return l
 
     def _muted(self, text: str) -> QLabel:
-        l = QLabel(text); l.setStyleSheet(Theme.muted_style(11)); return l
+        l = QLabel(text); l.setProperty("textrole", "muted-sm"); return l
 
     def _pwd_field(self, placeholder: str) -> QLineEdit:
         e = QLineEdit(); e.setEchoMode(QLineEdit.EchoMode.Password)
         e.setPlaceholderText(placeholder); e.setFixedHeight(36); return e
 
     def _form_lbl(self, text: str) -> QLabel:
-        l = QLabel(f"{text}:"); l.setStyleSheet(Theme.section_label_style(12)); return l
+        l = QLabel(f"{text}:"); l.setProperty("textrole", "section-label"); return l
 
     # ── Handlers ──────────────────────────────────────────────────────────────
 
