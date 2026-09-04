@@ -70,7 +70,7 @@ EXPENSE_CATEGORIES = [
     "Food & Dining", "Groceries", "Travel", "Fuel",
     "EMI / Loan", "Utilities", "Medical", "Education",
     "Shopping", "Entertainment", "Insurance", "Investment",
-    "Fixed Deposit", "FD Principal",
+    "Fixed Deposit", "FD Principal", "Bank Charges",
     "Tax Payment", "Other Expense",
 ]
 

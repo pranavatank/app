@@ -33,6 +33,7 @@ def _migrate_fixed_deposit_schema_if_needed(conn: sqlite3.Connection, cur: sqlit
     has_maturity_amount_formula = "maturity_amount_formula" in col_meta
     has_maturity_amount_bank = "maturity_amount_bank" in col_meta
     has_maturity_calc_method = "maturity_calc_method" in col_meta
+    has_deposit_account_no = "deposit_account_no" in col_meta
 
     if needs_nullable_migration:
         conn.execute("PRAGMA foreign_keys=OFF")
@@ -76,6 +77,7 @@ def _migrate_fixed_deposit_schema_if_needed(conn: sqlite3.Connection, cur: sqlit
         source_file_expr = "source_statement_file" if has_source_statement_file else "NULL"
         source_tx_expr = "source_transaction_id" if has_source_transaction_id else "NULL"
         source_desc_expr = "source_description" if has_source_description else "NULL"
+        deposit_account_expr = "deposit_account_no" if has_deposit_account_no else "NULL"
 
         cur.execute(f"""
             INSERT INTO FixedDeposit_new
@@ -87,6 +89,7 @@ def _migrate_fixed_deposit_schema_if_needed(conn: sqlite3.Connection, cur: sqlit
                    maturity_amount_bank, maturity_calc_method,
                                      expected_interest_amount, actual_interest_amount,
                                      linked_transaction_id, source_statement_file, source_transaction_id,
+                   deposit_account_no,
                    status, source_description)
             SELECT fd_id, account_id, person_id, principal_amount, start_date,
                      {fd_reference_expr},
@@ -96,6 +99,7 @@ def _migrate_fixed_deposit_schema_if_needed(conn: sqlite3.Connection, cur: sqlit
                      {maturity_amount_bank_expr}, {maturity_calc_method_expr},
                      {expected_interest_expr}, {actual_interest_expr},
                      {linked_tx_expr}, {source_file_expr}, {source_tx_expr},
+                     {deposit_account_expr},
                      status, {source_desc_expr}
             FROM FixedDeposit
         """)
@@ -129,6 +133,8 @@ def _migrate_fixed_deposit_schema_if_needed(conn: sqlite3.Connection, cur: sqlit
         cur.execute("ALTER TABLE FixedDeposit ADD COLUMN maturity_amount_bank REAL")
     if not has_maturity_calc_method:
         cur.execute("ALTER TABLE FixedDeposit ADD COLUMN maturity_calc_method TEXT DEFAULT 'Formula'")
+    if not has_deposit_account_no:
+        cur.execute("ALTER TABLE FixedDeposit ADD COLUMN deposit_account_no TEXT")
 
     cur.execute("""
         UPDATE FixedDeposit
@@ -222,6 +228,8 @@ def _migrate_transactions_schema_if_needed(cur: sqlite3.Cursor) -> None:
         cur.execute("ALTER TABLE Transactions ADD COLUMN internal_transfer_group_id INTEGER")
     if "is_internal_transfer" not in cols:
         cur.execute("ALTER TABLE Transactions ADD COLUMN is_internal_transfer INTEGER NOT NULL DEFAULT 0")
+    if "deposit_account_no" not in cols:
+        cur.execute("ALTER TABLE Transactions ADD COLUMN deposit_account_no TEXT")
     cur.execute(
         "CREATE INDEX IF NOT EXISTS idx_Transactions_reference_no "
         "ON Transactions(reference_no)"
@@ -373,6 +381,7 @@ def initialise_database() -> None:
             amount           REAL    NOT NULL,
             reference_no     TEXT,
             description      TEXT,
+            deposit_account_no TEXT,
             balance_after    REAL,
             linked_transaction_id INTEGER REFERENCES Transactions(transaction_id),
             internal_transfer_group_id INTEGER,
@@ -406,10 +415,16 @@ def initialise_database() -> None:
             linked_transaction_id INTEGER REFERENCES Transactions(transaction_id),
             source_statement_file TEXT,
             source_transaction_id INTEGER REFERENCES Transactions(transaction_id),
+            deposit_account_no TEXT,
             status            TEXT    NOT NULL DEFAULT 'Active',
             source_description TEXT
         )
     """)
+
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_FixedDeposit_deposit_account_no "
+        "ON FixedDeposit(deposit_account_no)"
+    )
 
     # ── FDInterestRecord ─────────────────────────────────────────────────────
     cur.execute("""

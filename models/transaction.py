@@ -270,6 +270,7 @@ def add_transaction(account_id: int, person_id: int, transaction_date: str,
                     category: str = None, mode: str = None,
                     description: str = None, balance_after: float = None,
                     reference_no: str = None,
+                    deposit_account_no: str = None,
                     source: str = "Manual") -> int:
     """Insert a transaction. Returns new transaction_id."""
     txn_type = normalize_transaction_type(transaction_type)
@@ -277,10 +278,10 @@ def add_transaction(account_id: int, person_id: int, transaction_date: str,
     cur = conn.execute("""
         INSERT INTO Transactions
             (account_id, person_id, transaction_date, transaction_type,
-                         category, mode, amount, reference_no, description, balance_after, source)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         category, mode, amount, reference_no, description, deposit_account_no, balance_after, source)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (account_id, person_id, transaction_date, txn_type,
-                    category, mode, amount, reference_no, description, balance_after, source))
+                    category, mode, amount, reference_no, description, deposit_account_no, balance_after, source))
     conn.commit()
     txn_id = cur.lastrowid
     conn.close()
@@ -291,7 +292,7 @@ def add_transactions_batch(account_id: int, person_id: int, transactions: list[d
     """Insert multiple transactions in a single DB transaction. Returns list of new ids.
 
     Each item in `transactions` should be a dict with keys: transaction_date, transaction_type, amount,
-    category, mode, description, reference_no, balance_after (optional).
+    category, mode, description, reference_no, deposit_account_no, balance_after (optional).
     """
     conn = get_connection()
     ids = []
@@ -302,13 +303,13 @@ def add_transactions_batch(account_id: int, person_id: int, transactions: list[d
                 """
                 INSERT INTO Transactions
                     (account_id, person_id, transaction_date, transaction_type,
-                                 category, mode, amount, reference_no, description, balance_after, source)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                 category, mode, amount, reference_no, description, deposit_account_no, balance_after, source)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     account_id, person_id, txn.get("transaction_date"), txn_type,
                     txn.get("category"), txn.get("mode"), txn.get("amount"), txn.get("reference_no"),
-                    txn.get("description"), txn.get("balance_after"), source
+                    txn.get("description"), txn.get("deposit_account_no"), txn.get("balance_after"), source
                 )
             )
             ids.append(cur.lastrowid)
