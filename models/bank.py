@@ -10,36 +10,6 @@ from core.database import get_connection
 _TAN_RE = re.compile(r"\(([A-Z0-9]{10})\)")
 
 
-def create_bank_table():
-    """Create Bank table if not exists."""
-    conn = get_connection()
-    try:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS Bank (
-                bank_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                bank_name TEXT NOT NULL UNIQUE,
-                nickname TEXT,
-                tan_code TEXT,
-                created_at TEXT DEFAULT (datetime('now'))
-            )
-        """)
-
-        cols = {row[1] for row in conn.execute("PRAGMA table_info(Bank)").fetchall()}
-        if "nickname" not in cols:
-            conn.execute("ALTER TABLE Bank ADD COLUMN nickname TEXT")
-        if "tan_code" not in cols:
-            conn.execute("ALTER TABLE Bank ADD COLUMN tan_code TEXT")
-
-        # Unique TAN (ignore NULL/empty)
-        conn.execute(
-            "CREATE UNIQUE INDEX IF NOT EXISTS idx_Bank_tan_code_unique "
-            "ON Bank(tan_code) WHERE tan_code IS NOT NULL AND tan_code <> ''"
-        )
-        conn.commit()
-    finally:
-        conn.close()
-
-
 def _normalize_bank_name(bank_name: str) -> str:
     return (bank_name or "").strip()
 
@@ -51,7 +21,6 @@ def add_bank(bank_name: str, nickname: str = None) -> int:
     if not bank_name:
         return None
 
-    create_bank_table()
     conn = get_connection()
     try:
         try:
@@ -96,7 +65,6 @@ def update_bank_tan_code_if_exists(bank_name: str, tan_code: str) -> bool:
     if not name or not tan:
         return False
 
-    create_bank_table()
     conn = get_connection()
     try:
         row = conn.execute(
@@ -126,7 +94,6 @@ def update_bank_tan_code_if_exists(bank_name: str, tan_code: str) -> bool:
 
 def get_all_banks() -> list[dict]:
     """Get all banks ordered by name."""
-    create_bank_table()
     conn = get_connection()
     try:
         rows = conn.execute("""
@@ -157,7 +124,6 @@ def get_or_create_bank(bank_name: str) -> int:
     bank_name = _normalize_bank_name(bank_name)
     if not bank_name:
         return None
-    create_bank_table()
     conn = get_connection()
     try:
         row = conn.execute(

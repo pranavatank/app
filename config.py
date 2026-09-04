@@ -21,11 +21,13 @@ SALT_SIZE         = 32    # bytes
 AES_KEY_SIZE      = 32    # bytes (256-bit)
 
 # ── FD TDS (tax deducted at source on Fixed Deposit interest) ─────────────────
-# Banks deduct TDS once a depositor's FD interest with that bank crosses this
-# limit in a financial year. Filing FD_TDS_FORM_NAME with the bank (when income
-# is below the taxable limit) avoids the deduction.
-FD_TDS_THRESHOLD  = 50_000
-FD_TDS_FORM_NAME  = "Form 121"
+# Banks deduct TDS once a depositor's FD interest crosses the threshold in a
+# financial year. To avoid deduction, file Form 15G (non-senior) or Form 15H
+# (senior citizen, 60+) when total income is below the taxable limit.
+FD_TDS_THRESHOLD         = 50_000
+FD_TDS_FORM_NAME         = "Form 15G"
+FD_TDS_FORM_NAME_SENIOR  = "Form 15H"
+FD_TDS_THRESHOLD_SENIOR  = 100_000
 
 # ── Financial Year Helpers ────────────────────────────────────────────────────
 def get_current_financial_year() -> str:

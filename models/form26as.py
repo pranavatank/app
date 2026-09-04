@@ -8,52 +8,6 @@ We store each row so it can be reconciled against AIS TDS records.
 from core.database import get_connection
 
 
-# ── Table creation ────────────────────────────────────────────────────────────
-
-def create_form26as_tables() -> None:
-    conn = get_connection()
-    cur  = conn.cursor()
-
-    # One import record per person + FY + upload
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS Form26ASImport (
-            import_id      INTEGER PRIMARY KEY AUTOINCREMENT,
-            person_id      INTEGER NOT NULL REFERENCES Person(person_id),
-            financial_year TEXT    NOT NULL,
-            import_date    TEXT    NOT NULL DEFAULT (datetime('now')),
-            source_file    TEXT,
-            total_tds      REAL    DEFAULT 0,
-            raw_text       TEXT
-        )
-    """)
-
-    # Each TDS row from the form
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS Form26ASRecord (
-            record_id      INTEGER PRIMARY KEY AUTOINCREMENT,
-            import_id      INTEGER NOT NULL REFERENCES Form26ASImport(import_id) ON DELETE CASCADE,
-            section        TEXT,              -- e.g. 194A, 192, 194I
-            deductor_name  TEXT,
-            deductor_tan   TEXT,
-            transaction_date TEXT,
-            amount_paid    REAL   DEFAULT 0,
-            tds_deducted   REAL   DEFAULT 0,
-            tds_deposited  REAL   DEFAULT 0,
-            status         TEXT,              -- e.g. "F" (Final), "U" (Unmatched)
-            certificate_no TEXT,
-            remarks        TEXT,
-            raw_line       TEXT
-        )
-    """)
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_Form26ASRecord_import ON Form26ASRecord(import_id)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_Form26ASRecord_tan    ON Form26ASRecord(deductor_tan)")
-
-    conn.commit()
-    conn.close()
-
-
-# ── Import / CRUD ─────────────────────────────────────────────────────────────
-
 def save_form26as_import(
     person_id: int,
     financial_year: str,
@@ -65,7 +19,6 @@ def save_form26as_import(
     Upsert a Form 26AS import for person + FY.
     Returns import_id.
     """
-    create_form26as_tables()
     conn = get_connection()
     cur  = conn.cursor()
 
@@ -114,7 +67,6 @@ def save_form26as_import(
 
 
 def get_form26as_import(person_id: int, financial_year: str) -> dict | None:
-    create_form26as_tables()
     conn = get_connection()
     row  = conn.execute("""
         SELECT * FROM Form26ASImport
@@ -126,7 +78,6 @@ def get_form26as_import(person_id: int, financial_year: str) -> dict | None:
 
 
 def get_form26as_records(import_id: int) -> list[dict]:
-    create_form26as_tables()
     conn = get_connection()
     rows = conn.execute("""
         SELECT * FROM Form26ASRecord WHERE import_id = ?
@@ -137,7 +88,6 @@ def get_form26as_records(import_id: int) -> list[dict]:
 
 
 def delete_form26as_import(person_id: int, financial_year: str) -> None:
-    create_form26as_tables()
     conn = get_connection()
     conn.execute(
         "DELETE FROM Form26ASImport WHERE person_id = ? AND financial_year = ?",
@@ -160,7 +110,6 @@ def manual_add_record(
     status: str = "F",
 ) -> None:
     """Add a single TDS record manually (no PDF import needed)."""
-    create_form26as_tables()
     imp = get_form26as_import(person_id, financial_year)
     if imp is None:
         import_id = save_form26as_import(

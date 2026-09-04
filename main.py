@@ -4,8 +4,94 @@ main.py — Application entry point for Personal Financial Manager.
 
 import sys
 import os
+import importlib.util
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# Dependency check must run before PyQt6 imports, so failures produce readable
+# dialogs instead of tracebacks. Defined here so it can be called before imports.
+def check_dependencies():
+    """Verify all required dependencies are installed, with readable error reporting."""
+
+    # Mapping of module names to their pip package names
+    required_modules = {
+        'PyQt6.QtWidgets': 'PyQt6',
+        'qtawesome': 'qtawesome',
+        'pdfplumber': 'pdfplumber',
+        'pypdf': 'pypdf',
+        'pandas': 'pandas',
+        'openpyxl': 'openpyxl',
+        'dateutil': 'python-dateutil',
+    }
+
+    missing = []
+
+    # Check each module
+    for module_name, pip_name in required_modules.items():
+        if importlib.util.find_spec(module_name) is None:
+            missing.append((module_name, pip_name))
+
+    # Special case: if PyQt6.QtWidgets is missing, check if it's the namespace package issue
+    if any(m == 'PyQt6.QtWidgets' for m, _ in missing):
+        try:
+            import PyQt6
+            if PyQt6.__file__ is None:
+                error_msg = (
+                    "PyQt6 installation is incomplete (namespace package with no bindings).\n\n"
+                    "This usually happens on Microsoft Store Python or after a failed install.\n\n"
+                    "Fix: Run this command:\n"
+                    "  python -m pip install --force-reinstall --no-cache-dir PyQt6 qtawesome\n\n"
+                    "If that fails, install Python from python.org and use a virtual environment."
+                )
+                _show_error_dialog(error_msg)
+                sys.exit(1)
+        except ImportError:
+            pass
+
+    # Report any missing dependencies
+    if missing:
+        pip_packages = [pip_name for _, pip_name in missing]
+        error_msg = (
+            f"Missing required dependencies:\n\n"
+            f"{', '.join(pip_packages)}\n\n"
+            f"Install with:\n"
+            f"  python -m pip install {' '.join(pip_packages)}\n\n"
+            f"Or install all dependencies:\n"
+            f"  python -m pip install -r requirements.txt"
+        )
+        _show_error_dialog(error_msg)
+        sys.exit(1)
+
+
+def _show_error_dialog(message):
+    """Display error message via dialog, with fallbacks if Qt is unavailable."""
+    # Always print to stderr first
+    print(message, file=sys.stderr)
+
+    # Try PyQt6 dialog
+    try:
+        from PyQt6.QtWidgets import QApplication, QMessageBox
+        app = QApplication.instance() or QApplication(sys.argv)
+        QMessageBox.critical(None, "Dependency Error", message)
+        return
+    except Exception:
+        pass
+
+    # Try tkinter dialog
+    try:
+        import tkinter as tk
+        from tkinter import messagebox
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showerror("Dependency Error", message)
+        return
+    except Exception:
+        pass
+
+
+# Call check at module import time only when this is the entry point
+if __name__ == "__main__":
+    check_dependencies()
 
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtGui import QFont
@@ -27,6 +113,7 @@ def _unload_local_ai_model():
 
 
 def bootstrap():
+    check_dependencies()
     os.makedirs(DATA_DIR,   exist_ok=True)
     os.makedirs(BACKUP_DIR, exist_ok=True)
     initialise_database()

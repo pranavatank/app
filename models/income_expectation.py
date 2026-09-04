@@ -4,32 +4,6 @@ models/income_expectation.py — Income expectation tracking
 
 from core.database import get_connection
 
-def create_income_expectation_table():
-    """Create income_expectation table if not exists."""
-    conn = get_connection()
-    try:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS IncomeExpectation (
-                expectation_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                person_id INTEGER NOT NULL,
-                account_id INTEGER NOT NULL,
-                income_type TEXT NOT NULL,
-                expected_amount REAL NOT NULL,
-                expected_date TEXT NOT NULL,
-                frequency TEXT NOT NULL,
-                financial_year TEXT NOT NULL,
-                actual_transaction_id INTEGER,
-                notes TEXT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (person_id) REFERENCES Person(person_id),
-                FOREIGN KEY (account_id) REFERENCES BankAccount(account_id),
-                FOREIGN KEY (actual_transaction_id) REFERENCES Transactions(transaction_id)
-            )
-        """)
-        conn.commit()
-    finally:
-        conn.close()
-
 def add_income_expectation(person_id, account_id, income_type, expected_amount,
                           expected_date, frequency, financial_year, notes=None):
     """Add new income expectation(s). For recurring, creates multiple records."""

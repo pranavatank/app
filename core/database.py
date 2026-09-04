@@ -546,6 +546,109 @@ def initialise_database() -> None:
         )
     """)
 
+    # ── AISTISImportLine ─────────────────────────────────────────────────────
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS AISTISImportLine (
+            line_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            import_id INTEGER NOT NULL REFERENCES AISTISImport(import_id) ON DELETE CASCADE,
+            line_no INTEGER NOT NULL,
+            text TEXT NOT NULL
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_AISTISImportLine_import_id ON AISTISImportLine(import_id)")
+
+    # ── AISTISImportRecord ───────────────────────────────────────────────────
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS AISTISImportRecord (
+            record_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            import_id INTEGER NOT NULL REFERENCES AISTISImport(import_id) ON DELETE CASCADE,
+            record_type TEXT NOT NULL,
+            information_code TEXT,
+            information_description TEXT,
+            information_source TEXT,
+            source_tan TEXT,
+            bucket TEXT,
+            count INTEGER,
+            amount REAL,
+            amount_reported REAL,
+            amount_processed REAL,
+            amount_accepted REAL,
+            quarter TEXT,
+            payment_date TEXT,
+            amount_paid REAL,
+            tds_deducted REAL,
+            tds_deposited REAL,
+            status TEXT,
+            raw_line TEXT
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_AISTISImportRecord_import_id ON AISTISImportRecord(import_id)")
+
+    # Migrate older AISTISImportRecord schema if table existed without newer columns.
+    ais_record_cols = {row[1] for row in cur.execute("PRAGMA table_info(AISTISImportRecord)").fetchall()}
+    if "source_tan" not in ais_record_cols:
+        cur.execute("ALTER TABLE AISTISImportRecord ADD COLUMN source_tan TEXT")
+    if "amount_reported" not in ais_record_cols:
+        cur.execute("ALTER TABLE AISTISImportRecord ADD COLUMN amount_reported REAL")
+    if "amount_processed" not in ais_record_cols:
+        cur.execute("ALTER TABLE AISTISImportRecord ADD COLUMN amount_processed REAL")
+    if "amount_accepted" not in ais_record_cols:
+        cur.execute("ALTER TABLE AISTISImportRecord ADD COLUMN amount_accepted REAL")
+
+    # ── Form26ASImport ──────────────────────────────────────────────────────
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS Form26ASImport (
+            import_id      INTEGER PRIMARY KEY AUTOINCREMENT,
+            person_id      INTEGER NOT NULL REFERENCES Person(person_id),
+            financial_year TEXT    NOT NULL,
+            import_date    TEXT    NOT NULL DEFAULT (datetime('now')),
+            source_file    TEXT,
+            total_tds      REAL    DEFAULT 0,
+            raw_text       TEXT
+        )
+    """)
+
+    # ── Form26ASRecord ──────────────────────────────────────────────────────
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS Form26ASRecord (
+            record_id      INTEGER PRIMARY KEY AUTOINCREMENT,
+            import_id      INTEGER NOT NULL REFERENCES Form26ASImport(import_id) ON DELETE CASCADE,
+            section        TEXT,
+            deductor_name  TEXT,
+            deductor_tan   TEXT,
+            transaction_date TEXT,
+            amount_paid    REAL   DEFAULT 0,
+            tds_deducted   REAL   DEFAULT 0,
+            tds_deposited  REAL   DEFAULT 0,
+            status         TEXT,
+            certificate_no TEXT,
+            remarks        TEXT,
+            raw_line       TEXT
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_Form26ASRecord_import ON Form26ASRecord(import_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_Form26ASRecord_tan    ON Form26ASRecord(deductor_tan)")
+
+    # ── IncomeSource ────────────────────────────────────────────────────────
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS IncomeSource (
+            source_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source_type TEXT NOT NULL,
+            source_name TEXT NOT NULL,
+            tan TEXT,
+            pan TEXT,
+            address TEXT,
+            contact_person TEXT,
+            phone TEXT,
+            email TEXT,
+            notes TEXT,
+            created_date TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(tan)
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_IncomeSource_tan ON IncomeSource(tan)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_IncomeSource_type ON IncomeSource(source_type)")
+
     _migrate_bank_account_schema_if_needed(cur)
     _migrate_transactions_schema_if_needed(cur)
     _migrate_fixed_deposit_schema_if_needed(conn, cur)

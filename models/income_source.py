@@ -7,32 +7,6 @@ Stores companies, employers, banks, and other entities that pay income or deduct
 from core.database import get_connection
 
 
-def create_income_source_table():
-    """Create income source table if not exists."""
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS IncomeSource (
-            source_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            source_type TEXT NOT NULL,
-            source_name TEXT NOT NULL,
-            tan TEXT,
-            pan TEXT,
-            address TEXT,
-            contact_person TEXT,
-            phone TEXT,
-            email TEXT,
-            notes TEXT,
-            created_date TEXT NOT NULL DEFAULT (datetime('now')),
-            UNIQUE(tan)
-        )
-    """)
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_IncomeSource_tan ON IncomeSource(tan)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_IncomeSource_type ON IncomeSource(source_type)")
-    conn.commit()
-    conn.close()
-
-
 def save_income_source(
     source_type: str,
     source_name: str,
@@ -45,7 +19,6 @@ def save_income_source(
     notes: str = None,
 ) -> int:
     """Save or update income source. Returns source_id."""
-    create_income_source_table()
     conn = get_connection()
     cur = conn.cursor()
     
@@ -84,7 +57,6 @@ def get_income_source_by_tan(tan: str) -> dict | None:
     """Get income source by TAN."""
     if not tan:
         return None
-    create_income_source_table()
     conn = get_connection()
     row = conn.execute(
         "SELECT * FROM IncomeSource WHERE tan = ?", (tan.strip().upper(),)
@@ -95,7 +67,6 @@ def get_income_source_by_tan(tan: str) -> dict | None:
 
 def get_income_source(source_id: int) -> dict | None:
     """Get income source by ID."""
-    create_income_source_table()
     conn = get_connection()
     row = conn.execute(
         "SELECT * FROM IncomeSource WHERE source_id = ?", (source_id,)
@@ -106,7 +77,6 @@ def get_income_source(source_id: int) -> dict | None:
 
 def get_all_income_sources(source_type: str = None) -> list[dict]:
     """Get all income sources, optionally filtered by type."""
-    create_income_source_table()
     conn = get_connection()
     if source_type:
         rows = conn.execute(
@@ -123,7 +93,6 @@ def get_all_income_sources(source_type: str = None) -> list[dict]:
 
 def delete_income_source(source_id: int):
     """Delete income source."""
-    create_income_source_table()
     conn = get_connection()
     conn.execute("DELETE FROM IncomeSource WHERE source_id = ?", (source_id,))
     conn.commit()
@@ -132,7 +101,6 @@ def delete_income_source(source_id: int):
 
 def search_income_sources(query: str) -> list[dict]:
     """Search income sources by name or TAN."""
-    create_income_source_table()
     conn = get_connection()
     pattern = f"%{query}%"
     rows = conn.execute("""

@@ -6,96 +6,9 @@ import sqlite3
 from core.database import get_connection
 
 
-def create_ais_tis_table():
-    """Create AIS/TIS import table if not exists."""
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS AISTISImport (
-            import_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            person_id INTEGER NOT NULL REFERENCES Person(person_id),
-            financial_year TEXT NOT NULL,
-            import_date TEXT NOT NULL DEFAULT (datetime('now')),
-            source_type TEXT NOT NULL,
-            raw_json TEXT NOT NULL,
-            salary_income REAL DEFAULT 0,
-            fd_interest REAL DEFAULT 0,
-            savings_interest REAL DEFAULT 0,
-            other_interest REAL DEFAULT 0,
-            dividend_income REAL DEFAULT 0,
-            rental_income REAL DEFAULT 0,
-            other_income REAL DEFAULT 0,
-            tds_deducted REAL DEFAULT 0,
-            UNIQUE(person_id, financial_year, source_type)
-        )
-    """)
-    conn.commit()
-    conn.close()
-
-
-def create_ais_tis_detail_tables() -> None:
-    """Create tables to store detailed AIS/TIS import breakdowns."""
-    create_ais_tis_table()
-    conn = get_connection()
-    cur = conn.cursor()
-
-    # Store every extracted line from a PDF import (lossless storage).
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS AISTISImportLine (
-            line_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            import_id INTEGER NOT NULL REFERENCES AISTISImport(import_id) ON DELETE CASCADE,
-            line_no INTEGER NOT NULL,
-            text TEXT NOT NULL
-        )
-    """)
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_AISTISImportLine_import_id ON AISTISImportLine(import_id)")
-
-    # Store structured records parsed from AIS/TIS sources (PDF text or JSON-derived breakdown).
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS AISTISImportRecord (
-            record_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            import_id INTEGER NOT NULL REFERENCES AISTISImport(import_id) ON DELETE CASCADE,
-            record_type TEXT NOT NULL,
-            information_code TEXT,
-            information_description TEXT,
-            information_source TEXT,
-            source_tan TEXT,
-            bucket TEXT,
-            count INTEGER,
-            amount REAL,
-            amount_reported REAL,
-            amount_processed REAL,
-            amount_accepted REAL,
-            quarter TEXT,
-            payment_date TEXT,
-            amount_paid REAL,
-            tds_deducted REAL,
-            tds_deposited REAL,
-            status TEXT,
-            raw_line TEXT
-        )
-    """)
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_AISTISImportRecord_import_id ON AISTISImportRecord(import_id)")
-
-    # Migrate older schema if table existed without newer columns.
-    cols = {row[1] for row in cur.execute("PRAGMA table_info(AISTISImportRecord)").fetchall()}
-    if "source_tan" not in cols:
-        cur.execute("ALTER TABLE AISTISImportRecord ADD COLUMN source_tan TEXT")
-    if "amount_reported" not in cols:
-        cur.execute("ALTER TABLE AISTISImportRecord ADD COLUMN amount_reported REAL")
-    if "amount_processed" not in cols:
-        cur.execute("ALTER TABLE AISTISImportRecord ADD COLUMN amount_processed REAL")
-    if "amount_accepted" not in cols:
-        cur.execute("ALTER TABLE AISTISImportRecord ADD COLUMN amount_accepted REAL")
-
-    conn.commit()
-    conn.close()
-
-
 def save_ais_tis_data(person_id: int, financial_year: str, source_type: str,
                        raw_json: str, data: dict) -> int:
     """Save or update AIS/TIS import data."""
-    create_ais_tis_table()
     conn = get_connection()
     cur = conn.cursor()
     
@@ -131,7 +44,6 @@ def save_ais_tis_data(person_id: int, financial_year: str, source_type: str,
 
 def save_ais_tis_pdf_lines(import_id: int, extracted_text: str) -> None:
     """Store every extracted line from a PDF import."""
-    create_ais_tis_detail_tables()
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("DELETE FROM AISTISImportLine WHERE import_id = ?", (import_id,))
@@ -147,7 +59,6 @@ def save_ais_tis_pdf_lines(import_id: int, extracted_text: str) -> None:
 
 def save_ais_tis_records(import_id: int, records: list[dict]) -> None:
     """Store parsed structured records for an import."""
-    create_ais_tis_detail_tables()
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("DELETE FROM AISTISImportRecord WHERE import_id = ?", (import_id,))
@@ -200,7 +111,6 @@ def save_ais_tis_records(import_id: int, records: list[dict]) -> None:
 
 def get_ais_tis_records(import_id: int) -> list[dict]:
     """Get structured records for an import."""
-    create_ais_tis_detail_tables()
     conn = get_connection()
     cur = conn.cursor()
     rows = cur.execute(
@@ -213,7 +123,6 @@ def get_ais_tis_records(import_id: int) -> list[dict]:
 
 def get_ais_tis_data(person_id: int, financial_year: str, source_type: str | None = None):
     """Get AIS/TIS data for person and FY, optionally filtered by source_type."""
-    create_ais_tis_table()
     conn = get_connection()
     cur = conn.cursor()
 
@@ -235,7 +144,6 @@ def get_ais_tis_data(person_id: int, financial_year: str, source_type: str | Non
 
 def get_all_ais_tis_imports(person_id: int = None):
     """Get all AIS/TIS imports."""
-    create_ais_tis_table()
     conn = get_connection()
     cur = conn.cursor()
     
