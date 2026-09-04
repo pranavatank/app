@@ -586,3 +586,42 @@ def delete_fd(fd_id: int) -> None:
     conn.execute("DELETE FROM FixedDeposit WHERE fd_id = ?", (fd_id,))
     conn.commit()
     conn.close()
+
+
+def find_fd_by_account_no(account_no: str, person_id: int = None) -> dict | None:
+    """
+    Find FD record by account number using deposit_account_matches prefix matching.
+
+    Uses normalize_account_no and deposit_account_matches from engines/statement/assemble.py
+    to handle various account formats (Jana, Equitas, Ujjivan, etc.).
+
+    Args:
+        account_no: AIS account number to match (e.g., "45220300154351221")
+        person_id: optional filter to search only within a person's FDs
+
+    Returns:
+        dict with fd_id, account_id, principal_amount, etc., or None if no match found
+    """
+    from engines.statement.assemble import deposit_account_matches
+
+    if not account_no:
+        return None
+
+    conn = get_connection()
+    query = "SELECT * FROM FixedDeposit WHERE status IN ('Active', 'Pending Details', 'Matured')"
+    params = []
+
+    if person_id:
+        query += " AND person_id = ?"
+        params.append(person_id)
+
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+
+    # Iterate through FDs and check if account numbers match using deposit_account_matches
+    for row in rows:
+        fd_ref = row.get('fd_reference_no') if isinstance(row, dict) else getattr(row, 'fd_reference_no', None)
+        if fd_ref and deposit_account_matches(account_no, fd_ref):
+            return dict(row) if not isinstance(row, dict) else row
+
+    return None

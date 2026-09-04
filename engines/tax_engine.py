@@ -135,6 +135,40 @@ def slab_position(taxable_income: float, slabs: list) -> dict:
     }
 
 
+def calculate_gross_total_income(
+    salary_income: float = 0,
+    pension_income: float = 0,
+    business_income: float = 0,
+    house_property_income: float = 0,
+    capital_gains_normal: float = 0,
+    capital_gains_stcg_111a: float = 0,
+    capital_gains_ltcg_112: float = 0,
+    capital_gains_ltcg_112a: float = 0,
+    interest_income: float = 0,
+    dividend_income: float = 0,
+    other_income: float = 0,
+) -> tuple[float, float]:
+    """
+    Calculate gross total income and identify special-rate capital gains.
+
+    Returns (gross_total_income, special_rate_income) where special_rate_income
+    is the sum of s.111A and s.112A gains that will be taxed at fixed rates
+    (not slab rates).
+    """
+    # Sum all normal-slab income
+    normal_gross = (
+        salary_income + pension_income + business_income + house_property_income +
+        capital_gains_normal + interest_income + dividend_income + other_income
+    )
+
+    # Special-rate income (taxed at 15% for s.111A, 12.5% for s.112/112A)
+    special_rate_income = capital_gains_stcg_111a + capital_gains_ltcg_112a
+
+    gross_total_income = normal_gross + capital_gains_ltcg_112 + special_rate_income
+
+    return gross_total_income, special_rate_income
+
+
 def calculate_new_regime_tax(
     gross_income: float,
     salary_income: float = 0,
@@ -258,15 +292,66 @@ def calculate_new_regime_tax(
     }
 
 
+def get_recommended_itr_form(
+    salary_income: float,
+    business_income: float,
+    presumptive_income: float,
+    interest_income: float,
+    dividend_income: float,
+    other_income: float,
+) -> tuple[str, str]:
+    """
+    Recommend ITR form based on income composition per current tax law.
+
+    Returns (form, reason) tuple.
+    - ITR-4 (Sugam) if 44ADA presumptive income is the main/only business income
+    - ITR-3 if there is any business or professional income (not under 44ADA)
+    - ITR-1 if interest/dividend only (no business/salary)
+    - ITR-1 as fallback if salary only
+
+    Note: 44ADA (now renamed s.44AE for individuals) is a one-time election per owner's case
+    that determines this taxpayer's form choice permanently (Form 10-IEA binding).
+    For a purely salaried person, the choice is annual.
+    """
+    has_business = business_income > 0
+    has_presumptive = presumptive_income > 0
+    has_salary = salary_income > 0
+    has_interest = interest_income > 0
+    has_dividend = dividend_income > 0
+    has_other = other_income > 0
+
+    if has_presumptive and presumptive_income >= (business_income or 0):
+        return "ITR-4", "44ADA presumptive income (Sugam)"
+
+    if has_business or has_presumptive:
+        return "ITR-3", "Business or professional income"
+
+    if has_interest or has_dividend:
+        return "ITR-1", "Interest and dividend income only"
+
+    if has_salary or has_other:
+        return "ITR-1", "Salaried person"
+
+    return "ITR-1", "Not applicable (no income)"
+
+
 def calculate_and_save_tax(
     person_id: int,
     financial_year: str,
     salary_income: float = 0,
     pension_income: float = 0,
+    business_income: float = 0,
+    presumptive_income: float = 0,
+    house_property_income: float = 0,
+    capital_gains_normal: float = 0,
+    capital_gains_stcg_111a: float = 0,
+    capital_gains_ltcg_112: float = 0,
+    capital_gains_ltcg_112a: float = 0,
     fd_interest: float = 0,
     savings_interest: float = 0,
+    other_interest: float = 0,
+    dividend_income: float = 0,
     other_income: float = 0,
-    special_rate_income: float = 0,
     deductions_80c: float = 0,
     deductions_80d: float = 0,
     home_loan_interest: float = 0,
@@ -278,11 +363,41 @@ def calculate_and_save_tax(
 ) -> dict:
     """
     Calculate tax for New Regime and save to database.
-    Returns dict with calculation details and net payable/refund.
+    Returns dict with calculation details, net payable/refund, and ITR recommendation.
 
-    Old regime calculation is removed as per owner's requirements.
+    All income categories must be passed separately so the engine can handle
+    special-rate income (s.111A at 15%, s.112A at 12.5%) correctly.
+
+    REGIME CHOICE REMOVED (T030):
+    The old-vs-new regime choice has been deleted from this application because
+    the owner has professional income under s.194J, which triggers Form 10-IEA —
+    a one-time, binding switch between regimes per financial year. Once elected,
+    it stands for that FY. The database columns (taxable_income_old_regime,
+    tax_old_regime, total_tax_old, rebate_87a_old) are preserved to load existing
+    profiles without error.
+
+    For a purely salaried person without such professional income, the regime
+    choice IS annual under current law, and a future maintainer should restore
+    this if the user's circumstances change or multi-user logic is added.
     """
-    gross_total_income = salary_income + pension_income + fd_interest + savings_interest + other_income + special_rate_income
+    # Calculate gross income and identify special-rate components
+    # Presumptive income is part of business income
+    total_business_income = business_income + presumptive_income
+    gross_total_income, special_rate_income = calculate_gross_total_income(
+        salary_income=salary_income,
+        pension_income=pension_income,
+        business_income=total_business_income,
+        house_property_income=house_property_income,
+        capital_gains_normal=capital_gains_normal,
+        capital_gains_stcg_111a=capital_gains_stcg_111a,
+        capital_gains_ltcg_112=capital_gains_ltcg_112,
+        capital_gains_ltcg_112a=capital_gains_ltcg_112a,
+        interest_income=fd_interest + savings_interest + other_interest,
+        dividend_income=dividend_income,
+        other_income=other_income,
+    )
+
+    total_interest = fd_interest + savings_interest + other_interest
     taxes_paid = tds_deducted + tcs_collected + advance_tax_paid + self_assessment_tax
 
     # Calculate tax using New Regime
@@ -297,6 +412,16 @@ def calculate_and_save_tax(
 
     # Assessment year
     assessment_year = get_assessment_year(financial_year)
+
+    # Get ITR recommendation
+    itr_form, itr_reason = get_recommended_itr_form(
+        salary_income=salary_income,
+        business_income=business_income,
+        presumptive_income=presumptive_income,
+        interest_income=total_interest,
+        dividend_income=dividend_income,
+        other_income=other_income,
+    )
 
     # Save to database (only New Regime now)
     upsert_tax_profile(
@@ -328,6 +453,8 @@ def calculate_and_save_tax(
         "assessment_year": assessment_year,
         "taxes_paid": round(taxes_paid, 2),
         "new_regime": new,
+        "itr_form": itr_form,
+        "itr_reason": itr_reason,
     }
 
 

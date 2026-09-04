@@ -18,12 +18,18 @@ from dataclasses import dataclass, field
 
 
 # ── Installment schedule ──────────────────────────────────────────────────────
+# Safe harbour percentages per s.234C: 12%, 36%, 75%, 100%
 
 INSTALLMENTS = [
-    {"name": "1st Installment",  "due_month": 6,  "due_day": 15, "cum_pct": 0.15, "quarter": "Q1"},
-    {"name": "2nd Installment",  "due_month": 9,  "due_day": 15, "cum_pct": 0.45, "quarter": "Q2"},
+    {"name": "1st Installment",  "due_month": 6,  "due_day": 15, "cum_pct": 0.12, "quarter": "Q1"},
+    {"name": "2nd Installment",  "due_month": 9,  "due_day": 15, "cum_pct": 0.36, "quarter": "Q2"},
     {"name": "3rd Installment",  "due_month": 12, "due_day": 15, "cum_pct": 0.75, "quarter": "Q3"},
     {"name": "4th Installment",  "due_month": 3,  "due_day": 15, "cum_pct": 1.00, "quarter": "Q4"},
+]
+
+# Section 44ADA single-instalment schedule (100% by 15 March)
+INSTALLMENTS_44ADA = [
+    {"name": "Single Installment", "due_month": 3, "due_day": 15, "cum_pct": 1.00, "quarter": "Q4"},
 ]
 
 
@@ -72,11 +78,16 @@ def _days_to(due: date, today: date | None = None) -> int:
 
 # ── Section 234C interest ─────────────────────────────────────────────────────
 
-def _interest_234c(shortfall: float) -> float:
-    """Simple estimate: 1% per month × 3 months on shortfall."""
+def _interest_234c(shortfall: float, is_march_shortfall: bool = False) -> float:
+    """
+    Calculate interest on shortfall.
+    - Regular shortfalls (Jun, Sep, Dec): 1% per month × 3 months
+    - 15 March shortfall only: 1% per month × 1 month (interest accrues from 16 Mar to 31 Mar, approximately 1 month)
+    """
     if shortfall <= 0:
         return 0.0
-    return round(shortfall * 0.01 * 3, 2)
+    months = 1 if is_march_shortfall else 3
+    return round(shortfall * 0.01 * months, 2)
 
 
 # ── Main calculation ──────────────────────────────────────────────────────────
@@ -88,6 +99,9 @@ def calculate_advance_tax(
     tds_deducted: float = 0.0,
     advance_tax_paid: float = 0.0,
     today: date | None = None,
+    is_44ada: bool = False,
+    is_senior_resident: bool = False,
+    has_business_income: bool = False,
 ) -> AdvanceTaxResult:
     """
     Calculate advance tax installments and produce reminder/banner data.
@@ -100,6 +114,9 @@ def calculate_advance_tax(
     tds_deducted    : TDS already deducted / expected to be deducted
     advance_tax_paid: advance tax already paid so far
     today           : override today's date (for testing)
+    is_44ada        : True if taxpayer elected 44ADA (now 44AE for individuals)
+    is_senior_resident : True if resident individual ≥ 60 years old
+    has_business_income : True if there is any business income (excluding 44ADA presumptive)
     """
     today = today or date.today()
     fy_start_year = int(financial_year.split("-")[0])
@@ -108,7 +125,23 @@ def calculate_advance_tax(
 
     # Net tax after TDS
     net_tax = max(0.0, annual_tax - tds_deducted)
-    total_paid = advance_tax_paid  # running total of advance tax paid
+
+    # Senior citizens (≥ 60 years, no business income) are exempt from advance tax
+    if is_senior_resident and not has_business_income:
+        result = AdvanceTaxResult(
+            financial_year=financial_year,
+            assessment_year=assessment_year,
+            estimated_gross_income=gross_income,
+            estimated_annual_tax=annual_tax,
+            tds_deducted=tds_deducted,
+            advance_tax_paid=advance_tax_paid,
+            net_tax_payable=net_tax,
+            banner_message=(
+                f"✅  Senior citizen (resident, no business income) — exempt from advance tax."
+            ),
+            banner_level="success",
+        )
+        return result
 
     # If liability < ₹10,000 → no advance tax required
     if net_tax < 10_000:
@@ -128,18 +161,26 @@ def calculate_advance_tax(
         )
         return result
 
+    # Select installment schedule based on regime
+    if is_44ada:
+        schedule = INSTALLMENTS_44ADA
+    else:
+        schedule = INSTALLMENTS
+
     installments: list[InstallmentStatus] = []
     next_due: InstallmentStatus | None = None
 
-    for inst in INSTALLMENTS:
+    for inst in schedule:
         due = _due_date(fy_start_year, inst["due_month"], inst["due_day"])
         cum_amount = round(net_tax * inst["cum_pct"], 2)
         days_rem = _days_to(due, today)
 
-        # How much should have been paid cumulatively by this date
+        # Shortfall: what should have been paid by this date minus what has been paid
+        shortfall = max(0.0, cum_amount - advance_tax_paid)
+
+        # Determine status
         if today > due:
             # Quarter already passed
-            shortfall = max(0.0, cum_amount - total_paid)
             if shortfall < 1.0:
                 status = "Paid"
             elif shortfall < cum_amount * 0.10:
@@ -147,13 +188,14 @@ def calculate_advance_tax(
             else:
                 status = "Overdue"
         elif days_rem <= 7:
-            shortfall = max(0.0, cum_amount - total_paid)
             status = "Due Soon"
         else:
-            shortfall = max(0.0, cum_amount - total_paid)
             status = "Upcoming"
 
-        interest = _interest_234c(shortfall) if status in ("Overdue", "Partial") else 0.0
+        # Calculate interest on shortfall
+        # 15 March shortfall uses 1 month interest, others use 3 months
+        is_march = inst["due_month"] == 3
+        interest = _interest_234c(shortfall, is_march_shortfall=is_march) if status in ("Overdue", "Partial") else 0.0
 
         s = InstallmentStatus(
             name=inst["name"],
@@ -162,7 +204,7 @@ def calculate_advance_tax(
             cumulative_pct=inst["cum_pct"],
             annual_tax=net_tax,
             amount_due=cum_amount,
-            amount_paid=total_paid,
+            amount_paid=advance_tax_paid,
             shortfall=shortfall,
             status=status,
             days_remaining=days_rem,

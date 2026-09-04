@@ -23,6 +23,7 @@ from models.ais_tis_import import get_ais_tis_data
 from engines.tax_engine import (
     calculate_and_save_tax,
     calculate_new_regime_tax,
+    calculate_gross_total_income,
     project_next_year_income,
 )
 from engines.advance_tax_engine import calculate_advance_tax
@@ -562,18 +563,27 @@ class TaxScreen(QWidget):
         self.refresh()
 
     def _update_gross(self):
+        """Display gross income calculated by the same function the engine uses."""
         salary = max(0, self.gross_salary.value() - self.exemption_10.value() -
                      self.deduction_16ia.value() - self.deduction_16ii.value() - self.deduction_16iii.value())
         nav = self.annual_rent.value() - self.municipal_tax.value() - self.unrealized_rent.value()
         house = max(-200000, nav - nav*0.30 - self.letout_interest.value() - self.self_occupied_interest.value())
-        cg = (self.stcg_normal.value() + self.stcg_111a.value() + self.ltcg_20.value() +
-              self.ltcg_112a.value() + self.ltcg_other.value())
-        biz = (self.presumptive_income.value() + self.manufacturing_income.value() + self.other_business_income.value())
-        others = (self.savings_interest_input.value() + self.fd_interest_input.value() +
-                  self.other_interest.value() + self.dividend_income.value() +
-                  self.rental_income.value() + self.lottery_winnings.value() +
-                  self.online_game_winnings.value() + self.other_income_input.value())
-        gross = salary + max(0, house) + cg + biz + others
+
+        # Use the same function as the engine to ensure displayed gross matches calculated gross
+        gross, _ = calculate_gross_total_income(
+            salary_income=salary,
+            pension_income=0,
+            business_income=self.manufacturing_income.value() + self.other_business_income.value(),
+            house_property_income=house,
+            capital_gains_normal=self.stcg_normal.value(),
+            capital_gains_stcg_111a=self.stcg_111a.value(),
+            capital_gains_ltcg_112=self.ltcg_20.value(),
+            capital_gains_ltcg_112a=self.ltcg_112a.value() + self.ltcg_other.value(),
+            interest_income=self.savings_interest_input.value() + self.fd_interest_input.value() + self.other_interest.value(),
+            dividend_income=self.dividend_income.value(),
+            other_income=(self.rental_income.value() + self.lottery_winnings.value() +
+                         self.online_game_winnings.value() + self.other_income_input.value()),
+        )
         self.gross_income_label.setText(f"₹ {gross:,.2f}")
 
     def refresh_theme(self):
@@ -730,17 +740,46 @@ class TaxScreen(QWidget):
         if not pid:
             QMessageBox.warning(self, "No Person", "Please select a person from the top bar.")
             return
+
+        # Salary section: gross minus exemptions and deductions
         salary = max(0, self.gross_salary.value() - self.exemption_10.value() -
                      self.deduction_16ia.value() - self.deduction_16ii.value() - self.deduction_16iii.value())
+
+        # House property: net of expenses and interest
+        nav = self.annual_rent.value() - self.municipal_tax.value() - self.unrealized_rent.value()
+        house = max(-200000, nav - nav*0.30 - self.letout_interest.value() - self.self_occupied_interest.value())
+
+        # Capital gains: separate by special rate
+        capital_gains_normal = self.stcg_normal.value()
+        capital_gains_stcg_111a = self.stcg_111a.value()  # s.111A @ 15%
+        capital_gains_ltcg_112 = self.ltcg_20.value()     # s.112 @ 20%
+        capital_gains_ltcg_112a = self.ltcg_112a.value() + self.ltcg_other.value()  # s.112A @ 12.5%
+
+        # Business / Profession: presume + regular
+        business_income = self.manufacturing_income.value() + self.other_business_income.value()
+        presumptive_income = self.presumptive_income.value()
+
+        # Other income: interest, dividend, rental, lottery, games, misc
         other_income = (self.other_interest.value() + self.dividend_income.value() +
                         self.rental_income.value() + self.lottery_winnings.value() +
                         self.online_game_winnings.value() + self.other_income_input.value())
+
         total_80c = min(150000, self.deduction_80c.value() + self.deduction_80ccc.value() + self.deduction_80ccd1.value())
+
         result = calculate_and_save_tax(
             person_id=pid, financial_year=session.selected_fy,
             salary_income=salary,
+            business_income=business_income,
+            presumptive_income=presumptive_income,
+            house_property_income=house,
+            capital_gains_normal=capital_gains_normal,
+            capital_gains_stcg_111a=capital_gains_stcg_111a,
+            capital_gains_ltcg_112=capital_gains_ltcg_112,
+            capital_gains_ltcg_112a=capital_gains_ltcg_112a,
             fd_interest=self.fd_interest_input.value(),
             savings_interest=self.savings_interest_input.value(),
+            other_interest=self.other_interest.value(),
+            dividend_income=self.dividend_income.value(),
             other_income=other_income,
             deductions_80c=total_80c,
             deductions_80d=self.deduction_80d.value(),
