@@ -1217,3 +1217,70 @@ Tax and banking rules cited in §4 were verified against:
 - [Interest calculation on Deposits — ICICI Bank (PDF)](https://www.icici.bank.in/content/dam/icicibank/managed-assets/docs/personal/general-links/interest-calculation-of-deposit.pdf)
 - [FD Interest Calculation: Simple vs Compound — IndusInd Bank](https://www.indusind.bank.in/iblogs/fixed-deposit/fixed-deposit-interest-calculation-simple-vs-compound-interest/)
 - [RBI circular on payment of interest on savings accounts on a daily product basis — TaxGuru](https://taxguru.in/rbi/rbi-circular-on-payment-of-interest-on-savings-bank-account-on-a-daily-product-basis-ucbs.html)
+
+---
+
+# Appendix Z — Open issues found during execution
+
+Recorded as they were hit, so the plan stays the source of truth and these get
+decided deliberately rather than absorbed silently. Nothing here is fixed.
+
+## Z1. Gradient buttons fail contrast in every theme (from T037)
+The token contract's 17 required pairs cover flat `PRIMARY`, but every filled
+button is painted with a GRADIENT, and each gradient starts at a light
+300/400-level stop. White label contrast against the light end:
+  Aurora  primary 4.47 · success 1.92 · danger 2.69 · warning 1.67 · info 1.81
+  Nova    primary 1.85 · success 1.52 · danger 1.89 · warning 1.25 · info 1.45
+  Midnight primary 2.98 · success 1.52 · danger 1.90 · warning 1.25 · info 1.67
+No single text colour clears 4.5 across a stop that spans light to dark, so
+this cannot be fixed by choosing a better label colour — the gradient START
+stops have to be darkened, or filled buttons have to become flat fills.
+DECISION NEEDED: darken every gradient start, or drop gradients on filled
+buttons. Either is a visual change beyond what T037 authorised.
+
+## Z2. FOCUS_RING was unsatisfiable as specified (resolved, but by changing themes)
+`FOCUS_RING` must clear 3.0 against both SURFACE and PRIMARY. With a near-black
+SURFACE and a 400-level pastel PRIMARY that is algebraically impossible: Nova
+needed a ring luminance >= 0.1185 and <= 0.0786 simultaneously.
+Resolved by darkening Nova's PRIMARY #A78BFA -> #7D54F8 and Midnight Pro's
+#818CF8 -> #5563F6, which also fixed M16 (white labels at 2.72 / 2.98).
+FLAGGED because it changed two themes' identity colours, which no task asked for.
+
+## Z3. The "56 violations" baseline is pair-set dependent (reconciled, no action)
+M14's 56-of-140 is measured over the audit's own 14-pair set. The token
+contract's 17-pair set replaces 5 of those pairs (DANGER, SUCCESS, WARNING,
+INFO on SURFACE, and BORDER_FOCUS on SURFACE) with *_TEXT and FOCUS_RING
+variants, moving exactly 19 failures into a "missing token" bucket:
+56 - 19 = 37. Both numbers are correct. Quoting "56" against the new contract
+will look like a regression when it is not.
+
+## Z4. Jana's direction bug is not what M3 diagnosed (resolved)
+M3 attributes the direction errors to the two-date branch defaulting to
+"Expense". True for three banks. Jana is different: it populates BOTH the
+Deposits and Withdrawal columns on every row, with `0.00` in the unused one.
+So "whichever column is present" picks debit on every Jana row, and "reject
+rows where both are present" drops all 65. The rule has to be that the
+non-zero column decides. Worth knowing before writing any future parser.
+
+## Z5. Jana's measured error rate is 36.0%, not 46.9% (no action)
+M3 records 46.9%. Measured today: 25 balance-tied rows, 9 wrong = 36.0%.
+Equitas, IDFC and Ujjivan reproduce to 0.1%, and Jana's row count matches
+exactly at 65, so this is a methodology difference in the original harness,
+not codebase drift.
+
+## Z6. IDFC's header is stacked, and its control-totals row is a near-miss (resolved)
+IDFC's transaction header spans two physical lines (`Transaction | Value Date |
+Particulars | Cheque | Debit | Credit | Balance` then `Date | No`). Separately
+its page-1 `Opening Balance | Total Debit | Total Credit | Closing Balance` row
+scores 3 against the same synonym table. A match threshold below 4 silently
+picks the control-totals row as the header. Do not lower it.
+
+## Z7. Statement Import depended on the deleted chatbot module (resolved)
+T009 says to delete ui/chatbot_screen.py. It also held OllamaModelStartWorker,
+imported by ui/statement_import_screen_modern.py — a screen being KEPT. Moved
+to ui/ollama_worker.py before deleting. T009 did not mention this.
+
+## Z8. Git history still contains the secrets (OPEN — needs a human)
+T001's untracking is done; the history purge is not, and requires explicit
+approval because it is irreversible and breaks every clone. If this repo was
+ever pushed anywhere, the AIS/TIS and Equitas passwords must be rotated too.
