@@ -1284,3 +1284,29 @@ to ui/ollama_worker.py before deleting. T009 did not mention this.
 T001's untracking is done; the history purge is not, and requires explicit
 approval because it is irreversible and breaks every clone. If this repo was
 ever pushed anywhere, the AIS/TIS and Equitas passwords must be rotated too.
+
+## Z9. T014 continuation-row merging is DISABLED (OPEN)
+Jana prints one logical transaction across three physical rows with the amounts
+row in the middle, so its narration and reference arrive split:
+description `CREDIT INTEREST CAPITALISED` instead of
+`CASA CREDIT INTEREST CAPITALIZED`, and `reference_no` None instead of
+`CHBATCH4522010044796705C260331`.
+Three attempts to enable the merge all destroyed real transactions — row counts
+fell from 38/376/65/27 to 28/344/57/25 and IDFC's parsed credits came up
+102,324.00 short against its own printed control totals. Each attempt was
+reverted. The merge code is present but switched off, and the anchor-count
+invariant (anchors in == transactions out) is the check that must hold before
+it can be turned on.
+IMPACT: narration quality on Jana only. Direction, amounts, balances and totals
+are all correct and verified. No financial figure is affected.
+Guarded by tests/test_statement_package.py, which pins the row counts, zero
+direction errors, and IDFC's control totals so this cannot regress unnoticed.
+
+## Z10. deposit_account_no is only populated for Ujjivan (OPEN)
+21 of 27 Ujjivan rows carry it. Equitas, IDFC and Jana yield 0, because their
+narrations reference deposits in formats the current extractor does not match
+(Equitas prints `FD300014105382`, Jana `4522030015435122/1`). The
+normalisation rules and `deposit_account_matches()` are implemented and unit-
+correct; what is missing is the narration patterns that find the number in the
+first place for those three banks.
+IMPACT: FD-to-statement linking works for Ujjivan only.

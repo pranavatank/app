@@ -7,7 +7,7 @@ Entry point for parsing bank statements using word coordinates and column geomet
 from engines.statement.extract import extract_words_from_pdf
 from engines.statement.rows import cluster_into_rows
 from engines.statement.columns import find_header, build_columns
-from engines.statement.assemble import assemble_transactions
+from engines.statement.assemble import assemble_transactions, deposit_account_matches
 from engines.statement.validate import (
     normalise_order,
     confidence,
@@ -104,4 +104,4 @@ def parse_statement_pdf(
         raise
 
 
-__all__ = ["parse_statement_pdf"]
+__all__ = ["parse_statement_pdf", "deposit_account_matches"]
