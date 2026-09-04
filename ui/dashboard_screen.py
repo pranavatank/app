@@ -81,64 +81,6 @@ class DashboardScreen(QMainWindow):
         right_layout.addWidget(self._build_content_area(), stretch=1)
 
         root_layout.addWidget(right, stretch=1)
-        self._build_chat_launcher()
-
-    def _build_chat_launcher(self):
-        self.chatbot_dialog = None
-        self.chat_launcher_btn = QPushButton("AI", self)
-        self.chat_launcher_btn.setFixedSize(58, 58)
-        self.chat_launcher_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.chat_launcher_btn.setToolTip("Open local AI chat")
-        self.chat_launcher_btn.setAccessibleName("Open local AI chat")
-        self.chat_launcher_btn.setAccessibleDescription("Open the local Ollama chatbot.")
-        self.chat_launcher_btn.clicked.connect(self._open_chatbot)
-        self.chat_launcher_btn.setStyleSheet(self._chat_launcher_style())
-        self.chat_launcher_btn.setGraphicsEffect(Theme.shadow_primary())
-        self.chat_launcher_btn.raise_()
-        self._position_chat_launcher()
-
-    @staticmethod
-    def _chat_launcher_style() -> str:
-        return f"""
-            QPushButton {{
-                background: {Theme.gradient(Theme.PRIMARY_GRADIENT_START, Theme.HERO_GRADIENT_END, diagonal=True)};
-                color: #FFFFFF;
-                border: 2px solid {Theme.SURFACE};
-                border-radius: 29px;
-                font-size: 15px;
-                font-weight: 800;
-            }}
-            QPushButton:hover {{
-                background: {Theme.gradient(Theme.PRIMARY_GRADIENT_HOVER_START, Theme.HERO_GRADIENT_HOVER_END, diagonal=True)};
-            }}
-            QPushButton:pressed {{
-                background: {Theme.PRIMARY_DARK};
-                padding-top: 2px;
-            }}
-        """
-
-    def _position_chat_launcher(self):
-        if not hasattr(self, "chat_launcher_btn"):
-            return
-        margin = 24
-        size = self.chat_launcher_btn.size()
-        self.chat_launcher_btn.move(
-            max(margin, self.width() - size.width() - margin),
-            max(margin, self.height() - size.height() - margin),
-        )
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        self._position_chat_launcher()
-
-    def _open_chatbot(self):
-        from ui.chatbot_screen import LocalChatbotDialog
-
-        if self.chatbot_dialog is None:
-            self.chatbot_dialog = LocalChatbotDialog(self)
-        self.chatbot_dialog.show()
-        self.chatbot_dialog.raise_()
-        self.chatbot_dialog.activateWindow()
 
     # ── Sidebar ──────────────────────────────────────────────────────────────
 
@@ -403,9 +345,6 @@ class DashboardScreen(QMainWindow):
         # Overview banner gradient
         if hasattr(self, '_overview_banner') and self._overview_banner:
             self._overview_banner.setStyleSheet(self._overview_banner_css())
-
-        if hasattr(self, 'chat_launcher_btn') and self.chat_launcher_btn:
-            self.chat_launcher_btn.setStyleSheet(self._chat_launcher_style())
 
         # Refresh all SummaryPanel cards (left-accent + card border are inline)
         for panel_name in ('panel_financial', 'panel_bank', 'panel_interest', 'panel_tax'):

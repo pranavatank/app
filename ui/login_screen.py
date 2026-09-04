@@ -87,9 +87,8 @@ class LoginScreen(QWidget):
 
     def refresh_theme(self, *_args):
         """This window is torn down before the theme switcher is reachable
-        (see __init__), so this is defensive-only — kept in sync with the
-        chatbot/dashboard pattern rather than exhaustively restyling every
-        widget on a screen that can't actually go stale in practice."""
+        (see __init__), so this is defensive-only — we register the listener
+        for consistency, but it can't actually fire while this screen is visible."""
         self.setStyleSheet(self._root_css())
         if hasattr(self, "_card"):
             self._card.setStyleSheet(self._card_css())

@@ -46,7 +46,7 @@ from engines.statement_metadata_extractor import extract_account_metadata
 from ui.dialogs.account_dialog import AccountDialog
 from ui.dialogs.account_metadata_dialog import AccountMetadataDialog
 from ui.dialogs.password_dialog import PasswordDialog
-from ui.chatbot_screen import OllamaModelStartWorker
+from ui.ollama_worker import OllamaModelStartWorker
 from ui.dialogs.column_mapping_dialog import ColumnMappingDialog
 
 
@@ -588,8 +588,7 @@ class StatementImportScreen(QWidget):
 
     def _warm_up_ai_model(self):
         """Pre-load the local Ollama model in the background so the first
-        Parse Statement call in AI/auto mode doesn't hit a cold-start timeout
-        (reuses the same worker the chatbot uses to start the model)."""
+        Parse Statement call in AI/auto mode doesn't hit a cold-start timeout."""
         if getattr(self, "_warmup_thread", None):
             return
         self.btn_ai_warmup.setEnabled(False)
