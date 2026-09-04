@@ -256,6 +256,28 @@ def _migrate_person_schema_if_needed(cur: sqlite3.Cursor) -> None:
         cur.execute("ALTER TABLE Person ADD COLUMN ais_tis_password_enc TEXT")
 
 
+def _seed_bank_fd_conventions(cur: sqlite3.Cursor) -> None:
+    """Seed BankFDConvention table with default conventions for all banks (idempotent)."""
+    # Get all banks from the Bank table
+    banks = cur.execute("SELECT bank_id, bank_name FROM Bank").fetchall()
+
+    for bank in banks:
+        bank_id = bank[0]
+
+        # Check if convention already exists for this bank
+        existing = cur.execute(
+            "SELECT COUNT(*) FROM BankFDConvention WHERE bank_id = ?",
+            (bank_id,)
+        ).fetchone()[0]
+
+        if existing == 0:
+            # Insert default convention
+            cur.execute("""
+                INSERT INTO BankFDConvention (bank_id, compounding, simple_below_days, day_count, rounding_adjustment)
+                VALUES (?, ?, ?, ?, ?)
+            """, (bank_id, 'Quarterly', 183, 'Actual/365', 4))
+
+
 def _seed_tax_config(cur: sqlite3.Cursor) -> None:
     """Seed TaxSlabConfig and TaxParams with FY2025-26 and FY2026-27 data (idempotent)."""
 
@@ -739,8 +761,22 @@ def initialise_database() -> None:
         )
     """)
 
+    # ── BankFDConvention ────────────────────────────────────────────────────
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS BankFDConvention (
+            convention_id       INTEGER PRIMARY KEY AUTOINCREMENT,
+            bank_id             INTEGER NOT NULL REFERENCES Bank(bank_id),
+            compounding         TEXT    NOT NULL DEFAULT 'Quarterly',
+            simple_below_days   INTEGER NOT NULL DEFAULT 183,
+            day_count           TEXT    NOT NULL DEFAULT 'Actual/365',
+            rounding_adjustment REAL    NOT NULL DEFAULT 4,
+            UNIQUE(bank_id)
+        )
+    """)
+
     # Seed TaxSlabConfig and TaxParams if they don't exist
     _seed_tax_config(cur)
+    _seed_bank_fd_conventions(cur)
 
     _migrate_bank_account_schema_if_needed(cur)
     _migrate_fd_interest_record_schema_if_needed(cur)

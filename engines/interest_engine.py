@@ -30,32 +30,6 @@ def calculate_fd_maturity(principal: float, rate: float, tenure_months: int,
     return round(maturity, 2)
 
 
-def calculate_fd_maturity_flexible(principal: float, rate: float,
-                                   start_date: date, maturity_date: date,
-                                   compounding: str,
-                                   tenure_years: int = 0,
-                                   tenure_months: int = 0,
-                                   tenure_days: int = 0) -> float:
-    """Formula-style maturity for flexible tenure input."""
-    if principal <= 0 or rate <= 0 or maturity_date <= start_date:
-        return round(principal, 2)
-
-    # Keep backward compatibility for month-only tenure entry.
-    if tenure_days == 0 and tenure_years == 0 and tenure_months > 0:
-        return calculate_fd_maturity(principal, rate, tenure_months, compounding)
-
-    r = rate / 100
-    if compounding == "Monthly":
-        n = 12
-    elif compounding == "Quarterly":
-        n = 4
-    else:
-        n = 1
-
-    total_days = (maturity_date - start_date).days
-    t = total_days / 365
-    maturity = principal * ((1 + r / n) ** (n * t))
-    return round(maturity, 2)
 
 
 def calculate_fd_maturity_date(start_date: date,
@@ -126,50 +100,79 @@ def calculate_fd_maturity_bank_style(principal: float, rate: float,
                                      compounding: str,
                                      tenure_years: int = 0,
                                      tenure_months: int = 0,
-                                     tenure_days: int = 0) -> float:
+                                     tenure_days: int = 0,
+                                     rounding_adjustment: float = 0) -> float:
     """
-    Bank-style maturity: actual-day interest with leap-year denominator,
-    compounding at each completed compounding period.
+    Bank-style maturity using the U/V/W/X/Y/Z method from the spec:
+    U = completed quarters
+    V = broken-period days (from calendar date U quarters after start)
+    W = compounded part: (1 + rate/400)^U * principal - principal
+    X = simple interest on broken period: ((1 + rate/400)^U * principal) * (V/365 * rate/100)
+    Y = W + X
+    Z = ROUND(Y, 0)
     """
     if principal <= 0 or rate <= 0 or maturity_date < start_date:
         return round(principal, 2)
 
-    # For pure day-tenure FDs, many bank sheets align more closely with
-    # formula-based fractional tenure than period-posting simulation.
-    if tenure_days > 0 and tenure_years == 0 and tenure_months == 0:
-        return calculate_fd_maturity_flexible(
-            principal,
-            rate,
-            start_date,
-            maturity_date,
-            compounding,
-            tenure_years,
-            tenure_months,
-            tenure_days,
-        )
+    # Calculate number of days
+    total_days = (maturity_date - start_date).days
 
-    period_months = _period_months_for_compounding(compounding)
-    current_principal = principal
-    total_interest = 0.0
-    period_start = start_date
-    annual_rate = rate / 100
+    # U = completed quarters (INT((E - C) / 30.433 / 3))
+    # Using 30.433 days/month average
+    u = int(total_days / 30.433 / 3)
 
-    while period_start <= maturity_date:
-        period_end = min(
-            period_start + relativedelta(months=period_months) - timedelta(days=1),
-            maturity_date,
-        )
+    # V = broken-period days
+    # Advance start date by 3*U months (calendar date arithmetic)
+    quarter_date = start_date + relativedelta(months=3 * u)
+    v = (maturity_date - quarter_date).days
 
-        period_interest = _accrue_period_interest(current_principal, annual_rate, period_start, period_end)
-        total_interest += period_interest
+    # W = (1 + rate/400)^U * principal - principal
+    rate_factor = 1 + rate / 400
+    principal_after_compounding = principal * (rate_factor ** u)
+    w = principal_after_compounding - principal
 
-        # Compound only when the period is fully completed before maturity.
-        if period_end < maturity_date:
-            current_principal += period_interest
+    # X = principal_after_compounding * (V/365 * rate/100)
+    x = principal_after_compounding * (v / 365 * rate / 100)
 
-        period_start = period_end + timedelta(days=1)
+    # Y = W + X
+    y = w + x
 
-    return round(principal + total_interest, 2)
+    # Z = ROUND(Y, 0)
+    return round(principal + y, 2)
+
+
+def calculate_fd_maturity_flexible(principal: float, rate: float,
+                                   start_date: date, maturity_date: date,
+                                   compounding: str,
+                                   tenure_years: int = 0,
+                                   tenure_months: int = 0,
+                                   tenure_days: int = 0,
+                                   rounding_adjustment: float = 4) -> float:
+    """Formula-style maturity for flexible tenure input.
+    H = ROUNDUP(F * (1 + G/100/4)^(4*(E - C)/365), 0) - F - rounding_adjustment
+    """
+    if principal <= 0 or rate <= 0 or maturity_date <= start_date:
+        return round(principal, 2)
+
+    # Keep backward compatibility for month-only tenure entry.
+    if tenure_days == 0 and tenure_years == 0 and tenure_months > 0:
+        return calculate_fd_maturity(principal, rate, tenure_months, compounding)
+
+    r = rate / 100
+    if compounding == "Monthly":
+        n = 12
+    elif compounding == "Quarterly":
+        n = 4
+    else:
+        n = 1
+
+    total_days = (maturity_date - start_date).days
+    t = total_days / 365
+    maturity = principal * ((1 + r / n) ** (n * t))
+
+    # Apply the rounding adjustment (default 4, per spec's column H)
+    interest = round(maturity - principal, 0) - rounding_adjustment
+    return round(principal + interest, 2)
 
 
 def _effective_maturity_amount(fd: dict) -> float:
@@ -191,30 +194,101 @@ def _effective_maturity_amount(fd: dict) -> float:
     return float(fallback)
 
 
-def calculate_fd_interest_for_fy(fd_id: int, financial_year: str) -> float:
-    """Calculate FD interest earned in a specific FY."""
-    fd = get_fd(fd_id)
-    if not fd:
+def fd_interest_accrued_to(fd: dict, as_of: date) -> float:
+    """
+    Calculate interest accrued to a specific date using the spec's three-branch rule.
+
+    Let M = plain day count from start_date to as_of (boundary - start, not inclusive).
+        M <= 183           ->  INT(F * G/100 * M / 365)
+        183 < M <= 365     ->  INT(F * (1 + G/400)^4 - F)
+        M > 365            ->  INT(F * (1 + G/400)^(4*M/365) - F)
+
+    Day count is a plain date difference (no +1). For start 2026-02-24 and target 2026-03-31,
+    the count is 35 days, not 36.
+    """
+    fd_start = date.fromisoformat(fd["start_date"])
+    if as_of < fd_start:
         return 0.0
-    
-    fy_start, fy_end = fy_date_range(financial_year)
+
+    principal = float(fd["principal_amount"])
+    rate = float(fd.get("interest_rate") or 0)
+
+    if principal <= 0 or rate <= 0:
+        return 0.0
+
+    # Plain day count: from start_date to as_of
+    m = (as_of - fd_start).days
+    g = rate  # G is the rate as a whole number (8 means 8%)
+    f = principal
+
+    if m <= 183:
+        # Simple interest for first 183 days
+        accrued = int(f * g / 100 * m / 365)
+    elif m <= 365:
+        # Quarterly compounding for full year
+        accrued = int(f * ((1 + g / 400) ** 4) - f)
+    else:
+        # Quarterly compounding for M days
+        accrued = int(f * ((1 + g / 400) ** (4 * m / 365)) - f)
+
+    return float(accrued)
+
+
+def fd_interest_for_fy(fd: dict, financial_year: str) -> float:
+    """
+    Calculate FD interest earned in a specific FY using the accrual method.
+
+    The FINAL financial year takes the remainder: total_interest - sum(earlier years),
+    so the parts always add back to the maturity total exactly.
+    """
     fd_start = date.fromisoformat(fd["start_date"])
     fd_end = date.fromisoformat(fd["maturity_date"])
-    
-    # Overlap period
-    overlap_start = max(fd_start, fy_start)
-    overlap_end = min(fd_end, fy_end)
-    
-    if overlap_start > overlap_end:
+    fy_start, fy_end = fy_date_range(financial_year)
+
+    # Clamp the FD's date range to the FY's date range
+    accrual_start = max(fd_start, fy_start)
+    accrual_end = min(fd_end, fy_end)
+
+    if accrual_start > accrual_end:
         return 0.0
-    
-    # Calculate interest for overlap period
-    days_in_fy = (overlap_end - overlap_start).days + 1
-    total_days = (fd_end - fd_start).days + 1
-    total_interest = _effective_maturity_amount(fd) - float(fd["principal_amount"])
-    
-    fy_interest = (total_interest * days_in_fy) / total_days
-    return round(fy_interest, 2)
+
+    # Check if this is the final FY (FD matures during or before this FY)
+    is_final_fy = accrual_end >= fd_end
+
+    if not is_final_fy:
+        # Not final FY: use direct accrual calculation
+        interest_at_end = fd_interest_accrued_to(fd, accrual_end)
+        interest_at_start = 0.0
+        if accrual_start > fd_start:
+            interest_at_start = fd_interest_accrued_to(fd, accrual_start - timedelta(days=1))
+        return round(interest_at_end - interest_at_start, 2)
+    else:
+        # Final FY: take the remainder to ensure exact re-addition
+        total_interest = _effective_maturity_amount(fd) - float(fd["principal_amount"])
+
+        # Sum all previous FYs' interest
+        previous_total = 0.0
+        fd_fy = _fy_of_date(fd_start)
+        fd_fy_year = int(fd_fy.split("-")[0])
+        current_fy_year = int(financial_year.split("-")[0])
+
+        # Iterate through all FYs from FD start to the one before the current FY
+        for offset in range(current_fy_year - fd_fy_year):
+            check_fy_year = fd_fy_year + offset
+            check_fy = f"{check_fy_year}-{str(check_fy_year + 1)[2:]}"
+            check_fy_start, check_fy_end = fy_date_range(check_fy)
+
+            check_start = max(fd_start, check_fy_start)
+            check_end = min(fd_end, check_fy_end)
+
+            if check_start <= check_end:
+                interest_at_end = fd_interest_accrued_to(fd, check_end)
+                interest_at_start = 0.0
+                if check_start > fd_start:
+                    interest_at_start = fd_interest_accrued_to(fd, check_start - timedelta(days=1))
+                previous_total += interest_at_end - interest_at_start
+
+        return round(total_interest - previous_total, 2)
 
 
 def _fy_quarters(financial_year: str) -> list[tuple[str, date, date]]:
@@ -357,37 +431,6 @@ def calculate_fd_quarterly_credit_breakdown(principal: float, rate: float,
     return rows
 
 
-def calculate_fd_interest_quarterly_for_fy(fd_id: int, financial_year: str) -> list[dict]:
-    """Allocate selected FD interest amount into FY quarters by overlap days."""
-    fd = get_fd(fd_id)
-    if not fd:
-        return []
-
-    fd_start = date.fromisoformat(fd["start_date"])
-    fd_end = date.fromisoformat(fd["maturity_date"])
-    total_days = (fd_end - fd_start).days + 1
-    if total_days <= 0:
-        return []
-
-    total_interest = _effective_maturity_amount(fd) - float(fd["principal_amount"])
-    rows = []
-    for quarter, q_start, q_end in _fy_quarters(financial_year):
-        overlap_start = max(fd_start, q_start)
-        overlap_end = min(fd_end, q_end)
-        if overlap_start > overlap_end:
-            continue
-        days = (overlap_end - overlap_start).days + 1
-        interest = round((total_interest * days) / total_days, 2)
-        rows.append({
-            "quarter": quarter,
-            "period_start": overlap_start.isoformat(),
-            "period_end": overlap_end.isoformat(),
-            "days": days,
-            "interest": interest,
-        })
-    return rows
-
-
 def allocate_fd_interest_to_fy(fd_id: int) -> None:
     """Allocate FD interest across all relevant FYs and store in DB."""
     fd = get_fd(fd_id)
@@ -469,13 +512,6 @@ def allocate_savings_interest_to_fy(account_id: int, financial_year: str,
     upsert_savings_interest(
         account_id, financial_year, avg_balance, interest_rate, round(interest, 2)
     )
-
-
-def project_fd_interest_next_fy(fd_id: int, current_fy: str) -> float:
-    """Project FD interest for next FY."""
-    next_fy_year = int(current_fy.split("-")[0]) + 1
-    next_fy = f"{next_fy_year}-{str(next_fy_year + 1)[2:]}"
-    return calculate_fd_interest_for_fy(fd_id, next_fy)
 
 
 _TDS_QUARTERS = ["Q1", "Q2", "Q3", "Q4"]

@@ -1356,3 +1356,22 @@ and the new index on it made initialise_database() raise
 "no such column: deposit_account_no" — on a FRESH database everything worked,
 so this only broke machines that already had data. The owner's. Guarded
 ALTER TABLE migrations now run before the index is created.
+
+## Z16. A FOURTH defect in the owner's workbook — inconsistent FY boundaries
+domain_spec.owner_spreadsheet_model lists three known workbook defects. There is
+a fourth, and it changes a tax figure.
+The FY boundaries live in cells Q66 and Q67 of the "Bank" sheet:
+    Q66 = 2026-04-01   (the START of FY2026-27)
+    Q67 = 2027-03-31   (the END of FY2026-27)
+Columns M and N are plain date differences from those, so the first boundary is
+one day later than it should be. That single day is the entire reason the sheet
+shows 789 of FY2025-26 interest on the 501-day FD: with a correct 31 March
+boundary the count is 35 days, not 36, and the accrual is 767.
+
+T023's acceptance asks for 789 / 8,279 / 2,414 "matching the owner's spreadsheet
+exactly". The app instead uses 31 March consistently for every boundary and
+produces 767 / 8,301 / 2,414, which still re-adds to the 11,482 maturity total
+exactly. Reproducing 789 would mean reproducing the workbook's off-by-one.
+DECISION NEEDED: keep the app correct (current behaviour), or make the app
+bug-compatible with the spreadsheet so the owner's own cross-checks tie out.
+Recommendation: keep the app correct and fix the workbook.
