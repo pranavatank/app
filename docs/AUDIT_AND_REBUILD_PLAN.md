@@ -1310,3 +1310,19 @@ normalisation rules and `deposit_account_matches()` are implemented and unit-
 correct; what is missing is the narration patterns that find the number in the
 first place for those three banks.
 IMPACT: FD-to-statement linking works for Ujjivan only.
+
+## Z11. T018's "TDS 13,367" is not obtainable from AIS (plan error)
+T018 requires the AIS parser to produce tds = 13,367. It cannot: that figure
+is 26AS's, not AIS's.
+Measured from AIS.pdf, all 67 detail rows across all three detail tables:
+    TDS DEDUCTED total   12,073   (Active 6,246 + Inactive 5,827)
+    TDS DEPOSITED total  12,073
+The strings "13,367", "10,508" and "2,859" do not appear anywhere in AIS.pdf.
+They are 26AS figures — T017's own acceptance lists them as deductor rows
+(Enlightvision 10,508 + Jana 2,859 = 13,367).
+The plan's suggested fix ("skip every Inactive row") reaches 6,246, which is
+further from the target than summing everything.
+RESOLUTION TAKEN: the AIS parser reports what AIS actually says (12,073) and
+26AS remains the authority on tax credit. The 1,294 difference between the two
+documents is a real reconciliation finding about the owner's data, not a
+parser bug, and the Tax Documents screen should surface it rather than hide it.
