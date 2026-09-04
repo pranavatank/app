@@ -7,12 +7,13 @@ from PyQt6.QtWidgets import (
     QPushButton, QComboBox, QLineEdit, QTableWidget,
     QTableWidgetItem, QHeaderView, QDialog, QDialogButtonBox,
     QFormLayout, QDateEdit, QDoubleSpinBox, QTextEdit,
-    QMessageBox, QFrame, QAbstractItemView, QCheckBox
+    QMessageBox, QFrame, QAbstractItemView, QCheckBox, QTabWidget
 )
 from PyQt6.QtCore import Qt, QDate, QTimer
 from PyQt6.QtGui import QFont, QColor
 
 from ui.widgets.excel_table import ExcelTableWithStats
+from ui.widgets.chart_widget import ChartWidget
 
 from ui.theme import Theme
 from ui.icons import icon as app_icon, is_available as icons_available
@@ -26,11 +27,60 @@ from models.person import get_all_persons
 from models.bank_account import get_accounts_for_person, get_all_accounts
 from models.transaction import (
     get_transactions, add_transaction, update_transaction, delete_transaction,
-    reprocess_internal_transfers, display_transaction_type, normalize_transaction_type
+    reprocess_internal_transfers, display_transaction_type, normalize_transaction_type,
+    get_category_summary
 )
 
 _COL_DATE=0; _COL_TYPE=1; _COL_CAT=2; _COL_MODE=3; _COL_REF=4; _COL_DESC=5
 _COL_AMOUNT=6; _COL_BAL=7; _COL_ACCT=8; _COL_PERSON=9; _COL_ID=10
+
+# Month names for monthly chart
+_MONTHS = [
+    ("Apr", 4), ("May", 5), ("Jun", 6),
+    ("Jul", 7), ("Aug", 8), ("Sep", 9),
+    ("Oct", 10), ("Nov", 11), ("Dec", 12),
+    ("Jan", 1), ("Feb", 2), ("Mar", 3),
+]
+
+
+def _monthly_data(person_id, financial_year: str, account_id: int | None = None):
+    """Return (month_labels, income_list, expense_list) for a FY."""
+    from core.database import get_connection
+    fy_year = int(financial_year.split("-")[0])
+
+    labels, income_vals, expense_vals = [], [], []
+    conn = get_connection()
+    for name, month in _MONTHS:
+        year = fy_year if month >= 4 else fy_year + 1
+        from calendar import monthrange
+        last_day = monthrange(year, month)[1]
+        m_start = f"{year}-{month:02d}-01"
+        m_end   = f"{year}-{month:02d}-{last_day:02d}"
+
+        q = """
+            SELECT transaction_type, SUM(amount) AS total
+            FROM Transactions
+            WHERE transaction_date BETWEEN ? AND ?
+              AND COALESCE(is_internal_transfer, 0) = 0
+        """
+        params = [m_start, m_end]
+        if person_id:
+            q += " AND person_id = ?"
+            params.append(person_id)
+        if account_id:
+            q += " AND account_id = ?"
+            params.append(account_id)
+        q += " GROUP BY transaction_type"
+
+        rows = conn.execute(q, params).fetchall()
+        row_map = {r["transaction_type"]: r["total"] or 0 for r in rows}
+
+        labels.append(name)
+        income_vals.append(row_map.get("Income", 0))
+        expense_vals.append(row_map.get("Expense", 0))
+
+    conn.close()
+    return labels, income_vals, expense_vals
 
 
 class _DateSortItem(QTableWidgetItem):
@@ -72,6 +122,18 @@ class TransactionsScreen(QWidget):
         layout.addWidget(self._build_unsaved_bar())
         # Filter bar
         layout.addWidget(self._build_filter_bar())
+
+        # Charts tabs (Monthly and Categories)
+        self.charts_tabs = QTabWidget()
+        self.charts_tabs.setAccessibleName("Transaction charts")
+        self.charts_tabs.setAccessibleDescription("View monthly and category breakdowns.")
+        self.monthly_chart = ChartWidget()
+        self.category_chart = ChartWidget()
+        self.charts_tabs.addTab(self.monthly_chart, "Monthly")
+        self.charts_tabs.addTab(self.category_chart, "Categories")
+        self.charts_tabs.setFixedHeight(380)
+        layout.addWidget(self.charts_tabs)
+
         # Table
         layout.addWidget(self._build_table(), stretch=1)
         # Status
@@ -248,6 +310,7 @@ class TransactionsScreen(QWidget):
             return
         self._reload_filter_persons()
         self._fetch_and_display()
+        self._refresh_charts()
 
     def refresh_theme(self):
         """Called after a live theme switch — rebuilds all inline-styled
@@ -267,6 +330,10 @@ class TransactionsScreen(QWidget):
             self.lbl_net_sum.setStyleSheet(Theme.badge_style(Theme.PRIMARY_LIGHT, Theme.PRIMARY_DARK))
         if hasattr(self, 'table_widget') and self.table_widget:
             self.table_widget.refresh_theme()
+        if hasattr(self, 'monthly_chart') and self.monthly_chart:
+            self.monthly_chart.refresh_theme()
+        if hasattr(self, 'category_chart') and self.category_chart:
+            self.category_chart.refresh_theme()
         # Re-populate the table so row text colours (baked QColor) refresh too
         if hasattr(self, '_current_rows') and self._current_rows is not None:
             self._populate_table(self._current_rows)
@@ -427,6 +494,45 @@ class TransactionsScreen(QWidget):
         self.lbl_expense_sum.setText(f"Debit: ₹ {expense:,.2f}")
         sign = "+" if net >= 0 else ""
         self.lbl_net_sum.setText(f"Net: {sign}₹ {net:,.2f}")
+
+    def _refresh_charts(self):
+        """Refresh the monthly and category charts based on current filters."""
+        pid = self.f_person.currentData()
+        aid = self.f_account.currentData()
+        fy  = self.f_fy.currentText() or session.selected_fy
+        if not fy:
+            return
+        self._refresh_monthly_chart(pid, aid, fy)
+        self._refresh_category_chart(pid, aid, fy)
+
+    def _refresh_monthly_chart(self, pid, aid, fy):
+        """Refresh the monthly bar chart."""
+        try:
+            months, income, expense = _monthly_data(pid, fy, aid)
+            if all(v == 0 for v in income) and all(v == 0 for v in expense):
+                self.monthly_chart.show_empty_state("No monthly data for this period")
+                return
+            self.monthly_chart.plot_monthly_bar(
+                months=months,
+                income=income,
+                expense=expense,
+                title=f"Monthly Overview — FY {fy}",
+            )
+        except Exception:
+            self.monthly_chart.show_empty_state("Could not load monthly data")
+
+    def _refresh_category_chart(self, pid, aid, fy):
+        """Refresh the category pie chart."""
+        cats = get_category_summary(person_id=pid, financial_year=fy, account_id=aid)
+        if not cats:
+            self.category_chart.show_empty_state("No category data for this period")
+            return
+        top = cats[:8]
+        self.category_chart.plot_pie(
+            labels=[c["category"] or "Uncategorised" for c in top],
+            values=[c["total"] for c in top],
+            title=f"Debit by Category — FY {fy}",
+        )
 
     def _reprocess_data(self):
         reply = QMessageBox.question(

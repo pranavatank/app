@@ -15,12 +15,13 @@ from datetime import date
 from dateutil.relativedelta import relativedelta
 
 from ui.widgets.excel_table import ExcelTableWithStats
+from ui.widgets.chart_widget import ChartWidget
 
 from ui.theme import Theme
 from ui.icons import icon as app_icon, icon_label
 from ui.date_utils import format_display_date
 from core.session import session
-from config import COMPOUNDING_TYPES, fy_date_range, get_assessment_year, get_current_financial_year, FD_TDS_FORM_NAME
+from config import COMPOUNDING_TYPES, fy_date_range, get_assessment_year, get_current_financial_year, FD_TDS_FORM_NAME, get_all_financial_years
 from models.person import get_all_persons
 from models.bank_account import get_accounts_for_person
 from models.transaction import display_transaction_type
@@ -34,6 +35,8 @@ from models.fixed_deposit import (
     unlink_fd_transaction,
     auto_link_fd_records,
 )
+from models.fd_interest_record import get_total_fd_interest
+from models.savings_interest import get_total_savings_interest
 from engines.interest_engine import (
     calculate_fd_maturity,
     calculate_fd_maturity_bank_style,
@@ -125,6 +128,11 @@ class FixedDepositsScreen(QWidget):
         self.tds_banner.setVisible(False)
         layout.addWidget(self.tds_banner)
 
+        # Interest trend chart
+        self.interest_chart = ChartWidget()
+        self.interest_chart.setFixedHeight(350)
+        layout.addWidget(self.interest_chart)
+
         # Table
         self.table_widget = ExcelTableWithStats(show_checkboxes=True)
         self.table = self.table_widget.table
@@ -172,6 +180,7 @@ class FixedDepositsScreen(QWidget):
         fds = get_all_fds(person_id=session.selected_person_id)
         self.table.setRowCount(0)
         self.table.setSortingEnabled(False)  # Disable sorting during population
+        self._refresh_interest_chart()
 
         status_colors = {
             "Active":  QColor(Theme.SUCCESS),
@@ -286,6 +295,32 @@ class FixedDepositsScreen(QWidget):
         )
         self.tds_banner.setVisible(True)
 
+    def _refresh_interest_chart(self):
+        """Refresh the FD and Savings interest trend chart."""
+        if not hasattr(self, 'interest_chart') or not self.interest_chart:
+            return
+
+        fys = list(reversed(get_all_financial_years(since_year=2020)))
+        pid = session.selected_person_id
+
+        fd_interests  = [get_total_fd_interest(fy, pid)      for fy in fys]
+        sav_interests = [get_total_savings_interest(fy, pid)  for fy in fys]
+
+        if all(v == 0 for v in fd_interests) and all(v == 0 for v in sav_interests):
+            self.interest_chart.show_empty_state("No interest records found")
+            return
+
+        self.interest_chart.plot_trend_line(
+            categories=fys,
+            series={
+                "FD Interest":      fd_interests,
+                "Savings Interest": sav_interests,
+            },
+            title="Interest Income Trend",
+            xlabel="Financial Year",
+            ylabel="Amount (₹)",
+        )
+
     def refresh_theme(self):
         """Called after a live theme switch — the table is fully rebuilt on
         every refresh() call (status colours included), so re-running it
@@ -304,6 +339,8 @@ class FixedDepositsScreen(QWidget):
                 Theme.text_style(color=Theme.WARNING_DARK, size=12, weight=600))
         if hasattr(self, "table_widget") and self.table_widget:
             self.table_widget.refresh_theme()
+        if hasattr(self, "interest_chart") and self.interest_chart:
+            self.interest_chart.refresh_theme()
         self.refresh()
 
     def _format_tenure(self, fd: dict) -> str:

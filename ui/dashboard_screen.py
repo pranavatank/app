@@ -32,17 +32,15 @@ from ui.icons import icon as app_icon, fallback as icon_fallback, is_available a
 from ui.widgets.summary_panel import SummaryPanel
 
 _NAV_ITEMS = [
-    ("Overview",          "overview"),
-    ("Accounts",          "accounts"),
-    ("Transactions",      "transactions"),
-    ("Income Management", "income"),
-    ("Fixed Deposits",    "fixed_deposits"),
-    ("Statement Import",  "statement_import"),
-    ("AIS/TIS Import",    "ais_tis"),
-    ("Tax",               "tax"),
-    ("26AS vs AIS",       "reconciliation"),
-    ("Reports",           "reports"),
-    ("Settings",          "settings"),
+    ("Overview",              "overview"),
+    ("Accounts",              "accounts"),
+    ("Transactions",          "transactions"),
+    ("Income & Expectations", "income"),
+    ("Fixed Deposits",        "fixed_deposits"),
+    ("Statement Import",      "statement_import"),
+    ("Tax Documents",         "ais_tis"),
+    ("Tax",                   "tax"),
+    ("Settings",              "settings"),
 ]
 
 
@@ -366,8 +364,7 @@ class DashboardScreen(QMainWindow):
         # QColor table-row foregrounds, etc.) and won't update via the
         # global QSS unpolish/polish pass alone.
         for page_name in ('accounts_page', 'transactions_page', 'fd_page',
-                          'income_page', 'import_page', 'ais_tis_page',
-                          'reconciliation_page', 'reports_page', 'tax_page'):
+                          'income_page', 'import_page', 'ais_tis_page', 'tax_page'):
             page = getattr(self, page_name, None)
             if page is not None and hasattr(page, 'refresh_theme'):
                 try:
@@ -542,15 +539,7 @@ class DashboardScreen(QMainWindow):
             from ui.tax_screen import TaxScreen
             self.tax_page = TaxScreen(self)
             return self.tax_page
-        elif index == 8:  # Reconciliation
-            from ui.reconciliation_screen import ReconciliationScreen
-            self.reconciliation_page = ReconciliationScreen(self)
-            return self.reconciliation_page
-        elif index == 9:  # Reports
-            from ui.reports_screen import ReportsScreen
-            self.reports_page = ReportsScreen(self)
-            return self.reports_page
-        elif index == 10:  # Settings
+        elif index == 8:  # Settings
             from ui.settings_screen import SettingsScreen
             self.settings_page = SettingsScreen(self)
             return self.settings_page
@@ -857,8 +846,6 @@ class DashboardScreen(QMainWindow):
             lambda: self.import_page.refresh() if hasattr(self, 'import_page') else None,
             lambda: self.ais_tis_page.refresh() if hasattr(self, 'ais_tis_page') else None,
             lambda: self.tax_page.refresh() if hasattr(self, 'tax_page') else None,
-            lambda: self.reconciliation_page.refresh() if hasattr(self, 'reconciliation_page') else None,
-            lambda: self.reports_page.refresh() if hasattr(self, 'reports_page') else None,
             lambda: self.settings_page.refresh() if hasattr(self, 'settings_page') else None,
         ]
         if 0 <= idx < len(pages):

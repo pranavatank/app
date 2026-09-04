@@ -12,7 +12,8 @@ from PyQt6.QtGui import QFont
 
 from ui.theme.theme import Theme
 from ui.icons import set_btn_icon, icon_label as app_icon_label, pixmap as app_pixmap, is_available as icons_available, tab_icon
-from models.bank_account import get_all_accounts, add_account, update_account, delete_account
+from ui.widgets.chart_widget import ChartWidget
+from models.bank_account import get_all_accounts, add_account, update_account, delete_account, get_account
 from models.bank import get_or_create_bank, update_bank_tan_code_if_exists
 from models.person import get_all_persons
 from models.fixed_deposit import get_all_fds
@@ -65,6 +66,11 @@ class AccountsScreen(QWidget):
         header.addWidget(btn_add)
         layout.addLayout(header)
 
+        # Bank-wise balance chart
+        self.bank_chart = ChartWidget()
+        self.bank_chart.setFixedHeight(350)
+        layout.addWidget(self.bank_chart)
+
         # Container for both views
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -78,7 +84,7 @@ class AccountsScreen(QWidget):
         self.container_layout.setContentsMargins(0, 0, 0, 0)
 
         scroll.setWidget(self.container)
-        layout.addWidget(scroll)
+        layout.addWidget(scroll, stretch=1)
 
         self.setAccessibleName("Accounts screen")
         self.setAccessibleDescription("Manage bank accounts in card or list view.")
@@ -112,12 +118,15 @@ class AccountsScreen(QWidget):
                 f"color: {Theme.TEXT_MUTED}; font-size: 15px; background: transparent;")
             no_data_layout.addWidget(no_data)
             self.container_layout.addWidget(no_data_container)
+            self._refresh_bank_chart()
             return
 
         if self.view_mode == "card":
             self._render_card_view(accounts)
         else:
             self._render_list_view(accounts)
+
+        self._refresh_bank_chart()
 
     def _render_card_view(self, accounts):
         grid_widget = QWidget()
@@ -419,7 +428,44 @@ class AccountsScreen(QWidget):
     def refresh_theme(self):
         """Called after a live theme switch — cards are rebuilt fresh on every
         _load_accounts() call, so simply reloading picks up the new colours."""
+        if hasattr(self, 'bank_chart') and self.bank_chart:
+            self.bank_chart.refresh_theme()
         self._load_accounts()
+
+    def _refresh_bank_chart(self):
+        """Refresh the bank-wise balance chart."""
+        if not hasattr(self, 'bank_chart') or not self.bank_chart:
+            return
+
+        if self.selected_person_id is not None:
+            accounts = [a for a in get_all_accounts() if a["person_id"] == self.selected_person_id]
+        else:
+            accounts = get_all_accounts()
+
+        if not accounts:
+            self.bank_chart.show_empty_state("No bank accounts found")
+            return
+
+        # Sort by balance descending
+        accounts = sorted(accounts, key=lambda a: a["current_balance"], reverse=True)
+
+        labels = [
+            f"{a.get('bank_display_name', a['bank_name'])}\n({a['account_type']})"
+            for a in accounts
+        ]
+        values = [a["current_balance"] for a in accounts]
+
+        if all(v == 0 for v in values):
+            self.bank_chart.show_empty_state("All account balances are zero")
+            return
+
+        self.bank_chart.plot_bar(
+            categories=labels,
+            values=values,
+            title="Balance by Bank Account",
+            ylabel="Balance (₹)",
+            color=Theme.TEAL,
+        )
 
     def _on_add_account(self):
         persons = get_all_persons()
