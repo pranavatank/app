@@ -100,13 +100,14 @@ class DashboardScreen(QMainWindow):
         # Brand header
         brand = QWidget()
         self._brand_widget = brand  # keep ref for theme refresh
-        brand.setStyleSheet(self._brand_bg_css())
+        brand.setObjectName("brand")
         brand.setFixedHeight(64)
         brand_layout = QHBoxLayout(brand)
         brand_layout.setContentsMargins(12, 0, 12, 0)
         brand_layout.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
         brand_icon = QLabel()
+        brand_icon.setObjectName("brandIcon")
         brand_icon.setFixedSize(44, 44)
         brand_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         brand_pm = logo_pixmap(38)
@@ -114,12 +115,11 @@ class DashboardScreen(QMainWindow):
             brand_icon.setPixmap(brand_pm)
         else:
             brand_icon.setText("PF")
-            brand_icon.setStyleSheet("color: white; font-size: 14px; font-weight: 700; background: transparent;")
         brand_layout.addWidget(brand_icon)
 
         self.brand_text = QLabel("FinManager")
+        self.brand_text.setObjectName("brandText")
         self.brand_text.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
-        self.brand_text.setStyleSheet("color: white; background: transparent;")
         self.brand_text.setVisible(False)  # Hidden when collapsed
         brand_layout.addWidget(self.brand_text)
         brand_layout.addStretch()
@@ -129,10 +129,7 @@ class DashboardScreen(QMainWindow):
 
         # Nav label (hidden when collapsed)
         self.nav_lbl = QLabel("  NAVIGATION")
-        self.nav_lbl.setStyleSheet(
-            Theme.text_style(color=Theme.TEXT_MUTED, size=10, weight=700) +
-            " letter-spacing: 1.5px; padding-left: 20px;"
-        )
+        self.nav_lbl.setObjectName("navLabel")
         self.nav_lbl.setVisible(False)
         layout.addWidget(self.nav_lbl)
         layout.addSpacing(6)
@@ -149,17 +146,17 @@ class DashboardScreen(QMainWindow):
         layout.addStretch()
 
         self.ver_lbl = QLabel("v1.0")
+        self.ver_lbl.setObjectName("verLabel")
         self.ver_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.ver_lbl.setStyleSheet(Theme.text_style(color=Theme.TEXT_MUTED, size=10) + " padding-bottom: 12px;")
         layout.addWidget(self.ver_lbl)
 
         # Toggle button - expands/collapses the sidebar on click (no hover, no pin)
         self._sidebar_toggle_btn = QPushButton()
+        self._sidebar_toggle_btn.setObjectName("sidebarToggle")
         self._sidebar_toggle_btn.setFixedHeight(40)
         self._sidebar_toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._sidebar_toggle_btn.setIconSize(QSize(16, 16))
         self._sidebar_toggle_btn.clicked.connect(self._toggle_sidebar)
-        self._sidebar_toggle_btn.setStyleSheet(self._sidebar_toggle_style())
         layout.addWidget(self._sidebar_toggle_btn)
 
         self._set_nav_active(0)
@@ -198,7 +195,7 @@ class DashboardScreen(QMainWindow):
 
         # Icon label (always visible, 76px fixed)
         icon_label = QLabel()
-        icon_label.setObjectName("nav_icon")
+        icon_label.setObjectName("navIcon")
         icon_label.setFixedWidth(76)
         icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         if icons_available():
@@ -211,14 +208,12 @@ class DashboardScreen(QMainWindow):
         else:
             icon_label.setText(icon_fallback(icon_name))
             icon_label.setFont(QFont("Segoe UI Emoji", 18))
-        icon_label.setStyleSheet("background: transparent;")
         layout.addWidget(icon_label)
 
         # Text label (hidden when collapsed)
         text_label = QLabel(label)
         text_label.setObjectName("nav_label")
         text_label.setFont(QFont("Segoe UI", 12))
-        text_label.setStyleSheet(f"color: {Theme.SIDEBAR_TEXT}; background: transparent; padding-right: 12px;")
         text_label.setVisible(False)
         layout.addWidget(text_label)
         layout.addStretch()
@@ -228,7 +223,6 @@ class DashboardScreen(QMainWindow):
         container._icon_label = icon_label
         container._text_label = text_label
 
-        container.setStyleSheet(self._nav_normal_style())
         return container
 
     def _set_nav_active(self, index: int):
@@ -245,7 +239,6 @@ class DashboardScreen(QMainWindow):
             text_label = btn._text_label
             # Active items get a crisp icon in the active-text token colour
             icon_color = Theme.SIDEBAR_ACTIVE_TEXT if is_active else "auto"
-            text_color = Theme.SIDEBAR_ACTIVE_TEXT if is_active else Theme.SIDEBAR_TEXT
 
             if icons_available():
                 icon_name = btn._icon_name
@@ -253,106 +246,26 @@ class DashboardScreen(QMainWindow):
                 if not pm.isNull():
                     icon_label.setPixmap(pm)
 
-            weight = "font-weight: 700;" if is_active else ""
-            text_label.setStyleSheet(
-                f"color: {text_color}; background: transparent; padding-right: 12px; {weight}")
+            # Update text label active property for dynamic styling
+            text_label.setProperty("active", is_active)
+            text_label.style().unpolish(text_label)
+            text_label.style().polish(text_label)
 
-    @staticmethod
-    def _brand_bg_css() -> str:
-        return (f"background: {Theme.gradient(Theme.HERO_GRADIENT_START, Theme.HERO_GRADIENT_END, diagonal=True)};")
-
-    @staticmethod
-    def _sidebar_toggle_style() -> str:
-        return f"""
-            QPushButton {{
-                background: transparent;
-                border: none;
-                border-top: 1px solid {Theme.SIDEBAR_HOVER};
-                border-radius: 0px;
-                margin: 0px;
-            }}
-            QPushButton:hover {{ background-color: {Theme.SIDEBAR_HOVER}; }}
-        """
-
-    @staticmethod
-    def _overview_banner_css() -> str:
-        return Theme.hero_header_style(radius=16, selector="QFrame")
-
-    @staticmethod
-    def _nav_normal_style() -> str:
-        return f"""
-            QToolButton[nav_item="true"] {{
-                background: transparent;
-                border: none;
-                border-radius: 10px;
-                margin: 2px 10px;
-                padding: 0px;
-            }}
-            QToolButton[nav_item="true"]:hover {{
-                background-color: {Theme.SIDEBAR_HOVER};
-                border-radius: 10px;
-                margin: 2px 10px;
-            }}
-            QToolButton[nav_item="true"]:checked {{
-                background-color: {Theme.SIDEBAR_ACTIVE};
-                border: none;
-                border-radius: 10px;
-                margin: 2px 10px;
-            }}
-        """
-
-    @staticmethod
-    def _nav_active_style() -> str:
-        """
-        Active nav — solid SIDEBAR_ACTIVE pill. Used for dynamic styling via checked state.
-        """
-        return f"""
-            QToolButton[nav_item="true"][active="true"] {{
-                background-color: {Theme.SIDEBAR_ACTIVE};
-                border: none;
-                border-radius: 10px;
-                margin: 2px 10px;
-            }}
-        """
 
     def _on_theme_changed(self, name: str) -> None:
         """
         Called by ThemeManager after a theme switch.
-        Rebuilds all inline-styled dashboard widgets that can't be
-        updated by Qt's polish/unpolish cycle alone.
+        Rebuilds nav icon pixmaps (colors are baked in) and refreshes
+        delegated components. Global QSS now handles layout/border/bg changes.
         """
-        # Brand gradient header
-        if hasattr(self, '_brand_widget') and self._brand_widget:
-            self._brand_widget.setStyleSheet(self._brand_bg_css())
-        if hasattr(self, '_sidebar_toggle_btn') and self._sidebar_toggle_btn:
-            self._sidebar_toggle_btn.setStyleSheet(self._sidebar_toggle_style())
-            self._update_sidebar_toggle_btn()
-
-        # Nav button styles + icon pixmaps (colors are baked into QPixmap)
-        # Update nav button stylesheet for dynamic property-based styling
+        # Nav icon colors are baked into QPixmap, so refresh those
         if hasattr(self, '_nav_buttons'):
-            for btn in self._nav_buttons:
-                btn.setStyleSheet(self._nav_normal_style())
-        current_idx = self.stack.currentIndex() if hasattr(self, 'stack') else 0
-        self._set_nav_active(current_idx)
+            current_idx = self.stack.currentIndex() if hasattr(self, 'stack') else 0
+            self._set_nav_active(current_idx)
 
-        # Nav label / version label colors
-        if hasattr(self, 'nav_lbl') and self.nav_lbl:
-            self.nav_lbl.setStyleSheet(
-                Theme.text_style(color=Theme.TEXT_MUTED, size=10, weight=700) +
-                " letter-spacing: 1.5px; padding-left: 20px;"
-            )
-        if hasattr(self, 'ver_lbl') and self.ver_lbl:
-            self.ver_lbl.setStyleSheet(
-                Theme.text_style(color=Theme.TEXT_MUTED, size=10) + " padding-bottom: 12px;")
-
-        # Page title
-        if hasattr(self, 'page_title_lbl') and self.page_title_lbl:
-            self.page_title_lbl.setStyleSheet(Theme.title_style(15))
-
-        # Overview banner gradient
-        if hasattr(self, '_overview_banner') and self._overview_banner:
-            self._overview_banner.setStyleSheet(self._overview_banner_css())
+        # Update sidebar toggle button icon
+        if hasattr(self, '_sidebar_toggle_btn') and self._sidebar_toggle_btn:
+            self._update_sidebar_toggle_btn()
 
         # Refresh all SummaryPanel cards (left-accent + card border are inline)
         for panel_name in ('panel_financial', 'panel_bank', 'panel_interest', 'panel_tax'):
@@ -391,12 +304,11 @@ class DashboardScreen(QMainWindow):
             logo_chip.setPixmap(topbar_pm)
         else:
             logo_chip.setText("PF")
-            logo_chip.setStyleSheet(Theme.text_style(color=Theme.PRIMARY_DARK, size=11, weight=700))
         layout.addWidget(logo_chip)
 
         self.page_title_lbl = QLabel("Overview")
+        self.page_title_lbl.setObjectName("pageTitle")
         self.page_title_lbl.setFont(QFont("Segoe UI", 15, QFont.Weight.Bold))
-        self.page_title_lbl.setStyleSheet(Theme.title_style(15))
         layout.addWidget(self.page_title_lbl)
 
         layout.addStretch()
@@ -404,7 +316,7 @@ class DashboardScreen(QMainWindow):
         def _sep():
             s = QFrame()
             s.setFrameShape(QFrame.Shape.VLine)
-            s.setStyleSheet(f"color: {Theme.BORDER};")
+            s.setObjectName("divider")
             s.setFixedHeight(28)
             return s
 
@@ -485,7 +397,6 @@ class DashboardScreen(QMainWindow):
     def _build_placeholder_page(self, index: int) -> QWidget:
         """Build a lightweight placeholder page."""
         page = QWidget()
-        page.setStyleSheet(f"background-color: {Theme.BG};")
         page.setObjectName(f"placeholder_{index}")
         return page
 
@@ -549,28 +460,22 @@ class DashboardScreen(QMainWindow):
     def _build_error_page(self, index: int, error_msg: str) -> QWidget:
         """Build an error page to display inline when screen construction fails."""
         page = QWidget()
-        page.setStyleSheet(f"background-color: {Theme.BG};")
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addStretch()
 
         error_frame = QFrame()
-        error_frame.setStyleSheet(f"""
-            background-color: {Theme.SURFACE};
-            border: 2px solid {Theme.DANGER};
-            border-radius: 12px;
-            padding: 24px;
-        """)
+        error_frame.setObjectName("errorFrame")
         error_layout = QVBoxLayout(error_frame)
 
         title = QLabel("Screen Load Error")
+        title.setObjectName("errorTitle")
         title.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
-        title.setStyleSheet(f"color: {Theme.DANGER}; background: transparent;")
         error_layout.addWidget(title)
 
         msg = QLabel(error_msg)
+        msg.setObjectName("errorMessage")
         msg.setFont(QFont("Segoe UI", 12))
-        msg.setStyleSheet(f"color: {Theme.TEXT_PRIMARY}; background: transparent; word-wrap: break-word;")
         msg.setWordWrap(True)
         error_layout.addWidget(msg)
 
@@ -591,15 +496,14 @@ class DashboardScreen(QMainWindow):
 
     def _build_overview_page(self) -> QWidget:
         page = QWidget()
-        page.setStyleSheet(f"background-color: {Theme.BG};")
 
         scroll = QScrollArea()
+        scroll.setObjectName("transparentSurface")
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setStyleSheet("background: transparent; border: none;")
 
         inner = QWidget()
-        inner.setStyleSheet("background: transparent;")
+        inner.setObjectName("transparentSurface")
         outer = QVBoxLayout(inner)
         outer.setContentsMargins(28, 24, 28, 24)
         outer.setSpacing(20)
@@ -607,19 +511,19 @@ class DashboardScreen(QMainWindow):
         # FY banner
         banner = QFrame()
         self._overview_banner = banner  # keep ref for theme refresh
-        banner.setStyleSheet(self._overview_banner_css())
+        banner.setObjectName("overviewBanner")
         banner.setFixedHeight(70)
         b_layout = QHBoxLayout(banner)
         b_layout.setContentsMargins(24, 0, 24, 0)
 
         b_title = QLabel("Financial Overview")
+        b_title.setObjectName("bannerTitle")
         b_title.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
-        b_title.setStyleSheet("color: white; background: transparent;")
         b_layout.addWidget(b_title)
         b_layout.addStretch()
 
         self.banner_fy_lbl = QLabel("")
-        self.banner_fy_lbl.setStyleSheet("color: rgba(255,255,255,0.82); font-size: 13px; background: transparent;")
+        self.banner_fy_lbl.setObjectName("bannerFyLabel")
         b_layout.addWidget(self.banner_fy_lbl)
         outer.addWidget(banner)
 

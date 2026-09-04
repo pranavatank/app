@@ -269,8 +269,8 @@ class StatementImportScreen(QWidget):
         self._header_icon = icon_label("statement_import", size=20, color=Theme.PRIMARY)
         header.addWidget(self._header_icon)
         self._title_lbl = title = QLabel("Statement Import")
+        title.setObjectName("importTitle")
         title.setFont(QFont("Segoe UI", 15, QFont.Weight.Bold))
-        title.setStyleSheet(Theme.title_style(15))
         header.addWidget(title)
         header.addStretch()
 
@@ -310,12 +310,12 @@ class StatementImportScreen(QWidget):
         layout.setSpacing(20)
 
         scroll = QScrollArea()
+        scroll.setObjectName("transparentSurface")
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setStyleSheet("background: transparent; border: none;")
 
         content = QWidget()
-        content.setStyleSheet("background: transparent;")
+        content.setObjectName("transparentSurface")
         cl = QVBoxLayout(content)
         cl.setSpacing(20)
         cl.setContentsMargins(0, 0, 0, 0)
@@ -366,16 +366,9 @@ class StatementImportScreen(QWidget):
         
         file_row = QHBoxLayout()
         self.file_label = QLabel("No file selected")
+        self.file_label.setObjectName("fileLabel")
         self.file_label.setAccessibleName("Selected statement file")
         self.file_label.setAccessibleDescription("Shows the currently selected statement file.")
-        self.file_label.setStyleSheet(f"""
-            background: {Theme.SURFACE_ALT}; 
-            color: {Theme.TEXT_SECONDARY};
-            border: 2px dashed {Theme.BORDER}; 
-            border-radius: 10px;
-            padding: 12px 16px; 
-            font-size: 13px;
-        """)
         file_row.addWidget(self.file_label, stretch=1)
 
         btn_browse = Theme.btn("Browse", "secondary", height=42, min_width=120)
@@ -605,6 +598,7 @@ class StatementImportScreen(QWidget):
         debug_layout.addLayout(debug_header)
         
         self.debug_output = QPlainTextEdit()
+        self.debug_output.setObjectName("importDebugOutput")
         self.debug_output.setReadOnly(True)
         self.debug_output.setMinimumHeight(140)
         self.debug_output.setMaximumHeight(200)
@@ -612,17 +606,6 @@ class StatementImportScreen(QWidget):
         self.debug_output.setAccessibleName("Import debug output")
         self.debug_output.setAccessibleDescription("Shows parser attempts, validation issues, and duplicate information.")
         self.debug_output.setToolTip("Shows parser attempts, validation issues, and duplicate information.")
-        self.debug_output.setStyleSheet(f"""
-            QPlainTextEdit {{
-                background: {Theme.SURFACE_ALT};
-                color: {Theme.TEXT_SECONDARY};
-                border: 1px solid {Theme.BORDER};
-                border-radius: 8px;
-                font-size: 11px;
-                font-family: 'Consolas', 'Courier New', monospace;
-                padding: 8px;
-            }}
-        """)
         debug_layout.addWidget(self.debug_output)
         layout.addWidget(debug_card, stretch=0)
         
@@ -697,7 +680,7 @@ class StatementImportScreen(QWidget):
     def _card_title_row(self, icon_name: str, text: str) -> QWidget:
         """Card title with a registry icon instead of a plain emoji."""
         row_widget = QWidget()
-        row_widget.setStyleSheet("background: transparent;")
+        row_widget.setObjectName("transparentBg")
         row = QHBoxLayout(row_widget)
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(8)
@@ -1146,17 +1129,13 @@ class StatementImportScreen(QWidget):
         """Called after a live theme switch. Deliberately does NOT call
         refresh() — that resets the whole import wizard (selected file,
         parsed rows, in-progress state), which would be destructive mid-import.
-        Only re-applies inline card styles and the step indicator."""
+        Only re-applies icon pixmaps and child widget themes."""
+        # Re-apply card shadow effects after theme change
         for attr in ("_card1", "_card2", "_card3", "_preview_header_card", "_debug_card"):
             card = getattr(self, attr, None)
             if card is not None:
-                card.setStyleSheet(
-                    Theme.card_style(bg=Theme.SURFACE, border_color=Theme.BORDER,
-                                      radius=14, padding=20, selector="QFrame#ImportCard")
-                )
                 card.setGraphicsEffect(Theme.shadow_card())
-        if hasattr(self, "_title_lbl"):
-            self._title_lbl.setStyleSheet(Theme.title_style(15))
+        # Re-apply icon pixmaps (colors are baked in)
         if hasattr(self, "_header_icon"):
             self._header_icon.setPixmap(icon_pixmap("statement_import", size=20, color=Theme.PRIMARY))
         if hasattr(self, "preview_table_widget") and self.preview_table_widget:

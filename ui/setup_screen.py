@@ -23,31 +23,21 @@ class SetupScreen(QWidget):
         set_window_icon(self)
         self.setFixedSize(480, 600)
         self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowCloseButtonHint)
-        self.setStyleSheet(self._root_css())
+        self.setObjectName("setupWindow")
         self._build_ui()
         self._center_on_screen()
         # Defensive only: closes itself before Settings is reachable (see
         # login_screen.py's identical note) — registered for consistency.
         ThemeManager.register_on_change(self.refresh_theme)
 
-    @staticmethod
-    def _root_css() -> str:
-        return f"background-color: {Theme.BG};"
-
-    @staticmethod
-    def _card_css() -> str:
-        return Theme.tinted_surface_style(radius=16, selector="QFrame#SetupCard")
-
     def refresh_theme(self, *_args):
-        """Defensive-only (see __init__) — restyles the static chrome; the
-        strength bar/label depend on runtime password-strength state, not
-        theme, so they're left to their own update logic rather than guessed
-        at here."""
-        self.setStyleSheet(self._root_css())
+        """Defensive-only (see __init__) — re-apply shadow effect and update
+        strength bar styling if needed. Card/strip styles are now in global QSS."""
         if hasattr(self, "_card"):
-            self._card.setStyleSheet(self._card_css())
-        if hasattr(self, "_strip"):
-            self._strip.setStyleSheet(Theme.panel_strip_style(radius=2))
+            self._card.setGraphicsEffect(Theme.shadow_elevated())
+        # Re-trigger strength display in case current text is set
+        if hasattr(self, "pwd_input"):
+            self._update_strength(self.pwd_input.text())
 
     def _build_ui(self):
         root = QVBoxLayout(self)
@@ -55,8 +45,7 @@ class SetupScreen(QWidget):
         root.addStretch(1)
 
         self._card = card = QFrame()
-        card.setObjectName("SetupCard")
-        card.setStyleSheet(self._card_css())
+        card.setObjectName("setupCard")
         card.setFixedWidth(400)
         card.setGraphicsEffect(Theme.shadow_elevated())
 
@@ -77,20 +66,20 @@ class SetupScreen(QWidget):
         cl.addSpacing(8)
 
         self._strip = strip = QFrame()
+        strip.setObjectName("setupStrip")
         strip.setFixedHeight(4)
-        strip.setStyleSheet(Theme.panel_strip_style(radius=2))
         cl.addWidget(strip)
         cl.addSpacing(14)
 
         title = QLabel("Welcome")
+        title.setObjectName("setupTitle")
         title.setFont(QFont("Segoe UI", 22, QFont.Weight.Bold))
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=22, weight=700))
         cl.addWidget(title)
 
         subtitle = QLabel("Set a master password to secure your data")
+        subtitle.setObjectName("setupSubtitle")
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        subtitle.setStyleSheet(Theme.text_style(color=Theme.TEXT_SECONDARY, size=13))
         cl.addWidget(subtitle)
         cl.addSpacing(26)
 
@@ -103,12 +92,13 @@ class SetupScreen(QWidget):
         cl.addSpacing(5)
 
         self.strength_bar = QFrame()
+        self.strength_bar.setObjectName("setupStrengthBar")
         self.strength_bar.setFixedHeight(4)
-        self.strength_bar.setStyleSheet(f"background: {Theme.BORDER}; border-radius: 2px;")
+        self.strength_bar.setProperty("strength", "empty")
         cl.addWidget(self.strength_bar)
 
         self.strength_label = QLabel("")
-        self.strength_label.setStyleSheet(Theme.text_style(color=Theme.TEXT_MUTED, size=11))
+        self.strength_label.setObjectName("setupStrengthLabel")
         cl.addWidget(self.strength_label)
         cl.addSpacing(14)
 
@@ -121,7 +111,7 @@ class SetupScreen(QWidget):
 
         # TOTP
         self.totp_check = QCheckBox("Enable two-factor authentication (TOTP)")
-        self.totp_check.setStyleSheet(Theme.muted_style(12))
+        self.totp_check.setObjectName("setupTotpCheck")
         cl.addWidget(self.totp_check)
         cl.addSpacing(24)
 
@@ -138,8 +128,8 @@ class SetupScreen(QWidget):
         self.setTabOrder(self.totp_check, self.btn_setup)
 
         note = QLabel("Your password cannot be recovered. Keep it safe.")
+        note.setObjectName("setupNote")
         note.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        note.setStyleSheet(Theme.text_style(color=Theme.WARNING, size=11))
         cl.addWidget(note)
 
         h = QHBoxLayout()
@@ -151,7 +141,7 @@ class SetupScreen(QWidget):
 
     def _lbl(self, text: str) -> QLabel:
         l = QLabel(text)
-        l.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=13, weight=600))
+        l.setObjectName("setupFieldLabel")
         return l
 
     def _field(self, placeholder: str, password: bool = False) -> QLineEdit:
@@ -165,23 +155,26 @@ class SetupScreen(QWidget):
     def _update_strength(self, text: str):
         n = len(text)
         if n == 0:
-            self.strength_bar.setStyleSheet(f"background: {Theme.BORDER}; border-radius: 2px;")
+            self.strength_bar.setProperty("strength", "empty")
             self.strength_label.setText("")
+            self.strength_label.setProperty("strength", "empty")
         elif n < 8:
-            self.strength_bar.setStyleSheet(
-                Theme.panel_strip_style(Theme.DANGER_GRADIENT_START, Theme.DANGER_GRADIENT_END, radius=2))
+            self.strength_bar.setProperty("strength", "weak")
             self.strength_label.setText("Weak — use at least 8 characters")
-            self.strength_label.setStyleSheet(Theme.text_style(color=Theme.DANGER, size=11))
+            self.strength_label.setProperty("strength", "weak")
         elif n < 12:
-            self.strength_bar.setStyleSheet(
-                Theme.panel_strip_style(Theme.WARNING_GRADIENT_START, Theme.WARNING_GRADIENT_END, radius=2))
+            self.strength_bar.setProperty("strength", "moderate")
             self.strength_label.setText("Moderate")
-            self.strength_label.setStyleSheet(Theme.text_style(color=Theme.WARNING, size=11))
+            self.strength_label.setProperty("strength", "moderate")
         else:
-            self.strength_bar.setStyleSheet(
-                Theme.panel_strip_style(Theme.SUCCESS_GRADIENT_START, Theme.SUCCESS_GRADIENT_END, radius=2))
+            self.strength_bar.setProperty("strength", "strong")
             self.strength_label.setText("Strong ✓")
-            self.strength_label.setStyleSheet(Theme.text_style(color=Theme.SUCCESS, size=11))
+            self.strength_label.setProperty("strength", "strong")
+        # Trigger style update
+        self.strength_bar.style().unpolish(self.strength_bar)
+        self.strength_bar.style().polish(self.strength_bar)
+        self.strength_label.style().unpolish(self.strength_label)
+        self.strength_label.style().polish(self.strength_label)
 
     def _on_setup(self):
         pwd     = self.pwd_input.text()

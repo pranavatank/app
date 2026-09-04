@@ -704,6 +704,24 @@ QLabel#successLabel {{ color: {t.SUCCESS};        font-size: 12px; }}
 QLabel#mutedLabel   {{ color: {t.TEXT_MUTED};     font-size: 12px; }}
 
 /* Sidebar navigation items */
+QToolButton[nav_item="true"] {{
+    background: transparent;
+    border: none;
+    border-radius: 10px;
+    margin: 2px 10px;
+    padding: 0px;
+}}
+QToolButton[nav_item="true"]:hover {{
+    background-color: {t.SIDEBAR_HOVER};
+    border-radius: 10px;
+    margin: 2px 10px;
+}}
+QToolButton[nav_item="true"]:checked {{
+    background-color: {t.SIDEBAR_ACTIVE};
+    border: none;
+    border-radius: 10px;
+    margin: 2px 10px;
+}}
 QWidget[nav_item="true"]:focus {{ outline: 2px solid {t.FOCUS_RING}; outline-offset: 2px; }}
 
 /* ═══════════════════════════ TRANSPARENT CONTAINERS ══════════════ */
@@ -788,4 +806,73 @@ QLabel#accountMetricValue[variant="success"] {{ color: {t.SUCCESS}; }}
 QLabel#accountMetricValue[variant="warning"] {{ color: {t.WARNING}; }}
 QLabel#accountMetricValue[variant="info"] {{ color: {t.INFO}; }}
 QLabel#accountMetricValue[variant="teal"] {{ color: {t.TEAL}; }}
+
+/* ═══════════════════════════ DASHBOARD SCREEN ════════════════════════ */
+QWidget#brand {{ background: {t.gradient(t.HERO_GRADIENT_START, t.HERO_GRADIENT_END, diagonal=True)}; }}
+QLabel#navLabel {{ color: {t.TEXT_MUTED}; font-size: 10px; font-weight: 700; letter-spacing: 1.5px; padding-left: 20px; }}
+QLabel[objectName="nav_label"] {{ color: {t.SIDEBAR_TEXT}; background: transparent; padding-right: 12px; }}
+QLabel[objectName="nav_label"][active="true"] {{ color: {t.SIDEBAR_ACTIVE_TEXT}; font-weight: 700; }}
+QLabel#verLabel {{ color: {t.TEXT_MUTED}; font-size: 10px; }}
+QLabel#brandText {{ color: white; background: transparent; }}
+QLabel#brandIcon {{ color: white; font-size: 14px; font-weight: 700; background: transparent; }}
+QLabel#navIcon {{ background: transparent; }}
+QLabel#pageTitle {{ color: {t.TEXT_HEADING}; font-size: 15px; font-weight: 700; }}
+QPushButton#sidebarToggle {{ background: transparent; border: none; border-top: 1px solid {t.SIDEBAR_HOVER}; margin: 0px; }}
+QPushButton#sidebarToggle:hover {{ background-color: {t.SIDEBAR_HOVER}; }}
+QFrame#overviewBanner {{ background: {t.gradient(t.HERO_GRADIENT_START, t.HERO_GRADIENT_END)}; border-radius: 16px; }}
+QLabel#bannerTitle {{ color: white; background: transparent; }}
+QLabel#bannerFyLabel {{ color: rgba(255,255,255,0.82); font-size: 13px; background: transparent; }}
+QFrame#errorFrame {{ background-color: {t.SURFACE}; border: 2px solid {t.DANGER}; border-radius: 12px; padding: 24px; }}
+QLabel#errorTitle {{ color: {t.DANGER}; background: transparent; }}
+QLabel#errorMessage {{ color: {t.TEXT_PRIMARY}; background: transparent; }}
+
+/* ═══════════════════════════ FIXED DEPOSITS SCREEN ════════════════════ */
+QLabel#fdTitle {{ color: {t.TEXT_PRIMARY}; }}
+QLabel#fdSubtitle {{ color: {t.TEXT_SECONDARY}; font-size: 12px; }}
+QLabel#fdInfoLabel {{ color: {t.INFO}; font-size: 11px; padding: 4px; }}
+QLabel#fdStatusLabel {{ color: {t.WARNING}; font-weight: 600; }}
+QLabel#fdMaturityDateLabel {{ font-weight: 700; color: {t.TEXT_PRIMARY}; }}
+QLabel#fdMaturityAmountLabel {{ font-weight: 700; font-size: 15px; color: {t.SUCCESS}; }}
+QLabel#fdMaturityFormulaLabel {{ font-weight: 700; color: {t.TEXT_PRIMARY}; }}
+
+/* ═══════════════════════════ STATEMENT IMPORT SCREEN ═════════════════ */
+QLabel#importTitle {{ color: {t.TEXT_PRIMARY}; font-size: 15px; }}
+QLabel#importStatusLabel {{ color: {t.TEXT_PRIMARY}; font-size: 13px; font-weight: 700; }}
+QPlainTextEdit#importDebugOutput {{ background: {t.SURFACE_ALT}; color: {t.TEXT_SECONDARY}; border: 1px solid {t.BORDER}; border-radius: 8px; font-size: 11px; font-family: 'Consolas', 'Courier New', monospace; padding: 8px; }}
+QLabel#importStepDot {{ border-radius: 13px; }}
+QLabel#importStepLine {{ background: transparent; }}
+QFrame#importStepCard {{ background: {t.SURFACE}; border: 1px solid {t.BORDER}; border-radius: 12px; padding: 16px; }}
+QLabel#fileLabel {{ background: {t.SURFACE_ALT}; color: {t.TEXT_SECONDARY}; border: 2px dashed {t.BORDER}; border-radius: 10px; padding: 12px 16px; font-size: 13px; }}
+QLabel#previewSummaryLabel {{ color: {t.TEXT_PRIMARY}; font-size: 13px; font-weight: 700; }}
+
+/* ═══════════════════════════ AIS/TIS IMPORT SCREEN ═══════════════════ */
+QFrame#aisTisHeaderFrame {{ background-color: {t.SURFACE}; border: 1px solid {t.BORDER}; border-radius: 10px; padding: 12px; }}
+QLabel#aisTisTitle {{ color: {t.TEXT_PRIMARY}; font-size: 14px; font-weight: 700; }}
+QLabel#aisTisPersonLabel {{ color: {t.TEXT_SECONDARY}; font-size: 11px; font-weight: 500; }}
+QLabel#aisTisPersonLabel[variant="warning"] {{ color: {t.WARNING}; font-size: 11px; font-weight: 500; }}
+QLabel#aisTisPersonLabel[variant="selected"] {{ color: {t.TEXT_PRIMARY}; font-size: 11px; font-weight: 600; }}
+QLabel#aisTisCountLabel {{ color: {t.TEXT_MUTED}; font-size: 11px; }}
+QFrame#aisTisDebugFrame {{ background-color: {t.SURFACE}; border: 1px solid {t.BORDER}; border-radius: 8px; padding: 8px; }}
+QLabel#aisTisDebugTitle {{ color: {t.TEXT_SECONDARY}; font-size: 11px; font-weight: 600; }}
+QTextEdit#aisTisDebugText {{ background: {t.SURFACE_ALT}; border: 1px solid {t.BORDER}; border-radius: 6px; padding: 6px; font-family: 'Consolas', 'Courier New', monospace; font-size: 10px; color: {t.TEXT_PRIMARY}; }}
+QPushButton#aisTisCloseDebugBtn {{ background: transparent; border: none; color: {t.TEXT_SECONDARY}; font-weight: bold; }}
+QPushButton#aisTisCloseDebugBtn:hover {{ color: {t.DANGER}; }}
+
+/* ═══════════════════════════ SETUP SCREEN ════════════════════════════ */
+QWidget#setupWindow {{ background-color: {t.BG}; }}
+QFrame#setupCard {{ background-color: {t.SURFACE_TINT_START}; border: 1px solid {t.BORDER}; border-radius: 16px; padding: 0px; }}
+QFrame#setupStrip {{ background: {t.gradient(t.PRIMARY_GRADIENT_START, t.PRIMARY_GRADIENT_END)}; border-radius: 2px; }}
+QLabel#setupTitle {{ color: {t.TEXT_PRIMARY}; font-size: 22px; font-weight: 700; }}
+QLabel#setupSubtitle {{ color: {t.TEXT_SECONDARY}; font-size: 13px; }}
+QLabel#setupFieldLabel {{ color: {t.TEXT_PRIMARY}; font-size: 13px; font-weight: 600; }}
+QLabel#setupNote {{ color: {t.WARNING}; font-size: 11px; }}
+QLabel#setupStrengthLabel {{ color: {t.TEXT_MUTED}; font-size: 11px; }}
+QLabel#setupStrengthLabel[strength="weak"] {{ color: {t.DANGER}; font-size: 11px; }}
+QLabel#setupStrengthLabel[strength="moderate"] {{ color: {t.WARNING}; font-size: 11px; }}
+QLabel#setupStrengthLabel[strength="strong"] {{ color: {t.SUCCESS}; font-size: 11px; }}
+QFrame#setupStrengthBar {{ background: {t.BORDER}; border-radius: 2px; }}
+QFrame#setupStrengthBar[strength="weak"] {{ background: {t.gradient(t.DANGER_GRADIENT_START, t.DANGER_GRADIENT_END)}; border-radius: 2px; }}
+QFrame#setupStrengthBar[strength="moderate"] {{ background: {t.gradient(t.WARNING_GRADIENT_START, t.WARNING_GRADIENT_END)}; border-radius: 2px; }}
+QFrame#setupStrengthBar[strength="strong"] {{ background: {t.gradient(t.SUCCESS_GRADIENT_START, t.SUCCESS_GRADIENT_END)}; border-radius: 2px; }}
+QCheckBox#setupTotpCheck {{ color: {t.TEXT_SECONDARY}; font-size: 12px; }}
 """

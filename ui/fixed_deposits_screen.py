@@ -66,11 +66,11 @@ class FixedDepositsScreen(QWidget):
         header = QHBoxLayout(self.header_frame)
         header.setContentsMargins(20, 16, 20, 16)
         self._title_lbl = title = QLabel("Fixed Deposits")
+        title.setObjectName("fdTitle")
         title.setFont(QFont("Segoe UI", 15, QFont.Weight.Bold))
-        title.setStyleSheet(f"color: {Theme.TEXT_PRIMARY};")
         header.addWidget(title)
         self._subtitle_lbl = subtitle = QLabel("Track FD principal, expected vs actual interest, and transaction linkage")
-        subtitle.setStyleSheet(f"color: {Theme.TEXT_SECONDARY}; font-size: 12px;")
+        subtitle.setObjectName("fdSubtitle")
         header.addWidget(subtitle)
         header.addStretch()
 
@@ -166,12 +166,12 @@ class FixedDepositsScreen(QWidget):
 
         # Info label
         self._info_lbl = info_label = QLabel("Tip: Edit cells directly, then click 'Save Changes' or 'Recalculate Selected' to update database")
-        info_label.setStyleSheet(f"color: {Theme.INFO}; font-size: 11px; padding: 4px;")
+        info_label.setObjectName("fdInfoLabel")
         info_label.setWordWrap(True)
         layout.addWidget(info_label)
 
         self.status_label = QLabel("")
-        self.status_label.setObjectName("mutedLabel")
+        self.status_label.setObjectName("fdStatusLabel")
         layout.addWidget(self.status_label)
 
     def refresh(self):
@@ -322,21 +322,9 @@ class FixedDepositsScreen(QWidget):
         )
 
     def refresh_theme(self):
-        """Called after a live theme switch — the table is fully rebuilt on
-        every refresh() call (status colours included), so re-running it
-        picks up the new theme automatically."""
-        if hasattr(self, "header_frame") and self.header_frame:
-            self.header_frame.setStyleSheet(Theme.page_header_style())
-        if hasattr(self, "_title_lbl"):
-            self._title_lbl.setStyleSheet(f"color: {Theme.TEXT_PRIMARY};")
-        if hasattr(self, "_subtitle_lbl"):
-            self._subtitle_lbl.setStyleSheet(f"color: {Theme.TEXT_SECONDARY}; font-size: 12px;")
-        if hasattr(self, "_info_lbl"):
-            self._info_lbl.setStyleSheet(f"color: {Theme.INFO}; font-size: 11px; padding: 4px;")
-        if hasattr(self, "tds_banner"):
-            self.tds_banner.setStyleSheet(Theme.banner_style("warning"))
-            self.tds_banner_label.setStyleSheet(
-                Theme.text_style(color=Theme.WARNING_DARK, size=12, weight=600))
+        """Called after a live theme switch. The interest chart (matplotlib
+        canvas) needs explicit theme refresh since it can't use QSS.
+        Table is rebuilt on refresh() which picks up new theme colors."""
         if hasattr(self, "table_widget") and self.table_widget:
             self.table_widget.refresh_theme()
         if hasattr(self, "interest_chart") and self.interest_chart:

@@ -182,18 +182,18 @@ class AISTISImportScreenV2(QWidget):
 
     def _build_header(self) -> QFrame:
         self._header_frame = header = QFrame()
-        header.setStyleSheet(Theme.card_style(radius=10, padding=12))
+        header.setObjectName("aisTisHeaderFrame")
         header.setGraphicsEffect(Theme.shadow_card())
         h_layout = QHBoxLayout(header)
         h_layout.setSpacing(12)
 
         self._title_lbl = title = QLabel("Income Tax Data Import")
+        title.setObjectName("aisTisTitle")
         title.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
-        title.setStyleSheet(Theme.title_style(14))
         h_layout.addWidget(title)
 
         self.person_label = QLabel("Select person")
-        self.person_label.setStyleSheet(Theme.text_style(color=Theme.TEXT_SECONDARY, size=11, weight=500))
+        self.person_label.setObjectName("aisTisPersonLabel")
         h_layout.addWidget(self.person_label)
         h_layout.addStretch()
 
@@ -338,48 +338,30 @@ class AISTISImportScreenV2(QWidget):
     def _build_debug_panel(self, parent_layout):
         """Collapsible debug panel at bottom."""
         self.debug_frame = QFrame()
-        self.debug_frame.setStyleSheet(Theme.card_style(radius=8, padding=8))
+        self.debug_frame.setObjectName("aisTisDebugFrame")
         self.debug_frame.setMaximumHeight(200)
         self.debug_frame.hide()
-        
+
         debug_layout = QVBoxLayout(self.debug_frame)
         debug_layout.setContentsMargins(8, 8, 8, 8)
         debug_layout.setSpacing(4)
-        
+
         debug_header = QHBoxLayout()
         debug_title = QLabel("Debug: Extracted Text")
-        debug_title.setStyleSheet(Theme.text_style(color=Theme.TEXT_SECONDARY, size=11, weight=600))
+        debug_title.setObjectName("aisTisDebugTitle")
         debug_header.addWidget(debug_title)
         debug_header.addStretch()
-        
+
         btn_close_debug = QPushButton("✕")
+        btn_close_debug.setObjectName("aisTisCloseDebugBtn")
         btn_close_debug.setFixedSize(20, 20)
-        btn_close_debug.setStyleSheet(f"""
-            QPushButton {{
-                background: transparent;
-                border: none;
-                color: {Theme.TEXT_SECONDARY};
-                font-weight: bold;
-            }}
-            QPushButton:hover {{
-                color: {Theme.DANGER};
-            }}
-        """)
         btn_close_debug.clicked.connect(self.debug_frame.hide)
         debug_header.addWidget(btn_close_debug)
         debug_layout.addLayout(debug_header)
-        
+
         self.debug_text = QTextEdit()
+        self.debug_text.setObjectName("aisTisDebugText")
         self.debug_text.setReadOnly(True)
-        self.debug_text.setStyleSheet(f"""
-            background: {Theme.SURFACE_ALT};
-            border: 1px solid {Theme.BORDER};
-            border-radius: 6px;
-            padding: 6px;
-            font-family: 'Consolas', 'Courier New', monospace;
-            font-size: 10px;
-            color: {Theme.TEXT_PRIMARY};
-        """)
         debug_layout.addWidget(self.debug_text)
         
         parent_layout.addWidget(self.debug_frame)
@@ -391,16 +373,10 @@ class AISTISImportScreenV2(QWidget):
         parent_layout.addWidget(self.btn_toggle_debug)
 
     def refresh_theme(self):
-        """Called after a live theme switch — the header card and debug
-        panel are built once at construction, so their inline styling
-        needs re-applying before the dynamic refresh() runs."""
+        """Called after a live theme switch — re-apply shadow effects and
+        refresh data since person_label styling depends on selection state."""
         if hasattr(self, "_header_frame"):
-            self._header_frame.setStyleSheet(Theme.card_style(radius=10, padding=12))
             self._header_frame.setGraphicsEffect(Theme.shadow_card())
-        if hasattr(self, "debug_frame"):
-            self.debug_frame.setStyleSheet(Theme.card_style(radius=8, padding=8))
-        if hasattr(self, "_title_lbl"):
-            self._title_lbl.setStyleSheet(Theme.title_style(14))
         self.refresh()
 
     def refresh(self):
@@ -409,17 +385,21 @@ class AISTISImportScreenV2(QWidget):
 
         if not pid:
             self.person_label.setText("Please select a person from the top bar")
-            self.person_label.setStyleSheet(Theme.text_style(color=Theme.WARNING, size=11, weight=500))
+            self.person_label.setProperty("variant", "warning")
+            self.person_label.style().unpolish(self.person_label)
+            self.person_label.style().polish(self.person_label)
             self.table_26as.setRowCount(0)
             self.table_ais.setRowCount(0)
             self.table_tis.setRowCount(0)
             return
-        
+
         person = get_person(pid)
         if person:
             self.person_label.setText(f"{person['full_name']} · FY {fy}")
-            self.person_label.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=11, weight=600))
-        
+            self.person_label.setProperty("variant", "selected")
+            self.person_label.style().unpolish(self.person_label)
+            self.person_label.style().polish(self.person_label)
+
         self._load_26as_data()
         self._load_ais_data()
         self._load_tis_data()
