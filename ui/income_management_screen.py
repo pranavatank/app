@@ -12,6 +12,7 @@ from PyQt6.QtCore import Qt, QDate
 from PyQt6.QtGui import QFont, QColor
 
 from ui.widgets.excel_table import ExcelTableWithStats
+from ui.widgets.states import EmptyState
 from ui.widgets.toast_utils import show_success, show_warning, show_info
 from ui.theme import Theme
 from ui.icons import set_btn_icon
@@ -78,6 +79,13 @@ class IncomeManagementScreen(QWidget):
         # Summary cards
         layout.addWidget(self._build_summary_cards())
 
+        # Table container (will hold table or empty state)
+        self.table_container = QWidget()
+        self.table_container_layout = QVBoxLayout(self.table_container)
+        self.table_container_layout.setContentsMargins(0, 0, 0, 0)
+        self.table_container_layout.setSpacing(0)
+        self._empty_state = None
+
         # Table with Excel-like features
         self.table_widget = ExcelTableWithStats(show_checkboxes=True)
         self.table = self.table_widget.table
@@ -88,12 +96,13 @@ class IncomeManagementScreen(QWidget):
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self.table.doubleClicked.connect(self._edit_expectation)
         self.table.keyPressEvent = self._handle_key_press
-        
+
         for i, w in enumerate([120, 130, 100, 110, 130, 110, 130, 110, 90, 160, 0]):
             self.table.setColumnWidth(i, w)
         self.table.setColumnHidden(10, True)
-        
-        layout.addWidget(self.table_widget, stretch=1)
+
+        self.table_container_layout.addWidget(self.table_widget)
+        layout.addWidget(self.table_container, stretch=1)
 
         self.status_label = QLabel("")
         self.status_label.setObjectName("mutedLabel")
@@ -319,6 +328,28 @@ class IncomeManagementScreen(QWidget):
         self._update_summary(rows)
 
     def _populate_table(self, rows):
+        # Show empty state if no income expectations
+        if not rows:
+            if self._empty_state is None:
+                self._empty_state = EmptyState(
+                    icon_name="income_src",
+                    headline="No income expectations",
+                    explanation="Add income expectations to track expected vs actual income.",
+                    action_text="Add Expected Income",
+                    parent=self.table_container
+                )
+                self._empty_state.action_clicked.connect(self._add_expectation)
+                self.table_container_layout.insertWidget(0, self._empty_state)
+            self.table_widget.setVisible(False)
+            if self._empty_state:
+                self._empty_state.setVisible(True)
+            return
+
+        # Hide empty state and show table
+        if self._empty_state:
+            self._empty_state.setVisible(False)
+        self.table_widget.setVisible(True)
+
         self.table.setSortingEnabled(False)
         self.table.setRowCount(len(rows))
 

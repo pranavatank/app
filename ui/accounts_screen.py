@@ -13,6 +13,7 @@ from PyQt6.QtGui import QFont
 from ui.theme.theme import Theme
 from ui.icons import set_btn_icon, icon_label as app_icon_label, pixmap as app_pixmap, is_available as icons_available, tab_icon
 from ui.widgets.chart_widget import ChartWidget
+from ui.widgets.states import EmptyState
 from ui.widgets.toast_utils import show_success, show_warning
 from models.bank_account import get_all_accounts, add_account, update_account, delete_account, get_account
 from models.bank import get_or_create_bank, update_bank_tan_code_if_exists
@@ -109,16 +110,15 @@ class AccountsScreen(QWidget):
             accounts = [a for a in accounts if a["person_id"] == self.selected_person_id]
 
         if not accounts:
-            no_data_container = QFrame()
-            no_data_container.setStyleSheet(Theme.empty_state_style())
-            no_data_layout = QVBoxLayout(no_data_container)
-            no_data_layout.setContentsMargins(0, 0, 0, 0)
-            no_data = QLabel("No accounts found.\nClick 'Add Account' to get started.")
-            no_data.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            no_data.setStyleSheet(
-                f"color: {Theme.TEXT_MUTED}; font-size: 15px; background: transparent;")
-            no_data_layout.addWidget(no_data)
-            self.container_layout.addWidget(no_data_container)
+            empty_state = EmptyState(
+                icon_name="bank",
+                headline="No accounts yet",
+                explanation="Add your first bank account to start tracking.",
+                action_text="Add Account",
+                parent=self.container
+            )
+            empty_state.action_clicked.connect(self._on_add_account)
+            self.container_layout.addWidget(empty_state)
             self._refresh_bank_chart()
             return
 

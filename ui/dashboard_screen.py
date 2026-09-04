@@ -682,7 +682,7 @@ class DashboardScreen(QMainWindow):
         self.panel_bank.clear_stats()
         accounts = get_accounts_for_person(pid) if pid else get_all_accounts()
         if not accounts:
-            self.panel_bank.add_stat("_e", "No accounts added yet", ""); return
+            return
         for acc in accounts:
             self.panel_bank.add_stat(
                 f"acc_{acc['account_id']}",

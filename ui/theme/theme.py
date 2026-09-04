@@ -986,4 +986,32 @@ QWidget#Toast[variant="danger"] QPushButton {{
 QWidget#Toast[variant="danger"] QPushButton:hover {{
     color: {t.DANGER_DARK};
 }}
+
+/* ═══════════════════════════ STATE WIDGETS ════════════════════ */
+QFrame#EmptyState {{
+    background-color: {t.SURFACE};
+    border: none;
+}}
+QLabel#EmptyStateIcon {{
+    background: transparent;
+}}
+QPushButton#EmptyStateActionButton {{
+    min-width: 140px;
+}}
+
+QFrame#LoadingState {{
+    background-color: {t.SURFACE};
+    border: none;
+}}
+
+QFrame#ErrorState {{
+    background-color: {t.SURFACE};
+    border: none;
+}}
+QLabel#ErrorStateIcon {{
+    background: transparent;
+}}
+QPushButton#ErrorStateRetryButton {{
+    min-width: 140px;
+}}
 """

@@ -16,6 +16,7 @@ from dateutil.relativedelta import relativedelta
 
 from ui.widgets.excel_table import ExcelTableWithStats
 from ui.widgets.chart_widget import ChartWidget
+from ui.widgets.states import EmptyState
 from ui.widgets.toast_utils import show_success, show_warning, show_info
 
 from ui.theme import Theme
@@ -164,7 +165,16 @@ class FixedDepositsScreen(QWidget):
         self.table.deleteSelectedRows = self._delete_selected_fds
         for i, w in enumerate([40,110,120,110,110,70,90,100,100,110,130,130,120,110,85]):
             self.table.setColumnWidth(i, w)
-        layout.addWidget(self.table_widget)
+
+        # Table container (will hold table or empty state)
+        self.table_container = QWidget()
+        self.table_container_layout = QVBoxLayout(self.table_container)
+        self.table_container_layout.setContentsMargins(0, 0, 0, 0)
+        self.table_container_layout.setSpacing(0)
+        self.table_container_layout.addWidget(self.table_widget)
+        self._empty_state = None
+
+        layout.addWidget(self.table_container)
 
         # Info label
         self._info_lbl = info_label = QLabel("Tip: Edit cells directly, then click 'Save Changes' or 'Recalculate Selected' to update database")
@@ -180,6 +190,31 @@ class FixedDepositsScreen(QWidget):
         # Block signals during refresh to avoid triggering itemChanged
         self.table.blockSignals(True)
         fds = get_all_fds(person_id=session.selected_person_id)
+
+        # Show empty state if no FDs
+        if not fds:
+            if self._empty_state is None:
+                self._empty_state = EmptyState(
+                    icon_name="piggy-bank",
+                    headline="No fixed deposits",
+                    explanation="Add a fixed deposit to track principal, interest, and maturity.",
+                    action_text="Add FD",
+                    parent=self.table_container
+                )
+                self._empty_state.action_clicked.connect(self._on_add_fd)
+                self.table_container_layout.insertWidget(0, self._empty_state)
+            self.table_widget.setVisible(False)
+            if self._empty_state:
+                self._empty_state.setVisible(True)
+            self._refresh_interest_chart()
+            self.table.blockSignals(False)
+            return
+
+        # Hide empty state and show table
+        if self._empty_state:
+            self._empty_state.setVisible(False)
+        self.table_widget.setVisible(True)
+
         self.table.setRowCount(0)
         self.table.setSortingEnabled(False)  # Disable sorting during population
         self._refresh_interest_chart()

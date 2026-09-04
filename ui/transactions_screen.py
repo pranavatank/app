@@ -14,6 +14,7 @@ from PyQt6.QtGui import QFont, QColor
 
 from ui.widgets.excel_table import ExcelTableWithStats
 from ui.widgets.chart_widget import ChartWidget
+from ui.widgets.states import EmptyState
 from ui.widgets.toast_utils import show_success, show_warning
 
 from ui.theme import Theme
@@ -135,8 +136,18 @@ class TransactionsScreen(QWidget):
         self.charts_tabs.setFixedHeight(380)
         layout.addWidget(self.charts_tabs)
 
-        # Table
-        layout.addWidget(self._build_table(), stretch=1)
+        # Table container (will hold table or empty state)
+        self.table_container = QWidget()
+        self.table_container_layout = QVBoxLayout(self.table_container)
+        self.table_container_layout.setContentsMargins(0, 0, 0, 0)
+        self.table_container_layout.setSpacing(0)
+
+        self.table_widget = self._build_table()
+        self.table_container_layout.addWidget(self.table_widget, stretch=1)
+
+        self._empty_state = None
+        layout.addWidget(self.table_container, stretch=1)
+
         # Status
         self.status_label = QLabel("")
         self.status_label.setObjectName("mutedLabel")
@@ -390,6 +401,28 @@ class TransactionsScreen(QWidget):
         self.btn_delete.setEnabled(False)
 
     def _populate_table(self, rows):
+        # Show empty state if no transactions
+        if not rows:
+            if self._empty_state is None:
+                self._empty_state = EmptyState(
+                    icon_name="transactions",
+                    headline="No transactions",
+                    explanation="Import a bank statement to see your transactions here.",
+                    action_text="Import Statement",
+                    parent=self.table_container
+                )
+                self._empty_state.action_clicked.connect(self._trigger_import)
+                self.table_container_layout.addWidget(self._empty_state)
+            self.table_widget.setVisible(False)
+            if self._empty_state:
+                self._empty_state.setVisible(True)
+            return
+
+        # Hide empty state and show table
+        if self._empty_state:
+            self._empty_state.setVisible(False)
+        self.table_widget.setVisible(True)
+
         # Block signals during refresh
         self.table.blockSignals(True)
         self.table.setSortingEnabled(False)
@@ -637,6 +670,12 @@ class TransactionsScreen(QWidget):
         if id_item is None: return None
         txn_id = int(id_item.text())
         return next((r for r in self._current_rows if r["transaction_id"] == txn_id), None)
+
+    def _trigger_import(self):
+        """Trigger statement import (navigate to the import screen via parent)."""
+        if self._parent_window:
+            # Navigate to statement import screen (index 5)
+            self._parent_window._navigate(5)
 
     def _on_selection_changed(self):
         has = bool(self.table.selectedItems())
