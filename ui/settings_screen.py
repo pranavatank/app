@@ -248,10 +248,10 @@ class SettingsScreen(QWidget):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setStyleSheet("background: transparent; border: none;")
+        scroll.setObjectName("transparentBg")
 
         content = QWidget()
-        content.setStyleSheet("background: transparent;")
+        content.setObjectName("transparentSurface")
         cl = QVBoxLayout(content)
         cl.setSpacing(18)
         cl.setContentsMargins(0, 0, 0, 0)
@@ -280,7 +280,6 @@ class SettingsScreen(QWidget):
         f = QFrame()
         f.setObjectName("SettingsHdr")
         f.setFixedHeight(76)
-        f.setStyleSheet(self._hdr_css())
         f.setGraphicsEffect(Theme.shadow_elevated())
 
         layout = QHBoxLayout(f)
@@ -295,16 +294,16 @@ class SettingsScreen(QWidget):
         else:
             icon_lbl.setText("⚙️")
             icon_lbl.setFont(QFont("Segoe UI Emoji", 20))
-        icon_lbl.setStyleSheet("background: transparent; border: none;")
+        icon_lbl.setObjectName("transparentBg")
         layout.addWidget(icon_lbl)
 
         col = QVBoxLayout(); col.setSpacing(2)
         t = QLabel("Settings")
         t.setFont(QFont("Segoe UI", 15, QFont.Weight.Bold))
-        t.setStyleSheet("color: white; background: transparent; border: none;")
+        t.setObjectName("hdrTitle")
         col.addWidget(t)
         s = QLabel("Security  ·  Privacy  ·  Theme  ·  Data  ·  Backup")
-        s.setStyleSheet("color: rgba(255,255,255,0.82); font-size: 12px; background: transparent; border: none;")
+        s.setObjectName("hdrSubtitle")
         col.addWidget(s)
         layout.addLayout(col)
         layout.addStretch()
@@ -326,9 +325,6 @@ class SettingsScreen(QWidget):
         self._refresh_badges()
         return f
 
-    def _hdr_css(self) -> str:
-        return Theme.hero_header_style(radius=14, selector="QFrame#SettingsHdr")
-
     def _hdr_badge(self, text: str) -> QLabel:
         l = QLabel(text)
         l.setStyleSheet(
@@ -347,19 +343,19 @@ class SettingsScreen(QWidget):
     # ── Theme section ─────────────────────────────────────────────────────────
 
     def _build_theme_section(self) -> QWidget:
-        outer = QWidget(); outer.setStyleSheet("background: transparent;")
+        outer = QWidget(); outer.setObjectName("transparentSurface")
         vl = QVBoxLayout(outer); vl.setContentsMargins(0,0,0,0); vl.setSpacing(10)
 
         # Section header
         hdr = QHBoxLayout()
         ic = QLabel("🎨"); ic.setFont(QFont("Segoe UI Emoji", 14))
-        ic.setStyleSheet("background: transparent;"); hdr.addWidget(ic)
+        ic.setObjectName("transparentSurface"); hdr.addWidget(ic)
         title = QLabel("Color Theme")
         title.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
         title.setStyleSheet(Theme.text_style(color=Theme.TEXT_HEADING, size=14, weight=700))
         hdr.addWidget(title); hdr.addSpacing(10)
         live = QLabel("● Live — no restart needed")
-        live.setStyleSheet(f"color:{Theme.SUCCESS};font-size:11px;font-weight:700;background:transparent;")
+        live.setObjectName("themeLiveIndicator")
         hdr.addWidget(live); hdr.addStretch()
         sub = QLabel("Click any card to switch instantly")
         sub.setStyleSheet(Theme.muted_style(12)); hdr.addWidget(sub)
@@ -367,7 +363,6 @@ class SettingsScreen(QWidget):
 
         # Container
         container = QFrame(); container.setObjectName("ThemeContainer")
-        container.setStyleSheet(self._cards_css())
         container.setGraphicsEffect(Theme.shadow_card())
         self._cards_container = container
 
@@ -395,7 +390,7 @@ class SettingsScreen(QWidget):
             self._btn_group.addButton(card)
             self._theme_cards[info["name"]] = card
 
-            cell_w = QWidget(); cell_w.setStyleSheet("background: transparent;")
+            cell_w = QWidget(); cell_w.setObjectName("transparentSurface")
             cell   = QVBoxLayout(cell_w); cell.setSpacing(3); cell.setContentsMargins(0,0,0,0)
             cell.addWidget(card, alignment=Qt.AlignmentFlag.AlignHCenter)
             n = QLabel(f"{info.get('emoji','🎨')} {info['name']}")
@@ -409,7 +404,6 @@ class SettingsScreen(QWidget):
 
         # Description bar
         desc = QFrame(); desc.setObjectName("ThemeDescBar")
-        desc.setStyleSheet(self._desc_css())
         self._desc_bar = desc
         dl = QHBoxLayout(desc); dl.setContentsMargins(14,8,14,8); dl.setSpacing(10)
         self._theme_name_lbl = QLabel("")
@@ -429,15 +423,9 @@ class SettingsScreen(QWidget):
         return (f"QFrame#ThemeContainer{{background-color:{Theme.SURFACE};"
                 f"border:1px solid {Theme.BORDER};border-radius:14px;}}")
 
-    def _desc_css(self) -> str:
-        return (f"QFrame#ThemeDescBar{{background-color:{Theme.SURFACE_ALT};"
-                f"border:1px solid {Theme.BORDER};border-radius:8px;}}")
-
     def _row_label(self, text: str) -> QLabel:
         l = QLabel(text)
-        l.setStyleSheet(
-            Theme.text_style(color=Theme.TEXT_SECONDARY, size=12, weight=700) +
-            f" background:{Theme.SURFACE_ALT};border-radius:6px;padding:4px 10px;")
+        l.setObjectName("rowLabel")
         return l
 
     def _update_desc(self, name: str):
@@ -472,29 +460,12 @@ class SettingsScreen(QWidget):
 
     def _on_theme_changed(self, name: str):
         """
-        Rebuild every inline-styled widget after a theme switch.
-        Called by ThemeManager BEFORE _deep_refresh() so widgets have
-        correct styles when Qt repaints them.
+        Update theme card active states after a theme switch.
+        Most styles are now in global QSS and update automatically.
         """
         # Update card active states
         for n, card in self._theme_cards.items():
             card.set_active(n == name)
-
-        # Rebuild inline CSS for frozen widgets
-        if self._hdr_frame:
-            self._hdr_frame.setStyleSheet(self._hdr_css())
-        if self._cards_container:
-            self._cards_container.setStyleSheet(self._cards_css())
-        if self._desc_bar:
-            self._desc_bar.setStyleSheet(self._desc_css())
-
-        # Every section card/group built via _card()/_group() bakes Theme.*
-        # colors in at construction — re-apply now that Theme has switched.
-        for card in self._all_cards:
-            card.setStyleSheet(self._card_css())
-            card.setGraphicsEffect(Theme.shadow_card())
-        for group in self._all_groups:
-            group.setStyleSheet(self._group_css())
 
         self._update_desc(name)
         self._refresh_badges()
@@ -606,31 +577,14 @@ class SettingsScreen(QWidget):
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
-    @staticmethod
-    def _group_css() -> str:
-        return f"""
-            QGroupBox {{
-                border: none; margin-top: 4px; background: transparent;
-                font-size: 13px; font-weight: 700; color: {Theme.PRIMARY_DARK};
-            }}
-            QGroupBox::title {{ subcontrol-origin: margin; left: 2px; padding: 0 6px; }}
-        """
-
     def _group(self, title: str) -> QGroupBox:
         g = QGroupBox(title)
-        g.setStyleSheet(self._group_css())
+        g.setObjectName("SettingsGroup")
         self._all_groups.append(g)
         return g
 
-    @staticmethod
-    def _card_css() -> str:
-        return Theme.card_style(
-            bg=Theme.SURFACE, border_color=Theme.BORDER,
-            radius=12, padding=14, selector="QFrame#SettingsCard")
-
     def _card(self) -> QFrame:
         f = QFrame(); f.setObjectName("SettingsCard")
-        f.setStyleSheet(self._card_css())
         f.setGraphicsEffect(Theme.shadow_card())
         f.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self._all_cards.append(f)

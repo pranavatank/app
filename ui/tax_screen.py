@@ -53,9 +53,6 @@ class TaxScreen(QWidget):
         # Header card
         self._header_card = header_card = QFrame()
         header_card.setObjectName("TaxHeaderCard")
-        header_card.setStyleSheet(
-            Theme.page_header_style(radius=14, selector="QFrame#TaxHeaderCard")
-        )
         header_layout = QHBoxLayout(header_card)
         header_layout.setContentsMargins(16, 12, 16, 12)
         header_layout.setSpacing(12)
@@ -102,10 +99,10 @@ class TaxScreen(QWidget):
         left_scroll = QScrollArea()
         left_scroll.setWidgetResizable(True)
         left_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        left_scroll.setStyleSheet("background: transparent; border: none;")
+        left_scroll.setObjectName("transparentBg")
 
         left_content = QWidget()
-        left_content.setStyleSheet("background: transparent;")
+        left_content.setObjectName("transparentSurface")
         left_layout = QVBoxLayout(left_content)
         left_layout.setSpacing(14)
         left_layout.setContentsMargins(0, 0, 8, 0)
@@ -127,10 +124,10 @@ class TaxScreen(QWidget):
         right_scroll = QScrollArea()
         right_scroll.setWidgetResizable(True)
         right_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        right_scroll.setStyleSheet("background: transparent; border: none;")
+        right_scroll.setObjectName("transparentBg")
 
         right_content = QWidget()
-        right_content.setStyleSheet("background: transparent;")
+        right_content.setObjectName("transparentSurface")
         right_layout = QVBoxLayout(right_content)
         right_layout.setSpacing(12)
         right_layout.setContentsMargins(8, 0, 0, 0)
@@ -152,13 +149,6 @@ class TaxScreen(QWidget):
     def _build_context_panel(self) -> QFrame:
         self._context_panel = panel = QFrame()
         panel.setObjectName("TaxContextPanel")
-        panel.setStyleSheet(
-            Theme.tinted_surface_style(
-                radius=12,
-                border_color=Theme.BORDER,
-                selector="QFrame#TaxContextPanel",
-            )
-        )
 
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(14, 12, 14, 12)
@@ -170,18 +160,21 @@ class TaxScreen(QWidget):
 
         row1 = QHBoxLayout(); row1.setSpacing(8)
         self.ctx_person = QLabel("Person: —")
-        self.ctx_person.setStyleSheet(Theme.badge_style(Theme.PRIMARY_LIGHT, Theme.PRIMARY_DARK, radius=10, padding="4px 10px", size=11, weight=600))
+        self.ctx_person.setObjectName("ctxBadge")
+        self.ctx_person.setProperty("variant", "person")
         row1.addWidget(self.ctx_person)
         row1.addStretch()
         layout.addLayout(row1)
 
         row2 = QHBoxLayout(); row2.setSpacing(8)
         self.ctx_fy = QLabel("FY: —")
-        self.ctx_fy.setStyleSheet(Theme.badge_style(Theme.SURFACE_ALT, Theme.TEXT_SECONDARY, radius=10, padding="4px 10px", size=11, weight=600))
+        self.ctx_fy.setObjectName("ctxBadge")
+        self.ctx_fy.setProperty("variant", "fy")
         row2.addWidget(self.ctx_fy)
 
         self.ctx_source = QLabel("Source: AIS/TIS")
-        self.ctx_source.setStyleSheet(Theme.badge_style(Theme.INFO_LIGHT, Theme.INFO_DARK, radius=10, padding="4px 10px", size=11, weight=600))
+        self.ctx_source.setObjectName("ctxBadge")
+        self.ctx_source.setProperty("variant", "source")
         row2.addWidget(self.ctx_source)
         row2.addStretch()
         layout.addLayout(row2)
@@ -358,10 +351,6 @@ class TaxScreen(QWidget):
         # ── Net Payable / Refund — the number that actually matters ──────────
         self._net_card = net_card = QFrame()
         net_card.setObjectName("NetPayableCard")
-        net_card.setStyleSheet(
-            Theme.card_style(bg=Theme.SURFACE_ALT, border_color=Theme.BORDER,
-                              radius=12, padding=16, selector="QFrame#NetPayableCard")
-        )
         net_layout = QVBoxLayout(net_card); net_layout.setSpacing(6)
         net_title = QLabel("Net Result — New Regime")
         net_title.setStyleSheet(Theme.section_label_style())
@@ -412,10 +401,6 @@ class TaxScreen(QWidget):
         # Slab position — the "income vs max slab" answer.
         self._proj_slab_card = QFrame()
         self._proj_slab_card.setObjectName("ProjSlabCard")
-        self._proj_slab_card.setStyleSheet(
-            Theme.card_style(bg=Theme.SURFACE_ALT, border_color=Theme.BORDER,
-                              radius=12, padding=14, selector="QFrame#ProjSlabCard")
-        )
         slab_l = QVBoxLayout(self._proj_slab_card); slab_l.setSpacing(4)
         self.proj_slab_label = QLabel("—")
         self.proj_slab_label.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
@@ -492,6 +477,8 @@ class TaxScreen(QWidget):
                      accent_role: str = "PRIMARY") -> QFrame:
         card = QFrame()
         card.setObjectName("TaxRegimeCard")
+        card.setProperty("variant", "primary")  # Will be updated dynamically if needed
+        # Dynamic styling for accent color and background — kept inline because variant is dynamic
         card.setStyleSheet(
             Theme.card_style(
                 bg=bg,
@@ -587,28 +574,11 @@ class TaxScreen(QWidget):
         self.gross_income_label.setText(f"₹ {gross:,.2f}")
 
     def refresh_theme(self):
-        """Called after a live theme switch — the header, context panel,
-        and regime/net-payable cards are built once at construction, so
-        their inline styling needs re-applying before refresh() reloads data."""
+        """Called after a live theme switch. Most styles are now in global QSS.
+        Only the advance_tax_banner and dynamic regime card styling need updating."""
         if hasattr(self, "advance_tax_banner"):
             self.advance_tax_banner.refresh_theme()
-        if hasattr(self, "_header_card"):
-            self._header_card.setStyleSheet(
-                Theme.page_header_style(radius=14, selector="QFrame#TaxHeaderCard"))
-        if hasattr(self, "_context_panel"):
-            self._context_panel.setStyleSheet(
-                Theme.tinted_surface_style(radius=12, border_color=Theme.BORDER,
-                                            selector="QFrame#TaxContextPanel"))
-        if hasattr(self, "ctx_person"):
-            self.ctx_person.setStyleSheet(
-                Theme.badge_style(Theme.PRIMARY_LIGHT, Theme.PRIMARY_DARK, radius=10, padding="4px 10px", size=11, weight=600))
-        if hasattr(self, "ctx_fy"):
-            self.ctx_fy.setStyleSheet(
-                Theme.badge_style(Theme.SURFACE_ALT, Theme.TEXT_SECONDARY, radius=10, padding="4px 10px", size=11, weight=600))
-        if hasattr(self, "ctx_source"):
-            self.ctx_source.setStyleSheet(
-                Theme.badge_style(Theme.INFO_LIGHT, Theme.INFO_DARK, radius=10, padding="4px 10px", size=11, weight=600))
-        # Refresh New Regime card styling
+        # Refresh regime card styling (accent color is dynamic per card)
         card = getattr(self, "_new_regime_card", None)
         if card is not None:
             role = getattr(card, "_accent_role", "PRIMARY")
@@ -624,19 +594,6 @@ class TaxScreen(QWidget):
             divider = getattr(card, "_accent_divider", None)
             if divider:
                 divider.setStyleSheet(f"background: {accent}44; border: none;")
-        if hasattr(self, "_net_card"):
-            self._net_card.setStyleSheet(
-                Theme.card_style(bg=Theme.SURFACE_ALT, border_color=Theme.BORDER, radius=12,
-                                  padding=16, selector="QFrame#NetPayableCard"))
-        if hasattr(self, "_proj_slab_card"):
-            self._proj_slab_card.setStyleSheet(
-                Theme.card_style(bg=Theme.SURFACE_ALT, border_color=Theme.BORDER, radius=12,
-                                  padding=14, selector="QFrame#ProjSlabCard"))
-        for group in self._section_groups:
-            group.setStyleSheet(
-                Theme.group_box_style() +
-                "\nQLabel { border: none; background: transparent; }\n"
-            )
         self.refresh()
 
 

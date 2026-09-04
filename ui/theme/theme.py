@@ -705,4 +705,87 @@ QLabel#mutedLabel   {{ color: {t.TEXT_MUTED};     font-size: 12px; }}
 
 /* Sidebar navigation items */
 QWidget[nav_item="true"]:focus {{ outline: 2px solid {t.FOCUS_RING}; outline-offset: 2px; }}
+
+/* ═══════════════════════════ TRANSPARENT CONTAINERS ══════════════ */
+QWidget#transparentBg {{ background: transparent; border: none; }}
+QFrame#transparentBg {{ background: transparent; border: none; }}
+QWidget#transparentSurface {{ background: transparent; }}
+QFrame#transparentSurface {{ background: transparent; }}
+
+/* ═══════════════════════════ RESULT LABELS ════════════════════════ */
+QLabel#resultLabel {{ color: {t.TEXT_PRIMARY}; font-size: 13px; border: none; background: transparent; padding: 0; margin: 0; }}
+QLabel#resultLabelBold {{ color: {t.TEXT_PRIMARY}; font-size: 14px; font-weight: 700; border: none; background: transparent; padding: 0; margin: 0; }}
+
+/* ═══════════════════════════ PAYABLE/REFUND LABELS ════════════════ */
+QLabel#payableLabel {{ color: {t.TEXT_SECONDARY}; font-size: 15px; font-weight: 700; }}
+QLabel#payableLabel[variant="danger"] {{ color: {t.DANGER}; }}
+QLabel#payableLabel[variant="success"] {{ color: {t.SUCCESS}; }}
+QLabel#payableLabel[variant="neutral"] {{ color: {t.TEXT_SECONDARY}; }}
+
+/* ═══════════════════════════ ACCOUNT CARDS ════════════════════════ */
+QFrame#listItem {{ background: {t.SURFACE}; border: 1px solid {t.BORDER}; border-radius: 10px; padding: 16px 20px; }}
+QFrame#listItem:hover {{ background: {t.SURFACE_ALT}; border-color: {t.PRIMARY}; }}
+QFrame#accountCard {{ background-color: {t.SURFACE}; border: 1px solid {t.BORDER}; border-radius: 12px; }}
+QFrame#accountCard:hover {{ border-color: {t.PRIMARY}; background-color: {t.SURFACE_ALT}; }}
+
+/* ═══════════════════════════ DIVIDERS ══════════════════════════════ */
+QFrame#divider {{ background-color: {t.DIVIDER}; border: none; max-height: 1px; }}
+QFrame#accentDivider {{ border: none; max-height: 1px; }}
+QFrame#accentDivider[variant="primary"] {{ background-color: {t.PRIMARY}; }}
+QFrame#accentDivider[variant="success"] {{ background-color: {t.SUCCESS}; }}
+QFrame#accentDivider[variant="warning"] {{ background-color: {t.WARNING}; }}
+QFrame#accentDivider[variant="info"] {{ background-color: {t.INFO}; }}
+
+/* ═══════════════════════════ RESULT SECTIONS ═══════════════════════ */
+QFrame#taxRegimeCard {{ border-left: 4px solid {t.PRIMARY}; }}
+QFrame#taxRegimeCard[variant="primary"] {{ border-color: {t.PRIMARY}; }}
+QFrame#taxRegimeCard[variant="accent"] {{ border-left: 4px solid {t.PRIMARY}; }}
+
+/* ═══════════════════════════ ACCOUNT CARDS WITH ACCENTS ════════════ */
+QFrame#accountCard[variant="savings"] {{ border-left: 4px solid {t.SUCCESS}; }}
+QFrame#accountCard[variant="current"] {{ border-left: 4px solid {t.PRIMARY}; }}
+QFrame#accountCard[variant="salary"] {{ border-left: 4px solid {t.TEAL}; }}
+QFrame#accountCard[variant="fd-linked"] {{ border-left: 4px solid {t.WARNING}; }}
+QFrame#accountCard[variant="savings"]:hover {{ border-color: {t.SUCCESS}; border-left-color: {t.SUCCESS}; }}
+QFrame#accountCard[variant="current"]:hover {{ border-color: {t.PRIMARY}; border-left-color: {t.PRIMARY}; }}
+QFrame#accountCard[variant="salary"]:hover {{ border-color: {t.TEAL}; border-left-color: {t.TEAL}; }}
+QFrame#accountCard[variant="fd-linked"]:hover {{ border-color: {t.WARNING}; border-left-color: {t.WARNING}; }}
+
+/* ═══════════════════════════ SETTINGS SCREEN ═════════════════════════ */
+QLabel#themeLiveIndicator {{ color: {t.SUCCESS}; font-size: 11px; font-weight: 700; background: transparent; }}
+
+/* ═══════════════════════════ TAX SCREEN — BADGES ════════════════════ */
+QLabel#ctxBadge {{ border-radius: 10px; padding: 4px 10px; font-size: 11px; font-weight: 600; }}
+QLabel#ctxBadge[variant="person"] {{ background: {t.PRIMARY_LIGHT}; color: {t.PRIMARY_DARK}; }}
+QLabel#ctxBadge[variant="fy"] {{ background: {t.SURFACE_ALT}; color: {t.TEXT_SECONDARY}; }}
+QLabel#ctxBadge[variant="source"] {{ background: {t.INFO_LIGHT}; color: {t.INFO_DARK}; }}
+
+/* ═══════════════════════════ TAX SCREEN — CARDS ════════════════════ */
+QFrame#TaxHeaderCard {{ background-color: {t.SURFACE}; border: 1px solid {t.BORDER}; border-radius: 14px; padding: 0; }}
+QFrame#TaxContextPanel {{ background-color: {t.SURFACE_TINT_START}; border: 1px solid {t.BORDER}; border-radius: 12px; padding: 14px 12px; }}
+QFrame#NetPayableCard {{ background-color: {t.SURFACE_ALT}; border: 1px solid {t.BORDER}; border-radius: 12px; padding: 16px; }}
+QFrame#ProjSlabCard {{ background-color: {t.SURFACE_ALT}; border: 1px solid {t.BORDER}; border-radius: 12px; padding: 14px; }}
+
+/* ═══════════════════════════ TAX SCREEN — REGIME CARDS WITH ACCENT ══ */
+QFrame#TaxRegimeCard {{ border-radius: 12px; padding: 0; }}
+QFrame#TaxRegimeCard[variant="primary"] {{ background-color: {t.PRIMARY_LIGHT}; border: 1px solid {t.PRIMARY}; border-left: 4px solid {t.PRIMARY}; }}
+
+/* ═══════════════════════════ SETTINGS SCREEN ════════════════════════ */
+QFrame#SettingsHdr {{ background: {t.gradient(t.HERO_GRADIENT_START, t.HERO_GRADIENT_END)}; border-radius: 14px; }}
+QFrame#ThemeContainer {{ background-color: {t.SURFACE}; border: 1px solid {t.BORDER}; border-radius: 14px; }}
+QFrame#ThemeDescBar {{ background-color: {t.SURFACE_ALT}; border: 1px solid {t.BORDER}; border-radius: 8px; }}
+QFrame#SettingsCard {{ background-color: {t.SURFACE}; border: 1px solid {t.BORDER}; border-radius: 12px; padding: 14px; }}
+QGroupBox#SettingsGroup {{ border: none; margin-top: 4px; background: transparent; font-size: 13px; font-weight: 700; color: {t.PRIMARY_DARK}; }}
+QGroupBox#SettingsGroup::title {{ subcontrol-origin: margin; left: 2px; padding: 0 6px; }}
+QLabel#hdrTitle {{ color: white; background: transparent; border: none; }}
+QLabel#hdrSubtitle {{ color: rgba(255,255,255,0.82); font-size: 12px; background: transparent; border: none; }}
+QLabel#rowLabel {{ color: {t.TEXT_SECONDARY}; font-size: 12px; font-weight: 700; background: {t.SURFACE_ALT}; border-radius: 6px; padding: 4px 10px; }}
+
+/* ═══════════════════════════ ACCOUNTS SCREEN ═══════════════════════ */
+QLabel#accountMetricLabel {{ font-size: 11px; color: {t.TEXT_MUTED}; }}
+QLabel#accountMetricValue {{ font-size: 15px; font-weight: 700; }}
+QLabel#accountMetricValue[variant="success"] {{ color: {t.SUCCESS}; }}
+QLabel#accountMetricValue[variant="warning"] {{ color: {t.WARNING}; }}
+QLabel#accountMetricValue[variant="info"] {{ color: {t.INFO}; }}
+QLabel#accountMetricValue[variant="teal"] {{ color: {t.TEAL}; }}
 """

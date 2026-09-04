@@ -75,10 +75,10 @@ class AccountsScreen(QWidget):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setStyleSheet("background: transparent; border: none;")
+        scroll.setObjectName("transparentBg")
 
         self.container = QWidget()
-        self.container.setStyleSheet("background: transparent;")
+        self.container.setObjectName("transparentSurface")
         self.container_layout = QVBoxLayout(self.container)
         self.container_layout.setSpacing(0)
         self.container_layout.setContentsMargins(0, 0, 0, 0)
@@ -164,7 +164,7 @@ class AccountsScreen(QWidget):
 
     def _create_bank_section(self, bank_name, accounts):
         section = QFrame()
-        section.setStyleSheet(f"background: transparent; border: none;")
+        section.setObjectName("transparentBg")
         layout = QVBoxLayout(section)
         layout.setSpacing(8)
         layout.setContentsMargins(0, 0, 0, 16)
@@ -187,24 +187,12 @@ class AccountsScreen(QWidget):
         fds = get_all_fds(person_id=account["person_id"])
         account_fds = [fd for fd in fds if fd["account_id"] == account["account_id"] and fd["status"] == "Active"]
         fd_value = sum(fd["principal_amount"] for fd in account_fds)
-        
+
         fd_interest = get_total_fd_interest(self.selected_fy, account_id=account["account_id"])
         savings_interest = get_total_savings_interest(self.selected_fy, account_id=account["account_id"])
 
         item = QFrame()
         item.setObjectName("listItem")
-        item.setStyleSheet(f"""
-            QFrame#listItem {{
-                background: {Theme.SURFACE};
-                border: 1px solid {Theme.BORDER};
-                border-radius: 10px;
-                padding: 16px 20px;
-            }}
-            QFrame#listItem:hover {{
-                background: {Theme.SURFACE_ALT};
-                border-color: {Theme.PRIMARY};
-            }}
-        """)
         item.setGraphicsEffect(Theme.shadow_card())
         item.setCursor(Qt.CursorShape.PointingHandCursor)
         item.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -295,28 +283,16 @@ class AccountsScreen(QWidget):
 
     def _create_card(self, account: dict) -> QFrame:
         accent_map = {
-            "Savings":   Theme.SUCCESS,
-            "Current":   Theme.PRIMARY,
-            "Salary":    Theme.TEAL,
-            "FD-linked": Theme.WARNING,
+            "Savings":   "savings",
+            "Current":   "current",
+            "Salary":    "salary",
+            "FD-linked": "fd-linked",
         }
-        accent = accent_map.get(account.get("account_type", "Savings"), Theme.PRIMARY)
+        variant = accent_map.get(account.get("account_type", "Savings"), "current")
 
         card = QFrame()
         card.setObjectName("accountCard")
-        card.setStyleSheet(f"""
-            QFrame#accountCard {{
-                background-color: {Theme.SURFACE};
-                border: 1px solid {Theme.BORDER};
-                border-left: 4px solid {accent};
-                border-radius: 12px;
-            }}
-            QFrame#accountCard:hover {{
-                border: 1px solid {accent};
-                border-left: 4px solid {accent};
-                background-color: {Theme.SURFACE_ALT};
-            }}
-        """)
+        card.setProperty("variant", variant)
         card.setGraphicsEffect(Theme.shadow_card())
         card.setCursor(Qt.CursorShape.PointingHandCursor)
         card.mousePressEvent = lambda e: self._on_card_clicked(account)
@@ -363,7 +339,7 @@ class AccountsScreen(QWidget):
         # Divider
         div = QFrame()
         div.setFixedHeight(1)
-        div.setStyleSheet(f"background: {Theme.DIVIDER}; border: none;")
+        div.setObjectName("divider")
         layout.addWidget(div)
 
         # Balance
