@@ -1,6 +1,16 @@
 """
 core/database.py — SQLite database initialisation and connection management.
 All 9 tables are created here. The DB file lives at data/financial.db.
+
+SECURITY NOTE:
+The database file (data/financial.db) is stored as plaintext SQLite. This is intentional.
+Only two columns are field-encrypted with AES-256:
+  - BankAccount.statement_password_enc (bank statement password)
+  - Person.ais_tis_password_enc (Income Tax portal password)
+All other data (balances, transactions, fixed deposits, tax calculations, etc.) is in plaintext.
+Anyone with read access to the file can inspect all financial data.
+SQLCipher (encrypted SQLite) was considered and deferred; plaintext SQLite is the current choice.
+For privacy from file-system access, store data/financial.db and backups/ on an encrypted volume.
 """
 
 import sqlite3

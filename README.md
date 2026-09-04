@@ -1,7 +1,7 @@
 # Personal Offline Financial Management System
 
 ## Overview
-A fully offline, encrypted desktop application for managing personal and family financial data with comprehensive features for tracking income, expenses, investments, and tax calculations.
+A fully offline desktop application for managing personal and family financial data with comprehensive features for tracking income, expenses, investments, and tax calculations. User credentials (bank statement passwords and Income Tax portal passwords) are encrypted; the SQLite database itself is stored as plaintext and should be kept on an encrypted volume (BitLocker, FileVault, LUKS) if privacy from file-system access is important.
 
 ## ✨ Features
 
@@ -52,18 +52,18 @@ A fully offline, encrypted desktop application for managing personal and family 
 - 📅 Multi-year comparisons
 
 ### Security & Privacy
-- 🔐 Master password authentication
-- 🔒 AES-256 database encryption
+- 🔐 Master password authentication (PBKDF2, 100K iterations)
+- 🔒 Encrypted credential fields (bank statement & Income Tax portal passwords)
 - 📱 Device binding
 - 🔑 Optional TOTP (2FA)
 - 👁️ Privacy mode (mask all amounts)
-- 💾 Encrypted backup & restore
+- 💾 Backup & restore (plaintext copy of database)
 
 ## 🛠️ Technology Stack
 
 - **Language**: Python 3.10+
 - **UI Framework**: PyQt6
-- **Database**: SQLite (encrypted with AES-256)
+- **Database**: SQLite (plaintext, recommended on encrypted volume)
 - **PDF Parsing**: pdfplumber
 - **Excel Parsing**: pandas / openpyxl
 - **Charts**: matplotlib
@@ -92,7 +92,7 @@ A fully offline, encrypted desktop application for managing personal and family 
 On first launch, you'll be prompted to:
 1. Create a master password (minimum 8 characters)
 2. Optionally enable TOTP (2FA)
-3. The app will automatically create the encrypted database
+3. The app will automatically create the database
 
 ## 📁 Project Structure
 
@@ -100,8 +100,8 @@ On first launch, you'll be prompted to:
 Financial App/
 ├── core/                    # Core functionality
 │   ├── auth.py             # Authentication & security
-│   ├── database.py         # Database initialization
-│   ├── encryption.py       # AES-256 encryption
+│   ├── database.py         # Database initialization (plaintext SQLite)
+│   ├── encryption.py       # Field-level AES-256 encryption for credentials
 │   └── session.py          # Session management
 │
 ├── models/                  # Data access layer (10 tables)
@@ -138,8 +138,8 @@ Financial App/
 │       ├── chart_widget.py
 │       └── privacy_overlay.py
 │
-├── data/                    # Database (auto-created)
-├── backups/                 # Encrypted backups
+├── data/                    # Database (auto-created, plaintext SQLite)
+├── backups/                 # Backup copies (plaintext)
 ├── main.py                  # Application entry point
 ├── config.py               # Configuration & constants
 └── requirements.txt        # Dependencies
@@ -241,14 +241,24 @@ The app unloads the configured Ollama model when the desktop window closes.
    - Identify missing transactions
    - Ensure accurate tax filing
 
-## 🔒 Security Features
+## 🔒 Security
 
-- **Encryption**: All data encrypted with AES-256
-- **Master Password**: Required for all access
-- **Device Binding**: App tied to specific device
-- **TOTP Support**: Optional 2FA
-- **Privacy Mode**: Mask all financial amounts
-- **Secure Backups**: Encrypted backup files
+**What IS protected:**
+- Master password: Hashed with PBKDF2 (100,000 iterations) with per-user salt.
+- Bank statement passwords and Income Tax portal passwords: Encrypted with AES-256 in the `statement_password_enc` and `ais_tis_password_enc` columns.
+- Device binding: App records a hash of the device ID at first login.
+- Optional 2FA: Time-based one-time passwords (TOTP) can be enabled.
+
+**What is NOT protected:**
+- The SQLite database file (`data/financial.db`) is stored in **plaintext**. Anyone with read access to the file can see all balances, transactions, fixed deposits, tax records, and income data.
+- Backup files are plaintext copies of the database; restores overwrite the live database.
+- All other fields (transaction amounts, interest earned, tax calculations, deductions, etc.) are readable to anyone with file-system access.
+
+**Recommendation:**
+If the privacy of your financial data from file-system access is important, store the database and backups on an encrypted volume (BitLocker on Windows, FileVault on macOS, LUKS on Linux). This prevents casual inspection if someone gains access to your device.
+
+**Offline Operation:**
+The app does not connect to the internet and does not send data anywhere. All computation and storage is local to your device.
 
 ## 📊 Database Schema
 
