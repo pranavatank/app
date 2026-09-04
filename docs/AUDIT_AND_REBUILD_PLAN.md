@@ -1285,7 +1285,7 @@ T001's untracking is done; the history purge is not, and requires explicit
 approval because it is irreversible and breaks every clone. If this repo was
 ever pushed anywhere, the AIS/TIS and Equitas passwords must be rotated too.
 
-## Z9. T014 continuation-row merging is DISABLED (OPEN)
+## Z9. T014 continuation-row merging is ABANDONED after four attempts (OPEN)
 Jana prints one logical transaction across three physical rows with the amounts
 row in the middle, so its narration and reference arrive split:
 description `CREDIT INTEREST CAPITALISED` instead of
@@ -1449,3 +1449,36 @@ That is a real optimisation and a real risk (a screen shown mid-switch could
 paint with stale colours), so it is recorded rather than attempted.
 Residual: 143 inline setStyleSheet calls (Z17) still force 13 refresh_theme()
 listeners to run on every switch, which is part of this cost.
+
+## Z9 UPDATE — fourth attempt, reverted. Recommend leaving this alone.
+Attempts 1-3 destroyed financial data: row counts fell from 38/376/65/27 to
+28/344/57/25 and IDFC's parsed credits came up 102,324.00 short against its own
+printed control totals. All were reverted.
+
+Attempt 4 (with the anchor-count invariant and the tests/test_statement_package.py
+guard in place) preserved the financial data perfectly — 38/376/65/27, zero
+direction errors, IDFC totals exact to 0.00 — which shows the guard works. But it
+CORRUPTED the narration instead: adjacent duplicated words appeared in
+    30 of 65  Jana descriptions
+    19 of 376 IDFC descriptions
+e.g. 'CREDIT CREDIT INTEREST CAPITALISED', where the unmerged text reads
+'CREDIT INTEREST CAPITALISED'. It also never recovered the leading 'CASA' the
+task asks for. Duplicated tokens are worse than split narration, so this was
+reverted too.
+
+The test the attempt added would have let this through: it asserted
+`"CREDIT INTEREST" in desc and "CAPITALIZED" in desc`, a substring check that
+passes on the corrupted string.
+
+CURRENT STATE (correct, all verified): Equitas 38 / IDFC 376 / Jana 65 /
+Ujjivan 27, 0 direction errors, IDFC debit 4,80,013.35 and credit 4,67,264.82
+exact, 0 descriptions with duplicated words. Jana narration remains split
+across its three physical rows.
+
+RECOMMENDATION: leave T014 unimplemented. It affects narration display on ONE
+bank. No financial figure depends on it — direction, amounts, balances,
+categories and totals are all correct without it. Four attempts have each
+traded either data integrity or narration integrity for it. If it is revisited,
+the acceptance must assert the description EXACTLY equals
+'CASA CREDIT INTEREST CAPITALIZED' and that no description anywhere contains an
+adjacent duplicated word, because both failure modes have now been observed.
