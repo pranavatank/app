@@ -11,22 +11,28 @@ Usage (anywhere in the app):
 
     from ui.widgets.loader import Loader
 
-    # Show while doing slow work:
-    with Loader(parent_widget, "Parsing statement…"):
-        do_heavy_work()
+    # For long-running work (parsing, heavy computation): use Loader.run() to run in a worker thread.
+    # This keeps the UI responsive and allows you to show progress updates.
+    def do_heavy_work():
+        return parse_statement()
+
+    Loader.run(parent_widget, fn=do_heavy_work, message="Parsing…",
+               on_done=callback)
+
+    # For quick operations (backup, file operations), you can use context manager:
+    # WARNING: The blocking form BLOCKS the entire UI thread. Only use for fast operations (<1s).
+    with Loader(parent_widget, "Backing up database…"):
+        backup_database()
 
     # Or manually:
-    loader = Loader(parent_widget, "Calculating tax…")
+    loader = Loader(parent_widget, "Calculating…")
     loader.show()
     ...
     loader.hide()
 
     # With custom subtitle:
-    with Loader(parent_widget, "Importing PDF", subtitle="This may take a moment"):
-        parse()
-
-    # Run a callable in a QThread and auto-show/hide:
-    Loader.run(parent_widget, fn=my_fn, message="Loading…", on_done=callback)
+    with Loader(parent_widget, "Quick operation", subtitle="Almost done"):
+        fast_operation()
 """
 
 from __future__ import annotations

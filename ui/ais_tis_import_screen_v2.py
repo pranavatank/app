@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (
     QFileDialog, QMessageBox, QTabWidget, QDialog, QFormLayout,
     QLineEdit, QComboBox, QTextEdit, QScrollArea
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QObject, pyqtSignal
 from PyQt6.QtGui import QFont
 
 from ui.theme import Theme
@@ -38,6 +38,54 @@ import json
 
 _BUCKET_KEYS = ["salary_income", "fd_interest", "savings_interest", "other_interest",
                 "dividend_income", "rental_income", "other_income"]
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Worker classes for parsing AIS/TIS/26AS PDFs in background thread
+# ══════════════════════════════════════════════════════════════════════════════
+
+class _AISTISParseWorker(QObject):
+    """Worker that parses AIS/TIS PDF text in a background thread."""
+    finished = pyqtSignal(dict)  # Emits parsed result dict
+    error = pyqtSignal(object)   # Emits exception
+    progress = pyqtSignal(str)   # Emits progress message
+
+    def __init__(self, pdf_text: str, source_type: str):
+        super().__init__()
+        self.pdf_text = pdf_text
+        self.source_type = source_type
+
+    def run(self):
+        """Parse AIS/TIS PDF text in background thread."""
+        try:
+            self.progress.emit(f"Parsing {self.source_type} PDF...")
+            parser = parse_ais_pdf_text if self.source_type == "AIS" else parse_tis_pdf_text
+            parsed = parser(self.pdf_text)
+            self.finished.emit(parsed)
+        except Exception as e:
+            self.error.emit(e)
+
+
+class _Form26ASParseWorker(QObject):
+    """Worker that parses Form 26AS PDF text in a background thread."""
+    finished = pyqtSignal(dict)  # Emits parsed result dict
+    error = pyqtSignal(object)   # Emits exception
+    progress = pyqtSignal(str)   # Emits progress message
+
+    def __init__(self, pdf_text: str):
+        super().__init__()
+        self.pdf_text = pdf_text
+
+    def run(self):
+        """Parse Form 26AS PDF text in background thread."""
+        try:
+            self.progress.emit("Parsing Form 26AS PDF...")
+            parsed = parse_form26as_pdf(self.pdf_text)
+            if not parsed["records"]:
+                parsed["records"] = parse_form26as_text_simple(self.pdf_text)
+            self.finished.emit(parsed)
+        except Exception as e:
+            self.error.emit(e)
 
 
 def _bucket_for_json_type(type_str: str) -> str:
@@ -409,105 +457,117 @@ class AISTISImportScreenV2(QWidget):
     def _import_26as(self):
         pid = session.selected_person_id
         fy = session.selected_fy
-        
+
         if not pid:
             QMessageBox.warning(self, "No Person", "Please select a person from the top bar.")
             return
-        
+
         file_path, _ = QFileDialog.getOpenFileName(
             self, "Select Form 26AS PDF", "", "PDF Files (*.pdf)"
         )
-        
+
         if not file_path:
             return
-        
+
         try:
             # Extract text from PDF
             result = extract_pdf_text(file_path)
             pdf_text = result.text
-            
+
             # Show debug
             self.debug_text.setPlainText(pdf_text[:5000])  # First 5000 chars
             self.debug_frame.show()
             self.btn_toggle_debug.setText("Hide Debug")
-            
-            # Parse Form 26AS
-            parsed = parse_form26as_pdf(pdf_text)
-            
-            if not parsed["records"]:
-                # Try simple parser
-                parsed["records"] = parse_form26as_text_simple(pdf_text)
-            
-            if not parsed["records"]:
-                QMessageBox.warning(self, "No Records", "No TDS records found in PDF.")
-                return
 
-            # Determine FY
-            if parsed["assessment_year"]:
-                import_fy = extract_financial_year_from_ay(parsed["assessment_year"])
-            else:
-                import_fy = fy
+            def on_parse_done(parsed):
+                """Callback on GUI thread after Form 26AS parse completes."""
+                try:
+                    if not parsed["records"]:
+                        QMessageBox.warning(self, "No Records", "No TDS records found in PDF.")
+                        return
 
-            # Preview & edit before writing anything to the database — the
-            # regex-based PDF parser is best-effort, so let the user fix
-            # any misread TAN/amount/date and drop bad rows first.
-            preview = RecordsPreviewDialog(
-                self, "Preview Form 26AS Records", parsed["records"],
-                columns=[
-                    ("Deductor Name", "deductor_name", False),
-                    ("TAN", "deductor_tan", False),
-                    ("Section", "section", False),
-                    ("Date", "transaction_date", False),
-                    ("Amount Paid", "amount_paid", True),
-                    ("TDS Deducted", "tds_deducted", True),
-                    ("Status", "status", False),
-                ],
+                    # Determine FY
+                    if parsed["assessment_year"]:
+                        import_fy = extract_financial_year_from_ay(parsed["assessment_year"])
+                    else:
+                        import_fy = fy
+
+                    # Preview & edit before writing anything to the database
+                    preview = RecordsPreviewDialog(
+                        self, "Preview Form 26AS Records", parsed["records"],
+                        columns=[
+                            ("Deductor Name", "deductor_name", False),
+                            ("TAN", "deductor_tan", False),
+                            ("Section", "section", False),
+                            ("Date", "transaction_date", False),
+                            ("Amount Paid", "amount_paid", True),
+                            ("TDS Deducted", "tds_deducted", True),
+                            ("Status", "status", False),
+                        ],
+                    )
+                    if preview.exec() != QDialog.DialogCode.Accepted:
+                        return
+                    approved_records = preview.get_selected_records()
+                    if not approved_records:
+                        QMessageBox.information(self, "Nothing to Import", "No rows were selected.")
+                        return
+
+                    # Process records and match with income sources
+                    processed_records = []
+                    new_sources = []
+
+                    for rec in approved_records:
+                        tan = (rec.get("deductor_tan") or "").strip().upper()
+                        rec["deductor_tan"] = tan
+                        if not tan:
+                            continue
+
+                        # Check if income source exists
+                        source = get_income_source_by_tan(tan)
+
+                        if not source:
+                            # New TAN - ask user to link or create
+                            new_sources.append(rec)
+
+                        processed_records.append(rec)
+
+                    # Show dialog for new sources
+                    if new_sources:
+                        self._handle_new_sources(new_sources)
+
+                    # Save to database
+                    import_id = save_form26as_import(
+                        person_id=pid,
+                        financial_year=import_fy,
+                        records=processed_records,
+                        source_file=file_path,
+                        raw_text=pdf_text,
+                    )
+
+                    QMessageBox.information(
+                        self, "Import Successful",
+                        f"Imported {len(processed_records)} TDS records from Form 26AS."
+                    )
+
+                    self._load_26as_data()
+
+                except Exception as e:
+                    QMessageBox.critical(self, "Import Error", f"Failed to import Form 26AS:\n{str(e)}")
+
+            def on_parse_error(exc):
+                """Callback if parse fails."""
+                QMessageBox.critical(self, "Parse Failed", f"Could not parse PDF.\n\nError: {exc}")
+
+            # Run parser in background thread
+            worker = _Form26ASParseWorker(pdf_text)
+            Loader.run(
+                self,
+                fn=worker.run,
+                message="Parsing Form 26AS PDF…",
+                subtitle="Extracting TDS records",
+                on_done=on_parse_done,
+                on_error=on_parse_error
             )
-            if preview.exec() != QDialog.DialogCode.Accepted:
-                return
-            approved_records = preview.get_selected_records()
-            if not approved_records:
-                QMessageBox.information(self, "Nothing to Import", "No rows were selected.")
-                return
-
-            # Process records and match with income sources
-            processed_records = []
-            new_sources = []
-
-            for rec in approved_records:
-                tan = (rec.get("deductor_tan") or "").strip().upper()
-                rec["deductor_tan"] = tan
-                if not tan:
-                    continue
-
-                # Check if income source exists
-                source = get_income_source_by_tan(tan)
-
-                if not source:
-                    # New TAN - ask user to link or create
-                    new_sources.append(rec)
-
-                processed_records.append(rec)
-
-            # Show dialog for new sources
-            if new_sources:
-                self._handle_new_sources(new_sources)
-
-            # Save to database
-            import_id = save_form26as_import(
-                person_id=pid,
-                financial_year=import_fy,
-                records=processed_records,
-                source_file=file_path,
-                raw_text=pdf_text,
-            )
-
-            QMessageBox.information(
-                self, "Import Successful",
-                f"Imported {len(processed_records)} TDS records from Form 26AS."
-            )
-
-            self._load_26as_data()
 
         except Exception as e:
             QMessageBox.critical(self, "Import Error", f"Failed to import Form 26AS:\n{str(e)}")
@@ -611,83 +671,108 @@ class AISTISImportScreenV2(QWidget):
         self.debug_frame.show()
         self.btn_toggle_debug.setText("Hide Debug")
 
-        with Loader(self, f"Parsing {source_type} PDF…", subtitle="Extracting income and TDS records"):
-            parser = parse_ais_pdf_text if source_type == "AIS" else parse_tis_pdf_text
+        # Store context for later use in callback
+        self._ais_tis_import_context = {
+            "pdf_text": pdf_text,
+            "source_type": source_type,
+            "pid": pid,
+            "fy": fy
+        }
+
+        def on_parse_done(parsed):
+            """Callback on GUI thread after AIS/TIS parse completes."""
             try:
-                parsed = parser(pdf_text)
+                details = parsed.get("details") or []
+                if not details:
+                    QMessageBox.warning(self, "No Records", f"No {source_type} records found in the PDF.")
+                    return
+
+                # Preview & edit before writing anything to the database
+                preview = RecordsPreviewDialog(
+                    self, f"Preview {source_type} Records", details,
+                    columns=[
+                        ("Source", "information_source", False),
+                        ("TAN", "source_tan", False),
+                        ("Code", "information_code", False),
+                        ("Amount", "amount", True),
+                        ("TDS", "tds_deducted", True),
+                        ("Quarter", "quarter", False),
+                    ],
+                )
+                if preview.exec() != QDialog.DialogCode.Accepted:
+                    return
+                approved_details = preview.get_selected_records()
+                if not approved_details:
+                    QMessageBox.information(self, "Nothing to Import", "No rows were selected.")
+                    return
+                for rec in approved_details:
+                    rec["source_tan"] = (rec.get("source_tan") or "").strip().upper()
+
+                parsed = dict(parsed)
+                parsed["details"] = approved_details
+                parsed.update(_recompute_aggregates_from_records(approved_details))
+
+                existing = get_ais_tis_data(pid, fy, source_type=source_type)
+                if existing:
+                    merged = dict(parsed)
+                    for key in _BUCKET_KEYS + ["tds_deducted"]:
+                        if merged.get(key, 0) == 0 and existing.get(key, 0) not in (None, 0):
+                            merged[key] = existing[key]
+                    parsed = merged
+
+                import_id = save_ais_tis_data(
+                    person_id=pid,
+                    financial_year=fy,
+                    source_type=source_type,
+                    raw_json=pdf_text,
+                    data=parsed
+                )
+                new_sources = []
+                if import_id:
+                    save_ais_tis_pdf_lines(import_id, pdf_text)
+                    save_ais_tis_records(import_id, approved_details)
+
+                    for rec in approved_details:
+                        tan = rec.get("source_tan") or ""
+                        if tan and not get_income_source_by_tan(tan):
+                            new_sources.append(rec)
+
+                if import_id and new_sources:
+                    self._handle_new_sources_ais(new_sources)
+
+                QMessageBox.information(
+                    self, "Import Successful",
+                    f"Imported {len(approved_details)} {source_type} record(s) for FY {fy}."
+                )
+
+                if source_type == "AIS":
+                    self._load_ais_data()
+                else:
+                    self._load_tis_data()
+
             except Exception as e:
-                QMessageBox.critical(self, "Parse Failed", f"Could not parse PDF.\n\nError: {e}")
-                return
+                QMessageBox.critical(self, "Import Error", str(e))
 
-        details = parsed.get("details") or []
-        if not details:
-            QMessageBox.warning(self, "No Records", f"No {source_type} records found in the PDF.")
-            return
+        def on_parse_error(exc):
+            """Callback if parse fails."""
+            QMessageBox.critical(self, "Parse Failed", f"Could not parse PDF.\n\nError: {exc}")
 
-        # Preview & edit before writing anything to the database — the
-        # regex-based PDF parser is best-effort, so let the user fix any
-        # misread source/TAN/amount and drop bad rows first.
-        preview = RecordsPreviewDialog(
-            self, f"Preview {source_type} Records", details,
-            columns=[
-                ("Source", "information_source", False),
-                ("TAN", "source_tan", False),
-                ("Code", "information_code", False),
-                ("Amount", "amount", True),
-                ("TDS", "tds_deducted", True),
-                ("Quarter", "quarter", False),
-            ],
+        def on_parse_progress(msg):
+            """Update progress during parse."""
+            pass  # Loader.run() handles progress display
+
+        # Run parser in background thread
+        worker = _AISTISParseWorker(pdf_text, source_type)
+        worker.progress.connect(on_parse_progress)
+
+        Loader.run(
+            self,
+            fn=worker.run,
+            message=f"Parsing {source_type} PDF…",
+            subtitle="Extracting income and TDS records",
+            on_done=on_parse_done,
+            on_error=on_parse_error
         )
-        if preview.exec() != QDialog.DialogCode.Accepted:
-            return
-        approved_details = preview.get_selected_records()
-        if not approved_details:
-            QMessageBox.information(self, "Nothing to Import", "No rows were selected.")
-            return
-        for rec in approved_details:
-            rec["source_tan"] = (rec.get("source_tan") or "").strip().upper()
-
-        parsed = dict(parsed)
-        parsed["details"] = approved_details
-        parsed.update(_recompute_aggregates_from_records(approved_details))
-
-        existing = get_ais_tis_data(pid, fy, source_type=source_type)
-        if existing:
-            merged = dict(parsed)
-            for key in _BUCKET_KEYS + ["tds_deducted"]:
-                if merged.get(key, 0) == 0 and existing.get(key, 0) not in (None, 0):
-                    merged[key] = existing[key]
-            parsed = merged
-
-        import_id = save_ais_tis_data(
-            person_id=pid,
-            financial_year=fy,
-            source_type=source_type,
-            raw_json=pdf_text,
-            data=parsed
-        )
-        new_sources = []
-        if import_id:
-            save_ais_tis_pdf_lines(import_id, pdf_text)
-            save_ais_tis_records(import_id, approved_details)
-
-            for rec in approved_details:
-                tan = rec.get("source_tan") or ""
-                if tan and not get_income_source_by_tan(tan):
-                    new_sources.append(rec)
-
-        if import_id and new_sources:
-            self._handle_new_sources_ais(new_sources)
-
-        QMessageBox.information(
-            self, "Import Successful",
-            f"Imported {len(approved_details)} {source_type} record(s) for FY {fy}."
-        )
-
-        if source_type == "AIS":
-            self._load_ais_data()
-        else:
-            self._load_tis_data()
 
     def _import_ais(self):
         pid = session.selected_person_id

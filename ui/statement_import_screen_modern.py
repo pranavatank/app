@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import (
     QInputDialog,
     QStackedWidget, QScrollArea
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QThread
+from PyQt6.QtCore import Qt, pyqtSignal, QThread, QObject
 from PyQt6.QtGui import QFont, QColor
 from datetime import datetime
 import json
@@ -53,6 +53,181 @@ from ui.ollama_worker import OllamaModelStartWorker
 from ui.dialogs.column_mapping_dialog import ColumnMappingDialog
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# Worker class for parsing statements in background thread
+# ══════════════════════════════════════════════════════════════════════════════
+
+class _StatementParseWorker(QObject):
+    """
+    Worker that parses a statement in a background thread.
+    Runs parse_statement_with_debug() and emits results via signals.
+    """
+    finished = pyqtSignal(tuple)  # Emits (txns, debug_info)
+    error = pyqtSignal(object)    # Emits exception
+    progress = pyqtSignal(str)    # Emits progress message
+
+    def __init__(self, file_path, file_type, bank_name, password, column_mapping):
+        super().__init__()
+        self.file_path = file_path
+        self.file_type = file_type
+        self.bank_name = bank_name
+        self.password = password
+        self.column_mapping = column_mapping
+
+    def run(self):
+        """Parse statement in background thread and emit result."""
+        try:
+            self.progress.emit("Parsing statement...")
+            txns, debug_info = parse_statement_with_debug(
+                self.file_path,
+                self.file_type,
+                self.bank_name,
+                password=self.password,
+                column_mapping=self.column_mapping,
+            )
+            self.finished.emit((txns, debug_info))
+        except Exception as e:
+            self.error.emit(e)
+
+
+class _TransactionImportWorker(QObject):
+    """
+    Worker that imports transactions in a background thread.
+    Handles database insertion, FD creation, and logging.
+    Does NOT call allocate_savings_interest_to_fy or recalculate_account_balance — those run on GUI thread.
+    """
+    finished = pyqtSignal(dict)  # Emits result dict with keys: inserted_ids, imported, fds_created, batch_rows
+    error = pyqtSignal(object)   # Emits exception
+    progress = pyqtSignal(str)   # Emits progress message
+
+    def __init__(self, selected_account_id, selected_person_id, preview_transactions,
+                 preview_duplicate_flags, bank_name, selected_file, file_type, checked_rows):
+        super().__init__()
+        self.selected_account_id = selected_account_id
+        self.selected_person_id = selected_person_id
+        self.preview_transactions = preview_transactions
+        self.preview_duplicate_flags = preview_duplicate_flags
+        self.bank_name = bank_name
+        self.selected_file = selected_file
+        self.file_type = file_type
+        self.checked_rows = checked_rows
+
+    def run(self):
+        """Import transactions in background thread."""
+        try:
+            imported = 0
+            fds_created = 0
+            batch_rows = []
+            batch_preview_rows = []
+
+            # Collect transactions to import
+            for idx in self.checked_rows:
+                if idx % 25 == 0:
+                    count = len([i for i in self.checked_rows if i <= idx])
+                    self.progress.emit(f"Importing... {count}/{len(self.checked_rows)} processed")
+
+                is_duplicate = self.preview_duplicate_flags[idx] if idx < len(self.preview_duplicate_flags) else False
+                if is_duplicate:
+                    continue
+
+                txn = self.preview_transactions[idx]
+                batch_rows.append(txn)
+                batch_preview_rows.append(idx)
+
+            # Add transactions to database
+            inserted_ids = add_transactions_batch(
+                account_id=self.selected_account_id,
+                person_id=self.selected_person_id,
+                transactions=batch_rows,
+                source="Statement Import",
+            )
+
+            try:
+                for txn_id, txn in zip(inserted_ids, batch_rows):
+                    imported += 1
+
+                    # Handle FD maturity
+                    if txn.get("transaction_type") == "Income":
+                        apply_statement_redemption_event(
+                            account_id=self.selected_account_id,
+                            person_id=self.selected_person_id,
+                            transaction_id=txn_id,
+                            transaction_date=txn["transaction_date"],
+                            amount=float(txn["amount"]),
+                            description=txn.get("description") or "",
+                            reference_no=txn.get("reference_no"),
+                        )
+
+                    # Handle FD opening
+                    if self._is_fd_opening_transaction(txn):
+                        desc = txn.get("description") or ""
+                        fd_ref = self._extract_fd_reference(desc) or txn.get("reference_no")
+                        maturity_amt = self._extract_maturity_amount(desc)
+                        fd_id = add_fd_from_statement(
+                            account_id=self.selected_account_id,
+                            person_id=self.selected_person_id,
+                            principal_amount=float(txn["amount"]),
+                            start_date=txn["transaction_date"],
+                            fd_reference_no=fd_ref,
+                            tenure_months=None,
+                            interest_rate=None,
+                            compounding_type=None,
+                            maturity_date=None,
+                            maturity_amount=maturity_amt,
+                            maturity_amount_formula=maturity_amt,
+                            maturity_amount_bank=maturity_amt,
+                            expected_interest_amount=(maturity_amt - float(txn["amount"])) if maturity_amt else None,
+                            source_statement_file=os.path.basename(self.selected_file) if self.selected_file else None,
+                            source_transaction_id=txn_id,
+                            source_description=desc
+                        )
+                        if fd_id:
+                            fds_created += 1
+            except Exception:
+                delete_transactions_by_ids(inserted_ids)
+                raise
+
+            self.progress.emit("Finalizing import log...")
+            log_import(
+                account_id=self.selected_account_id,
+                person_id=self.selected_person_id,
+                bank_name=self.bank_name,
+                file_name=(self.selected_file.split("/")[-1] or self.selected_file.split("\\")[-1]),
+                file_type=self.file_type,
+                records_imported=imported,
+                status="Success"
+            )
+
+            self.finished.emit({
+                "inserted_ids": inserted_ids,
+                "imported": imported,
+                "fds_created": fds_created,
+                "batch_rows": batch_rows
+            })
+        except Exception as e:
+            self.error.emit(e)
+
+    def _is_fd_opening_transaction(self, txn):
+        """Check if transaction opens a fixed deposit."""
+        desc = (txn.get("description") or "").lower()
+        return any(phrase in desc for phrase in ["fd accepted", "opening", "fixed deposit"])
+
+    def _extract_fd_reference(self, desc):
+        """Extract FD reference number from description."""
+        match = re.search(r'[Rr]ef\.?\s*[:#]?\s*(\S+)', desc)
+        return match.group(1) if match else None
+
+    def _extract_maturity_amount(self, desc):
+        """Extract maturity amount from description."""
+        match = re.search(r'₹?\s*([\d,]+\.?\d*)', desc)
+        if match:
+            try:
+                return float(match.group(1).replace(",", ""))
+            except ValueError:
+                pass
+        return None
+
+
 class StatementImportScreen(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -78,6 +253,8 @@ class StatementImportScreen(QWidget):
         self._preview_cell_change_lock = False
         self._selection_tab_order_ready = False
         self._preview_tab_order_ready = False
+        self._parse_password = None
+        self._parse_save_password = False
         
         self._build_ui()
 
@@ -660,14 +837,13 @@ class StatementImportScreen(QWidget):
             self.person_combo.setFocus()
 
     def _parse_statement(self):
-        """Parse statement and show preview"""
+        """Parse statement and show preview — running parser in background thread."""
         self.file_type = self.file_type_combo.currentText()
         acc = get_account(self.selected_account_id)
         self.bank_name = acc["bank_name"] if acc else "Unknown"
-        
-        password = None
-        save_password = False
-        saved_password = None
+
+        self._parse_password = None
+        self._parse_save_password = False
 
         # Check if encrypted
         if self._is_statement_file_encrypted(self.selected_file, self.file_type):
@@ -675,53 +851,95 @@ class StatementImportScreen(QWidget):
             password, save_password = self._prompt_statement_password(saved_password)
             if not password:
                 return
-        
-        self._show_loader("Processing Statement", "Reading and extracting transactions...")
-        
+            self._parse_password = password
+            self._parse_save_password = save_password
+
+        # Disable controls and start parse in background thread
+        self.btn_next.setEnabled(False)
+        self.btn_browse.setEnabled(False)
+        self.file_type_combo.setEnabled(False)
+
+        self._start_statement_parse_worker()
+
+    def _start_statement_parse_worker(self):
+        """Start the statement parser in a background thread."""
+        def on_parse_done(result):
+            txns, debug_info = result
+            self.import_debug_info = debug_info or {}
+
+            # Save password if requested
+            if self._parse_save_password and self._parse_password:
+                set_statement_password(self.selected_account_id, self._parse_password, session.aes_key)
+
+            # Process parsed transactions on the GUI thread
+            self._process_parsed_statement(txns)
+
+        def on_parse_error(exc):
+            self._handle_parse_error(exc)
+
+        def on_parse_progress(msg):
+            self._update_loader(msg)
+
+        # Create worker and run in Loader.run()
+        worker = _StatementParseWorker(
+            self.selected_file,
+            self.file_type,
+            self.bank_name,
+            self._parse_password,
+            self._column_mapping
+        )
+        worker.progress.connect(on_parse_progress)
+
+        Loader.run(
+            self,
+            fn=worker.run,
+            message="Processing Statement",
+            subtitle="Reading and extracting transactions...",
+            on_done=on_parse_done,
+            on_error=on_parse_error
+        )
+
+    def _handle_parse_error(self, exc):
+        """Handle errors from statement parsing."""
+        self.btn_next.setEnabled(True)
+        self.btn_browse.setEnabled(True)
+        self.file_type_combo.setEnabled(True)
+
+        if isinstance(exc, StatementPasswordRequiredError):
+            saved_password = self._get_saved_statement_password()
+            password, save_password = self._prompt_statement_password(saved_password)
+            if not password:
+                return
+            self._parse_password = password
+            self._parse_save_password = save_password
+            self._start_statement_parse_worker()
+        elif isinstance(exc, StatementPasswordInvalidError):
+            QMessageBox.warning(self, "Invalid Password", "The password did not unlock the file. Please try again.")
+            password, save_password = self._prompt_statement_password(self._parse_password or None)
+            if not password:
+                return
+            self._parse_password = password
+            self._parse_save_password = save_password
+            self._start_statement_parse_worker()
+        elif isinstance(exc, StatementPasswordError):
+            QMessageBox.critical(self, "Password Error", str(exc))
+        else:
+            QMessageBox.critical(self, "Parse Error", str(exc))
+
+    def _process_parsed_statement(self, txns):
+        """Process parsed transactions on the GUI thread (after worker returns)."""
+        self.btn_next.setEnabled(True)
+        self.btn_browse.setEnabled(True)
+        self.file_type_combo.setEnabled(True)
+
         try:
-            # Parse with retry on password errors
-            while True:
-                try:
-                    # Use unified parser entry point and forward user-provided column mapping
-                    txns, debug_info = parse_statement_with_debug(
-                        self.selected_file,
-                        self.file_type,
-                        self.bank_name,
-                        password=password,
-                        column_mapping=self._column_mapping,
-                    )
-                    self.import_debug_info = debug_info or {}
-                    if save_password and password:
-                        set_statement_password(self.selected_account_id, password, session.aes_key)
-                    break
-                except StatementPasswordRequiredError:
-                    self._hide_loader()
-                    saved_password = self._get_saved_statement_password()
-                    password, save_password = self._prompt_statement_password(saved_password)
-                    if not password:
-                        return
-                    self._show_loader("Processing Statement", "Reading and extracting transactions...")
-                except StatementPasswordInvalidError:
-                    self._hide_loader()
-                    QMessageBox.warning(self, "Invalid Password", "The password did not unlock the file. Please try again.")
-                    password, save_password = self._prompt_statement_password(password or saved_password)
-                    if not password:
-                        return
-                    self._show_loader("Processing Statement", "Reading and extracting transactions...")
-                except StatementPasswordError as e:
-                    self._hide_loader()
-                    QMessageBox.critical(self, "Password Error", str(e))
-                    return
-            
-            # Extract metadata
+            # Extract metadata (lightweight operation, can stay on UI thread)
             try:
-                self._update_loader("Extracting account metadata...")
-                self.statement_text = extract_statement_text(self.selected_file, self.file_type, password=password)
+                self.statement_text = extract_statement_text(self.selected_file, self.file_type, password=self._parse_password)
                 metadata = extract_account_metadata(self.statement_text)
-                
+
                 if any(metadata.values()):
                     acc = get_account(self.selected_account_id)
-                    self._hide_loader()
                     dialog = AccountMetadataDialog(
                         self,
                         account_id=self.selected_account_id,
@@ -729,21 +947,16 @@ class StatementImportScreen(QWidget):
                         metadata=metadata,
                     )
                     dialog.exec()
-                    self._show_loader("Processing Statement", "Validating transactions...")
             except Exception as e:
                 print(f"Metadata extraction failed: {e}")
 
-            self._update_loader("Validating and checking duplicates...")
-            
-            # If no transactions extracted and it's Excel, suggest mapping columns and retry once
+            # If no transactions extracted and it's Excel, suggest mapping columns and retry
             if not txns and self.file_type and self.file_type.lower().startswith("excel"):
-                # If we already have a mapping, nothing else to try
                 if not self._column_mapping:
-                    # Ask AI for a mapping suggestion (best-effort)
                     try:
                         from engines.statement_parser import LocalAIStatementParser
                         ai = LocalAIStatementParser()
-                        suggestion = ai.suggest_excel_mapping(self.selected_file, password=password)
+                        suggestion = ai.suggest_excel_mapping(self.selected_file, password=self._parse_password)
                     except Exception:
                         suggestion = {}
 
@@ -751,36 +964,28 @@ class StatementImportScreen(QWidget):
                     mapping_dialog.setWindowTitle("Map Columns — Excel Import")
                     if mapping_dialog.exec() == QDialog.DialogCode.Accepted:
                         self._column_mapping = mapping_dialog.get_mapping()
-                        # Try parsing again with the mapping
-                        try:
-                            txns, debug_info = parse_statement_with_debug(
-                                self.selected_file,
-                                self.file_type,
-                                self.bank_name,
-                                password=password,
-                                column_mapping=self._column_mapping,
-                            )
-                            self.import_debug_info = debug_info or {}
-                        except Exception:
-                            pass
+                        # Retry parsing with new mapping
+                        self._start_statement_parse_worker()
+                        return
 
+            # Validate transactions (lightweight, can stay on UI thread)
             if not txns:
                 self.parsed_transactions = []
                 self.preview_transactions = []
                 self.preview_duplicate_flags = []
                 self.validation_errors = []
                 self.duplicate_count = 0
-                self._hide_loader()
                 self._populate_preview_table()
                 self._switch_to_preview()
                 QMessageBox.information(self, "No Transactions", "Could not extract transactions. Check debug panel for details.")
                 return
-            
+
             valid, errors = validate_transactions(txns)
             self.validation_errors = errors
             if errors:
                 QMessageBox.warning(self, "Validation Errors", f"{len(errors)} rows were skipped. Check debug panel for details.")
 
+            # Check duplicates (lightweight DB queries, stay on UI thread)
             self.preview_transactions = valid
             self.preview_duplicate_flags = [
                 check_duplicate(
@@ -803,14 +1008,12 @@ class StatementImportScreen(QWidget):
                     QMessageBox.information(self, "All Duplicates", "All extracted rows already exist. Preview shows parsed rows, but duplicates are disabled for import.")
                 else:
                     QMessageBox.information(self, "Duplicates", f"{dups} duplicate(s) will be skipped.")
-            
+
             self.parsed_transactions = unique
-            self._hide_loader()
             self._populate_preview_table()
             self._switch_to_preview()
-            
+
         except Exception as e:
-            self._hide_loader()
             QMessageBox.critical(self, "Parse Error", str(e))
 
     def _switch_to_preview(self):
@@ -823,7 +1026,7 @@ class StatementImportScreen(QWidget):
         self.preview_table.setFocus()
 
     def _import_transactions(self):
-        """Import selected transactions"""
+        """Import selected transactions using background worker thread."""
         if not self.preview_transactions:
             QMessageBox.warning(self, "Nothing to Import", "No transactions available. Please go back and choose another file.")
             return
@@ -833,136 +1036,111 @@ class StatementImportScreen(QWidget):
             QMessageBox.warning(self, "Nothing Selected", "Please select at least one transaction to import.")
             return
 
-        self._show_loader("Importing Transactions", "Saving transactions and creating FD entries...")
+        # Disable controls during import
+        self.btn_next.setEnabled(False)
+        self.btn_back.setEnabled(False)
 
-        imported = 0
-        fds_created = 0
-        try:
-            batch_rows = []
-            batch_preview_rows = []
-            for idx in checked_rows:
-                if idx % 25 == 0:
-                    self._update_loader(f"Importing... {len([i for i in checked_rows if i <= idx])}/{len(checked_rows)} processed")
-
-                is_duplicate = self.preview_duplicate_flags[idx] if idx < len(self.preview_duplicate_flags) else False
-                if is_duplicate:
-                    continue
-                    
-                txn = self.preview_transactions[idx]
-                batch_rows.append(txn)
-                batch_preview_rows.append(idx)
-
-            inserted_ids = add_transactions_batch(
-                account_id=self.selected_account_id,
-                person_id=self.selected_person_id,
-                transactions=batch_rows,
-                source="Statement Import",
-            )
-
+        def on_import_done(result):
+            """Callback on GUI thread after worker finishes database operations."""
             try:
-                for txn_id, txn in zip(inserted_ids, batch_rows):
-                    imported += 1
+                inserted_ids = result["inserted_ids"]
+                imported = result["imported"]
+                fds_created = result["fds_created"]
+                batch_rows = result["batch_rows"]
 
-                    # Handle FD maturity
-                    if txn.get("transaction_type") == "Income":
-                        apply_statement_redemption_event(
-                            account_id=self.selected_account_id,
-                            person_id=self.selected_person_id,
-                            transaction_id=txn_id,
-                            transaction_date=txn["transaction_date"],
-                            amount=float(txn["amount"]),
-                            description=txn.get("description") or "",
-                            reference_no=txn.get("reference_no"),
-                        )
+                self._update_loader("Calculating savings interest...")
 
-                    # Handle FD opening
-                    if self._is_fd_opening_transaction(txn):
-                        desc = txn.get("description") or ""
-                        fd_ref = self._extract_fd_reference(desc) or txn.get("reference_no")
-                        maturity_amt = self._extract_maturity_amount(desc)
-                        fd_id = add_fd_from_statement(
-                            account_id=self.selected_account_id,
-                            person_id=self.selected_person_id,
-                            principal_amount=float(txn["amount"]),
-                            start_date=txn["transaction_date"],
-                            fd_reference_no=fd_ref,
-                            tenure_months=None,
-                            interest_rate=None,
-                            compounding_type=None,
-                            maturity_date=None,
-                            maturity_amount=maturity_amt,
-                            maturity_amount_formula=maturity_amt,
-                            maturity_amount_bank=maturity_amt,
-                            expected_interest_amount=(maturity_amt - float(txn["amount"])) if maturity_amt else None,
-                            source_statement_file=os.path.basename(self.selected_file) if self.selected_file else None,
-                            source_transaction_id=txn_id,
-                            source_description=desc
-                        )
-                        if fd_id:
-                            fds_created += 1
-            except Exception:
-                delete_transactions_by_ids(inserted_ids)
-                raise
+                # Recalculate savings interest for affected FYs and update running balances
+                # This MUST run on the GUI thread as per task requirements
+                account = get_account(self.selected_account_id)
+                if account:
+                    interest_rate = float(account.get("interest_rate") or 0)
+                    opening_balance = float(account.get("opening_balance") or 0)
 
-            self._update_loader("Finalizing import log...")
-            log_import(
-                account_id=self.selected_account_id,
-                person_id=self.selected_person_id,
-                bank_name=self.bank_name,
-                file_name=(self.selected_file.split("/")[-1] or self.selected_file.split("\\")[-1]),
-                file_type=self.file_type,
-                records_imported=imported,
-                status="Success"
-            )
+                    # Determine which FYs were affected by the import
+                    for txn in batch_rows:
+                        txn_date = datetime.fromisoformat(txn["transaction_date"]).date()
+                        # Determine FY of transaction
+                        if txn_date.month >= 4:
+                            fy = f"{txn_date.year}-{str(txn_date.year + 1)[2:]}"
+                        else:
+                            fy = f"{txn_date.year - 1}-{str(txn_date.year)[2:]}"
 
-            # Recalculate savings interest for affected FYs and update running balances
-            self._update_loader("Calculating savings interest...")
-            account = get_account(self.selected_account_id)
-            if account:
-                interest_rate = float(account.get("interest_rate") or 0)
-                opening_balance = float(account.get("opening_balance") or 0)
+                        try:
+                            allocate_savings_interest_to_fy(
+                                self.selected_account_id, fy, interest_rate, opening_balance
+                            )
+                        except Exception:
+                            # Log but don't fail the import
+                            pass
 
-                # Determine which FYs were affected by the import
-                for txn in batch_rows:
-                    txn_date = datetime.fromisoformat(txn["transaction_date"]).date()
-                    # Determine FY of transaction
-                    if txn_date.month >= 4:
-                        fy = f"{txn_date.year}-{str(txn_date.year + 1)[2:]}"
-                    else:
-                        fy = f"{txn_date.year - 1}-{str(txn_date.year)[2:]}"
+                # Recalculate running balances after import (ensures current_balance matches last transaction)
+                # This MUST run on the GUI thread as per task requirements
+                self._update_loader("Updating account balance...")
+                try:
+                    recalculate_account_balance(self.selected_account_id)
+                except Exception:
+                    # Log but don't fail the import
+                    pass
 
-                    try:
-                        allocate_savings_interest_to_fy(
-                            self.selected_account_id, fy, interest_rate, opening_balance
-                        )
-                    except Exception:
-                        # Log but don't fail the import
-                        pass
+                self.fds_created_last_import = fds_created
 
-            # Recalculate running balances after import (ensures current_balance matches last transaction)
-            self._update_loader("Updating account balance...")
-            try:
-                recalculate_account_balance(self.selected_account_id)
-            except Exception:
-                # Log but don't fail the import
-                pass
+                # Show success message
+                msg = f"Successfully imported {imported} transactions!"
+                if fds_created > 0:
+                    msg += f"\n\nAuto-created {fds_created} FD record(s)."
 
-            self.fds_created_last_import = fds_created
-            self._hide_loader()
-            
-            # Show success message
-            msg = f"Successfully imported {imported} transactions!"
-            if fds_created > 0:
-                msg += f"\n\nAuto-created {fds_created} FD record(s)."
-            QMessageBox.information(self, "✓ Import Complete", msg)
-            
-            if self.parent_window:
-                self.parent_window.refresh_overview()
-            self.refresh()
-            
-        except Exception as e:
-            self._hide_loader()
-            QMessageBox.critical(self, "Import Failed", str(e))
+                if self._loader:
+                    self._loader.hide()
+
+                QMessageBox.information(self, "✓ Import Complete", msg)
+
+                if self.parent_window:
+                    self.parent_window.refresh_overview()
+                self.refresh()
+
+            except Exception as e:
+                if self._loader:
+                    self._loader.hide()
+                QMessageBox.critical(self, "Post-Import Error", str(e))
+            finally:
+                self.btn_next.setEnabled(True)
+                self.btn_back.setEnabled(True)
+
+        def on_import_error(exc):
+            """Callback on GUI thread if worker fails."""
+            if self._loader:
+                self._loader.hide()
+            self.btn_next.setEnabled(True)
+            self.btn_back.setEnabled(True)
+            QMessageBox.critical(self, "Import Failed", str(exc))
+
+        def on_import_progress(msg):
+            """Update progress message from worker."""
+            self._update_loader(msg)
+
+        # Create worker
+        worker = _TransactionImportWorker(
+            self.selected_account_id,
+            self.selected_person_id,
+            self.preview_transactions,
+            self.preview_duplicate_flags,
+            self.bank_name,
+            self.selected_file,
+            self.file_type,
+            checked_rows
+        )
+        worker.progress.connect(on_import_progress)
+
+        # Start import in background thread using Loader.run()
+        Loader.run(
+            self,
+            fn=worker.run,
+            message="Importing Transactions",
+            subtitle="Saving transactions and creating FD entries...",
+            on_done=on_import_done,
+            on_error=on_import_error
+        )
 
     def refresh_theme(self):
         """Called after a live theme switch. Deliberately does NOT call
