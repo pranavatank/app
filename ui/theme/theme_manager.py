@@ -54,7 +54,7 @@ _COLOR_ATTRS = [
     "TOPBAR_BG","TOPBAR_BORDER",
     "TEXT_PRIMARY","TEXT_SECONDARY","TEXT_MUTED","TEXT_ON_PRIMARY","TEXT_HEADING",
     # ── Text on colored fills ───────────────────────────────────────────────
-    "TEXT_ON_SUCCESS","TEXT_ON_DANGER","TEXT_ON_WARNING","TEXT_ON_INFO","TEXT_ON_EDIT",
+    "TEXT_ON_SUCCESS","TEXT_ON_DANGER","TEXT_ON_WARNING","TEXT_ON_INFO","TEXT_ON_EDIT","TEXT_ON_HERO",
     # ── Semantic text colors ────────────────────────────────────────────────
     "DANGER_TEXT","SUCCESS_TEXT","WARNING_TEXT","INFO_TEXT",
     # ── Icon colors ────────────────────────────────────────────────────────

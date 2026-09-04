@@ -1225,7 +1225,7 @@ Tax and banking rules cited in §4 were verified against:
 Recorded as they were hit, so the plan stays the source of truth and these get
 decided deliberately rather than absorbed silently. Nothing here is fixed.
 
-## Z1. Gradient buttons fail contrast in every theme (from T037)
+## Z1. Gradient buttons fail contrast in every theme (RESOLVED - see note at end)
 The token contract's 17 required pairs cover flat `PRIMARY`, but every filled
 button is painted with a GRADIENT, and each gradient starts at a light
 300/400-level stop. White label contrast against the light end:
@@ -1375,3 +1375,23 @@ exactly. Reproducing 789 would mean reproducing the workbook's off-by-one.
 DECISION NEEDED: keep the app correct (current behaviour), or make the app
 bug-compatible with the spreadsheet so the owner's own cross-checks tie out.
 Recommendation: keep the app correct and fix the workbook.
+
+## Z1 RESOLUTION (approved by the owner)
+Fixed without flattening the buttons. The rule applied per colour family:
+a hue that is inherently light — amber, mint, cyan — CANNOT carry white text
+without turning muddy, so those families KEEP their colour and take DARK text;
+hues that read well dark (indigo, rose, magenta) are darkened slightly and keep
+white text. Most stops are unchanged, and where they move it is usually
+imperceptible (Aurora primary #6366F1 -> #5F63F0). Danger and edit shift from
+pastel to properly saturated red/magenta, which suits those roles better.
+
+A new TEXT_ON_HERO token was required: hero could not reuse TEXT_ON_PRIMARY
+because that token is also painted on flat PRIMARY (selected tabs, sidebar
+active, selection colour) where white is mandatory, while Nova's hero gradient
+needs dark text.
+
+The contrast gate now covers gradients — 72 additional checks, every on-fill
+text token against every stop of its family including hover stops. Worst value
+across all four themes is 4.52 against a 4.5 minimum. This is what stops the
+next palette from regressing the same way; the original gate only tested flat
+PRIMARY, which is why it never caught this.

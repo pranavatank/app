@@ -89,6 +89,7 @@ class Theme:
     TEXT_ON_WARNING           = c.TEXT_ON_WARNING
     TEXT_ON_INFO              = c.TEXT_ON_INFO
     TEXT_ON_EDIT              = c.TEXT_ON_EDIT
+    TEXT_ON_HERO              = c.TEXT_ON_HERO
 
     # ── Semantic text colors ────────────────────────────────────────────────
     DANGER_TEXT               = c.DANGER_TEXT
@@ -232,7 +233,7 @@ class Theme:
             "hero": f"""
                 QPushButton {{
                     background: {t.gradient(t.HERO_GRADIENT_START, t.HERO_GRADIENT_END)};
-                    color: {t.TEXT_ON_PRIMARY}; border: none; border-radius: 12px;
+                    color: {t.TEXT_ON_HERO}; border: none; border-radius: 12px;
                     padding: 4px 26px; font-size: 14px; font-weight: 700;
                 }}
                 QPushButton:hover  {{ background: {t.gradient(t.HERO_GRADIENT_HOVER_START, t.HERO_GRADIENT_HOVER_END)}; }}

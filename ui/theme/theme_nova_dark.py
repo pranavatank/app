@@ -15,10 +15,10 @@ PRIMARY                   = "#7D54F8"   # was #A78BFA — pastel primary could n
 PRIMARY_DARK              = "#9C73F7"   # was #8B5CF6
 PRIMARY_LIGHT             = "#241B47"   # tinted bg
 PRIMARY_TEXT              = "#FFFFFF"
-PRIMARY_GRADIENT_START    = "#C4B5FD"
-PRIMARY_GRADIENT_END      = "#8B5CF6"
-PRIMARY_GRADIENT_HOVER_START = "#A78BFA"
-PRIMARY_GRADIENT_HOVER_END   = "#7C3AED"
+PRIMARY_GRADIENT_START    = "#7958F4"
+PRIMARY_GRADIENT_END      = "#6F37F1"
+PRIMARY_GRADIENT_HOVER_START = "#7E56F4"
+PRIMARY_GRADIENT_HOVER_END   = "#7733EC"
 
 # ── Success — bright emerald ──────────────────────────────────────────────────
 SUCCESS                   = "#34D399"   # emerald-400
@@ -31,8 +31,8 @@ SUCCESS_GRADIENT_END      = "#059669"
 DANGER                    = "#FB7185"   # rose-400
 DANGER_DARK               = "#F43F5E"   # rose-500
 DANGER_LIGHT              = "#3F0817"
-DANGER_GRADIENT_START     = "#FDA4AF"
-DANGER_GRADIENT_END       = "#E11D48"
+DANGER_GRADIENT_START     = "#E7152F"
+DANGER_GRADIENT_END       = "#C01B3F"
 
 # ── Warning — warm gold ───────────────────────────────────────────────────────
 WARNING                   = "#FBBF24"   # amber-400
@@ -52,8 +52,8 @@ INFO_GRADIENT_END         = "#0891B2"
 EDIT                      = "#F472B6"   # pink-400
 EDIT_DARK                 = "#EC4899"   # pink-500
 EDIT_LIGHT                = "#3B0A24"
-EDIT_GRADIENT_START       = "#F9A8D4"
-EDIT_GRADIENT_END         = "#DB2777"
+EDIT_GRADIENT_START       = "#DB1E85"
+EDIT_GRADIENT_END         = "#B82264"
 
 # ── Hero — violet → cyan gradient (colorful signature look) ──────────────────
 HERO_GRADIENT_START       = "#A78BFA"
@@ -144,8 +144,9 @@ DANGER_TEXT        = "#FB6E82"
 SUCCESS_TEXT       = "#31D298"
 WARNING_TEXT       = "#FBBE21"
 INFO_TEXT          = "#1FD2EE"
-TEXT_ON_SUCCESS    = "#05261A"
-TEXT_ON_DANGER     = "#2E0711"
-TEXT_ON_WARNING    = "#2B1A02"
-TEXT_ON_INFO       = "#031B22"
-TEXT_ON_EDIT       = "#2A0630"
+TEXT_ON_SUCCESS    = "#081C14"
+TEXT_ON_DANGER     = "#FFFFFF"
+TEXT_ON_WARNING    = "#1C1808"
+TEXT_ON_INFO       = "#08191C"
+TEXT_ON_EDIT       = "#FFFFFF"
+TEXT_ON_HERO       = "#0D081C"

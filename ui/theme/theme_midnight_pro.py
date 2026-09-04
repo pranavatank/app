@@ -14,10 +14,10 @@ PRIMARY                   = "#5563F6"   # was #818CF8 — same reason as Nova
 PRIMARY_DARK              = "#7C7FF3"   # was #6366F1
 PRIMARY_LIGHT             = "#1E1B4B"   # indigo-950 — used as tinted bg
 PRIMARY_TEXT              = "#FFFFFF"
-PRIMARY_GRADIENT_START    = "#818CF8"
-PRIMARY_GRADIENT_END      = "#6366F1"
-PRIMARY_GRADIENT_HOVER_START = "#A5B4FC"
-PRIMARY_GRADIENT_HOVER_END   = "#818CF8"
+PRIMARY_GRADIENT_START    = "#5664F2"
+PRIMARY_GRADIENT_END      = "#474BEC"
+PRIMARY_GRADIENT_HOVER_START = "#4B68F2"
+PRIMARY_GRADIENT_HOVER_END   = "#3C4CEE"
 
 # ── Success — bright emerald ──────────────────────────────────────────────────
 SUCCESS                   = "#34D399"   # emerald-400
@@ -30,8 +30,8 @@ SUCCESS_GRADIENT_END      = "#059669"
 DANGER                    = "#F87171"   # red-400
 DANGER_DARK               = "#EF4444"   # red-500
 DANGER_LIGHT              = "#450A0A"   # red-950
-DANGER_GRADIENT_START     = "#FCA5A5"
-DANGER_GRADIENT_END       = "#DC2626"
+DANGER_GRADIENT_START     = "#E61717"
+DANGER_GRADIENT_END       = "#C02121"
 
 # ── Warning — warm gold ───────────────────────────────────────────────────────
 WARNING                   = "#FCD34D"   # amber-300
@@ -51,14 +51,14 @@ INFO_GRADIENT_END         = "#0284C7"
 EDIT                      = "#E879F9"   # fuchsia-400
 EDIT_DARK                 = "#D946EF"   # fuchsia-500
 EDIT_LIGHT                = "#2E0A3C"   # fuchsia-950
-EDIT_GRADIENT_START       = "#F0ABFC"
-EDIT_GRADIENT_END         = "#C026D3"
+EDIT_GRADIENT_START       = "#C318E1"
+EDIT_GRADIENT_END         = "#A423B4"
 
 # ── Hero — indigo → purple gradient ──────────────────────────────────────────
-HERO_GRADIENT_START       = "#818CF8"
-HERO_GRADIENT_END         = "#C084FC"   # purple-400
-HERO_GRADIENT_HOVER_START = "#6366F1"
-HERO_GRADIENT_HOVER_END   = "#A855F7"   # purple-500
+HERO_GRADIENT_START       = "#5664F2"
+HERO_GRADIENT_END         = "#8820EF"   # purple-400
+HERO_GRADIENT_HOVER_START = "#5F63F0"
+HERO_GRADIENT_HOVER_END   = "#891EEF"   # purple-500
 
 # ── Extra accents (vivid on dark) ─────────────────────────────────────────────
 PURPLE       = "#C084FC";  PURPLE_LIGHT  = "#1A0533"
@@ -143,8 +143,9 @@ DANGER_TEXT        = "#F86E6E"
 SUCCESS_TEXT       = "#31D298"
 WARNING_TEXT       = "#FCD24A"
 INFO_TEXT          = "#35BCF8"
-TEXT_ON_SUCCESS    = "#05261A"
-TEXT_ON_DANGER     = "#2E0711"
-TEXT_ON_WARNING    = "#2B1A02"
-TEXT_ON_INFO       = "#031B22"
-TEXT_ON_EDIT       = "#2A0630"
+TEXT_ON_SUCCESS    = "#081C14"
+TEXT_ON_DANGER     = "#FFFFFF"
+TEXT_ON_WARNING    = "#1C1808"
+TEXT_ON_INFO       = "#08151C"
+TEXT_ON_EDIT       = "#FFFFFF"
+TEXT_ON_HERO       = "#FFFFFF"

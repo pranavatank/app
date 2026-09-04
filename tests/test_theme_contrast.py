@@ -182,6 +182,73 @@ def test_theme_contrast(theme_name: str):
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+def test_gradient_contrast():
+    """
+    Test that gradient stops for all colored families pass WCAG AA contrast
+    with their corresponding TEXT_ON_* tokens.
+
+    For each theme and family (PRIMARY, SUCCESS, DANGER, WARNING, INFO, EDIT, HERO),
+    validates that the family's text token clears 4.5:1 against EVERY defined stop:
+    _GRADIENT_START, _GRADIENT_END, _GRADIENT_HOVER_START, _GRADIENT_HOVER_END.
+    """
+    gradient_stops = ["_GRADIENT_START", "_GRADIENT_END", "_GRADIENT_HOVER_START", "_GRADIENT_HOVER_END"]
+    families = ["PRIMARY", "SUCCESS", "DANGER", "WARNING", "INFO", "EDIT", "HERO"]
+    text_tokens = {
+        "PRIMARY": "TEXT_ON_PRIMARY",
+        "SUCCESS": "TEXT_ON_SUCCESS",
+        "DANGER": "TEXT_ON_DANGER",
+        "WARNING": "TEXT_ON_WARNING",
+        "INFO": "TEXT_ON_INFO",
+        "EDIT": "TEXT_ON_EDIT",
+        "HERO": "TEXT_ON_HERO",
+    }
+
+    violations = []
+
+    for theme_name in _THEME_MODULES.keys():
+        mod = importlib.import_module(_THEME_MODULES[theme_name])
+
+        for family in families:
+            text_token = text_tokens[family]
+            text_val = getattr(mod, text_token, None)
+
+            if text_val is None:
+                violations.append(f"{theme_name}: {text_token} missing")
+                continue
+
+            # Check if text token is parseable as 6-digit hex
+            if not isinstance(text_val, str) or not text_val.startswith("#") or len(text_val) != 7:
+                violations.append(f"{theme_name}: {text_token} unparseable = {text_val!r}")
+                continue
+
+            # Check each gradient stop
+            for stop in gradient_stops:
+                stop_attr = family + stop
+                stop_val = getattr(mod, stop_attr, None)
+
+                if stop_val is None:
+                    # Some themes may not define all stops (e.g. SUCCESS doesn't have hover stops)
+                    continue
+
+                # Check if stop is parseable
+                if not isinstance(stop_val, str) or not stop_val.startswith("#") or len(stop_val) != 7:
+                    violations.append(f"{theme_name}: {stop_attr} unparseable = {stop_val!r}")
+                    continue
+
+                # Calculate contrast ratio
+                try:
+                    ratio = contrast_ratio(text_val, stop_val)
+                    if ratio < 4.5:
+                        violations.append(
+                            f"{theme_name}: {text_token} on {stop_attr}: {ratio:.2f} (need >= 4.5)"
+                        )
+                except Exception as e:
+                    violations.append(f"{theme_name}: {text_token} on {stop_attr}: error: {e}")
+
+    # Assert all violations are empty
+    assert not violations, "\n".join(violations)
+
+
 def test_contrast_summary(capsys):
     """
     Compute and print contrast check totals across all themes.
@@ -290,6 +357,78 @@ def test_contrast_summary(capsys):
         print(f"{theme_name:.<35} {theme_contrast_failures:>3} | {theme_missing_tokens:>3} | {theme_total:>3}")
     print("-" * 80)
     print(f"{'TOTAL':.<35} {total_contrast_failures:>3} | {total_missing_tokens:>3} | {total_violations:>3}")
+    print("="*80 + "\n")
+
+    # Compute and print gradient stop coverage
+    gradient_stops = ["_GRADIENT_START", "_GRADIENT_END", "_GRADIENT_HOVER_START", "_GRADIENT_HOVER_END"]
+    families = ["PRIMARY", "SUCCESS", "DANGER", "WARNING", "INFO", "EDIT", "HERO"]
+    text_tokens = {
+        "PRIMARY": "TEXT_ON_PRIMARY",
+        "SUCCESS": "TEXT_ON_SUCCESS",
+        "DANGER": "TEXT_ON_DANGER",
+        "WARNING": "TEXT_ON_WARNING",
+        "INFO": "TEXT_ON_INFO",
+        "EDIT": "TEXT_ON_EDIT",
+        "HERO": "TEXT_ON_HERO",
+    }
+
+    gradient_checks_count = 0
+    gradient_results = {}  # theme -> family -> worst_ratio
+
+    for theme_name in _THEME_MODULES.keys():
+        mod = importlib.import_module(_THEME_MODULES[theme_name])
+        gradient_results[theme_name] = {}
+
+        for family in families:
+            text_token = text_tokens[family]
+            text_val = getattr(mod, text_token, None)
+
+            if text_val is None or not isinstance(text_val, str) or not text_val.startswith("#") or len(text_val) != 7:
+                gradient_results[theme_name][family] = None
+                continue
+
+            worst_ratio = None
+            for stop in gradient_stops:
+                stop_attr = family + stop
+                stop_val = getattr(mod, stop_attr, None)
+
+                if stop_val is None:
+                    continue
+
+                if not isinstance(stop_val, str) or not stop_val.startswith("#") or len(stop_val) != 7:
+                    continue
+
+                try:
+                    ratio = contrast_ratio(text_val, stop_val)
+                    gradient_checks_count += 1
+                    if worst_ratio is None or ratio < worst_ratio:
+                        worst_ratio = ratio
+                except Exception:
+                    pass
+
+            gradient_results[theme_name][family] = worst_ratio
+
+    # Print gradient coverage table
+    print("GRADIENT STOP CONTRAST — WORST RATIO PER FAMILY")
+    print("="*80)
+    print(f"Family               ", end="")
+    for theme_name in _THEME_MODULES.keys():
+        print(f" | {theme_name:.<15}", end="")
+    print()
+    print("-" * 80)
+
+    for family in families:
+        print(f"{family:.<20}", end="")
+        for theme_name in _THEME_MODULES.keys():
+            ratio = gradient_results[theme_name].get(family)
+            if ratio is None:
+                print(f" | {'N/A':>15}", end="")
+            else:
+                status = "PASS" if ratio >= 4.5 else "FAIL"
+                print(f" | {ratio:>6.2f} {status:>7}", end="")
+        print()
+    print("="*80)
+    print(f"\nTotal gradient checks: {gradient_checks_count}")
     print("="*80 + "\n")
 
     # This test always passes; it's just a recording mechanism
