@@ -1,244 +1,186 @@
 """
-ui/income_management_screen.py — Income expectation and tracking with modern UI
+ui/income_management_screen.py — Income expectations, FD interest, and income composition analysis
 """
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QComboBox,
-    QHeaderView, QDialog, QFormLayout, QSizePolicy,
-    QDateEdit, QDoubleSpinBox, QTextEdit, QMessageBox, QFrame, QLineEdit,
-    QTableWidget, QTableWidgetItem
+    QFrame, QTableWidget, QTableWidgetItem, QHeaderView, QDialog, QFormLayout,
+    QDateEdit, QDoubleSpinBox, QTextEdit, QMessageBox, QLineEdit, QSpinBox,
+    QSizePolicy, QScrollArea
 )
-from PyQt6.QtCore import Qt, QDate
+from PyQt6.QtCore import Qt, QDate, pyqtSignal
 from PyQt6.QtGui import QFont, QColor
 
-from ui.widgets.excel_table import ExcelTableWithStats
+from datetime import date, datetime
+from dateutil.relativedelta import relativedelta
+
+from ui.widgets.chart_widget import ChartWidget
 from ui.widgets.states import EmptyState
 from ui.widgets.toast_utils import show_success, show_warning, show_info
 from ui.theme import Theme
 from ui.icons import set_btn_icon
 from ui.date_utils import format_display_date
 from core.session import session
-from config import get_current_financial_year, get_all_financial_years
+
+from config import (
+    get_current_financial_year, get_all_financial_years, fy_date_range,
+    COMPOUNDING_TYPES, FD_TDS_FORM_NAME, FD_TDS_FORM_NAME_SENIOR
+)
 from models.person import get_all_persons
 from models.bank_account import get_accounts_for_person, get_all_accounts
 from models.income_expectation import (
-    add_income_expectation, get_income_expectations, update_income_expectation,
-    delete_income_expectation, link_actual_transaction, unlink_actual_transaction,
-    auto_link_income_expectations
+    get_income_expectations, auto_link_income_expectations,
+    add_income_expectation, update_income_expectation, delete_income_expectation
 )
 from models.transaction import get_transactions
+from models.fixed_deposit import get_all_fds
+from models.fd_interest_record import get_fd_interest_by_fy
+from models.savings_interest import get_savings_interest_by_fy
+from engines.interest_engine import (
+    fd_interest_for_fy, fd_interest_accrued_to,
+    calculate_savings_interest_for_fy, fd_tds_threshold_status
+)
 
-INCOME_TYPES = ["Salary", "Pension", "Dividend", "Interest", "Rental Income", "Business Income", "Other Income"]
-FREQUENCIES = ["Monthly", "Quarterly", "Half-Yearly", "Yearly", "One-Time"]
+
+def _format_inr(value: float) -> str:
+    """Format value in Indian Rupee with commas (e.g., 256642 -> 2,56,642)."""
+    if value is None:
+        return "—"
+
+    # Format to 2 decimals
+    formatted = f"{abs(value):,.2f}"
+
+    # Replace commas with Indian-style grouping: 2,56,642.00
+    parts = str(abs(value)).split('.')
+    integer_part = parts[0]
+    decimal_part = parts[1] if len(parts) > 1 else "00"
+
+    # Indian grouping: split from right, first 3 digits, then 2-digit groups
+    if len(integer_part) <= 3:
+        indian_formatted = integer_part
+    else:
+        # Reverse, group by 2s except first group which is 3
+        reversed_int = integer_part[::-1]
+        groups = []
+        groups.append(reversed_int[0:3][::-1])  # Last 3 digits
+        for i in range(3, len(reversed_int), 2):
+            groups.append(reversed_int[i:i+2][::-1])
+        indian_formatted = ','.join(groups[::-1])
+
+    sign = "-" if value < 0 else ""
+    return f"{sign}₹{indian_formatted}.{decimal_part[:2].ljust(2, '0')}"
 
 
 class IncomeManagementScreen(QWidget):
+    """Income & Expectations analysis with charts and ledger."""
+
     def __init__(self, parent_window=None):
         super().__init__()
         self._parent_window = parent_window
+        self._selected_fy = get_current_financial_year()
+        self._selected_person_id = None
         self._build_ui()
+        self.refresh()
 
     def _build_ui(self):
+        """Build main screen layout."""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 22, 28, 18)
         layout.setSpacing(16)
 
-        # Header with actions
+        # Header with title, FY selector, and person selector
+        layout.addLayout(self._build_header())
+
+        # KPI tiles
+        layout.addLayout(self._build_kpi_tiles())
+
+        # Panels in a scrollable area
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setObjectName("panelScroll")
+
+        panel_container = QWidget()
+        panel_layout = QVBoxLayout(panel_container)
+        panel_layout.setSpacing(20)
+        panel_layout.setContentsMargins(0, 0, 0, 0)
+
+        # 5 panels
+        panel_layout.addWidget(self._build_panel_1_vs_actual())
+        panel_layout.addWidget(self._build_panel_2_composition())
+        panel_layout.addWidget(self._build_panel_3_fd_runway())
+        panel_layout.addWidget(self._build_panel_4_tds_gauges())
+        panel_layout.addWidget(self._build_panel_5_ledger())
+
+        panel_layout.addStretch()
+        scroll.setWidget(panel_container)
+        layout.addWidget(scroll, stretch=1)
+
+    def _build_header(self) -> QHBoxLayout:
+        """Build header with title, FY, and person selectors."""
         header = QHBoxLayout()
-        self._title_lbl = title = QLabel("Income Management")
+        header.setSpacing(16)
+
+        # Title
+        title = QLabel("Income & Expectations")
         title.setFont(QFont("Segoe UI", 15, QFont.Weight.Bold))
         title.setProperty("textrole", "title-md")
         header.addWidget(title)
-        header.addStretch()
 
-        btn_add = Theme.btn("  Add Expected Income", "primary", height=38, min_width=170)
-        set_btn_icon(btn_add, "add")
-        btn_add.clicked.connect(self._add_expectation)
-        header.addWidget(btn_add)
+        header.addSpacing(20)
 
-        btn_auto_link = Theme.btn("  Auto-Link All", "success", height=38, min_width=130)
-        set_btn_icon(btn_auto_link, "auto_link")
-        btn_auto_link.clicked.connect(self._auto_link_all)
-        header.addWidget(btn_auto_link)
+        # FY selector
+        lbl_fy = QLabel("FY")
+        lbl_fy.setProperty("textrole", "section-label")
+        header.addWidget(lbl_fy)
 
-        btn_edit = Theme.btn("  Edit", "edit", height=38, min_width=90)
-        set_btn_icon(btn_edit, "edit")
-        btn_edit.clicked.connect(self._edit_expectation)
-        header.addWidget(btn_edit)
-
-        btn_delete = Theme.btn("  Delete", "danger", height=38, min_width=95)
-        set_btn_icon(btn_delete, "delete")
-        btn_delete.clicked.connect(self._delete_expectation)
-        header.addWidget(btn_delete)
-
-        layout.addLayout(header)
-
-        # Filter bar
-        layout.addWidget(self._build_filter_bar())
-
-        # Summary cards
-        layout.addWidget(self._build_summary_cards())
-
-        # Table container (will hold table or empty state)
-        self.table_container = QWidget()
-        self.table_container_layout = QVBoxLayout(self.table_container)
-        self.table_container_layout.setContentsMargins(0, 0, 0, 0)
-        self.table_container_layout.setSpacing(0)
-        self._empty_state = None
-
-        # Table with Excel-like features
-        self.table_widget = ExcelTableWithStats(show_checkboxes=True)
-        self.table = self.table_widget.table
-        self.table.setHeaders([
-            "Person", "Income Type", "Frequency", "Expected Date", "Expected Amount",
-            "Actual Date", "Actual Amount", "Variance", "Status", "Account", "ID"
-        ])
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
-        self.table.doubleClicked.connect(self._edit_expectation)
-        self.table.keyPressEvent = self._handle_key_press
-
-        for i, w in enumerate([120, 130, 100, 110, 130, 110, 130, 110, 90, 160, 0]):
-            self.table.setColumnWidth(i, w)
-        self.table.setColumnHidden(10, True)
-
-        self.table_container_layout.addWidget(self.table_widget)
-        layout.addWidget(self.table_container, stretch=1)
-
-        self.status_label = QLabel("")
-        self.status_label.setObjectName("mutedLabel")
-        layout.addWidget(self.status_label)
-
-    def _handle_key_press(self, event):
-        """Handle keyboard shortcuts including Delete key"""
-        from PyQt6.QtCore import Qt
-        if event.key() == Qt.Key.Key_Delete:
-            self._delete_selected_expectations()
-        else:
-            # Delegate to ExcelTable's own keyPressEvent (Ctrl+C/V/X/A) —
-            # calling super(type(self.table), ...) here would skip it
-            # entirely and fall straight through to plain QTableWidget.
-            from ui.widgets.excel_table import ExcelTable
-            ExcelTable.keyPressEvent(self.table, event)
-
-    def _delete_selected_expectations(self):
-        """Delete all checked expectations"""
-        checked_rows = []
-        for row in range(self.table.rowCount()):
-            checkbox = self.table.cellWidget(row, 0)
-            if checkbox and checkbox.findChild(QWidget).isChecked():
-                exp_id = int(self.table.item(row, 10).text())
-                checked_rows.append((row, exp_id))
-        
-        if not checked_rows:
-            show_warning("Please select expectations to delete.")
-            return
-        
-        reply = QMessageBox.question(
-            self, "Delete Expectations",
-            f"Delete {len(checked_rows)} expectation{'s' if len(checked_rows) != 1 else ''}?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        )
-        
-        if reply == QMessageBox.StandardButton.Yes:
-            for _, exp_id in checked_rows:
-                delete_income_expectation(exp_id)
-            self.refresh()
-            if self._parent_window:
-                self._parent_window.refresh_overview()
-
-    def _build_filter_bar(self) -> QWidget:
-        self._filter_bar = bar = QFrame()
-        bar.setObjectName("filterBar")
-        bar.setStyleSheet(Theme.filter_bar_style())
-        layout = QHBoxLayout(bar)
-        layout.setContentsMargins(16, 10, 16, 10)
-        layout.setSpacing(12)
-
-        def lbl(t):
-            l = QLabel(t)
-            l.setProperty("textrole", "section-label")
-            return l
-
-        layout.addWidget(lbl("Person"))
-        self.f_person = QComboBox()
-        self.f_person.setMinimumWidth(110)
-        self.f_person.setMinimumHeight(32)
-        self.f_person.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        self.f_person.setAccessibleName("Income person filter")
-        self.f_person.addItem("All Persons", userData=None)
-        layout.addWidget(self.f_person)
-
-        layout.addWidget(lbl("FY"))
-        self.f_fy = QComboBox()
-        self.f_fy.setMinimumWidth(75)
-        self.f_fy.setMinimumHeight(32)
-        self.f_fy.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
-        self.f_fy.setAccessibleName("Income financial year filter")
+        self.cmb_fy = QComboBox()
+        self.cmb_fy.setMinimumWidth(90)
         for fy in reversed(get_all_financial_years(since_year=2020)):
-            self.f_fy.addItem(fy)
-        self.f_fy.setCurrentText(session.selected_fy)
-        layout.addWidget(self.f_fy)
+            self.cmb_fy.addItem(fy)
+        self.cmb_fy.setCurrentText(self._selected_fy)
+        self.cmb_fy.currentTextChanged.connect(self._on_fy_changed)
+        header.addWidget(self.cmb_fy)
 
-        layout.addWidget(lbl("Type"))
-        self.f_type = QComboBox()
-        self.f_type.setMinimumWidth(100)
-        self.f_type.setMinimumHeight(32)
-        self.f_type.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        self.f_type.setAccessibleName("Income type filter")
-        self.f_type.addItem("All Types", userData=None)
-        for it in INCOME_TYPES:
-            self.f_type.addItem(it)
-        layout.addWidget(self.f_type)
+        # Person selector (including HUF and "All")
+        lbl_person = QLabel("Person")
+        lbl_person.setProperty("textrole", "section-label")
+        header.addWidget(lbl_person)
 
-        layout.addWidget(lbl("Status"))
-        self.f_status = QComboBox()
-        self.f_status.setMinimumWidth(90)
-        self.f_status.setMinimumHeight(32)
-        self.f_status.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
-        self.f_status.setAccessibleName("Income status filter")
-        self.f_status.addItems(["All", "Pending", "Received", "Overdue"])
-        layout.addWidget(self.f_status)
+        self.cmb_person = QComboBox()
+        self.cmb_person.setMinimumWidth(140)
+        self.cmb_person.addItem("All Persons", userData=None)
+        for p in get_all_persons():
+            self.cmb_person.addItem(p["full_name"], userData=p["person_id"])
+        self.cmb_person.currentIndexChanged.connect(self._on_person_changed)
+        header.addWidget(self.cmb_person)
 
-        layout.addStretch()
+        header.addStretch()
+        return header
 
-        btn_filter = Theme.btn("Apply", "primary", height=32, min_width=80)
-        btn_filter.setAccessibleName("Apply income filters")
-        btn_filter.clicked.connect(self.refresh)
-        layout.addWidget(btn_filter)
+    def _build_kpi_tiles(self) -> QHBoxLayout:
+        """Build 4 KPI tiles: Expected, Received, Still Expected, Projected Tax."""
+        kpi_layout = QHBoxLayout()
+        kpi_layout.setSpacing(14)
 
-        btn_clear = Theme.btn("Clear", "secondary", height=32, min_width=70)
-        btn_clear.setAccessibleName("Clear income filters")
-        btn_clear.clicked.connect(self._clear_filters)
-        layout.addWidget(btn_clear)
+        self.kpi_expected = self._create_kpi_tile("Expected Income", "₹ —", "kpiExpected")
+        self.kpi_received = self._create_kpi_tile("Received to Date", "₹ —", "kpiReceived")
+        self.kpi_pending = self._create_kpi_tile("Still Expected", "₹ —", "kpiPending")
+        self.kpi_tax = self._create_kpi_tile("Projected Tax", "₹ —", "kpiTax")
 
-        return bar
+        kpi_layout.addWidget(self.kpi_expected)
+        kpi_layout.addWidget(self.kpi_received)
+        kpi_layout.addWidget(self.kpi_pending)
+        kpi_layout.addWidget(self.kpi_tax)
 
-    def _build_summary_cards(self) -> QWidget:
-        container = QFrame()
-        container.setStyleSheet(f"background: transparent; border: none;")
-        layout = QHBoxLayout(container)
-        layout.setSpacing(14)
-        layout.setContentsMargins(0, 0, 0, 0)
+        return kpi_layout
 
-        self.card_expected = self._create_summary_card("Expected Total", "₹ —", Theme.PRIMARY)
-        self.card_actual = self._create_summary_card("Actual Received", "₹ —", Theme.SUCCESS)
-        self.card_pending = self._create_summary_card("Pending", "₹ —", Theme.WARNING)
-        self.card_variance = self._create_summary_card("Variance", "₹ —", Theme.INFO)
+    def _create_kpi_tile(self, title: str, value: str, object_name: str) -> QFrame:
+        """Create a single KPI tile using QSS class."""
+        tile = QFrame()
+        tile.setObjectName(object_name)
+        tile.setMinimumHeight(85)
 
-        layout.addWidget(self.card_expected)
-        layout.addWidget(self.card_actual)
-        layout.addWidget(self.card_pending)
-        layout.addWidget(self.card_variance)
-
-        return container
-
-    def _create_summary_card(self, title: str, value: str, color: str) -> QFrame:
-        card = QFrame()
-        card.setObjectName("card")
-        card.setMinimumHeight(85)
-        card.setStyleSheet(Theme.stat_tile_style(color, radius=14, selector="QFrame#card"))
-
-        layout = QVBoxLayout(card)
+        layout = QVBoxLayout(tile)
         layout.setContentsMargins(16, 12, 16, 12)
         layout.setSpacing(6)
 
@@ -247,688 +189,460 @@ class IncomeManagementScreen(QWidget):
         layout.addWidget(lbl_title)
 
         lbl_value = QLabel(value)
-        lbl_value.setObjectName("cardValue")
-        lbl_value.setStyleSheet(Theme.text_style(color=color, size=20, weight=700))
+        lbl_value.setObjectName(f"{object_name}_value")
         layout.addWidget(lbl_value)
 
         layout.addStretch()
-        return card
+        return tile
+
+    def _build_panel_1_vs_actual(self) -> QFrame:
+        """Panel 1: Expected vs Actual by month (grouped bars)."""
+        panel = QFrame()
+        panel.setObjectName("analysisPanel")
+
+        layout = QVBoxLayout(panel)
+        layout.setSpacing(12)
+
+        title = QLabel("Expected vs Actual by Month")
+        title.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
+        layout.addWidget(title)
+
+        self.chart_vs_actual = ChartWidget()
+        self.chart_vs_actual.setMinimumHeight(280)
+        layout.addWidget(self.chart_vs_actual)
+
+        return panel
+
+    def _build_panel_2_composition(self) -> QFrame:
+        """Panel 2: Income composition (stacked bars by FY or donut for single FY)."""
+        panel = QFrame()
+        panel.setObjectName("analysisPanel")
+
+        layout = QVBoxLayout(panel)
+        layout.setSpacing(12)
+
+        title = QLabel("Income Composition by Source")
+        title.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
+        layout.addWidget(title)
+
+        self.chart_composition = ChartWidget()
+        self.chart_composition.setMinimumHeight(280)
+        layout.addWidget(self.chart_composition)
+
+        return panel
+
+    def _build_panel_3_fd_runway(self) -> QFrame:
+        """Panel 3: FD interest accrual by FY with current FY marked."""
+        panel = QFrame()
+        panel.setObjectName("analysisPanel")
+
+        layout = QVBoxLayout(panel)
+        layout.setSpacing(12)
+
+        title = QLabel("FD Interest Runway (By Financial Year)")
+        title.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
+        layout.addWidget(title)
+
+        self.chart_fd_runway = ChartWidget()
+        self.chart_fd_runway.setMinimumHeight(280)
+        layout.addWidget(self.chart_fd_runway)
+
+        return panel
+
+    def _build_panel_4_tds_gauges(self) -> QFrame:
+        """Panel 4: Per-bank TDS threshold gauges with 15G/15H badge."""
+        panel = QFrame()
+        panel.setObjectName("analysisPanel")
+
+        layout = QVBoxLayout(panel)
+        layout.setSpacing(12)
+
+        title = QLabel("FD TDS Threshold Status by Bank")
+        title.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
+        layout.addWidget(title)
+
+        # Use a table for TDS status
+        self.table_tds = QTableWidget()
+        self.table_tds.setColumnCount(5)
+        self.table_tds.setHorizontalHeaderLabels(["Bank", "Total Interest", "Status", "Crossing Quarter", "Form"])
+        self.table_tds.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.table_tds.setMaximumHeight(250)
+        self.table_tds.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.table_tds.verticalHeader().setVisible(False)
+        layout.addWidget(self.table_tds)
+
+        return panel
+
+    def _build_panel_5_ledger(self) -> QFrame:
+        """Panel 5: Expectation ledger with inline editing and auto-match."""
+        panel = QFrame()
+        panel.setObjectName("analysisPanel")
+
+        layout = QVBoxLayout(panel)
+        layout.setSpacing(12)
+
+        # Title and button
+        title_layout = QHBoxLayout()
+        title = QLabel("Income Expectation Ledger")
+        title.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
+        title_layout.addWidget(title)
+        title_layout.addStretch()
+
+        btn_auto_match = Theme.btn("Auto-Match", "success", height=32, min_width=100)
+        set_btn_icon(btn_auto_match, "auto_link")
+        btn_auto_match.clicked.connect(self._on_auto_match_ledger)
+        title_layout.addWidget(btn_auto_match)
+
+        layout.addLayout(title_layout)
+
+        # Ledger table
+        self.table_ledger = QTableWidget()
+        self.table_ledger.setColumnCount(8)
+        self.table_ledger.setHorizontalHeaderLabels([
+            "Month", "Type", "Source", "Expected", "Actual", "Variance", "Status", "Matched Txn"
+        ])
+        self.table_ledger.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.table_ledger.setMinimumHeight(300)
+        self.table_ledger.verticalHeader().setVisible(False)
+        layout.addWidget(self.table_ledger)
+
+        return panel
 
     def refresh_theme(self):
-        """Called after a live theme switch — the 4 summary cards are built
-        once at construction, so their inline stat-tile styling needs
-        re-applying (refresh() alone only updates their value text)."""
-        for card, color in (
-            (self.card_expected, Theme.PRIMARY),
-            (self.card_actual, Theme.SUCCESS),
-            (self.card_pending, Theme.WARNING),
-            (self.card_variance, Theme.INFO),
-        ):
-            card.setStyleSheet(Theme.stat_tile_style(color, radius=14, selector="QFrame#card"))
-            value_lbl = card.findChild(QLabel, "cardValue")
-            if value_lbl:
-                value_lbl.setStyleSheet(Theme.text_style(color=color, size=20, weight=700))
-        if hasattr(self, "_title_lbl"):
-            self._title_lbl.setProperty("textrole", "title-md")
-        if hasattr(self, "_filter_bar"):
-            self._filter_bar.setStyleSheet(Theme.filter_bar_style())
-        if hasattr(self, "table_widget") and self.table_widget:
-            self.table_widget.refresh_theme()
+        """Called after live theme switch."""
+        # Refresh charts (KPI tiles use static QSS classes)
+        for chart in [self.chart_vs_actual, self.chart_composition, self.chart_fd_runway]:
+            chart.refresh_theme()
+
+        self.refresh()
+
+    def _on_fy_changed(self, fy):
+        """Handle FY change."""
+        self._selected_fy = fy
+        self.refresh()
+
+    def _on_person_changed(self):
+        """Handle person change."""
+        self._selected_person_id = self.cmb_person.currentData()
         self.refresh()
 
     def refresh(self):
-        self._reload_persons()
-        self._fetch_and_display()
+        """Refresh all panels with current selections."""
+        fy = self._selected_fy
+        person_id = self._selected_person_id
 
-    def _reload_persons(self):
-        self.f_person.blockSignals(True)
-        self.f_person.clear()
-        persons = get_all_persons()
-        self.f_person.addItem("All Persons", userData=None)
-        for p in persons:
-            self.f_person.addItem(p["full_name"], userData=p["person_id"])
-        if session.selected_person_id:
-            for i in range(self.f_person.count()):
-                if self.f_person.itemData(i) == session.selected_person_id:
-                    self.f_person.setCurrentIndex(i)
-                    break
-        self.f_person.blockSignals(False)
+        # Fetch data
+        expectations = self._fetch_expectations(person_id, fy)
 
-    def _fetch_and_display(self):
-        pid = self.f_person.currentData()
-        fy = self.f_fy.currentText() or None
-        income_type = self.f_type.currentText()
-        income_type = None if income_type == "All Types" else income_type
-        status_filter = self.f_status.currentText()
-        from datetime import datetime
-        today = datetime.now().date()
-
-        rows = get_income_expectations(person_id=pid, financial_year=fy, income_type=income_type)
-
-        # Apply status filter
-        if status_filter != "All":
-            filtered = []
-            for r in rows:
-                exp_date_str = r["expected_date"]
-                if "-" in exp_date_str:
-                    exp_date = datetime.strptime(exp_date_str, "%Y-%m-%d").date()
-                else:
-                    # Day-only for recurring - use current month
-                    day = int(exp_date_str)
-                    exp_date = today.replace(day=min(day, 28))
-                
-                if status_filter == "Pending":
-                    if r["actual_transaction_id"] is None and exp_date >= today:
-                        filtered.append(r)
-                elif status_filter == "Received":
-                    if r["actual_transaction_id"] is not None:
-                        filtered.append(r)
-                elif status_filter == "Overdue":
-                    if r["actual_transaction_id"] is None and exp_date < today:
-                        filtered.append(r)
-            rows = filtered
-
-        self._populate_table(rows)
-        self._update_summary(rows)
-
-    def _populate_table(self, rows):
-        # Show empty state if no income expectations
-        if not rows:
-            if self._empty_state is None:
-                self._empty_state = EmptyState(
-                    icon_name="income_src",
-                    headline="No income expectations",
-                    explanation="Add income expectations to track expected vs actual income.",
-                    action_text="Add Expected Income",
-                    parent=self.table_container
-                )
-                self._empty_state.action_clicked.connect(self._add_expectation)
-                self.table_container_layout.insertWidget(0, self._empty_state)
-            self.table_widget.setVisible(False)
-            if self._empty_state:
-                self._empty_state.setVisible(True)
+        if not expectations:
+            self._show_empty_state()
             return
 
-        # Hide empty state and show table
-        if self._empty_state:
-            self._empty_state.setVisible(False)
-        self.table_widget.setVisible(True)
+        # Update KPIs
+        self._update_kpi_tiles(expectations, person_id, fy)
 
-        self.table.setSortingEnabled(False)
-        self.table.setRowCount(len(rows))
+        # Update charts and tables
+        self._populate_chart_1(expectations)
+        self._populate_chart_2(person_id, fy)
+        self._populate_chart_3(person_id, fy)
+        self._populate_table_4_tds(person_id, fy)
+        self._populate_table_5_ledger(expectations)
 
-        from datetime import datetime
-        from PyQt6.QtWidgets import QTableWidgetItem
-        today = datetime.now().date()
+    def _show_empty_state(self):
+        """Show empty state when no data."""
+        # Clear all panels
+        self.chart_vs_actual.show_empty_state("No income expectations for this selection")
+        self.chart_composition.show_empty_state("Add income expectations to analyze composition")
+        self.chart_fd_runway.show_empty_state("No FD interest data available")
+        self.table_tds.setRowCount(0)
+        self.table_ledger.setRowCount(0)
 
-        for idx, row in enumerate(rows):
-            # Handle both full dates and day-only values
-            exp_date_str = row["expected_date"]
-            if "-" in exp_date_str:
-                exp_date = datetime.strptime(exp_date_str, "%Y-%m-%d").date()
-            else:
-                # Day-only for recurring frequencies - use current month for comparison
-                day = int(exp_date_str)
-                exp_date = today.replace(day=min(day, 28))  # Safe day for comparison
-            
-            is_linked = row["actual_transaction_id"] is not None
-            is_overdue = not is_linked and exp_date < today
+    def _fetch_expectations(self, person_id, fy):
+        """Fetch income expectations for the selection."""
+        try:
+            return get_income_expectations(person_id=person_id, financial_year=fy)
+        except Exception as e:
+            show_warning(f"Error fetching expectations: {e}")
+            return []
 
-            def item(text, align=Qt.AlignmentFlag.AlignLeft):
-                it = QTableWidgetItem(str(text) if text is not None else "—")
-                it.setTextAlignment(align | Qt.AlignmentFlag.AlignVCenter)
-                return it
+    def _update_kpi_tiles(self, expectations, person_id, fy):
+        """Update KPI values based on expectations."""
+        total_expected = sum(e["expected_amount"] for e in expectations)
+        total_received = sum(e.get("actual_amount", 0) for e in expectations if e["actual_transaction_id"])
+        total_pending = total_expected - total_received
 
-            def amt_item(val, color=None):
-                it = QTableWidgetItem(f"₹ {val:,.2f}" if val is not None else "—")
-                it.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-                if color:
-                    it.setForeground(QColor(color))
-                return it
+        # Projected tax (rough estimate: assume 15% on FD interest over 50k)
+        fd_interest_total = self._get_total_fd_interest(person_id, fy)
+        projected_tax = max(0, (fd_interest_total - 50000) * 0.10) if fd_interest_total > 50000 else 0
 
-            self.table.setItem(idx, 0, item(row["person_name"]))
-            self.table.setItem(idx, 1, item(row["income_type"]))
-            self.table.setItem(idx, 2, item(row["frequency"]))
-            # Display day-only as "Day X" for recurring frequencies
-            exp_display = format_display_date(row["expected_date"]) if "-" in row["expected_date"] else f"Day {row['expected_date']}"
-            self.table.setItem(idx, 3, item(exp_display))
-            self.table.setItem(idx, 4, amt_item(row["expected_amount"]))
-            
-            actual_date = format_display_date(row.get("actual_date"))
-            self.table.setItem(idx, 5, item(actual_date))
-            
-            actual_amt = row.get("actual_amount")
-            self.table.setItem(idx, 6, amt_item(actual_amt, Theme.SUCCESS if actual_amt else None))
+        # Update tiles
+        self.kpi_expected.findChild(QLabel, "kpiValue").setText(_format_inr(total_expected))
+        self.kpi_received.findChild(QLabel, "kpiValue").setText(_format_inr(total_received))
 
-            # Variance
-            if actual_amt:
-                variance = actual_amt - row["expected_amount"]
-                var_color = Theme.SUCCESS if variance >= 0 else Theme.DANGER
-                var_text = f"₹ {variance:+,.2f}"
-                var_item = QTableWidgetItem(var_text)
-                var_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-                var_item.setForeground(QColor(var_color))
-                self.table.setItem(idx, 7, var_item)
-            else:
-                self.table.setItem(idx, 7, item("—"))
+        # Percentage for received
+        pct = (total_received / total_expected * 100) if total_expected > 0 else 0
+        self.kpi_pending.findChild(QLabel, "kpiValue").setText(_format_inr(total_pending))
+        self.kpi_tax.findChild(QLabel, "kpiValue").setText(_format_inr(projected_tax))
 
-            # Status
-            if is_linked:
-                status = "Received"
-                status_color = Theme.SUCCESS
-            elif is_overdue:
-                status = "Overdue"
-                status_color = Theme.DANGER
-            else:
-                status = "Pending"
-                status_color = Theme.WARNING
-            
-            status_item = item(status)
-            status_item.setForeground(QColor(status_color))
-            self.table.setItem(idx, 8, status_item)
+    def _get_total_fd_interest(self, person_id, fy):
+        """Get total FD interest for person in FY."""
+        try:
+            fds = get_all_fds()
+            if person_id:
+                fds = [fd for fd in fds if fd["person_id"] == person_id]
 
-            self.table.setItem(idx, 9, item(f"{row.get('bank_display_name', row['bank_name'])} ({row['account_type']})"))
-            self.table.setItem(idx, 10, QTableWidgetItem(str(row["expectation_id"])))
-            self.table.setRowHeight(idx, 32)
+            total = 0.0
+            for fd in fds:
+                total += fd_interest_for_fy(fd, fy)
+            return total
+        except Exception:
+            return 0.0
 
-        self.table.setSortingEnabled(True)
-        count = self.table.rowCount()
-        self.status_label.setText(f"Showing {count} income expectation{'s' if count != 1 else ''}.")
+    def _populate_chart_1(self, expectations):
+        """Chart 1: Expected vs Actual by month."""
+        try:
+            # Group by month
+            months_data = {}
+            fy_start, fy_end = fy_date_range(self._selected_fy)
 
-    def _update_summary(self, rows):
-        expected_total = sum(r["expected_amount"] for r in rows)
-        actual_total = sum(r.get("actual_amount") or 0 for r in rows if r["actual_transaction_id"])
-        pending_total = sum(r["expected_amount"] for r in rows if not r["actual_transaction_id"])
-        variance = actual_total - (expected_total - pending_total)
+            # Initialize all months
+            current = fy_start
+            while current <= fy_end:
+                month_key = f"{current.strftime('%b')} {current.day}"
+                months_data[month_key] = {"expected": 0, "actual": 0}
+                current += relativedelta(months=1)
 
-        self.card_expected.findChild(QLabel, "cardValue").setText(session.mask(expected_total))
-        self.card_actual.findChild(QLabel, "cardValue").setText(session.mask(actual_total))
-        self.card_pending.findChild(QLabel, "cardValue").setText(session.mask(pending_total))
-        
-        var_label = self.card_variance.findChild(QLabel, "cardValue")
-        var_label.setText(session.mask(variance))
-        var_label.setStyleSheet(f"color: {Theme.SUCCESS if variance >= 0 else Theme.DANGER}; font-size: 20px; font-weight: 700;")
-
-    def _add_expectation(self):
-        persons = get_all_persons()
-        if not persons:
-            show_warning("Add a family member first.")
-            return
-        
-        dlg = IncomeExpectationDialog(self, persons=persons,
-                                     preselect_person_id=session.selected_person_id)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
-            data = dlg.get_data()
-            frequency = data["frequency"]
-            
-            if frequency in ["Monthly", "Quarterly", "Half-Yearly"]:
-                count_map = {"Monthly": 12, "Quarterly": 4, "Half-Yearly": 2}
-                expected_count = count_map[frequency]
-                reply = QMessageBox.question(
-                    self, "Create Multiple Records",
-                    f"This will create {expected_count} {frequency.lower()} records for FY {data['financial_year']}. Continue?",
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-                )
-                if reply != QMessageBox.StandardButton.Yes:
-                    return
-            
-            add_income_expectation(**data)
-            self.refresh()
-            if self._parent_window:
-                self._parent_window.refresh_overview()
-            
-            if frequency in ["Monthly", "Quarterly", "Half-Yearly"]:
-                show_success(f"Created {frequency.lower()} income expectations for the financial year.")
-
-    def _edit_expectation(self):
-        exp = self._selected_expectation()
-        if not exp:
-            return
-        
-        dlg = IncomeExpectationDialog(self, persons=get_all_persons(), existing=exp)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
-            data = dlg.get_data()
-            update_income_expectation(
-                exp["expectation_id"],
-                expected_amount=data["expected_amount"],
-                expected_date=data["expected_date"],
-                frequency=data["frequency"],
-                notes=data.get("notes")
-            )
-            self.refresh()
-            if self._parent_window:
-                self._parent_window.refresh_overview()
-
-    def _delete_expectation(self):
-        """Delete checked expectations or current selection"""
-        checked_rows = []
-        for row in range(self.table.rowCount()):
-            checkbox = self.table.cellWidget(row, 0)
-            if checkbox and checkbox.findChild(QWidget).isChecked():
-                exp_id = int(self.table.item(row, 10).text())
-                checked_rows.append(exp_id)
-        
-        if checked_rows:
-            reply = QMessageBox.question(
-                self, "Delete Expectations",
-                f"Delete {len(checked_rows)} expectation{'s' if len(checked_rows) != 1 else ''}?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-            )
-            if reply == QMessageBox.StandardButton.Yes:
-                for exp_id in checked_rows:
-                    delete_income_expectation(exp_id)
-                self.refresh()
-                if self._parent_window:
-                    self._parent_window.refresh_overview()
-        else:
-            exp = self._selected_expectation()
-            if not exp:
-                return
-            
-            reply = QMessageBox.question(
-                self, "Delete Expectation",
-                f"Delete {exp['income_type']} expectation of ₹{exp['expected_amount']:,.2f}?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-            )
-            if reply == QMessageBox.StandardButton.Yes:
-                delete_income_expectation(exp["expectation_id"])
-                self.refresh()
-                if self._parent_window:
-                    self._parent_window.refresh_overview()
-
-    def _auto_link_all(self):
-        """Auto-link all unlinked expectations with matching transactions."""
-        pid = self.f_person.currentData()
-        fy = self.f_fy.currentText()
-        
-        if not pid:
-            show_warning("Please select a specific person to auto-link their income.")
-            return
-        
-        # Get all accounts for this person
-        accounts = get_accounts_for_person(pid)
-        if not accounts:
-            show_info("No accounts found for this person.")
-            return
-        
-        total_linked = 0
-        for account in accounts:
-            linked = auto_link_income_expectations(pid, account["account_id"], fy)
-            total_linked += linked
-        
-        if total_linked > 0:
-            show_success(f"Successfully linked {total_linked} expectation{'s' if total_linked != 1 else ''} with actual transactions.")
-            self.refresh()
-            if self._parent_window:
-                self._parent_window.refresh_overview()
-        else:
-            show_info("No matching transactions found to link automatically.\n\nTransactions must be in the same month as expected date.")
-
-    def _selected_expectation(self):
-        if not self.table.selectedItems():
-            show_warning("Please select an income expectation.")
-            return None
-        
-        row = self.table.currentRow()
-        exp_id = int(self.table.item(row, 10).text())
-        
-        pid = self.f_person.currentData()
-        fy = self.f_fy.currentText()
-        rows = get_income_expectations(person_id=pid, financial_year=fy)
-        return next((r for r in rows if r["expectation_id"] == exp_id), None)
-
-    def _clear_filters(self):
-        self.f_person.setCurrentIndex(0)
-        self.f_fy.setCurrentText(get_current_financial_year())
-        self.f_type.setCurrentIndex(0)
-        self.f_status.setCurrentIndex(0)
-        self.refresh()
-
-
-class IncomeExpectationDialog(QDialog):
-    def __init__(self, parent=None, persons=None, existing=None, preselect_person_id=None):
-        super().__init__(parent)
-        self._persons = persons or []
-        self._existing = existing
-        self._preselect_pid = preselect_person_id
-        self.setWindowTitle("Edit Income Expectation" if existing else "Add Income Expectation")
-        self.setMinimumWidth(520)
-        self.setModal(True)
-        self._build_ui()
-        if existing:
-            self._prefill(existing)
-
-    def _build_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setSpacing(16)
-        layout.setContentsMargins(28, 24, 28, 20)
-
-        form = QFormLayout()
-        form.setSpacing(12)
-        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
-
-        self.cmb_person = QComboBox()
-        for p in self._persons:
-            self.cmb_person.addItem(p["full_name"], userData=p["person_id"])
-        if self._preselect_pid:
-            for i in range(self.cmb_person.count()):
-                if self.cmb_person.itemData(i) == self._preselect_pid:
-                    self.cmb_person.setCurrentIndex(i)
-                    break
-        form.addRow("Person *", self.cmb_person)
-
-        self.cmb_account = QComboBox()
-        self._populate_accounts()
-        form.addRow("Account *", self.cmb_account)
-        
-        # Connect signal AFTER both widgets are created
-        self.cmb_person.currentIndexChanged.connect(self._on_person_changed)
-
-        self.cmb_type = QComboBox()
-        self.cmb_type.addItems(INCOME_TYPES)
-        form.addRow("Income Type *", self.cmb_type)
-
-        self.amount_spin = QDoubleSpinBox()
-        self.amount_spin.setRange(0.01, 99_999_999.99)
-        self.amount_spin.setDecimals(2)
-        self.amount_spin.setGroupSeparatorShown(True)
-        self.amount_spin.setPrefix("₹ ")
-        form.addRow("Expected Amount *", self.amount_spin)
-
-        self.cmb_frequency = QComboBox()
-        self.cmb_frequency.addItems(FREQUENCIES)
-        self.cmb_frequency.currentTextChanged.connect(self._on_frequency_changed)
-        form.addRow("Frequency *", self.cmb_frequency)
-
-        # Date input changes based on frequency
-        self.date_container = QWidget()
-        self.date_layout = QHBoxLayout(self.date_container)
-        self.date_layout.setContentsMargins(0, 0, 0, 0)
-        
-        self.day_spin = QComboBox()
-        for i in range(1, 32):
-            suffix = "st" if i in [1, 21, 31] else "nd" if i in [2, 22] else "rd" if i in [3, 23] else "th"
-            self.day_spin.addItem(f"{i}{suffix}", userData=i)
-        self.date_layout.addWidget(self.day_spin)
-        
-        self.date_edit = QDateEdit()
-        self.date_edit.setCalendarPopup(True)
-        self.date_edit.setDate(QDate.currentDate())
-        self.date_edit.setDisplayFormat("dd/MM/yy")
-        self.date_layout.addWidget(self.date_edit)
-        self.date_edit.hide()
-        
-        form.addRow("Expected Date *", self.date_container)
-
-        self.fy_edit = QComboBox()
-        for fy in reversed(get_all_financial_years(since_year=2020)):
-            self.fy_edit.addItem(fy)
-        self.fy_edit.setCurrentText(get_current_financial_year())
-        if self._existing:
-            self.fy_edit.setEnabled(False)  # Can't change FY when editing
-        form.addRow("Financial Year *", self.fy_edit)
-        
-        if self._existing:
-            info_label = QLabel("Note: Editing only updates this specific record")
-            info_label.setStyleSheet(f"color: {Theme.WARNING}; font-size: 11px; font-style: italic;")
-            form.addRow("", info_label)
-
-        self.notes_edit = QTextEdit()
-        self.notes_edit.setMinimumHeight(68)
-        self.notes_edit.setPlaceholderText("Optional notes...")
-        form.addRow("Notes", self.notes_edit)
-        
-        # Show linked transaction if exists
-        if self._existing and self._existing.get("actual_transaction_id"):
-            linked_frame = QFrame()
-            linked_frame.setStyleSheet(f"""
-                QFrame {{
-                    background: {Theme.SUCCESS_LIGHT};
-                    border: 1px solid {Theme.SUCCESS};
-                    border-radius: 8px;
-                    padding: 12px;
-                }}
-            """)
-            linked_layout = QVBoxLayout(linked_frame)
-            linked_layout.setSpacing(8)
-            
-            linked_title = QLabel("Linked Transaction")
-            linked_title.setStyleSheet(f"color: {Theme.SUCCESS_DARK}; font-weight: 600; font-size: 12px;")
-            linked_layout.addWidget(linked_title)
-            
-            linked_info = QLabel(
-                f"Date: {format_display_date(self._existing.get('actual_date'))}\n"
-                f"Amount: ₹{self._existing.get('actual_amount', 0):,.2f}\n"
-                f"Description: {self._existing.get('description', 'N/A')}"
-            )
-            linked_info.setStyleSheet(f"color: {Theme.TEXT_PRIMARY}; font-size: 11px;")
-            linked_layout.addWidget(linked_info)
-            
-            btn_unlink = Theme.btn("Unlink Transaction", "danger", height=32, min_width=140)
-            set_btn_icon(btn_unlink, "unlink")
-            btn_unlink.clicked.connect(self._on_unlink)
-            linked_layout.addWidget(btn_unlink)
-            
-            form.addRow("", linked_frame)
-        else:
-            btn_link = Theme.btn("Link to Transaction", "success", height=32, min_width=150)
-            set_btn_icon(btn_link, "link")
-            btn_link.clicked.connect(self._on_link_transaction)
-            form.addRow("", btn_link)
-
-        layout.addLayout(form)
-
-        from PyQt6.QtWidgets import QDialogButtonBox
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Save" if self._existing else "Add")
-        buttons.accepted.connect(self._on_accept)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
-        
-        self._on_frequency_changed(self.cmb_frequency.currentText())
-
-    def _on_link_transaction(self):
-        """Open dialog to link a transaction"""
-        dlg = LinkActualDialog(self, expectation=self._existing)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
-            txn_id = dlg.get_selected_transaction_id()
-            if txn_id:
-                link_actual_transaction(self._existing["expectation_id"], txn_id)
-                show_success("Transaction has been linked.")
-                self.accept()
-
-    def _on_unlink(self):
-        """Unlink the transaction from this expectation"""
-        reply = QMessageBox.question(
-            self, "Unlink Transaction",
-            "Are you sure you want to unlink this transaction?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        )
-        if reply == QMessageBox.StandardButton.Yes:
-            unlink_actual_transaction(self._existing["expectation_id"])
-            show_success("Transaction has been unlinked.")
-            self.accept()  # Close dialog and refresh
-
-    def _on_frequency_changed(self, frequency):
-        if frequency in ["Monthly", "Quarterly", "Half-Yearly"]:
-            self.day_spin.show()
-            self.date_edit.hide()
-        else:
-            self.day_spin.hide()
-            self.date_edit.show()
-
-    def _populate_accounts(self):
-        self.cmb_account.clear()
-        pid = self.cmb_person.currentData()
-        accounts = get_accounts_for_person(pid) if pid else []
-        for a in accounts:
-            self.cmb_account.addItem(
-                f"{a.get('bank_display_name', a['bank_name'])} ({a['account_type']})",
-                userData=a["account_id"]
-            )
-
-    def _on_person_changed(self):
-        self._populate_accounts()
-
-    def _prefill(self, exp):
-        for i in range(self.cmb_person.count()):
-            if self.cmb_person.itemData(i) == exp["person_id"]:
-                self.cmb_person.setCurrentIndex(i)
-                break
-        
-        self._populate_accounts()
-        for i in range(self.cmb_account.count()):
-            if self.cmb_account.itemData(i) == exp["account_id"]:
-                self.cmb_account.setCurrentIndex(i)
-                break
-
-        idx = self.cmb_type.findText(exp["income_type"])
-        if idx >= 0:
-            self.cmb_type.setCurrentIndex(idx)
-
-        self.amount_spin.setValue(exp["expected_amount"])
-
-        idx = self.cmb_frequency.findText(exp["frequency"])
-        if idx >= 0:
-            self.cmb_frequency.setCurrentIndex(idx)
-
-        # Set date based on frequency
-        if exp["frequency"] in ["Monthly", "Quarterly", "Half-Yearly"]:
-            # For recurring frequencies, expected_date is stored as day number (1-31)
-            try:
-                day = int(exp["expected_date"])
-                for i in range(self.day_spin.count()):
-                    if self.day_spin.itemData(i) == day:
-                        self.day_spin.setCurrentIndex(i)
-                        break
-            except ValueError:
-                # Fallback: try parsing as full date
-                from datetime import datetime
+            # Populate with expectations
+            for exp in expectations:
                 try:
-                    date_obj = datetime.strptime(exp["expected_date"], "%Y-%m-%d")
-                    day = date_obj.day
-                    for i in range(self.day_spin.count()):
-                        if self.day_spin.itemData(i) == day:
-                            self.day_spin.setCurrentIndex(i)
-                            break
+                    exp_date = datetime.strptime(exp["expected_date"], "%Y-%m-%d").date()
                 except ValueError:
-                    pass
+                    # For recurring frequencies stored as day number
+                    continue
+
+                month_key = f"{exp_date.strftime('%b')} {exp_date.day}"
+                months_data[month_key]["expected"] += exp["expected_amount"]
+
+                if exp["actual_transaction_id"]:
+                    months_data[month_key]["actual"] += exp.get("actual_amount", 0)
+
+            # Draw grouped bar chart
+            if months_data:
+                labels = list(months_data.keys())
+                expected_vals = [months_data[k]["expected"] for k in labels]
+                actual_vals = [months_data[k]["actual"] for k in labels]
+
+                self.chart_vs_actual.plot_comparison(
+                    categories=labels,
+                    values1=expected_vals,
+                    values2=actual_vals,
+                    label1="Expected",
+                    label2="Actual",
+                    title="Expected vs Actual by Month"
+                )
+            else:
+                self.chart_vs_actual.show_empty_state("No monthly data")
+        except Exception as e:
+            self.chart_vs_actual.show_empty_state(f"Error: {str(e)[:50]}")
+
+    def _populate_chart_2(self, person_id, fy):
+        """Chart 2: Income composition by source (donut chart)."""
+        try:
+            expectations = get_income_expectations(person_id=person_id, financial_year=fy)
+
+            # Group by income type
+            composition = {}
+            for exp in expectations:
+                income_type = exp["income_type"]
+                composition[income_type] = composition.get(income_type, 0) + exp["expected_amount"]
+
+            if composition:
+                # Use pie/donut chart for single FY
+                labels = list(composition.keys())
+                values = list(composition.values())
+
+                self.chart_composition.plot_pie(
+                    labels=labels,
+                    values=values,
+                    title="Income Composition by Source"
+                )
+            else:
+                self.chart_composition.show_empty_state("No income composition data")
+        except Exception as e:
+            self.chart_composition.show_empty_state(f"Error: {str(e)[:50]}")
+
+    def _populate_chart_3(self, person_id, fy):
+        """Chart 3: FD interest runway by FY."""
+        try:
+            fds = get_all_fds()
+            if person_id:
+                fds = [fd for fd in fds if fd["person_id"] == person_id]
+
+            # Collect interest by FY
+            fy_interest = {}
+            current_fy = fy
+
+            # Look at current FY and next 2 FYs
+            for i in range(3):
+                check_fy = self._add_fy_years(current_fy, i)
+                total = sum(fd_interest_for_fy(fd, check_fy) for fd in fds)
+                if total > 0:
+                    fy_interest[check_fy] = total
+
+            if fy_interest:
+                labels = list(fy_interest.keys())
+                values = list(fy_interest.values())
+
+                self.chart_fd_runway.plot_bar(
+                    title="FD Interest Runway",
+                    labels=labels,
+                    values=values,
+                    color=Theme.PRIMARY
+                )
+            else:
+                self.chart_fd_runway.show_empty_state("No FD interest data")
+        except Exception as e:
+            self.chart_fd_runway.show_empty_state(f"Error: {str(e)[:50]}")
+
+    def _populate_table_4_tds(self, person_id, fy):
+        """Table 4: Per-bank TDS threshold status."""
+        try:
+            if not person_id:
+                self.table_tds.setRowCount(0)
+                return
+
+            status = fd_tds_threshold_status(person_id, fy)
+            banks = status.get("banks", [])
+
+            self.table_tds.setRowCount(len(banks))
+
+            for row, bank in enumerate(banks):
+                # Bank name
+                self.table_tds.setItem(row, 0, QTableWidgetItem(bank["bank_name"]))
+
+                # Total interest
+                interest_item = QTableWidgetItem(_format_inr(bank["total_interest"]))
+                interest_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                self.table_tds.setItem(row, 1, interest_item)
+
+                # Status (exceeds or OK)
+                status_text = "⚠ Exceeds" if bank["exceeds"] else "✓ OK"
+                status_item = QTableWidgetItem(status_text)
+                color = Theme.DANGER if bank["exceeds"] else Theme.SUCCESS
+                status_item.setForeground(QColor(color))
+                self.table_tds.setItem(row, 2, status_item)
+
+                # Crossing quarter
+                crossing = bank.get("crossing_quarter", "—")
+                self.table_tds.setItem(row, 3, QTableWidgetItem(str(crossing)))
+
+                # Form badge
+                form_text = bank["form_name"]
+                if bank["form_on_file"]:
+                    form_text += " ✓ On file"
+                    form_item = QTableWidgetItem(form_text)
+                    form_item.setForeground(QColor(Theme.SUCCESS))
+                else:
+                    form_item = QTableWidgetItem(form_text)
+                    if bank["exceeds"]:
+                        form_item.setForeground(QColor(Theme.DANGER))
+
+                self.table_tds.setItem(row, 4, form_item)
+        except Exception as e:
+            show_warning(f"Error loading TDS status: {e}")
+
+    def _populate_table_5_ledger(self, expectations):
+        """Table 5: Expectation ledger."""
+        try:
+            self.table_ledger.setRowCount(len(expectations))
+
+            for row, exp in enumerate(expectations):
+                # Month
+                try:
+                    exp_date = datetime.strptime(exp["expected_date"], "%Y-%m-%d").date()
+                    month_text = exp_date.strftime("%b %Y")
+                except ValueError:
+                    month_text = f"Day {exp['expected_date']}"
+
+                self.table_ledger.setItem(row, 0, QTableWidgetItem(month_text))
+
+                # Type
+                self.table_ledger.setItem(row, 1, QTableWidgetItem(exp["income_type"]))
+
+                # Source (account)
+                source = f"{exp.get('bank_display_name', exp['bank_name'])} ({exp['account_type']})"
+                self.table_ledger.setItem(row, 2, QTableWidgetItem(source))
+
+                # Expected amount
+                exp_item = QTableWidgetItem(_format_inr(exp["expected_amount"]))
+                exp_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                self.table_ledger.setItem(row, 3, exp_item)
+
+                # Actual amount
+                actual = exp.get("actual_amount", 0) if exp["actual_transaction_id"] else None
+                actual_item = QTableWidgetItem(_format_inr(actual) if actual else "—")
+                actual_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                if actual:
+                    actual_item.setForeground(QColor(Theme.SUCCESS))
+                self.table_ledger.setItem(row, 4, actual_item)
+
+                # Variance
+                if actual:
+                    variance = actual - exp["expected_amount"]
+                    variance_item = QTableWidgetItem(_format_inr(variance))
+                    variance_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                    color = Theme.SUCCESS if variance >= 0 else Theme.DANGER
+                    variance_item.setForeground(QColor(color))
+                    self.table_ledger.setItem(row, 5, variance_item)
+                else:
+                    self.table_ledger.setItem(row, 5, QTableWidgetItem("—"))
+
+                # Status
+                if exp["actual_transaction_id"]:
+                    status = "Received"
+                    color = Theme.SUCCESS
+                else:
+                    exp_date_obj = datetime.strptime(exp["expected_date"], "%Y-%m-%d").date() if "-" in exp["expected_date"] else date.today()
+                    if exp_date_obj < date.today():
+                        status = "Overdue"
+                        color = Theme.DANGER
+                    else:
+                        status = "Pending"
+                        color = Theme.WARNING
+
+                status_item = QTableWidgetItem(status)
+                status_item.setForeground(QColor(color))
+                self.table_ledger.setItem(row, 6, status_item)
+
+                # Matched transaction
+                matched_text = f"Txn #{exp['actual_transaction_id']}" if exp["actual_transaction_id"] else "—"
+                self.table_ledger.setItem(row, 7, QTableWidgetItem(matched_text))
+        except Exception as e:
+            show_warning(f"Error populating ledger: {e}")
+
+    def _on_auto_match_ledger(self):
+        """Auto-match expectations with transactions."""
+        person_id = self._selected_person_id
+        if not person_id:
+            show_warning("Please select a specific person to auto-match.")
+            return
+
+        fy = self._selected_fy
+        accounts = get_accounts_for_person(person_id)
+
+        total_matched = 0
+        for account in accounts:
+            matched = auto_link_income_expectations(person_id, account["account_id"], fy)
+            total_matched += matched
+
+        if total_matched > 0:
+            show_success(f"Auto-matched {total_matched} expectation{'s' if total_matched != 1 else ''}.")
+            self.refresh()
         else:
-            qd = QDate.fromString(exp["expected_date"], "yyyy-MM-dd")
-            if qd.isValid():
-                self.date_edit.setDate(qd)
+            show_info("No matching transactions found.")
 
-        self.fy_edit.setCurrentText(exp["financial_year"])
-        self.notes_edit.setPlainText(exp.get("notes") or "")
-
-    def _on_accept(self):
-        if not self.cmb_account.currentData():
-            show_warning("Please select an account.")
-            return
-        if self.amount_spin.value() <= 0:
-            show_warning("Amount must be > 0.")
-            return
-        self.accept()
-
-    def get_data(self) -> dict:
-        frequency = self.cmb_frequency.currentText()
-        
-        if frequency in ["Monthly", "Quarterly", "Half-Yearly"]:
-            expected_date = str(self.day_spin.currentData())
-        else:
-            expected_date = self.date_edit.date().toString("yyyy-MM-dd")
-        
-        return {
-            "person_id": self.cmb_person.currentData(),
-            "account_id": self.cmb_account.currentData(),
-            "income_type": self.cmb_type.currentText(),
-            "expected_amount": self.amount_spin.value(),
-            "expected_date": expected_date,
-            "frequency": frequency,
-            "financial_year": self.fy_edit.currentText(),
-            "notes": self.notes_edit.toPlainText().strip() or None,
-        }
-
-
-class LinkActualDialog(QDialog):
-    def __init__(self, parent=None, expectation=None):
-        super().__init__(parent)
-        self._expectation = expectation
-        self.setWindowTitle("Link Actual Transaction")
-        self.setMinimumWidth(600)
-        self.setMinimumHeight(400)
-        self.setModal(True)
-        self._build_ui()
-        self._load_transactions()
-
-    def _build_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setSpacing(16)
-        layout.setContentsMargins(24, 20, 24, 20)
-
-        info = QLabel(f"Select actual transaction for: {self._expectation['income_type']} - ₹{self._expectation['expected_amount']:,.2f}")
-        info.setStyleSheet(f"color: {Theme.TEXT_PRIMARY}; font-size: 13px; font-weight: 600;")
-        layout.addWidget(info)
-
-        self.table = QTableWidget()
-        self.table.setColumnCount(5)
-        self.table.setHorizontalHeaderLabels(["Date", "Category", "Amount", "Description", "ID"])
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
-        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.table.verticalHeader().setVisible(False)
-        self.table.setColumnHidden(4, True)
-        layout.addWidget(self.table)
-
-        from PyQt6.QtWidgets import QDialogButtonBox
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        buttons.accepted.connect(self._on_accept)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
-
-    def _load_transactions(self):
-        # Get income transactions for the same person, account, and FY
-        transactions = get_transactions(
-            person_id=self._expectation["person_id"],
-            account_id=self._expectation["account_id"],
-            financial_year=self._expectation["financial_year"],
-            transaction_type="Income"
-        )
-        
-        # Filter out already linked transactions
-        from models.income_expectation import get_income_expectations
-        all_expectations = get_income_expectations(
-            person_id=self._expectation["person_id"],
-            financial_year=self._expectation["financial_year"]
-        )
-        linked_ids = {e["actual_transaction_id"] for e in all_expectations if e["actual_transaction_id"]}
-        
-        transactions = [t for t in transactions if t["transaction_id"] not in linked_ids]
-
-        self.table.setRowCount(0)
-        for txn in transactions:
-            r = self.table.rowCount()
-            self.table.insertRow(r)
-            
-            self.table.setItem(r, 0, QTableWidgetItem(format_display_date(txn.get("transaction_date"))))
-            self.table.setItem(r, 1, QTableWidgetItem(txn.get("category") or "—"))
-            self.table.setItem(r, 2, QTableWidgetItem(f"₹ {txn['amount']:,.2f}"))
-            self.table.setItem(r, 3, QTableWidgetItem(txn.get("description") or "—"))
-            self.table.setItem(r, 4, QTableWidgetItem(str(txn["transaction_id"])))
-
-    def _on_accept(self):
-        if not self.table.selectedItems():
-            show_warning("Please select a transaction.")
-            return
-        self.accept()
-
-    def get_selected_transaction_id(self):
-        if not self.table.selectedItems():
-            return None
-        row = self.table.currentRow()
-        return int(self.table.item(row, 4).text())
+    def _add_fy_years(self, fy_str, years):
+        """Add years to a FY string like '2024-25'."""
+        start_year = int(fy_str.split("-")[0])
+        new_year = start_year + years
+        return f"{new_year}-{str(new_year + 1)[2:]}"

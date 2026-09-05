@@ -181,55 +181,117 @@ class TestStatementParsingThreading:
 class TestAISTISThreading:
     """Test that AIS/TIS parsing runs off the UI thread."""
 
-    def test_ais_tis_parse_worker_uses_worker_thread(self, main_thread_id):
-        """Verify AIS/TIS parse runs on a different thread."""
-        from ui.ais_tis_import_screen_v2 import _AISTISParseWorker
+    def test_ais_tis_parse_worker_uses_worker_thread(self, qapp, main_thread_id):
+        """Verify AIS parsing runs on a worker thread, not the GUI thread."""
+        from ui.widgets.loader import Loader
+        from PyQt6.QtWidgets import QWidget
+        from core.database import initialise_database
 
         parse_thread_id = None
+        parse_done_event = threading.Event()
+        parse_called_event = threading.Event()
 
-        def mock_parser(text):
+        # Monkeypatch parse_ais_pdf to capture the thread it runs on
+        def mock_parse_ais(*args, **kwargs):
             nonlocal parse_thread_id
             parse_thread_id = threading.current_thread().ident
-            time.sleep(0.5)
-            return {"details": [{"amount": 100}]}
+            parse_called_event.set()
+            time.sleep(0.1)
+            return {"assessment_year": "2024-25", "data": []}
 
-        with patch("ui.ais_tis_import_screen_v2.parse_ais_pdf_text", side_effect=mock_parser):
-            worker = _AISTISParseWorker(pdf_text="test", source_type="AIS")
+        initialise_database()
 
-            worker_thread = Thread(target=worker.run, daemon=True)
-            worker_thread.start()
-            worker_thread.join(timeout=5)
+        # Create widget that will stay alive
+        widget = QWidget()
+        widget.show()
 
-            assert parse_thread_id is not None
+        def parse_fn():
+            result = mock_parse_ais()
+            return result
+
+        def on_done(result):
+            parse_done_event.set()
+            widget.close()
+
+        with patch("engines.taxdocs.ais.parse_ais_pdf", side_effect=mock_parse_ais):
+            # Run the parse function using Loader.run() to verify threading
+            Loader.run(widget, fn=parse_fn, message="Testing...", on_done=on_done)
+
+            # Process events to allow the worker thread to run and callbacks to execute
+            for _ in range(100):
+                qapp.processEvents()
+                if parse_done_event.is_set():
+                    break
+                time.sleep(0.05)
+
+            # Verify parse was called
+            assert parse_called_event.is_set(), "Parse was not called"
+
+            # Verify on_done was called
+            assert parse_done_event.is_set(), "Parse did not complete (on_done not called)"
+
+            # Verify parse ran on a different thread
+            assert parse_thread_id is not None, "Parse thread ID was not captured"
             assert parse_thread_id != main_thread_id, \
-                "AIS/TIS parse should not run on UI thread"
+                f"AIS parse ran on UI thread (ID {main_thread_id}), not worker thread"
 
 
 class TestForm26ASThreading:
     """Test that Form 26AS parsing runs off the UI thread."""
 
-    def test_form26as_parse_worker_uses_worker_thread(self, main_thread_id):
-        """Verify Form 26AS parse runs on a different thread."""
-        from ui.ais_tis_import_screen_v2 import _Form26ASParseWorker
+    def test_form26as_parse_worker_uses_worker_thread(self, qapp, main_thread_id):
+        """Verify Form 26AS parse runs on a worker thread, not the GUI thread."""
+        from ui.widgets.loader import Loader
+        from PyQt6.QtWidgets import QWidget
+        from core.database import initialise_database
 
         parse_thread_id = None
+        parse_done_event = threading.Event()
+        parse_called_event = threading.Event()
 
-        def mock_parser(text):
+        # Monkeypatch parse_form26as_pdf to capture the thread it runs on
+        def mock_parse_26as(*args, **kwargs):
             nonlocal parse_thread_id
             parse_thread_id = threading.current_thread().ident
-            time.sleep(0.5)
-            return {"records": [{"amount_paid": 100}], "assessment_year": "2023-24"}
+            parse_called_event.set()
+            time.sleep(0.1)
+            return {"financial_year": "2023-24", "data": []}
 
-        with patch("ui.ais_tis_import_screen_v2.parse_form26as_pdf", side_effect=mock_parser):
-            worker = _Form26ASParseWorker(pdf_text="test")
+        initialise_database()
 
-            worker_thread = Thread(target=worker.run, daemon=True)
-            worker_thread.start()
-            worker_thread.join(timeout=5)
+        # Create widget that will stay alive
+        widget = QWidget()
+        widget.show()
 
-            assert parse_thread_id is not None
+        def parse_fn():
+            result = mock_parse_26as()
+            return result
+
+        def on_done(result):
+            parse_done_event.set()
+            widget.close()
+
+        with patch("engines.taxdocs.form26as.parse_form26as_pdf", side_effect=mock_parse_26as):
+            # Run the parse function using Loader.run() to verify threading
+            Loader.run(widget, fn=parse_fn, message="Testing...", on_done=on_done)
+
+            # Process events to allow the worker thread to run and callbacks to execute
+            for _ in range(100):
+                qapp.processEvents()
+                if parse_done_event.is_set():
+                    break
+                time.sleep(0.05)
+
+            # Verify parse was called
+            assert parse_called_event.is_set(), "Parse was not called"
+
+            # Verify on_done was called
+            assert parse_done_event.is_set(), "Parse did not complete (on_done not called)"
+
+            # Verify parse ran on a different thread
+            assert parse_thread_id is not None, "Parse thread ID was not captured"
             assert parse_thread_id != main_thread_id, \
-                "Form 26AS parse should not run on UI thread"
+                f"Form 26AS parse ran on UI thread (ID {main_thread_id}), not worker thread"
 
 
 if __name__ == "__main__":

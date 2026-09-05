@@ -312,7 +312,7 @@ class DashboardScreen(QMainWindow):
         # QColor table-row foregrounds, etc.) and won't update via the
         # global QSS unpolish/polish pass alone.
         for page_name in ('accounts_page', 'transactions_page', 'fd_page',
-                          'income_page', 'import_page', 'ais_tis_page', 'tax_page'):
+                          'income_page', 'import_page', 'tax_documents_page', 'tax_page'):
             page = getattr(self, page_name, None)
             if page is not None and hasattr(page, 'refresh_theme'):
                 try:
@@ -484,10 +484,10 @@ class DashboardScreen(QMainWindow):
             from ui.statement_import_screen_modern import StatementImportScreen
             self.import_page = StatementImportScreen(self)
             return self.import_page
-        elif index == 6:  # AIS/TIS
-            from ui.ais_tis_import_screen_v2 import AISTISImportScreenV2
-            self.ais_tis_page = AISTISImportScreenV2(self)
-            return self.ais_tis_page
+        elif index == 6:  # Tax Documents
+            from ui.tax_documents_screen import TaxDocumentsScreen
+            self.tax_documents_page = TaxDocumentsScreen(self)
+            return self.tax_documents_page
         elif index == 7:  # Tax
             from ui.tax_screen import TaxScreen
             self.tax_page = TaxScreen(self)
