@@ -987,6 +987,27 @@ QWidget#Toast[variant="danger"] QPushButton:hover {{
     color: {t.DANGER_DARK};
 }}
 
+/* ═══════════════════════════ KPI TILES ════════════════════ */
+QFrame#kpiTile {{
+    background-color: {t.SURFACE}; border: 1px solid {t.BORDER};
+    border-left: 4px solid {t.PRIMARY}; border-radius: 12px;
+}}
+QFrame#kpiTile[accent="success"] {{
+    border-left-color: {t.SUCCESS};
+}}
+QFrame#kpiTile[accent="danger"] {{
+    border-left-color: {t.DANGER};
+}}
+QFrame#kpiTile[accent="info"] {{
+    border-left-color: {t.INFO};
+}}
+QFrame#kpiTile[accent="teal"] {{
+    border-left-color: {t.TEAL};
+}}
+QLabel#kpiValue {{
+    color: {t.TEXT_PRIMARY};
+}}
+
 /* ═══════════════════════════ STATE WIDGETS ════════════════════ */
 QFrame#EmptyState {{
     background-color: {t.SURFACE};

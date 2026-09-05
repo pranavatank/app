@@ -279,6 +279,7 @@ def calculate_new_regime_tax(
     total_tax = tax_before_surcharge + surcharge + cess
 
     return {
+        "standard_deduction": round(standard_deduction, 2),
         "normal_income": round(normal_taxable_income, 2),
         "special_rate_income": round(special_rate_taxable_income, 2),
         "taxable_income": round(normal_taxable_income + special_rate_taxable_income, 2),

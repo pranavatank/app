@@ -82,3 +82,35 @@ class TestTaxEngine:
         assert result["rebate_87a"] == 0.0, f"No rebate expected but got {result['rebate_87a']}"
         expected_total = 195_000 + 7_800  # 1,95,000 special-rate tax + 4% cess
         assert result["total_tax"] == expected_total, f"Expected {expected_total} but got {result['total_tax']}"
+
+    def test_standard_deduction_returned(self):
+        """
+        standard_deduction should be returned and equal to:
+        - 0 when no salary/pension (no owner has salary)
+        - 75,000 when salary_income >= 75,000
+        """
+        # Case 1: No salary - standard deduction should be 0
+        result_no_salary = calculate_new_regime_tax(
+            gross_income=358_015,
+            financial_year="2026-27"
+        )
+        assert "standard_deduction" in result_no_salary, "standard_deduction key missing from result"
+        assert result_no_salary["standard_deduction"] == 0.0, \
+            f"Expected standard_deduction=0 for no salary, got {result_no_salary['standard_deduction']}"
+        # Verify arithmetic: gross - std_ded == taxable_income
+        assert result_no_salary["taxable_income"] == 358_015, \
+            f"Taxable income should equal gross income when std_ded=0"
+
+        # Case 2: Salary of 12,75,000 - standard deduction should be 75,000
+        result_with_salary = calculate_new_regime_tax(
+            gross_income=1_275_000,
+            salary_income=1_275_000,
+            financial_year="2026-27"
+        )
+        assert "standard_deduction" in result_with_salary, "standard_deduction key missing from result"
+        assert result_with_salary["standard_deduction"] == 75_000.0, \
+            f"Expected standard_deduction=75,000 for 12,75,000 salary, got {result_with_salary['standard_deduction']}"
+        # Verify arithmetic: gross - std_ded == taxable_income
+        expected_taxable = 1_275_000 - 75_000
+        assert result_with_salary["taxable_income"] == expected_taxable, \
+            f"Expected taxable_income={expected_taxable}, got {result_with_salary['taxable_income']}"

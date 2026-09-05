@@ -30,6 +30,7 @@ from ui.logo import logo_pixmap, set_window_icon
 from ui.theme import Theme, ThemeManager
 from ui.icons import icon as app_icon, fallback as icon_fallback, is_available as icons_available
 from ui.widgets.summary_panel import SummaryPanel
+from ui.widgets.chart_widget import ChartWidget
 
 _NAV_ITEMS = [
     ("Overview",              "overview"),
@@ -42,6 +43,37 @@ _NAV_ITEMS = [
     ("Tax",                   "tax"),
     ("Settings",              "settings"),
 ]
+
+
+def _format_indian_number(value: float) -> str:
+    """Format a number with Indian digit grouping (2,56,642 not 256,642)."""
+    if value < 0:
+        sign = "-"
+        value = abs(value)
+    else:
+        sign = ""
+
+    val_int = int(value)
+    val_decimal = value - val_int
+
+    # Format the integer part with Indian grouping
+    s = str(val_int)
+    if len(s) <= 3:
+        result = s
+    else:
+        # Reverse for processing from right
+        s_rev = s[::-1]
+        groups = [s_rev[0:3]]
+        for i in range(3, len(s_rev), 2):
+            groups.append(s_rev[i:i+2])
+        result = ",".join(groups)
+        result = result[::-1]
+
+    # Add decimal part if present
+    if val_decimal > 0:
+        result += f"{val_decimal:.2f}"[1:]  # Keep .XX from the float
+
+    return f"{sign}₹{result}"
 
 
 class NavLabelElisionFilter(QObject):
@@ -308,6 +340,23 @@ class DashboardScreen(QMainWindow):
             if panel is not None:
                 panel.refresh_theme()
 
+        # Refresh KPI tiles (re-apply theme via unpolish/polish)
+        for tile_name in ('kpi_balance', 'kpi_income', 'kpi_expense', 'kpi_savings', 'kpi_interest'):
+            tile = getattr(self, tile_name, None)
+            if tile is not None:
+                tile.style().unpolish(tile)
+                tile.style().polish(tile)
+                tile.setGraphicsEffect(Theme.shadow_card())
+
+        # Refresh charts (re-plot with new theme colors)
+        for chart_name in ('chart_income_expense', 'chart_distribution'):
+            chart = getattr(self, chart_name, None)
+            if chart is not None and hasattr(chart, 'refresh_theme'):
+                try:
+                    chart.refresh_theme()
+                except Exception:
+                    pass
+
         # Refresh stacked pages that carry baked-in colours (inline styles,
         # QColor table-row foregrounds, etc.) and won't update via the
         # global QSS unpolish/polish pass alone.
@@ -547,70 +596,181 @@ class DashboardScreen(QMainWindow):
         inner = QWidget()
         inner.setObjectName("transparentSurface")
         outer = QVBoxLayout(inner)
-        outer.setContentsMargins(28, 24, 28, 24)
-        outer.setSpacing(20)
+        outer.setContentsMargins(28, 16, 28, 16)
+        outer.setSpacing(16)
 
-        # FY banner
-        banner = QFrame()
-        self._overview_banner = banner  # keep ref for theme refresh
-        banner.setObjectName("overviewBanner")
-        banner.setMinimumHeight(70)
-        b_layout = QHBoxLayout(banner)
-        b_layout.setContentsMargins(24, 0, 24, 0)
+        # KPI strip with 4-5 tiles
+        kpi_container = QWidget()
+        kpi_layout = QVBoxLayout(kpi_container)
+        kpi_layout.setContentsMargins(0, 0, 0, 0)
+        kpi_layout.setSpacing(0)
 
-        b_title = QLabel("Financial Overview")
-        b_title.setObjectName("bannerTitle")
-        b_title.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
-        b_layout.addWidget(b_title)
-        b_layout.addStretch()
+        # Header with title and FY indicator
+        header = QHBoxLayout()
+        header.setSpacing(16)
+        title = QLabel("Financial Overview")
+        title.setFont(QFont("Segoe UI", 15, QFont.Weight.Bold))
+        header.addWidget(title)
+        header.addStretch()
 
         self.banner_fy_lbl = QLabel("")
-        self.banner_fy_lbl.setObjectName("bannerFyLabel")
-        b_layout.addWidget(self.banner_fy_lbl)
-        outer.addWidget(banner)
+        self.banner_fy_lbl.setFont(QFont("Segoe UI", 11))
+        self.banner_fy_lbl.setProperty("textrole", "secondary")
+        header.addWidget(self.banner_fy_lbl)
+        kpi_layout.addLayout(header)
+        kpi_layout.addSpacing(12)
 
-        # 2×2 Summary grid
-        grid = QGridLayout()
-        grid.setSpacing(18)
+        # KPI tiles grid (responsive)
+        kpi_tiles_layout = QGridLayout()
+        kpi_tiles_layout.setSpacing(12)
+
+        # Create KPI tiles
+        self.kpi_balance = self._create_kpi_tile("Total Balance", "₹ —", "primary")
+        self.kpi_income = self._create_kpi_tile("Income (FY)", "₹ —", "success")
+        self.kpi_expense = self._create_kpi_tile("Expense (FY)", "₹ —", "danger")
+        self.kpi_savings = self._create_kpi_tile("Net Savings", "₹ —", "info")
+        self.kpi_interest = self._create_kpi_tile("Interest Income", "₹ —", "teal")
+
+        kpi_tiles_layout.addWidget(self.kpi_balance, 0, 0)
+        kpi_tiles_layout.addWidget(self.kpi_income, 0, 1)
+        kpi_tiles_layout.addWidget(self.kpi_expense, 0, 2)
+        kpi_tiles_layout.addWidget(self.kpi_savings, 1, 0)
+        kpi_tiles_layout.addWidget(self.kpi_interest, 1, 1)
+
+        for i in range(3):
+            kpi_tiles_layout.setColumnStretch(i, 1)
+        for i in range(2):
+            kpi_tiles_layout.setRowStretch(i, 0)
+
+        kpi_layout.addLayout(kpi_tiles_layout)
+        kpi_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        outer.addWidget(kpi_container)
+
+        # Charts section
+        charts_container = QWidget()
+        charts_layout = QVBoxLayout(charts_container)
+        charts_layout.setContentsMargins(0, 0, 0, 0)
+        charts_layout.setSpacing(16)
+
+        charts_header = QLabel("Trends & Distribution")
+        charts_header.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
+        charts_layout.addWidget(charts_header)
+
+        # Charts grid (2 charts side by side on wide screens)
+        charts_grid = QGridLayout()
+        charts_grid.setSpacing(16)
+
+        # Income vs Expense chart
+        self.chart_income_expense = ChartWidget()
+        self.chart_income_expense.setMinimumHeight(280)
+        charts_grid.addWidget(self.chart_income_expense, 0, 0)
+
+        # Account distribution chart
+        self.chart_distribution = ChartWidget()
+        self.chart_distribution.setMinimumHeight(280)
+        charts_grid.addWidget(self.chart_distribution, 0, 1)
+
+        charts_grid.setColumnStretch(0, 1)
+        charts_grid.setColumnStretch(1, 1)
+        charts_layout.addLayout(charts_grid)
+
+        charts_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        outer.addWidget(charts_container)
+
+        # Summary panels (compact)
+        panels_container = QWidget()
+        panels_layout = QVBoxLayout(panels_container)
+        panels_layout.setContentsMargins(0, 0, 0, 0)
+        panels_layout.setSpacing(16)
+
+        panels_header = QLabel("Details")
+        panels_header.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
+        panels_layout.addWidget(panels_header)
+
+        # 2-column layout for summary panels
+        panels_grid = QGridLayout()
+        panels_grid.setSpacing(16)
 
         self.panel_financial = SummaryPanel("Financial Summary", "chart_overview", accent=Theme.PRIMARY)
-        self.panel_financial.add_stat("balance", "Total Balance",      "₹ —", value_size=16)
-        self.panel_financial.add_stat("income",  "Total Credit (FY)",  "₹ —", value_color_role="SUCCESS")
-        self.panel_financial.add_stat("expense", "Total Debit (FY)",   "₹ —", value_color_role="DANGER")
+        self.panel_financial.add_stat("balance", "Total Balance", "₹ —", value_size=14)
+        self.panel_financial.add_stat("income", "Total Credit (FY)", "₹ —", value_color_role="SUCCESS")
+        self.panel_financial.add_stat("expense", "Total Debit (FY)", "₹ —", value_color_role="DANGER")
         self.panel_financial.add_divider()
-        self.panel_financial.add_stat("savings", "Net Savings",        "₹ —", value_size=14, bold=True)
-        grid.addWidget(self.panel_financial, 0, 0)
+        self.panel_financial.add_stat("savings", "Net Savings", "₹ —", bold=True)
+        self.panel_financial.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        panels_grid.addWidget(self.panel_financial, 0, 0)
 
         self.panel_bank = SummaryPanel("Bank Accounts", "bank", accent=Theme.TEAL, scrollable=True)
-        grid.addWidget(self.panel_bank, 0, 1)
+        self.panel_bank.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        panels_grid.addWidget(self.panel_bank, 0, 1)
 
         self.panel_interest = SummaryPanel("Interest Summary", "trend", accent=Theme.SUCCESS)
-        self.panel_interest.add_stat("fd_curr",   "FD Interest (Current FY)",   "₹ —")
-        self.panel_interest.add_stat("fd_next",   "FD Interest (Next FY est.)", "₹ —")
+        self.panel_interest.add_stat("fd_curr", "FD Interest (Current FY)", "₹ —")
+        self.panel_interest.add_stat("fd_next", "FD Interest (Next FY est.)", "₹ —")
         self.panel_interest.add_divider()
-        self.panel_interest.add_stat("sav_curr",  "Savings Interest (FY)",      "₹ —")
-        self.panel_interest.add_stat("total_int", "Total Interest Income",      "₹ —", bold=True)
-        grid.addWidget(self.panel_interest, 1, 0)
+        self.panel_interest.add_stat("sav_curr", "Savings Interest (FY)", "₹ —")
+        self.panel_interest.add_stat("total_int", "Total Interest Income", "₹ —", bold=True)
+        self.panel_interest.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        panels_grid.addWidget(self.panel_interest, 1, 0)
 
         self.panel_tax = SummaryPanel("Tax Summary", "tax", accent=Theme.WARNING)
-        self.panel_tax.add_stat("gross",      "Gross Total Income", "₹ —")
-        self.panel_tax.add_stat("deductions", "Total Deductions",   "₹ —")
+        self.panel_tax.add_stat("gross", "Gross Total Income", "₹ —")
+        self.panel_tax.add_stat("deductions", "Total Deductions", "₹ —")
         self.panel_tax.add_divider()
-        self.panel_tax.add_stat("tax_old", "Tax — Old Regime", "₹ —")
-        self.panel_tax.add_stat("tax_new", "Tax — New Regime", "₹ —")
-        self.panel_tax.add_divider()
-        self.panel_tax.add_stat("regime",  "Recommended Regime", "—", bold=True)
-        grid.addWidget(self.panel_tax, 1, 1)
+        self.panel_tax.add_stat("tax_new", "Tax (New Regime)", "₹ —", bold=True)
+        self.panel_tax.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        panels_grid.addWidget(self.panel_tax, 1, 1)
 
-        grid.setColumnStretch(0, 1); grid.setColumnStretch(1, 1)
-        grid.setRowStretch(0, 1);    grid.setRowStretch(1, 1)
-        outer.addLayout(grid, stretch=1)
+        panels_grid.setColumnStretch(0, 1)
+        panels_grid.setColumnStretch(1, 1)
+        panels_layout.addLayout(panels_grid)
+
+        panels_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        outer.addWidget(panels_container)
+
+        outer.addStretch()
 
         scroll.setWidget(inner)
         page_layout = QVBoxLayout(page)
         page_layout.setContentsMargins(0, 0, 0, 0)
         page_layout.addWidget(scroll)
         return page
+
+    def _create_kpi_tile(self, label: str, value: str, accent: str) -> QFrame:
+        """Create a single KPI tile with label, value, and accent color.
+        accent: "success", "danger", "info", "teal", or default (primary)
+        """
+        tile = QFrame()
+        tile.setObjectName("kpiTile")
+        if accent not in ("primary",):  # primary is default, others are explicit
+            tile.setProperty("accent", accent)
+        tile.setGraphicsEffect(Theme.shadow_card())
+        tile.setMinimumHeight(100)
+
+        layout = QVBoxLayout(tile)
+        layout.setContentsMargins(16, 12, 16, 12)
+        layout.setSpacing(6)
+
+        # Label
+        lbl = QLabel(label)
+        lbl.setFont(QFont("Segoe UI", 10))
+        lbl.setProperty("textrole", "secondary")
+        layout.addWidget(lbl)
+
+        # Value
+        val_lbl = QLabel(value)
+        val_lbl.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
+        val_lbl.setObjectName("kpiValue")
+        layout.addWidget(val_lbl)
+
+        layout.addStretch()
+
+        # Store references for updates
+        tile._label = lbl
+        tile._value = val_lbl
+        tile._accent = accent
+
+        return tile
 
     # ═══════════════════════════════════════════════════════════════════════
     # Selectors
@@ -695,10 +855,104 @@ class DashboardScreen(QMainWindow):
         pid = session.selected_person_id
         aid = session.selected_account_id
         self.banner_fy_lbl.setText(f"FY {fy}  ·  AY {get_assessment_year(fy)}")
+        self._refresh_kpi_tiles(fy, pid, aid)
         self._refresh_financial_panel(fy, pid, aid)
         self._refresh_bank_panel(pid)
         self._refresh_interest_panel(fy, pid)
         self._refresh_tax_panel(fy, pid)
+        self._refresh_overview_charts(fy, pid, aid)
+
+    def _refresh_kpi_tiles(self, fy, pid, aid):
+        """Update the KPI tiles with latest data."""
+        if aid is not None:
+            from models.bank_account import get_account
+            acc = get_account(aid)
+            balance = acc["current_balance"] if acc else 0.0
+        else:
+            balance = get_total_balance(person_id=pid)
+        income  = get_income_total(person_id=pid,  financial_year=fy)
+        expense = get_expense_total(person_id=pid, financial_year=fy)
+        net     = income - expense
+        next_start = int(fy.split("-")[0]) + 1
+        next_fy = f"{next_start}-{str(next_start + 1)[2:]}"
+        fd_curr = get_total_fd_interest(fy, person_id=pid)
+        sav_curr = get_total_savings_interest(fy, person_id=pid)
+        total_interest = fd_curr + sav_curr
+
+        # Update KPI tiles
+        self.kpi_balance._value.setText(session.mask(balance))
+        self.kpi_income._value.setText(session.mask(income))
+        self.kpi_expense._value.setText(session.mask(expense))
+        self.kpi_savings._value.setText(session.mask(net))
+        self.kpi_interest._value.setText(session.mask(total_interest))
+
+    def _refresh_overview_charts(self, fy, pid, aid):
+        """Populate income/expense and distribution charts."""
+        try:
+            # Get monthly income and expense data
+            from models.transaction import get_transactions
+            from datetime import datetime
+
+            # Parse FY to get start and end dates
+            fy_start_year = int(fy.split("-")[0])
+            fy_end_year = fy_start_year + 1
+            start_date = f"{fy_start_year}-04-01"
+            end_date = f"{fy_end_year}-03-31"
+
+            transactions = get_transactions(
+                person_id=pid,
+                account_id=aid,
+                financial_year=fy
+            )
+
+            # Aggregate by month
+            monthly_income = {}
+            monthly_expense = {}
+
+            for tx in transactions:
+                if not tx.get("transaction_date"):
+                    continue
+                try:
+                    tx_date = datetime.strptime(tx["transaction_date"], "%Y-%m-%d")
+                    month_key = tx_date.strftime("%b")  # Apr, May, etc.
+                    month_num = tx_date.month
+
+                    # Account for FY starting in April
+                    display_month = f"{month_num-3} Apr" if month_num >= 4 else f"{month_num+9} {tx_date.strftime('%B')}"
+
+                    if tx["transaction_type"] == "credit":
+                        monthly_income[month_key] = monthly_income.get(month_key, 0) + tx["amount"]
+                    else:
+                        monthly_expense[month_key] = monthly_expense.get(month_key, 0) + tx["amount"]
+                except (ValueError, KeyError):
+                    continue
+
+            # Ensure all months are present
+            months = ["Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar"]
+            income_values = [monthly_income.get(m, 0) for m in months]
+            expense_values = [monthly_expense.get(m, 0) for m in months]
+
+            # Plot income vs expense chart
+            if any(income_values) or any(expense_values):
+                self.chart_income_expense.plot_monthly_bar(months, income_values, expense_values, "Income vs Expense (FY)")
+            else:
+                self.chart_income_expense.show_empty_state("No transaction data for this period")
+
+            # Get account distribution
+            accounts = get_accounts_for_person(pid) if pid else get_all_accounts()
+            account_names = [a.get('bank_display_name', a['bank_name']) for a in accounts]
+            account_balances = [a["current_balance"] for a in accounts]
+
+            # Filter out zero balances for pie chart
+            non_zero = [(n, b) for n, b in zip(account_names, account_balances) if b > 0]
+            if non_zero:
+                names, balances = zip(*non_zero)
+                self.chart_distribution.plot_pie(list(names), list(balances), "Account Distribution")
+            else:
+                self.chart_distribution.show_empty_state("No account balances to display")
+        except Exception as e:
+            self.chart_income_expense.show_empty_state(f"Error loading chart: {type(e).__name__}")
+            self.chart_distribution.show_empty_state("Unable to load data")
 
     def _refresh_financial_panel(self, fy, pid, aid):
         if aid is not None:
@@ -739,24 +993,22 @@ class DashboardScreen(QMainWindow):
 
     def _refresh_tax_panel(self, fy, pid):
         if pid is None:
-            for k in ["gross","deductions","tax_old","tax_new","regime"]:
-                self.panel_tax.update_stat(k, "Select a person" if k=="gross" else "—")
+            self.panel_tax.update_stat("gross", "Select a person")
+            self.panel_tax.update_stat("deductions", "—")
+            self.panel_tax.update_stat("tax_new", "—")
             return
         profile = get_tax_profile(pid, fy)
         if not profile:
-            for k in ["gross","deductions","tax_old","tax_new","regime"]:
-                self.panel_tax.update_stat(k, "No data" if k=="gross" else "—")
+            self.panel_tax.update_stat("gross", "No data")
+            self.panel_tax.update_stat("deductions", "—")
+            self.panel_tax.update_stat("tax_new", "—")
             return
         ded = sum(profile.get(k,0) for k in [
             "deductions_80c","deductions_80d","home_loan_interest","hra_exemption","standard_deduction"])
-        tax_old = profile.get("total_tax_old", 0)
         tax_new = profile.get("total_tax_new", 0)
-        regime  = "Old Regime" if tax_old < tax_new else ("New Regime" if tax_new < tax_old else "Either")
-        self.panel_tax.update_stat("gross",      session.mask(profile.get("gross_total_income",0)))
+        self.panel_tax.update_stat("gross", session.mask(profile.get("gross_total_income",0)))
         self.panel_tax.update_stat("deductions", session.mask(ded))
-        self.panel_tax.update_stat("tax_old",    session.mask(tax_old))
-        self.panel_tax.update_stat("tax_new",    session.mask(tax_new))
-        self.panel_tax.update_stat("regime",     regime)
+        self.panel_tax.update_stat("tax_new", session.mask(tax_new))
 
     # ═══════════════════════════════════════════════════════════════════════
     # Navigation & signals

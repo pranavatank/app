@@ -1,20 +1,22 @@
 """
-ui/tax_screen.py — Comprehensive tax estimator similar to Income Tax portal.
-FIX: btn_calc now uses Theme.btn() for guaranteed visibility.
+ui/tax_screen.py — Tax estimator for New Regime only (FY 2023-24 onwards).
+
+The owner has irrevocably opted into the New Regime (Form 10-IEA).
+This screen shows only New Regime inputs and calculations.
 """
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QGroupBox, QFormLayout, QFrame, QScrollArea,
-    QMessageBox, QDoubleSpinBox, QComboBox, QSplitter, QSizePolicy
+    QDoubleSpinBox, QComboBox, QSplitter, QSizePolicy, QMessageBox
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 
 from ui.theme import Theme
-from ui.icons import set_btn_icon, icon as app_icon, icon_label as app_icon_label, is_available as icons_available
+from ui.icons import set_btn_icon
 from ui.widgets.advance_tax_banner import AdvanceTaxBanner
-from ui.widgets.toast_utils import show_success
+from ui.widgets.toast_utils import show_success, show_danger
 from core.session import session
 from models.person import get_person
 from models.fd_interest_record import get_total_fd_interest
@@ -26,9 +28,48 @@ from engines.tax_engine import (
     calculate_new_regime_tax,
     calculate_gross_total_income,
     project_next_year_income,
+    get_recommended_itr_form,
 )
 from engines.advance_tax_engine import calculate_advance_tax
 from config import get_assessment_year
+
+
+def _format_indian_currency(value: float) -> str:
+    """Format amount in Indian digit grouping: 2,56,642."""
+    if value is None or value == 0:
+        return "₹ 0.00"
+
+    is_negative = value < 0
+    value = abs(value)
+
+    # Split into integer and decimal parts
+    integer_part = int(value)
+    decimal_part = value - integer_part
+
+    # Format integer with Indian grouping
+    s = str(integer_part)
+    if len(s) <= 3:
+        formatted_int = s
+    else:
+        # Last 3 digits, then groups of 2 from the right
+        last_three = s[-3:]
+        remaining = s[:-3]
+        groups = []
+        while len(remaining) > 2:
+            groups.insert(0, remaining[-2:])
+            remaining = remaining[:-2]
+        if remaining:
+            groups.insert(0, remaining)
+        formatted_int = ",".join(groups) + "," + last_three
+
+    # Add decimal part
+    decimal_str = f"{decimal_part:.2f}"[1:]  # Get .xx part
+    result = f"{formatted_int}{decimal_str}"
+
+    if is_negative:
+        result = "-" + result
+
+    return f"₹ {result}"
 
 
 class TaxScreen(QWidget):
@@ -36,9 +77,6 @@ class TaxScreen(QWidget):
         super().__init__(parent)
         self.parent_window = parent
         self.data_source = "ais"
-        # Every QGroupBox built via _section_group() bakes Theme.* colors
-        # into its stylesheet at construction — tracked here so
-        # refresh_theme() can re-apply them after a live theme switch.
         self._section_groups: list[QGroupBox] = []
         self._build_ui()
 
@@ -93,6 +131,7 @@ class TaxScreen(QWidget):
         header_layout.addWidget(self.btn_calc)
         layout.addWidget(header_card)
 
+        # Context and results splitter
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.setChildrenCollapsible(False)
         splitter.setHandleWidth(8)
@@ -111,18 +150,16 @@ class TaxScreen(QWidget):
 
         left_layout.addWidget(self._build_basic_info_section())
         left_layout.addWidget(self._build_salary_section())
-        left_layout.addWidget(self._build_house_property_section())
         left_layout.addWidget(self._build_capital_gains_section())
         left_layout.addWidget(self._build_business_section())
         left_layout.addWidget(self._build_other_sources_section())
-        left_layout.addWidget(self._build_deductions_section())
-        left_layout.addWidget(self._build_tds_section())
+        left_layout.addWidget(self._build_taxes_paid_section())
         left_layout.addStretch()
 
         left_scroll.setWidget(left_content)
         splitter.addWidget(left_scroll)
 
-        # Right rail: context + results
+        # Right rail: context + results + projection
         right_scroll = QScrollArea()
         right_scroll.setWidgetResizable(True)
         right_scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -135,7 +172,7 @@ class TaxScreen(QWidget):
         right_layout.setContentsMargins(8, 0, 0, 0)
 
         right_layout.addWidget(self._build_context_panel())
-        right_layout.addWidget(self._build_results_section())
+        right_layout.addWidget(self._build_waterfall_section())
         right_layout.addWidget(self._build_projection_section())
         right_layout.addStretch()
 
@@ -197,8 +234,10 @@ class TaxScreen(QWidget):
 
     # ── Section builders ──────────────────────────────────────────────────────
 
-    def _section_group(self, title: str) -> QGroupBox:
+    def _section_group(self, title: str, collapsible: bool = True) -> QGroupBox:
         group = QGroupBox(title)
+        group.setCheckable(collapsible)
+        group.setChecked(False)  # Start collapsed
         group.setStyleSheet(
             Theme.group_box_style() +
             "\nQLabel { border: none; background: transparent; }\n"
@@ -206,17 +245,8 @@ class TaxScreen(QWidget):
         self._section_groups.append(group)
         return group
 
-    def _recommendation_style(self, bg: str, fg: str, emphasize: bool = False) -> str:
-        border = f"2px solid {fg}" if emphasize else f"1px solid {Theme.BORDER}"
-        weight = 700 if emphasize else 600
-        return (
-            f"background-color: {bg}; color: {fg}; "
-            f"border: {border}; border-radius: 10px; "
-            f"padding: 20px; font-weight: {weight};"
-        )
-
     def _build_basic_info_section(self) -> QGroupBox:
-        group = self._section_group("Basic Information")
+        group = self._section_group("Basic Information", collapsible=False)
         layout = QFormLayout(group); layout.setSpacing(12)
         self.pan_label       = QLabel("—"); layout.addRow("PAN:", self.pan_label)
         self.taxpayer_label  = QLabel("—"); layout.addRow("Name of Taxpayer:", self.taxpayer_label)
@@ -229,48 +259,34 @@ class TaxScreen(QWidget):
         return group
 
     def _build_salary_section(self) -> QGroupBox:
-        group = self._section_group("Income — Salaries")
+        group = self._section_group("Salary & Pension Income")
         layout = QFormLayout(group); layout.setSpacing(12)
         self.gross_salary    = self._spin(); layout.addRow("Gross Salary:", self.gross_salary)
         self.exemption_10    = self._spin(); layout.addRow("Exemption claimed u/s 10:", self.exemption_10)
-        self.deduction_16ia  = self._spin(readonly=True)
-        self.deduction_16ia.setValue(50000)
-        layout.addRow("Deduction u/s 16(ia) (Standard ₹50K):", self.deduction_16ia)
         self.deduction_16ii  = self._spin(); layout.addRow("Deduction u/s 16(ii) (Entertainment):", self.deduction_16ii)
         self.deduction_16iii = self._spin(); layout.addRow("Deduction u/s 16(iii) (Professional Tax):", self.deduction_16iii)
-        return group
-
-    def _build_house_property_section(self) -> QGroupBox:
-        group = self._section_group("Income — House Property")
-        layout = QFormLayout(group); layout.setSpacing(12)
-        self.self_occupied_interest = self._spin()
-        layout.addRow("Self-occupied — Interest on Borrowed Capital:", self.self_occupied_interest)
-        self.annual_rent     = self._spin(); layout.addRow("Let-out — Annual Rent Received:", self.annual_rent)
-        self.municipal_tax   = self._spin(); layout.addRow("Less: Municipal Taxes Paid:", self.municipal_tax)
-        self.unrealized_rent = self._spin(); layout.addRow("Less: Unrealized Rent:", self.unrealized_rent)
-        self.letout_interest = self._spin(); layout.addRow("Less: Interest on Borrowed Capital u/s 24(b):", self.letout_interest)
+        self.pension_income  = self._spin(); layout.addRow("Pension Income:", self.pension_income)
         return group
 
     def _build_capital_gains_section(self) -> QGroupBox:
-        group = self._section_group("Income — Capital Gains")
+        group = self._section_group("Capital Gains Income")
         layout = QFormLayout(group); layout.setSpacing(12)
         self.stcg_normal = self._spin(); layout.addRow("Short Term Capital Gains (Normal rates):", self.stcg_normal)
-        self.stcg_111a   = self._spin(); layout.addRow("STCG u/s 111A (@ 20%):", self.stcg_111a)
+        self.stcg_111a   = self._spin(); layout.addRow("STCG u/s 111A (@ 15%):", self.stcg_111a)
         self.ltcg_20     = self._spin(); layout.addRow("Long Term Capital Gains (@ 20%):", self.ltcg_20)
         self.ltcg_112a   = self._spin(); layout.addRow("LTCG u/s 112A (@ 12.5%):", self.ltcg_112a)
-        self.ltcg_other  = self._spin(); layout.addRow("LTCG Other (@ 12.5%):", self.ltcg_other)
         return group
 
     def _build_business_section(self) -> QGroupBox:
-        group = self._section_group("Income — Business / Profession")
+        group = self._section_group("Business / Professional Income")
         layout = QFormLayout(group); layout.setSpacing(12)
-        self.presumptive_income      = self._spin(); layout.addRow("Presumptive Income u/s 44AD/44ADA:", self.presumptive_income)
+        self.presumptive_income      = self._spin(); layout.addRow("Presumptive Income u/s 44ADA:", self.presumptive_income)
         self.manufacturing_income    = self._spin(); layout.addRow("Manufacturing Business Income:", self.manufacturing_income)
         self.other_business_income   = self._spin(); layout.addRow("Other Business/Profession Income:", self.other_business_income)
         return group
 
     def _build_other_sources_section(self) -> QGroupBox:
-        group = self._section_group("Income — Other Sources")
+        group = self._section_group("Other Income Sources")
         layout = QFormLayout(group); layout.setSpacing(12)
         self.savings_interest_input  = self._spin(readonly=True)
         layout.addRow("Interest from Savings Bank Account:", self.savings_interest_input)
@@ -289,38 +305,8 @@ class TaxScreen(QWidget):
         layout.addRow("Gross Total Income:", self.gross_income_label)
         return group
 
-    def _build_deductions_section(self) -> QGroupBox:
-        group = self._section_group("Deductions — Old Regime Only")
-        layout = QFormLayout(group); layout.setSpacing(12)
-        note_top = QLabel(
-            "The New Regime does not allow these deductions — only the "
-            "standard deduction (₹75,000) and 80CCD(2) employer NPS apply."
-        )
-        note_top.setWordWrap(True)
-        note_top.setProperty("textrole", "emphasis-sm")
-        note_top.setProperty("color", "warning")
-        layout.addRow("", note_top)
-        self.deduction_80c    = self._spin(); layout.addRow("80C — LIC, PF, PPF, NSC (max ₹1.5L):", self.deduction_80c)
-        self.deduction_80ccc  = self._spin(); layout.addRow("80CCC — Pension Fund:", self.deduction_80ccc)
-        self.deduction_80ccd1 = self._spin(); layout.addRow("80CCD(1) — NPS Employee:", self.deduction_80ccd1)
-        self.deduction_80ccd1b= self._spin(); layout.addRow("80CCD(1B) — Additional NPS (max ₹50K):", self.deduction_80ccd1b)
-        self.deduction_80ccd2 = self._spin(); layout.addRow("80CCD(2) — NPS Employer (also in New Regime):", self.deduction_80ccd2)
-        self.deduction_80d    = self._spin(); layout.addRow("80D — MediClaim Premium (max ₹25K):", self.deduction_80d)
-        self.deduction_80g    = self._spin(); layout.addRow("80G — Donations:", self.deduction_80g)
-        self.deduction_80e    = self._spin(); layout.addRow("80E — Interest on Education Loan:", self.deduction_80e)
-        self.deduction_80ee   = self._spin(); layout.addRow("80EE — Interest on Home Loan:", self.deduction_80ee)
-        self.deduction_80tta  = self._spin(); layout.addRow("80TTA — Interest on Savings (max ₹10K):", self.deduction_80tta)
-        self.deduction_80ttb  = self._spin(); layout.addRow("80TTB — Senior Citizens Deposits:", self.deduction_80ttb)
-        self.home_loan_interest = self._spin(); layout.addRow("Home Loan Interest u/s 24(b):", self.home_loan_interest)
-        self.hra_exemption    = self._spin(); layout.addRow("HRA Exemption:", self.hra_exemption)
-        note = QLabel("Old-regime standard deduction (₹50,000) is applied automatically in the salary section.")
-        note.setWordWrap(True)
-        note.setProperty("textrole", "muted-md")
-        layout.addRow("", note)
-        return group
-
-    def _build_tds_section(self) -> QGroupBox:
-        group = self._section_group("Taxes Already Paid (TDS / TCS / Advance Tax)")
+    def _build_taxes_paid_section(self) -> QGroupBox:
+        group = self._section_group("Taxes Already Paid")
         layout = QFormLayout(group); layout.setSpacing(12)
         note = QLabel("Used to work out what you still owe, or your refund, below.")
         note.setWordWrap(True)
@@ -333,49 +319,91 @@ class TaxScreen(QWidget):
         self.self_assessment_tax = self._spin(); layout.addRow("Self-Assessment Tax Paid:", self.self_assessment_tax)
         return group
 
-    def _build_results_section(self) -> QGroupBox:
-        group = self._section_group("Tax Calculation Results")
+    def _build_waterfall_section(self) -> QGroupBox:
+        """Build the auditable tax calculation waterfall."""
+        group = self._section_group("Tax Calculation Waterfall", collapsible=False)
         layout = QVBoxLayout(group)
-        layout.setSpacing(10)
+        layout.setSpacing(6)
 
-        # ── New Regime — PRIMARY card (default regime since FY 2023-24) ──────
-        self._new_regime_card = new_card = self._regime_card(
-            "New Regime — Default", Theme.PRIMARY, Theme.PRIMARY_LIGHT, hero=True, accent_role="PRIMARY")
-        new_form = QFormLayout(); new_form.setSpacing(6)
-        self.new_taxable = self._result_lbl(); self.new_tax = self._result_lbl()
-        self.new_rebate  = self._result_lbl(); self.new_cess = self._result_lbl()
-        self.new_total   = self._result_lbl(bold=True)
-        new_form.addRow("Taxable Income:", self.new_taxable)
-        new_form.addRow("Tax as per Slabs:", self.new_tax)
-        new_form.addRow("Rebate u/s 87A:", self.new_rebate)
-        new_form.addRow("Health & Education Cess (4%):", self.new_cess)
-        new_form.addRow("Total Tax Liability:", self.new_total)
-        new_card.layout().addLayout(new_form)
-        layout.addWidget(new_card)
+        # Title
+        title = QLabel("New Regime Tax Breakdown")
+        title.setProperty("textrole", "emphasis-md")
+        layout.addWidget(title)
 
-        # ── Net Payable / Refund — the number that actually matters ──────────
-        self._net_card = net_card = QFrame()
-        net_card.setObjectName("NetPayableCard")
-        net_layout = QVBoxLayout(net_card); net_layout.setSpacing(6)
-        net_title = QLabel("Net Result — New Regime")
-        net_title.setProperty("textrole", "section-label")
-        net_layout.addWidget(net_title)
-        self.net_payable_label = QLabel("Calculate to see payable / refund")
-        self.net_payable_label.setFont(QFont("Segoe UI", 17, QFont.Weight.Bold))
-        self.net_payable_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.net_payable_label.setWordWrap(True)
-        self.net_payable_label.setProperty("textrole", "metric")
-        net_layout.addWidget(self.net_payable_label)
-        self.taxes_paid_label = QLabel("Taxes paid so far: ₹ 0.00")
-        self.taxes_paid_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.taxes_paid_label.setProperty("textrole", "muted-sm")
-        net_layout.addWidget(self.taxes_paid_label)
-        layout.addWidget(net_card)
+        # Waterfall form
+        form = QFormLayout(); form.setSpacing(4)
 
-        helper = QLabel("New Regime is the default since FY 2023-24. Use App Actual Data when AIS/TIS is outdated.")
-        helper.setWordWrap(True)
-        helper.setProperty("textrole", "muted-sm")
-        layout.addWidget(helper)
+        # Gross income
+        self.waterfall_gross = self._result_lbl(bold=True)
+        form.addRow("Gross Income", self.waterfall_gross)
+
+        # Standard deduction
+        self.waterfall_std_ded = self._result_lbl()
+        form.addRow("Less: Standard Deduction", self.waterfall_std_ded)
+
+        # Taxable income
+        self.waterfall_taxable = self._result_lbl(bold=True)
+        form.addRow("Taxable Income", self.waterfall_taxable)
+
+        # Slab tax
+        self.waterfall_slab_tax = self._result_lbl()
+        form.addRow("Slab Tax", self.waterfall_slab_tax)
+
+        # Special rate tax (if applicable)
+        self.waterfall_special_tax = self._result_lbl()
+        self.waterfall_special_label = QLabel("Special Rate Tax (s.111A/112A)")
+        form.addRow(self.waterfall_special_label, self.waterfall_special_tax)
+
+        # Total tax before rebate
+        self.waterfall_base_tax = self._result_lbl()
+        form.addRow("Total Tax", self.waterfall_base_tax)
+
+        # 87A Rebate
+        self.waterfall_rebate = self._result_lbl()
+        form.addRow("Less: Rebate u/s 87A", self.waterfall_rebate)
+
+        # Marginal relief (if applicable)
+        self.waterfall_marginal = self._result_lbl()
+        self.waterfall_marginal_label = QLabel("Marginal Relief")
+        form.addRow(self.waterfall_marginal_label, self.waterfall_marginal)
+
+        # Tax after rebate
+        self.waterfall_after_rebate = self._result_lbl()
+        form.addRow("Tax After Rebate", self.waterfall_after_rebate)
+
+        # Surcharge
+        self.waterfall_surcharge = self._result_lbl()
+        form.addRow("Plus: Surcharge", self.waterfall_surcharge)
+
+        # Cess
+        self.waterfall_cess = self._result_lbl()
+        form.addRow("Plus: Cess (4%)", self.waterfall_cess)
+
+        # Total tax liability
+        self.waterfall_total = self._result_lbl(bold=True)
+        form.addRow("Total Tax Liability", self.waterfall_total)
+
+        # Taxes paid
+        self.waterfall_taxes_paid = self._result_lbl()
+        form.addRow("Less: Taxes Paid", self.waterfall_taxes_paid)
+
+        # Net payable/refund
+        self.waterfall_net = self._result_lbl(bold=True)
+        form.addRow("Net Payable / Refund", self.waterfall_net)
+
+        layout.addLayout(form)
+
+        # ITR recommendation
+        itr_frame = QFrame()
+        itr_layout = QVBoxLayout(itr_frame); itr_layout.setSpacing(4); itr_layout.setContentsMargins(0, 8, 0, 0)
+        itr_label = QLabel("ITR Form Recommendation")
+        itr_label.setProperty("textrole", "section-label")
+        itr_layout.addWidget(itr_label)
+        self.waterfall_itr = QLabel("—")
+        self.waterfall_itr.setProperty("textrole", "emphasis-md")
+        itr_layout.addWidget(self.waterfall_itr)
+        layout.addWidget(itr_frame)
+
         return group
 
     def _build_projection_section(self) -> QGroupBox:
@@ -403,7 +431,7 @@ class TaxScreen(QWidget):
         form.addRow("Projected Tax (New Regime):", self.proj_tax)
         layout.addLayout(form)
 
-        # Slab position — the "income vs max slab" answer.
+        # Slab position
         self._proj_slab_card = QFrame()
         self._proj_slab_card.setObjectName("ProjSlabCard")
         slab_l = QVBoxLayout(self._proj_slab_card); slab_l.setSpacing(4)
@@ -447,12 +475,12 @@ class TaxScreen(QWidget):
                else "assuming salary unchanged from this year")
         self.proj_subtitle.setText(
             f"FY {proj['next_fy']}  ·  AY {proj['assessment_year']} — expected income {src}")
-        self.proj_expected.setText(f"₹ {proj['expected_income']:,.2f}")
-        self.proj_fd.setText(f"₹ {proj['fd_interest']:,.2f}")
-        self.proj_savings.setText(f"₹ {proj['savings_interest']:,.2f}")
-        self.proj_gross.setText(f"₹ {proj['gross_total_income']:,.2f}")
-        self.proj_taxable.setText(f"₹ {proj['taxable_income']:,.2f}")
-        self.proj_tax.setText(f"₹ {proj['projected_tax']:,.2f}")
+        self.proj_expected.setText(_format_indian_currency(proj['expected_income']))
+        self.proj_fd.setText(_format_indian_currency(proj['fd_interest']))
+        self.proj_savings.setText(_format_indian_currency(proj['savings_interest']))
+        self.proj_gross.setText(_format_indian_currency(proj['gross_total_income']))
+        self.proj_taxable.setText(_format_indian_currency(proj['taxable_income']))
+        self.proj_tax.setText(_format_indian_currency(proj['projected_tax']))
 
         slab = proj["slab"]
         rate = slab["current_rate"]
@@ -464,7 +492,7 @@ class TaxScreen(QWidget):
         else:
             to_next = slab["amount_to_next_slab"] or 0
             next_rate = slab["next_rate"]
-            self.proj_slab_label.setText(f"{rate}% slab  ·  ₹ {to_next:,.0f} to the {next_rate}% slab")
+            self.proj_slab_label.setText(f"{rate}% slab  ·  {_format_indian_currency(to_next)} to the {next_rate}% slab")
             # Less headroom before the next bracket → warmer colour.
             if to_next <= 50000:
                 color_role = "danger"
@@ -476,47 +504,9 @@ class TaxScreen(QWidget):
             self.proj_slab_label.setProperty("color", color_role)
             ceiling = slab["slab_ceiling"] or 0
             self.proj_slab_sub.setText(
-                f"Cross ₹ {ceiling:,.0f} taxable income and your marginal rate rises to {next_rate}%.")
+                f"Cross {_format_indian_currency(ceiling)} taxable income and your marginal rate rises to {next_rate}%.")
 
     # ── Helpers ───────────────────────────────────────────────────────────────
-
-    def _regime_card(self, title: str, accent: str, bg: str, hero: bool = False,
-                     accent_role: str = "PRIMARY") -> QFrame:
-        card = QFrame()
-        card.setObjectName("TaxRegimeCard")
-        card.setProperty("variant", "primary")  # Will be updated dynamically if needed
-        # Dynamic styling for accent color and background — kept inline because variant is dynamic
-        card.setStyleSheet(
-            Theme.card_style(
-                bg=bg,
-                border_color=accent,
-                radius=12 if hero else 10,
-                padding=0,
-                left_accent=accent,
-                selector="QFrame#TaxRegimeCard",
-            )
-        )
-        if hero:
-            card.setGraphicsEffect(Theme.shadow_card())
-        vl = QVBoxLayout(card)
-        if hero:
-            vl.setContentsMargins(18, 14, 18, 14)
-        else:
-            vl.setContentsMargins(16, 12, 16, 12)
-        vl.setSpacing(8)
-        t = QLabel(title)
-        t.setFont(QFont("Segoe UI", 15 if hero else 13, QFont.Weight.Bold))
-        t.setStyleSheet(Theme.text_style(color=accent, size=15 if hero else 13, weight=700))
-        vl.addWidget(t)
-        div = QFrame(); div.setFixedHeight(1)
-        div.setStyleSheet(f"background: {accent}44; border: none;")
-        vl.addWidget(div)
-        # Stashed for refresh_theme() — accent is baked into these two
-        # widgets at construction and won't update via the global QSS alone.
-        card._accent_title = t
-        card._accent_divider = div
-        card._accent_role = accent_role
-        return card
 
     def _spin(self, readonly=False) -> QDoubleSpinBox:
         s = QDoubleSpinBox()
@@ -531,17 +521,14 @@ class TaxScreen(QWidget):
         l = QLabel("—")
         if bold:
             l.setProperty("textrole", "emphasis-lg")
-            l.setStyleSheet(" border: none; background: transparent; padding: 0; margin: 0;")
         else:
             l.setProperty("textrole", "body-md")
-            l.setStyleSheet(" border: none; background: transparent; padding: 0; margin: 0;")
         return l
 
     def _connect_signals(self):
         for spin in [self.gross_salary, self.exemption_10, self.deduction_16ii, self.deduction_16iii,
-                     self.self_occupied_interest, self.annual_rent, self.municipal_tax, self.unrealized_rent,
-                     self.letout_interest, self.stcg_normal, self.stcg_111a, self.ltcg_20, self.ltcg_112a,
-                     self.ltcg_other, self.presumptive_income, self.manufacturing_income, self.other_business_income,
+                     self.pension_income, self.stcg_normal, self.stcg_111a, self.ltcg_20, self.ltcg_112a,
+                     self.presumptive_income, self.manufacturing_income, self.other_business_income,
                      self.savings_interest_input, self.fd_interest_input, self.other_interest,
                      self.dividend_income, self.rental_income, self.lottery_winnings,
                      self.online_game_winnings, self.other_income_input]:
@@ -555,50 +542,37 @@ class TaxScreen(QWidget):
     def _update_gross(self):
         """Display gross income calculated by the same function the engine uses."""
         salary = max(0, self.gross_salary.value() - self.exemption_10.value() -
-                     self.deduction_16ia.value() - self.deduction_16ii.value() - self.deduction_16iii.value())
-        nav = self.annual_rent.value() - self.municipal_tax.value() - self.unrealized_rent.value()
-        house = max(-200000, nav - nav*0.30 - self.letout_interest.value() - self.self_occupied_interest.value())
+                     self.deduction_16ii.value() - self.deduction_16iii.value())
 
         # Use the same function as the engine to ensure displayed gross matches calculated gross
         gross, _ = calculate_gross_total_income(
             salary_income=salary,
-            pension_income=0,
-            business_income=self.manufacturing_income.value() + self.other_business_income.value(),
-            house_property_income=house,
+            pension_income=self.pension_income.value(),
+            business_income=self.manufacturing_income.value() + self.other_business_income.value() +
+                           self.presumptive_income.value(),
+            house_property_income=0,
             capital_gains_normal=self.stcg_normal.value(),
             capital_gains_stcg_111a=self.stcg_111a.value(),
             capital_gains_ltcg_112=self.ltcg_20.value(),
-            capital_gains_ltcg_112a=self.ltcg_112a.value() + self.ltcg_other.value(),
+            capital_gains_ltcg_112a=self.ltcg_112a.value(),
             interest_income=self.savings_interest_input.value() + self.fd_interest_input.value() + self.other_interest.value(),
             dividend_income=self.dividend_income.value(),
             other_income=(self.rental_income.value() + self.lottery_winnings.value() +
                          self.online_game_winnings.value() + self.other_income_input.value()),
         )
-        self.gross_income_label.setText(f"₹ {gross:,.2f}")
+        self.gross_income_label.setText(_format_indian_currency(gross))
+
+        # Expand section if it has a value
+        # Find the "Other Income Sources" group and expand it
+        for group in self._section_groups:
+            if "Other Income Sources" in group.title():
+                group.setChecked(gross > 0)
 
     def refresh_theme(self):
-        """Called after a live theme switch. Most styles are now in global QSS.
-        Only the advance_tax_banner and dynamic regime card styling need updating."""
+        """Called after a live theme switch."""
         if hasattr(self, "advance_tax_banner"):
             self.advance_tax_banner.refresh_theme()
-        # Refresh regime card styling (accent color is dynamic per card)
-        card = getattr(self, "_new_regime_card", None)
-        if card is not None:
-            role = getattr(card, "_accent_role", "PRIMARY")
-            accent = getattr(Theme, role)
-            bg = getattr(Theme, "PRIMARY_LIGHT")
-            card.setStyleSheet(
-                Theme.card_style(bg=bg, border_color=accent, radius=12, padding=0,
-                                  left_accent=accent, selector="QFrame#TaxRegimeCard"))
-            card.setGraphicsEffect(Theme.shadow_card())
-            title = getattr(card, "_accent_title", None)
-            if title:
-                title.setStyleSheet(Theme.text_style(color=accent, size=15, weight=700))
-            divider = getattr(card, "_accent_divider", None)
-            if divider:
-                divider.setStyleSheet(f"background: {accent}44; border: none;")
         self.refresh()
-
 
     def refresh(self):
         pid = session.selected_person_id
@@ -650,19 +624,12 @@ class TaxScreen(QWidget):
         if profile:
             self.gross_salary.setValue(profile.get("salary_income",0))
             self.other_income_input.setValue(profile.get("other_income",0))
-            self.deduction_80c.setValue(profile.get("deductions_80c",0))
-            self.deduction_80d.setValue(profile.get("deductions_80d",0))
-            self.home_loan_interest.setValue(profile.get("home_loan_interest",0))
-            self.hra_exemption.setValue(profile.get("hra_exemption",0))
             self.tds_salary.setValue(profile.get("tds_deducted", 0))
             self.tcs_collected.setValue(profile.get("tcs_collected", 0))
             self.advance_tax.setValue(profile.get("advance_tax_paid", 0))
             self.self_assessment_tax.setValue(profile.get("self_assessment_tax", 0))
 
-            # Recompute fresh from the stored income/deduction figures rather
-            # than trusting a stale derived cess column — guarantees the
-            # displayed numbers always match what calculate_new_regime_tax()
-            # would produce today (e.g. after a rebate/slab fix).
+            # Recompute fresh from the stored income figures
             gross_total_income = profile.get("gross_total_income", 0)
             salary_income = profile.get("salary_income", 0)
             new = calculate_new_regime_tax(gross_total_income, salary_income=salary_income, financial_year=fy)
@@ -670,13 +637,12 @@ class TaxScreen(QWidget):
                 profile.get("tds_deducted", 0) + profile.get("tcs_collected", 0)
                 + profile.get("advance_tax_paid", 0) + profile.get("self_assessment_tax", 0)
             )
-            self._display_tax_results(new, taxes_paid)
+            self._display_waterfall(new, gross_total_income, salary_income, taxes_paid, pid, fy)
 
     def _clear_income_fields(self):
         for s in [self.gross_salary, self.exemption_10, self.deduction_16ii, self.deduction_16iii,
-                  self.self_occupied_interest, self.annual_rent, self.municipal_tax, self.unrealized_rent,
-                  self.letout_interest, self.stcg_normal, self.stcg_111a, self.ltcg_20, self.ltcg_112a,
-                  self.ltcg_other, self.presumptive_income, self.manufacturing_income, self.other_business_income,
+                  self.pension_income, self.stcg_normal, self.stcg_111a, self.ltcg_20, self.ltcg_112a,
+                  self.presumptive_income, self.manufacturing_income, self.other_business_income,
                   self.other_interest, self.dividend_income, self.rental_income, self.lottery_winnings,
                   self.online_game_winnings, self.other_income_input]:
             s.setValue(0)
@@ -684,37 +650,31 @@ class TaxScreen(QWidget):
     def _clear_inputs(self):
         self._clear_income_fields()
         for s in [self.fd_interest_input, self.savings_interest_input,
-                  self.deduction_80c, self.deduction_80ccc, self.deduction_80ccd1,
-                  self.deduction_80ccd1b, self.deduction_80ccd2, self.deduction_80d,
-                  self.deduction_80g, self.deduction_80e, self.deduction_80ee,
-                  self.deduction_80tta, self.deduction_80ttb, self.home_loan_interest, self.hra_exemption,
                   self.tds_salary, self.tds_other, self.tcs_collected, self.advance_tax, self.self_assessment_tax]:
             s.setValue(0)
-        for l in [self.new_taxable, self.new_tax, self.new_rebate, self.new_cess, self.new_total]:
+        for l in [self.waterfall_gross, self.waterfall_std_ded, self.waterfall_taxable,
+                  self.waterfall_slab_tax, self.waterfall_special_tax, self.waterfall_base_tax,
+                  self.waterfall_rebate, self.waterfall_marginal, self.waterfall_after_rebate,
+                  self.waterfall_surcharge, self.waterfall_cess, self.waterfall_total,
+                  self.waterfall_taxes_paid, self.waterfall_net]:
             l.setText("—")
-        self.net_payable_label.setText("Calculate to see payable / refund")
-        self.net_payable_label.setProperty("textrole", "metric")
-        self.taxes_paid_label.setText("Taxes paid so far: ₹ 0.00")
+        self.waterfall_itr.setText("—")
 
     def _on_calculate(self):
         pid = session.selected_person_id
         if not pid:
-            QMessageBox.warning(self, "No Person", "Please select a person from the top bar.")
+            show_danger("Please select a person from the top bar.")
             return
 
         # Salary section: gross minus exemptions and deductions
         salary = max(0, self.gross_salary.value() - self.exemption_10.value() -
-                     self.deduction_16ia.value() - self.deduction_16ii.value() - self.deduction_16iii.value())
-
-        # House property: net of expenses and interest
-        nav = self.annual_rent.value() - self.municipal_tax.value() - self.unrealized_rent.value()
-        house = max(-200000, nav - nav*0.30 - self.letout_interest.value() - self.self_occupied_interest.value())
+                     self.deduction_16ii.value() - self.deduction_16iii.value())
 
         # Capital gains: separate by special rate
         capital_gains_normal = self.stcg_normal.value()
-        capital_gains_stcg_111a = self.stcg_111a.value()  # s.111A @ 15%
-        capital_gains_ltcg_112 = self.ltcg_20.value()     # s.112 @ 20%
-        capital_gains_ltcg_112a = self.ltcg_112a.value() + self.ltcg_other.value()  # s.112A @ 12.5%
+        capital_gains_stcg_111a = self.stcg_111a.value()
+        capital_gains_ltcg_112 = self.ltcg_20.value()
+        capital_gains_ltcg_112a = self.ltcg_112a.value()
 
         # Business / Profession: presume + regular
         business_income = self.manufacturing_income.value() + self.other_business_income.value()
@@ -725,14 +685,13 @@ class TaxScreen(QWidget):
                         self.rental_income.value() + self.lottery_winnings.value() +
                         self.online_game_winnings.value() + self.other_income_input.value())
 
-        total_80c = min(150000, self.deduction_80c.value() + self.deduction_80ccc.value() + self.deduction_80ccd1.value())
-
         result = calculate_and_save_tax(
             person_id=pid, financial_year=session.selected_fy,
             salary_income=salary,
+            pension_income=self.pension_income.value(),
             business_income=business_income,
             presumptive_income=presumptive_income,
-            house_property_income=house,
+            house_property_income=0,
             capital_gains_normal=capital_gains_normal,
             capital_gains_stcg_111a=capital_gains_stcg_111a,
             capital_gains_ltcg_112=capital_gains_ltcg_112,
@@ -742,72 +701,92 @@ class TaxScreen(QWidget):
             other_interest=self.other_interest.value(),
             dividend_income=self.dividend_income.value(),
             other_income=other_income,
-            deductions_80c=total_80c,
-            deductions_80d=self.deduction_80d.value(),
-            home_loan_interest=self.home_loan_interest.value(),
-            hra_exemption=self.hra_exemption.value(),
             tds_deducted=self.tds_salary.value() + self.tds_other.value(),
             tcs_collected=self.tcs_collected.value(),
             advance_tax_paid=self.advance_tax.value(),
             self_assessment_tax=self.self_assessment_tax.value(),
         )
-        self._display_tax_results(result["new_regime"], result["taxes_paid"])
+        self._display_waterfall(result["new_regime"], result["gross_total_income"],
+                               salary, result["taxes_paid"], pid, session.selected_fy)
         if self.parent_window:
             self.parent_window.refresh_overview()
         show_success(f"Tax calculated for FY {session.selected_fy}")
 
-    def _display_tax_results(self, new: dict, taxes_paid: float):
-        """Populate result widgets from the New Regime calculation dict."""
-        self.new_taxable.setText(f"₹ {new['taxable_income']:,.2f}")
-        self.new_tax.setText(f"₹ {new['base_tax']:,.2f}")
-        self.new_rebate.setText(f"₹ {new.get('rebate_87a', 0):,.2f}")
-        self.new_cess.setText(f"₹ {new['cess']:,.2f}")
-        self.new_total.setText(f"₹ {new['total_tax']:,.2f}")
+    def _display_waterfall(self, new: dict, gross_total_income: float, salary_income: float,
+                          taxes_paid: float, pid: int, fy: str):
+        """Populate waterfall widgets from the New Regime calculation dict."""
+        # Display waterfall
+        self.waterfall_gross.setText(_format_indian_currency(gross_total_income))
+        self.waterfall_std_ded.setText(_format_indian_currency(new.get("standard_deduction", 0)))
+        self.waterfall_taxable.setText(_format_indian_currency(new['taxable_income']))
+        self.waterfall_slab_tax.setText(_format_indian_currency(new['slab_tax']))
 
-        self.taxes_paid_label.setText(f"Taxes paid so far: ₹ {taxes_paid:,.2f}")
-        net_new = new["total_tax"] - taxes_paid
-        self.net_payable_label.setProperty("textrole", "metric")
-        if net_new > 0.005:
-            self.net_payable_label.setText(f"Amount Payable: ₹ {net_new:,.2f}")
-            self.net_payable_label.setProperty("color", "danger")
-        elif net_new < -0.005:
-            self.net_payable_label.setText(f"Refund Due: ₹ {abs(net_new):,.2f}")
-            self.net_payable_label.setProperty("color", "success")
+        # Show special rate tax only if present
+        if new.get('special_rate_income', 0) > 0:
+            self.waterfall_special_tax.setText(_format_indian_currency(new['special_rate_tax']))
+            self.waterfall_special_label.show()
+            self.waterfall_special_tax.show()
         else:
-            self.net_payable_label.setText("Fully settled — nothing payable, no refund due")
-            self.net_payable_label.setProperty("color", None)
-        self.net_payable_label.style().unpolish(self.net_payable_label)
-        self.net_payable_label.style().polish(self.net_payable_label)
+            self.waterfall_special_label.hide()
+            self.waterfall_special_tax.hide()
+
+        self.waterfall_base_tax.setText(_format_indian_currency(new['slab_tax'] + new.get('special_rate_tax', 0)))
+        self.waterfall_rebate.setText(_format_indian_currency(new.get('rebate_87a', 0)))
+
+        # Marginal relief is computed within the engine but not returned separately.
+        # We can infer it, but for now just hide it if zero
+        self.waterfall_marginal_label.hide()
+        self.waterfall_marginal.hide()
+
+        self.waterfall_after_rebate.setText(_format_indian_currency(
+            new['slab_tax'] + new.get('special_rate_tax', 0) - new.get('rebate_87a', 0)))
+        self.waterfall_surcharge.setText(_format_indian_currency(new.get('surcharge', 0)))
+        self.waterfall_cess.setText(_format_indian_currency(new.get('cess', 0)))
+        self.waterfall_total.setText(_format_indian_currency(new['total_tax']))
+        self.waterfall_taxes_paid.setText(_format_indian_currency(taxes_paid))
+
+        net_new = new["total_tax"] - taxes_paid
+        self.waterfall_net.setText(_format_indian_currency(net_new))
+
+        # Get ITR recommendation
+        itr_form, itr_reason = get_recommended_itr_form(
+            salary_income=salary_income,
+            business_income=self.manufacturing_income.value() + self.other_business_income.value(),
+            presumptive_income=self.presumptive_income.value(),
+            interest_income=self.savings_interest_input.value() + self.fd_interest_input.value() + self.other_interest.value(),
+            dividend_income=self.dividend_income.value(),
+            other_income=self.rental_income.value() + self.lottery_winnings.value() +
+                        self.online_game_winnings.value() + self.other_income_input.value(),
+        )
+        self.waterfall_itr.setText(f"{itr_form} — {itr_reason}")
 
     def _update_advance_tax_banner(self):
         """Calculate and display advance tax reminder."""
         pid = session.selected_person_id
         fy = session.selected_fy
-        
+
         if not pid:
             self.advance_tax_banner.clear()
             return
-        
+
         profile = get_tax_profile(pid, fy)
         if not profile:
             self.advance_tax_banner.clear()
             return
-        
-        # Use the better regime's tax
-        tax_old = profile.get("total_tax_old", 0)
+
+        # Use the new regime's tax
         tax_new = profile.get("total_tax_new", 0)
-        annual_tax = min(tax_old, tax_new) if tax_old > 0 and tax_new > 0 else max(tax_old, tax_new)
-        
+
         gross_income = profile.get("gross_total_income", 0)
         tds = profile.get("tds_deducted", 0)
         advance_paid = profile.get("advance_tax_paid", 0)
-        
+
         result = calculate_advance_tax(
             financial_year=fy,
             gross_income=gross_income,
-            annual_tax=annual_tax,
+            annual_tax=tax_new,
             tds_deducted=tds,
             advance_tax_paid=advance_paid,
         )
-        
+
         self.advance_tax_banner.update_reminder(result)
