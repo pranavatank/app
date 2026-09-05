@@ -265,6 +265,8 @@ class IncomeManagementScreen(QWidget):
         self.table_tds = QTableWidget()
         self.table_tds.setColumnCount(5)
         self.table_tds.setHorizontalHeaderLabels(["Bank", "Total Interest", "Status", "Crossing Quarter", "Form"])
+        self.table_tds.setAccessibleName("FD TDS threshold status table")
+        self.table_tds.setAccessibleDescription("Shows per-bank TDS threshold status and whether the threshold is exceeded.")
         self.table_tds.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table_tds.setMaximumHeight(250)
         self.table_tds.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -290,6 +292,8 @@ class IncomeManagementScreen(QWidget):
 
         btn_auto_match = Theme.btn("Auto-Match", "success", height=32, min_width=100)
         set_btn_icon(btn_auto_match, "auto_link")
+        btn_auto_match.setAccessibleName("Auto-match income expectations")
+        btn_auto_match.setAccessibleDescription("Automatically match income expectations with transactions in the ledger.")
         btn_auto_match.clicked.connect(self._on_auto_match_ledger)
         title_layout.addWidget(btn_auto_match)
 
@@ -301,6 +305,8 @@ class IncomeManagementScreen(QWidget):
         self.table_ledger.setHorizontalHeaderLabels([
             "Month", "Type", "Source", "Expected", "Actual", "Variance", "Status", "Matched Txn"
         ])
+        self.table_ledger.setAccessibleName("Income expectation ledger table")
+        self.table_ledger.setAccessibleDescription("Shows income expectations with expected amounts, actual receipts, variance, and matching transaction status.")
         self.table_ledger.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table_ledger.setMinimumHeight(300)
         self.table_ledger.verticalHeader().setVisible(False)

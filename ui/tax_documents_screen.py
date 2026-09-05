@@ -136,6 +136,8 @@ class _FileDropZone(QFrame):
         # Button
         self.btn_upload = Theme.btn("  Select File", "secondary", height=32, min_width=120)
         set_btn_icon(self.btn_upload, "upload")
+        self.btn_upload.setAccessibleName(f"Select {title} file")
+        self.btn_upload.setAccessibleDescription(f"Open a file picker to select a {self.doc_type} PDF file to upload.")
         self.btn_upload.clicked.connect(self._pick_file)
         layout.addWidget(self.btn_upload)
 
@@ -270,6 +272,8 @@ class TaxDocumentsScreen(QWidget):
         self.position_table.setHorizontalHeaderLabels([
             "Category", "TIS", "AIS", "26AS", "In App", "Status"
         ])
+        self.position_table.setAccessibleName("Reconciled financial position table")
+        self.position_table.setAccessibleDescription("Shows the comparison of financial data across TIS, AIS, Form 26AS, and in-app records.")
         self.position_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         self.position_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.position_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
@@ -300,6 +304,8 @@ class TaxDocumentsScreen(QWidget):
         self.non_income_table = QTableWidget()
         self.non_income_table.setColumnCount(2)
         self.non_income_table.setHorizontalHeaderLabels(["Category", "Amount"])
+        self.non_income_table.setAccessibleName("Non-income items disclosure table")
+        self.non_income_table.setAccessibleDescription("Lists transactions that are disclosed but not counted as taxable income.")
         self.non_income_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.non_income_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.non_income_table.setMaximumHeight(200)
@@ -331,6 +337,8 @@ class TaxDocumentsScreen(QWidget):
         self.fd_table.setHorizontalHeaderLabels([
             "Account Number", "AIS Amount", "FD Record", "Status"
         ])
+        self.fd_table.setAccessibleName("Fixed deposit reconciliation table")
+        self.fd_table.setAccessibleDescription("Shows matching between AIS account numbers and Fixed Deposit records.")
         self.fd_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.fd_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.fd_table.setMaximumHeight(300)
