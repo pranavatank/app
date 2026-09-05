@@ -314,14 +314,6 @@ class IncomeManagementScreen(QWidget):
 
         return panel
 
-    def refresh_theme(self):
-        """Called after live theme switch."""
-        # Refresh charts (KPI tiles use static QSS classes)
-        for chart in [self.chart_vs_actual, self.chart_composition, self.chart_fd_runway]:
-            chart.refresh_theme()
-
-        self.refresh()
-
     def _on_fy_changed(self, fy):
         """Handle FY change."""
         self._selected_fy = fy

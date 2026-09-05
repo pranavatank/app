@@ -1123,26 +1123,6 @@ class StatementImportScreen(QWidget):
             on_error=on_import_error
         )
 
-    def refresh_theme(self):
-        """Called after a live theme switch. Deliberately does NOT call
-        refresh() — that resets the whole import wizard (selected file,
-        parsed rows, in-progress state), which would be destructive mid-import.
-        Only re-applies icon pixmaps and child widget themes."""
-        # Re-apply card shadow effects after theme change
-        for attr in ("_preview_header_card", "_debug_card", "_drag_drop_target"):
-            card = getattr(self, attr, None)
-            if card is not None:
-                card.setGraphicsEffect(Theme.shadow_card())
-        # Re-apply drag-drop icon pixmap
-        if hasattr(self, "_drag_drop_icon"):
-            pm = icon_pixmap("upload", size=32, color=Theme.PRIMARY)
-            if not pm.isNull():
-                self._drag_drop_icon.setPixmap(pm)
-        if hasattr(self, "preview_table_widget") and self.preview_table_widget:
-            self.preview_table_widget.refresh_theme()
-        if hasattr(self, "screen_indicator_step"):
-            self._set_step(self.screen_indicator_step)
-
     def refresh(self):
         """Reset to initial state"""
         self.selected_person_id = session.selected_person_id

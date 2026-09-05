@@ -26,56 +26,12 @@ class LoginScreen(QWidget):
         self.setFixedSize(560, 650)
         self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowCloseButtonHint)
         self.setObjectName("LoginRoot")
-        self.setStyleSheet(self._root_css())
         self._totp_required = is_totp_enabled()
         self._build_ui()
         self._center_on_screen()
         # Defensive only: this window is closed before Settings is reachable
         # (login happens before the theme switcher exists), so a live theme
-        # switch can never actually occur while it's visible — but register
-        # a listener anyway for consistency/safety if that ever changes.
-        ThemeManager.register_on_change(self.refresh_theme)
-
-    def _root_css(self) -> str:
-        # BG: gradient for light themes, flat dark for Midnight Pro
-        if ThemeManager.is_dark():
-            bg = f"background-color: {Theme.BG};"
-        else:
-            bg = f"background: {Theme.gradient(Theme.PRIMARY_GRADIENT_START, Theme.HERO_GRADIENT_END, diagonal=True)};"
-        return f"QWidget#LoginRoot {{ {bg} }}"
-
-    def _card_css(self) -> str:
-        card_bg = Theme.SURFACE if ThemeManager.is_dark() else "rgba(255,255,255,0.97)"
-        return f"""
-            QFrame#LoginCard {{
-                background-color: {card_bg};
-                border: 1px solid {Theme.BORDER};
-                border-radius: 26px;
-            }}
-        """
-
-    @staticmethod
-    def _hero_css() -> str:
-        return f"""
-            QFrame#LoginHero {{
-                background: {Theme.gradient(Theme.PRIMARY_GRADIENT_START, Theme.HERO_GRADIENT_END)};
-                border-radius: 18px;
-                border: none;
-            }}
-        """
-
-    @staticmethod
-    def _form_card_css() -> str:
-        return Theme.tinted_surface_style(radius=14, border_color=Theme.BORDER,
-                                          selector="QFrame#LoginFormCard")
-
-    @staticmethod
-    def _error_css() -> str:
-        return (
-            Theme.text_style(color=Theme.DANGER_DARK, size=13) +
-            f" background: {Theme.DANGER_LIGHT}; border-radius: 8px; "
-            f"padding: 12px 16px; border: 1px solid {Theme.DANGER}40;"
-        )
+        # switch can never actually occur while it's visible.
 
     def _badge_specs(self) -> list[tuple[str, str, str]]:
         return [
@@ -84,23 +40,6 @@ class LoginScreen(QWidget):
             ("2FA On" if self._totp_required else "2FA Optional",
              Theme.SUCCESS_LIGHT, Theme.SUCCESS_DARK),
         ]
-
-    def refresh_theme(self, *_args):
-        """This window is torn down before the theme switcher is reachable
-        (see __init__), so this is defensive-only — we register the listener
-        for consistency, but it can't actually fire while this screen is visible."""
-        self.setStyleSheet(self._root_css())
-        if hasattr(self, "_card"):
-            self._card.setStyleSheet(self._card_css())
-        if hasattr(self, "_hero"):
-            self._hero.setStyleSheet(self._hero_css())
-        if hasattr(self, "_form_card"):
-            self._form_card.setStyleSheet(self._form_card_css())
-        if hasattr(self, "error_label"):
-            self.error_label.setStyleSheet(self._error_css())
-        if hasattr(self, "_badges"):
-            for badge, (_txt, bg, fg) in zip(self._badges, self._badge_specs()):
-                badge.setStyleSheet(Theme.badge_style(bg, fg, radius=10, padding="4px 10px", size=11, weight=600))
 
     def _build_ui(self):
         root = QVBoxLayout(self)
@@ -113,7 +52,6 @@ class LoginScreen(QWidget):
         # ── Main card ─────────────────────────────────────────────────────────
         self._card = card = QFrame()
         card.setObjectName("LoginCard")
-        card.setStyleSheet(self._card_css())
         card.setFixedWidth(500)
         card.setGraphicsEffect(Theme.shadow_elevated())
 
@@ -124,14 +62,13 @@ class LoginScreen(QWidget):
         # ── Hero header ───────────────────────────────────────────────────────
         self._hero = hero = QFrame()
         hero.setObjectName("LoginHero")
-        hero.setStyleSheet(self._hero_css())
         hero_layout = QHBoxLayout(hero)
         hero_layout.setContentsMargins(18, 14, 18, 14)
         hero_layout.setSpacing(14)
 
         logo_container = QFrame()
+        logo_container.setObjectName("LoginLogoContainer")
         logo_container.setFixedSize(86, 86)
-        logo_container.setStyleSheet("background: rgba(255,255,255,0.20); border-radius: 32px;")
         logo_layout = QVBoxLayout(logo_container)
         logo_layout.setContentsMargins(0, 0, 0, 0)
         logo = QLabel()
@@ -140,7 +77,7 @@ class LoginScreen(QWidget):
             logo.setPixmap(logo_pix)
         else:
             logo.setText("PF")
-            logo.setStyleSheet("color: white; font-size: 18px; font-weight: 700;")
+            logo.setObjectName("LoginLogoText")
         logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
         logo_layout.addWidget(logo)
         hero_layout.addWidget(logo_container)
@@ -149,10 +86,10 @@ class LoginScreen(QWidget):
         hero_text.setSpacing(2)
         t = QLabel(APP_NAME)
         t.setFont(QFont("Segoe UI", 20, QFont.Weight.Bold))
-        t.setStyleSheet("color: white; background: transparent;")
+        t.setObjectName("LoginLogoText")
         hero_text.addWidget(t)
         s = QLabel("Offline-first financial vault")
-        s.setStyleSheet("color: rgba(255,255,255,0.88); font-size: 12px; background: transparent;")
+        s.setObjectName("LoginLogoSubtitle")
         hero_text.addWidget(s)
         hero_layout.addLayout(hero_text)
         hero_layout.addStretch()
@@ -174,7 +111,6 @@ class LoginScreen(QWidget):
         # ── Form area ─────────────────────────────────────────────────────────
         self._form_card = form_card = QFrame()
         form_card.setObjectName("LoginFormCard")
-        form_card.setStyleSheet(self._form_card_css())
         form_layout = QVBoxLayout(form_card)
         form_layout.setContentsMargins(18, 16, 18, 16)
         form_layout.setSpacing(10)
@@ -199,9 +135,9 @@ class LoginScreen(QWidget):
 
         # ── Error ─────────────────────────────────────────────────────────────
         self.error_label = QLabel("")
+        self.error_label.setObjectName("LoginErrorLabel")
         self.error_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.error_label.setWordWrap(True)
-        self.error_label.setStyleSheet(self._error_css())
         self.error_label.hide()
         layout.addWidget(self.error_label)
 
@@ -220,8 +156,8 @@ class LoginScreen(QWidget):
             self.setTabOrder(self.otp_input, self.btn_login)
 
         note = QLabel("Device-bound encryption")
+        note.setObjectName("LoginNote")
         note.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        note.setStyleSheet(Theme.text_style(color=Theme.TEXT_MUTED, size=12) + " border: none;")
         layout.addWidget(note)
 
         h = QHBoxLayout()
@@ -234,25 +170,14 @@ class LoginScreen(QWidget):
 
     def _lbl(self, text: str) -> QLabel:
         l = QLabel(text)
-        l.setStyleSheet(Theme.text_style(color=Theme.TEXT_PRIMARY, size=13, weight=600) + " border: none;")
+        l.setObjectName("LoginFieldLabel")
         return l
 
     def _field(self, placeholder: str, password: bool = False) -> QLineEdit:
         e = QLineEdit()
+        e.setObjectName("loginField")
         e.setPlaceholderText(placeholder)
         e.setMinimumHeight(46)
-        e.setStyleSheet(f"""
-            QLineEdit {{
-                background-color: {Theme.SURFACE};
-                color: {Theme.TEXT_PRIMARY};
-                border: 1.5px solid {Theme.BORDER};
-                border-radius: 10px;
-                padding: 0 16px;
-                font-size: 14px;
-            }}
-            QLineEdit:focus {{ border: 2px solid {Theme.PRIMARY}; }}
-            QLineEdit:hover {{ border-color: {Theme.BORDER_FOCUS}; }}
-        """)
         if password:
             e.setEchoMode(QLineEdit.EchoMode.Password)
         return e

@@ -27,18 +27,6 @@ class SetupScreen(QWidget):
         self.setObjectName("setupWindow")
         self._build_ui()
         self._center_on_screen()
-        # Defensive only: closes itself before Settings is reachable (see
-        # login_screen.py's identical note) — registered for consistency.
-        ThemeManager.register_on_change(self.refresh_theme)
-
-    def refresh_theme(self, *_args):
-        """Defensive-only (see __init__) — re-apply shadow effect and update
-        strength bar styling if needed. Card/strip styles are now in global QSS."""
-        if hasattr(self, "_card"):
-            self._card.setGraphicsEffect(Theme.shadow_elevated())
-        # Re-trigger strength display in case current text is set
-        if hasattr(self, "pwd_input"):
-            self._update_strength(self.pwd_input.text())
 
     def _build_ui(self):
         root = QVBoxLayout(self)

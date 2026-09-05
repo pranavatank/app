@@ -83,14 +83,6 @@ class AdvanceTaxBanner(QFrame):
             }}
         """)
 
-    def refresh_theme(self):
-        """Call after a live theme switch — the dismiss button, banner
-        frame, and reminder icon are all baked in at construction/last
-        update_reminder() call and won't update via the global QSS alone."""
-        self._apply_dismiss_style()
-        if self._result is not None:
-            self.update_reminder(self._result)
-    
     def update_reminder(self, result: AdvanceTaxResult):
         """Update banner with advance tax calculation result."""
         self._result = result

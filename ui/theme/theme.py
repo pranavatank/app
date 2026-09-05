@@ -1035,4 +1035,159 @@ QLabel#ErrorStateIcon {{
 QPushButton#ErrorStateRetryButton {{
     min-width: 140px;
 }}
+
+/* ═══════════════════════════ LOGIN SCREEN ════════════════════ */
+QWidget#LoginRoot {{
+    background-color: {t.BG};
+}}
+QFrame#LoginCard {{
+    background-color: {t.SURFACE};
+    border: 1px solid {t.BORDER};
+    border-radius: 26px;
+    padding: 0;
+}}
+QFrame#LoginHero {{
+    background: {t.gradient(t.PRIMARY_GRADIENT_START, t.HERO_GRADIENT_END, diagonal=True)};
+    border-radius: 18px;
+    border: none;
+}}
+QFrame#LoginFormCard {{
+    background-color: {t.SURFACE};
+    border: 1px solid {t.BORDER};
+    border-radius: 14px;
+    padding: 18px 16px;
+}}
+QLabel#LoginErrorLabel {{
+    background: {t.DANGER_LIGHT};
+    color: {t.DANGER_DARK};
+    border: 1px solid {t.DANGER}40;
+    border-radius: 8px;
+    padding: 12px 16px;
+    font-size: 13px;
+}}
+
+/* ═══════════════════════════ DIALOG CARDS ════════════════════ */
+QFrame#MetaInfoCard {{
+    background-color: {t.INFO_LIGHT};
+    border: 1px solid {t.INFO};
+    border-left: 4px solid {t.INFO};
+    border-radius: 10px;
+    padding: 14px;
+}}
+QFrame#MetaStatsCard {{
+    background-color: {t.SURFACE_ALT};
+    border: 1px solid {t.BORDER};
+    border-radius: 10px;
+    padding: 12px;
+}}
+QFrame#MetadataSectionCard {{
+    background-color: {t.SURFACE};
+    border: 1px solid {t.BORDER};
+    border-radius: 12px;
+    padding: 18px 14px;
+}}
+
+/* ═══════════════════════════ ACCOUNT DETAILS DIALOG ═════════════════ */
+QFrame#AccountDetailsScroll {{
+    background: transparent; border: none;
+}}
+QWidget#AccountDetailsContent {{
+    background: transparent;
+}}
+QFrame#AccountDetailsHeader {{
+    background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
+        stop:0 {t.PRIMARY}, stop:1 {t.PRIMARY_DARK});
+    min-height: 68px;
+}}
+QFrame#AccountDetailsFooter {{
+    background: {t.SURFACE};
+    border-top: 1px solid {t.BORDER};
+    min-height: 68px;
+}}
+QLabel#AccountStatusBadge {{
+    background: white; color: {t.PRIMARY_DARK};
+    padding: 6px 16px; border-radius: 14px;
+    font-weight: 700; font-size: 13px;
+}}
+QWidget#AccountTabContent {{
+    background: transparent;
+}}
+QFrame#AccountDetailSection {{
+    background: {t.SURFACE};
+    border: 1px solid {t.BORDER};
+    border-radius: 12px;
+}}
+QFrame#AccountDetailDivider {{
+    background: {t.DIVIDER}; border: none;
+    max-height: 1px;
+}}
+QLabel#AccountDetailsEmpty {{
+    color: {t.TEXT_MUTED}; font-size: 14px;
+}}
+QLabel#AccountDetailsNoCard {{
+    color: {t.TEXT_MUTED}; font-size: 14px; padding: 40px;
+}}
+
+/* ═══════════════════════════ LOGIN FORM ELEMENTS ═══════════════════ */
+QLineEdit#loginField {{
+    background-color: {t.SURFACE};
+    color: {t.TEXT_PRIMARY};
+    border: 1.5px solid {t.BORDER};
+    border-radius: 10px;
+    padding: 0 16px;
+    font-size: 14px;
+}}
+QLineEdit#loginField:focus {{ border: 2px solid {t.PRIMARY}; }}
+QLineEdit#loginField:hover {{ border-color: {t.BORDER_FOCUS}; }}
+QLabel#LoginFieldLabel {{
+    color: {t.TEXT_PRIMARY};
+    font-size: 13px;
+    font-weight: 600;
+    border: none;
+}}
+QLabel#LoginLogoText {{
+    color: white; font-size: 18px; font-weight: 700;
+}}
+QLabel#LoginLogoSubtitle {{
+    color: rgba(255,255,255,0.88); font-size: 12px;
+}}
+QFrame#LoginLogoContainer {{
+    background: rgba(255,255,255,0.20); border-radius: 32px;
+}}
+QLabel#LoginNote {{
+    color: {t.TEXT_MUTED}; font-size: 12px;
+}}
+
+/* ═══════════════════════════ ACCOUNT METADATA DIALOG ═════════════════ */
+QFrame#MetadataHeaderFrame {{
+    background: {t.gradient(t.SUCCESS_GRADIENT_START, t.SUCCESS_GRADIENT_END)};
+}}
+QLabel#MetadataTitle {{
+    color: white; background: transparent; font-size: 18px; font-weight: 700;
+}}
+QLabel#MetadataSubtitle {{
+    color: rgba(255,255,255,0.85); font-size: 13px; background: transparent;
+}}
+QLabel#MetadataHelper {{
+    color: rgba(255,255,255,0.8); font-size: 12px; background: transparent;
+}}
+QWidget#MetadataContentWidget {{
+    background: {t.BG};
+}}
+QLabel#MetadataInfoIcon {{
+    background: transparent; border: none;
+}}
+QScrollArea#MetadataScrollArea {{
+    background: {t.BG}; border: none;
+}}
+QWidget#MetadataFieldsContainer {{
+    background: {t.BG};
+}}
+QFrame#MetadataDivider {{
+    background: {t.DIVIDER}; border: none; max-height: 1px;
+}}
+QFrame#MetadataFooterFrame {{
+    background: {t.SURFACE};
+    border-top: 1px solid {t.BORDER};
+}}
 """

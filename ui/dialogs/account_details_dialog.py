@@ -36,20 +36,20 @@ class AccountDetailsPanel(QWidget):
 
         if not self.account:
             empty = QLabel("No account selected")
+            empty.setObjectName("AccountDetailsEmpty")
             empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            empty.setStyleSheet(f"color: {Theme.TEXT_MUTED}; font-size: 14px;")
             layout.addWidget(empty)
             return
 
         layout.addWidget(self._header())
 
         scroll = QScrollArea()
+        scroll.setObjectName("AccountDetailsScroll")
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setStyleSheet("background: transparent; border: none;")
 
         content = QWidget()
-        content.setStyleSheet("background: transparent;")
+        content.setObjectName("AccountDetailsContent")
         cl = QVBoxLayout(content)
         cl.setContentsMargins(24, 20, 24, 20)
         cl.setSpacing(16)
@@ -76,12 +76,7 @@ class AccountDetailsPanel(QWidget):
 
     def _header(self) -> QFrame:
         h = QFrame()
-        h.setStyleSheet(f"""
-            QFrame {{
-                background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
-                    stop:0 {Theme.PRIMARY}, stop:1 {Theme.PRIMARY_DARK});
-            }}
-        """)
+        h.setObjectName("AccountDetailsHeader")
         h.setMinimumHeight(68)
         hl = QHBoxLayout(h)
         hl.setContentsMargins(28, 0, 28, 0)
@@ -92,22 +87,13 @@ class AccountDetailsPanel(QWidget):
         hl.addStretch()
         status = self.account.get("account_status", "Active")
         sl = QLabel(status)
-        sl.setStyleSheet(f"""
-            background: white; color: {Theme.PRIMARY_DARK};
-            padding: 6px 16px; border-radius: 14px;
-            font-weight: 700; font-size: 13px;
-        """)
+        sl.setObjectName("AccountStatusBadge")
         hl.addWidget(sl)
         return h
 
     def _footer(self) -> QFrame:
         f = QFrame()
-        f.setStyleSheet(f"""
-            QFrame {{
-                background: {Theme.SURFACE};
-                border-top: 1px solid {Theme.BORDER};
-            }}
-        """)
+        f.setObjectName("AccountDetailsFooter")
         f.setMinimumHeight(68)
         fl = QHBoxLayout(f)
         fl.setContentsMargins(28, 14, 28, 14)
@@ -129,7 +115,7 @@ class AccountDetailsPanel(QWidget):
         return f
 
     def _tab_basic(self) -> QWidget:
-        w = QWidget(); w.setStyleSheet("background: transparent;")
+        w = QWidget(); w.setObjectName("AccountTabContent")
         l = QVBoxLayout(w); l.setContentsMargins(10,12,10,12); l.setSpacing(14)
         holder = self.account.get("account_holder_name") or self.account.get("person_name","—")
         l.addWidget(self._section("Account Information", [
@@ -152,7 +138,7 @@ class AccountDetailsPanel(QWidget):
         return w
 
     def _tab_bank(self) -> QWidget:
-        w = QWidget(); w.setStyleSheet("background: transparent;")
+        w = QWidget(); w.setObjectName("AccountTabContent")
         l = QVBoxLayout(w); l.setContentsMargins(10,12,10,12); l.setSpacing(14)
         l.addWidget(self._section("Bank Details", [
             ("IFSC Code",     self.account.get("ifsc_code","—")),
@@ -164,7 +150,7 @@ class AccountDetailsPanel(QWidget):
         return w
 
     def _tab_contact(self) -> QWidget:
-        w = QWidget(); w.setStyleSheet("background: transparent;")
+        w = QWidget(); w.setObjectName("AccountTabContent")
         l = QVBoxLayout(w); l.setContentsMargins(10,12,10,12); l.setSpacing(14)
         l.addWidget(self._section("Contact", [
             ("Email",   self.account.get("email_id","—")),
@@ -179,7 +165,7 @@ class AccountDetailsPanel(QWidget):
         return w
 
     def _tab_card(self) -> QWidget:
-        w = QWidget(); w.setStyleSheet("background: transparent;")
+        w = QWidget(); w.setObjectName("AccountTabContent")
         l = QVBoxLayout(w); l.setContentsMargins(10,12,10,12); l.setSpacing(14)
         if self.account.get("debit_card_enabled"):
             l.addWidget(self._section("Debit Card", [
@@ -189,21 +175,15 @@ class AccountDetailsPanel(QWidget):
             ]))
         else:
             no = QLabel("No debit card enabled for this account.")
+            no.setObjectName("AccountDetailsNoCard")
             no.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            no.setStyleSheet(f"color: {Theme.TEXT_MUTED}; font-size: 14px; padding: 40px;")
             l.addWidget(no)
         l.addStretch()
         return w
 
     def _section(self, title: str, fields: list) -> QFrame:
         sec = QFrame()
-        sec.setStyleSheet(f"""
-            QFrame {{
-                background: {Theme.SURFACE};
-                border: 1px solid {Theme.BORDER};
-                border-radius: 12px;
-            }}
-        """)
+        sec.setObjectName("AccountDetailSection")
         sl = QVBoxLayout(sec)
         sl.setSpacing(12)
         sl.setContentsMargins(20, 16, 20, 16)
@@ -214,8 +194,8 @@ class AccountDetailsPanel(QWidget):
         sl.addWidget(t)
 
         div = QFrame()
+        div.setObjectName("AccountDetailDivider")
         div.setFixedHeight(1)
-        div.setStyleSheet(f"background: {Theme.DIVIDER}; border: none;")
         sl.addWidget(div)
 
         form = QFormLayout()

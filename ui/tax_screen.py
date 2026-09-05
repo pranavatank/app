@@ -568,12 +568,6 @@ class TaxScreen(QWidget):
             if "Other Income Sources" in group.title():
                 group.setChecked(gross > 0)
 
-    def refresh_theme(self):
-        """Called after a live theme switch."""
-        if hasattr(self, "advance_tax_banner"):
-            self.advance_tax_banner.refresh_theme()
-        self.refresh()
-
     def refresh(self):
         pid = session.selected_person_id
         fy  = session.selected_fy

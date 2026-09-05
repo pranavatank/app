@@ -596,7 +596,3 @@ class TaxDocumentsScreen(QWidget):
             status_item.setForeground(QColor(Theme.WARNING))
             self.fd_table.setItem(row, 3, status_item)
 
-    def refresh_theme(self):
-        """Called after a live theme switch."""
-        # Theme colors are baked into style tokens; global QSS handles the rest
-        pass

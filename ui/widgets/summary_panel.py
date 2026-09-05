@@ -135,38 +135,6 @@ class SummaryPanel(QFrame):
         self._icon_bg.setText(icon_fallback(self._icon_key) or self._icon_key)
         self._icon_bg.setFont(QFont("Segoe UI Emoji", 15))
 
-    # ── Live theme refresh ────────────────────────────────────────────────────
-
-    def refresh_theme(self):
-        """Re-apply all inline styles after a theme switch — including every
-        stat row's label/value colors and every divider, not just the card
-        chrome, so a value_color=Theme.SUCCESS/DANGER row doesn't stay frozen
-        with the old theme's color after a live switch."""
-        self._apply_card_style()
-        self.setGraphicsEffect(Theme.shadow_card())
-        if self._icon_bg:
-            self._render_icon()
-            self._icon_bg.setStyleSheet(self._icon_css())
-        if self._title_lbl:
-            self._title_lbl.setProperty("textrole", "emphasis-md")
-        if self._div:
-            self._div.setStyleSheet(f"background: {Theme.DIVIDER};")
-        for div in self._dividers:
-            div.setStyleSheet(f"background: {Theme.DIVIDER};")
-        for key, meta in self._row_meta.items():
-            meta["label_widget"].setProperty("textrole", "secondary-sm")
-            val = self._rows.get(key)
-            if val is None:
-                continue
-            role = meta.get("value_color_role")
-            color = (getattr(Theme, role, None) if role else None) or meta["value_color"] or Theme.TEXT_PRIMARY
-            weight = "700" if meta["bold"] else "500"
-            val.setStyleSheet(
-                f"font-size: {meta['value_size']}px; font-weight: {weight};"
-                f" color: {color}; background: transparent; border: none;"
-            )
-        self.update()
-
     # ── Public API ────────────────────────────────────────────────────────────
 
     def add_stat(

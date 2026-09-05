@@ -32,12 +32,7 @@ class AccountMetadataDialog(QDialog):
 
         # Header with gradient
         header_frame = QFrame()
-        header_frame.setStyleSheet(f"""
-            QFrame {{
-                background: {Theme.gradient(Theme.SUCCESS_GRADIENT_START, Theme.SUCCESS_GRADIENT_END)};
-                border-radius: 0;
-            }}
-        """)
+        header_frame.setObjectName("MetadataHeaderFrame")
         header_frame.setMinimumHeight(104)
         
         header_layout = QVBoxLayout(header_frame)
@@ -49,25 +44,25 @@ class AccountMetadataDialog(QDialog):
         title_row.addWidget(icon_label("account_found", size=22, color="#FFFFFF"))
         title = QLabel("Account Details Found")
         title.setFont(QFont("Segoe UI", 18, QFont.Weight.Bold))
-        title.setStyleSheet("color: white; background: transparent;")
+        title.setObjectName("MetadataTitle")
         title_row.addWidget(title)
         title_row.addStretch()
         header_layout.addLayout(title_row)
-        
+
         subtitle = QLabel("Review and confirm the information extracted from your bank statement")
-        subtitle.setStyleSheet("color: rgba(255,255,255,0.85); font-size: 13px; background: transparent;")
+        subtitle.setObjectName("MetadataSubtitle")
         header_layout.addWidget(subtitle)
 
         total_detected = sum(1 for v in self.metadata.values() if str(v or "").strip())
         helper = QLabel(f"Detected {total_detected} fields. You can edit before saving.")
-        helper.setStyleSheet("color: rgba(255,255,255,0.8); font-size: 12px; background: transparent;")
+        helper.setObjectName("MetadataHelper")
         header_layout.addWidget(helper)
         
         layout.addWidget(header_frame)
 
         # Content area
         content_widget = QWidget()
-        content_widget.setStyleSheet(f"background: {Theme.BG};")
+        content_widget.setObjectName("MetadataContentWidget")
         content_layout = QVBoxLayout(content_widget)
         content_layout.setSpacing(20)
         content_layout.setContentsMargins(28, 24, 28, 24)
@@ -78,23 +73,13 @@ class AccountMetadataDialog(QDialog):
 
         info_frame = QFrame()
         info_frame.setObjectName("MetaInfoCard")
-        info_frame.setStyleSheet(
-            Theme.card_style(
-                bg=Theme.INFO_LIGHT,
-                border_color=Theme.INFO,
-                radius=10,
-                padding=0,
-                left_accent=Theme.INFO,
-                selector="QFrame#MetaInfoCard",
-            )
-        )
         info_layout = QHBoxLayout(info_frame)
         info_layout.setContentsMargins(14, 12, 14, 12)
         info_layout.setSpacing(10)
 
         info_icon = QLabel("ℹ️")
+        info_icon.setObjectName("MetadataInfoIcon")
         info_icon.setFont(QFont("Segoe UI Emoji", 16))
-        info_icon.setStyleSheet("background: transparent; border: none;")
         info_layout.addWidget(info_icon)
 
         info_text = QLabel(
@@ -109,9 +94,6 @@ class AccountMetadataDialog(QDialog):
 
         stats_frame = QFrame()
         stats_frame.setObjectName("MetaStatsCard")
-        stats_frame.setStyleSheet(
-            Theme.tinted_surface_style(radius=10, border_color=Theme.BORDER, selector="QFrame#MetaStatsCard")
-        )
         stats_layout = QVBoxLayout(stats_frame)
         stats_layout.setContentsMargins(12, 10, 12, 10)
         stats_layout.setSpacing(6)
@@ -129,12 +111,12 @@ class AccountMetadataDialog(QDialog):
 
         # Scroll area for fields
         scroll = QScrollArea()
+        scroll.setObjectName("MetadataScrollArea")
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setStyleSheet(f"background: {Theme.BG}; border: none;")
 
         fields_container = QWidget()
-        fields_container.setStyleSheet(f"background: {Theme.BG};")
+        fields_container.setObjectName("MetadataFieldsContainer")
         fields_layout = QVBoxLayout(fields_container)
         fields_layout.setSpacing(14)
         fields_layout.setContentsMargins(0, 0, 0, 0)
@@ -180,16 +162,6 @@ class AccountMetadataDialog(QDialog):
             # Section card
             section_frame = QFrame()
             section_frame.setObjectName("MetadataSectionCard")
-            section_frame.setStyleSheet(
-                Theme.card_style(
-                    bg=Theme.SURFACE,
-                    border_color=Theme.BORDER,
-                    radius=12,
-                    padding=0,
-                    selector="QFrame#MetadataSectionCard",
-                )
-            )
-            
             section_layout = QVBoxLayout(section_frame)
             section_layout.setSpacing(12)
             section_layout.setContentsMargins(18, 14, 18, 14)
@@ -202,8 +174,8 @@ class AccountMetadataDialog(QDialog):
 
             # Divider
             div = QFrame()
+            div.setObjectName("MetadataDivider")
             div.setFixedHeight(1)
-            div.setStyleSheet(f"background: {Theme.DIVIDER}; border: none;")
             section_layout.addWidget(div)
 
             # Fields grid
@@ -247,12 +219,7 @@ class AccountMetadataDialog(QDialog):
 
         # Footer with checkbox and buttons
         footer_frame = QFrame()
-        footer_frame.setStyleSheet(f"""
-            QFrame {{
-                background: {Theme.SURFACE};
-                border-top: 1px solid {Theme.BORDER};
-            }}
-        """)
+        footer_frame.setObjectName("MetadataFooterFrame")
         footer_layout = QVBoxLayout(footer_frame)
         footer_layout.setContentsMargins(24, 14, 24, 14)
         footer_layout.setSpacing(12)
