@@ -1190,4 +1190,47 @@ QFrame#MetadataFooterFrame {{
     background: {t.SURFACE};
     border-top: 1px solid {t.BORDER};
 }}
+
+/* ═══════════════════════════ SUMMARY PANEL ════════════════════════════ */
+QFrame#SummaryPanelDivider {{
+    background: {t.DIVIDER}; border: none; max-height: 1px;
+}}
+QWidget#SummaryPanelContainer {{
+    background: transparent; border: none;
+}}
+QScrollArea#SummaryPanelScroll {{
+    background: transparent; border: none;
+}}
+QWidget#SummaryPanelRow {{
+    background: transparent; border: none;
+}}
+QLabel#SummaryPanelValue {{
+    background: transparent; border: none;
+}}
+
+/* ═══════════════════════════ FD DIALOG ═════════════════════════════ */
+QLabel#FDDialogTitle {{
+    font-weight: 700; font-size: 15px; color: {t.TEXT_PRIMARY};
+}}
+QLabel#FDDialogHelper {{
+    color: {t.TEXT_SECONDARY}; font-size: 12px;
+}}
+QLabel#FDMaturityDateLabel {{
+    font-weight: 700; color: {t.TEXT_PRIMARY};
+}}
+QLabel#FDMaturityAmountLabel {{
+    font-weight: 700; color: {t.TEXT_PRIMARY};
+}}
+QLabel#FDSelectedMaturityLabel {{
+    font-weight: 700; font-size: 15px; color: {t.SUCCESS};
+}}
+QLabel#FDDialogDetailTitle {{
+    font-weight: 700; font-size: 14px; color: {t.TEXT_PRIMARY};
+}}
+QLabel#FDDialogSummary {{
+    color: {t.TEXT_PRIMARY}; font-weight: 600;
+}}
+QLabel#FDDialogQuarterTitle {{
+    font-weight: 700; color: {t.TEXT_PRIMARY};
+}}
 """

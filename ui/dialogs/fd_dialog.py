@@ -47,11 +47,11 @@ class FDDialog(QDialog):
         layout.setSpacing(14)
 
         title = QLabel("Fixed Deposit Details")
-        title.setStyleSheet(f"font-weight: 700; font-size: 15px; color: {Theme.TEXT_PRIMARY};")
+        title.setObjectName("FDDialogTitle")
         layout.addWidget(title)
 
         helper = QLabel("Enter FD inputs below. Scroll for advanced fields and bulk-create options.")
-        helper.setStyleSheet(f"color: {Theme.TEXT_SECONDARY}; font-size: 12px;")
+        helper.setObjectName("FDDialogHelper")
         layout.addWidget(helper)
 
         scroll = QScrollArea()
@@ -119,19 +119,19 @@ class FDDialog(QDialog):
 
         # Calculated outputs
         self.maturity_date_lbl = QLabel("—")
-        self.maturity_date_lbl.setStyleSheet(f"font-weight: 700; color: {Theme.TEXT_PRIMARY};")
+        self.maturity_date_lbl.setObjectName("FDMaturityDateLabel")
         form.addRow("Maturity Date:", self.maturity_date_lbl)
 
         self.maturity_amount_formula_lbl = QLabel("—")
-        self.maturity_amount_formula_lbl.setStyleSheet(f"font-weight: 700; color: {Theme.TEXT_PRIMARY};")
+        self.maturity_amount_formula_lbl.setObjectName("FDMaturityAmountLabel")
         form.addRow("Maturity (Current Formula):", self.maturity_amount_formula_lbl)
 
         self.maturity_amount_bank_lbl = QLabel("—")
-        self.maturity_amount_bank_lbl.setStyleSheet(f"font-weight: 700; color: {Theme.TEXT_PRIMARY};")
+        self.maturity_amount_bank_lbl.setObjectName("FDMaturityAmountLabel")
         form.addRow("Maturity (Bank-style Daily):", self.maturity_amount_bank_lbl)
 
         self.maturity_amount_lbl = QLabel("—")
-        self.maturity_amount_lbl.setStyleSheet(f"font-weight: 700; font-size: 15px; color: {Theme.SUCCESS};")
+        self.maturity_amount_lbl.setObjectName("FDSelectedMaturityLabel")
         form.addRow("Selected Maturity Amount:", self.maturity_amount_lbl)
 
         self.expected_interest_input = QLineEdit(); self.expected_interest_input.setPlaceholderText("Auto = Maturity - Principal")
@@ -351,18 +351,18 @@ class FDDialog(QDialog):
         v.setSpacing(10)
 
         title = QLabel("Detailed FD Calculation")
-        title.setStyleSheet(f"font-weight: 700; color: {Theme.TEXT_PRIMARY}; font-size: 14px;")
+        title.setObjectName("FDDialogDetailTitle")
         v.addWidget(title)
 
         summary = QLabel(
             f"Selected Maturity: ₹ {snap['maturity_selected']:,.2f}   |   "
             f"Selected Interest: ₹ {snap['maturity_selected'] - snap['principal']:,.2f}"
         )
-        summary.setStyleSheet(f"color: {Theme.TEXT_PRIMARY}; font-weight: 600;")
+        summary.setObjectName("FDDialogSummary")
         v.addWidget(summary)
 
         q_title = QLabel("Quarter-wise Interest")
-        q_title.setStyleSheet(f"font-weight: 700; color: {Theme.TEXT_PRIMARY};")
+        q_title.setObjectName("FDDialogQuarterTitle")
         v.addWidget(q_title)
 
         q_table = QTableWidget()

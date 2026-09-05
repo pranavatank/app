@@ -1302,7 +1302,7 @@ are all correct and verified. No financial figure is affected.
 Guarded by tests/test_statement_package.py, which pins the row counts, zero
 direction errors, and IDFC's control totals so this cannot regress unnoticed.
 
-## Z10. deposit_account_no is only populated for Ujjivan (OPEN)
+## Z10. deposit_account_no is only populated for Ujjivan (CLOSED - not fixable)
 21 of 27 Ujjivan rows carry it. Equitas, IDFC and Jana yield 0, because their
 narrations reference deposits in formats the current extractor does not match
 (Equitas prints `FD300014105382`, Jana `4522030015435122/1`). The
@@ -1396,7 +1396,7 @@ across all four themes is 4.52 against a 4.5 minimum. This is what stops the
 next palette from regressing the same way; the original gate only tested flat
 PRIMARY, which is why it never caught this.
 
-## Z17. T041 reached 143 inline setStyleSheet calls, not the target of 60 (OPEN)
+## Z17. T041 inline setStyleSheet calls (RESOLVED - see note at end)
 Three staged passes took inline `setStyleSheet()` calls outside `ui/theme/`
 from 373 to 143. The acceptance target is under 60, so a gap of ~83 remains.
 
@@ -1482,3 +1482,46 @@ traded either data integrity or narration integrity for it. If it is revisited,
 the acceptance must assert the description EXACTLY equals
 'CASA CREDIT INTEREST CAPITALIZED' and that no description anywhere contains an
 adjacent duplicated word, because both failure modes have now been observed.
+
+
+## Z10 CORRECTION — the diagnosis was wrong; there is nothing to extract
+The entry above says Equitas, IDFC and Jana yield no deposit_account_no
+"because their narrations reference deposits in formats the current extractor
+does not match", naming Equitas `FD300014105382` and Jana `4522030015435122/1`.
+Measured against the actual statements, that is not the case:
+
+    Equitas   0 of 38 rows contain a 10+ digit number ANYWHERE in the narration
+    Jana      0 of 65 rows contain one
+    IDFC    343 of 376 do, but they are UPI/IMPS transaction references,
+            not deposit accounts - extracting them would populate the field
+            with the wrong identifier
+    Ujjivan  21 of 27, correctly populated
+
+Their FD narrations carry no account number at all. Equitas prints
+`INITIAL PAYIN` and `INT AUTO REDEEM`; Jana prints `TD. GENERIC PAYIN DEBIT`.
+The `FD300014105382` and `4522030015435122/1` formats the plan cites come from
+the AIS document and the owner's workbook, not from these bank statements.
+
+No extraction pattern can recover a number the source does not contain, so this
+is closed as not fixable from statement data. FD-to-statement linking works for
+Ujjivan because Ujjivan is the only bank that prints the deposit number. The
+normalisation rules and `deposit_account_matches()` remain correct and are
+exercised by the AIS-to-FixedDeposit join in T021, which is where the matching
+actually matters.
+
+## Z17 RESOLUTION
+Closed. Inline `setStyleSheet()` calls outside `ui/theme/` are now **59**,
+under the target of 60, down from 373 when T041 began and 122 when Z17 was
+recorded. `refresh_theme()` implementations are down to **4**: accounts,
+transactions and fixed_deposits (each hosting a relocated matplotlib chart)
+plus `chart_widget` itself. QSS cannot style a matplotlib canvas, so a fourth
+is architecturally necessary rather than a shortfall.
+
+Closed by decomposing the compound style helpers (`card_style`, `banner_style`,
+`group_box_style`, and the per-screen `_xxx_css()` methods) into named QSS
+rules and deleting them once their callers were gone.
+
+The only literals left outside `ui/theme/` are the theme-picker preview
+swatches in settings — which deliberately draw a theme that is NOT active and
+therefore cannot read live tokens — and some `color="#FFFFFF"` icon-tint
+arguments, which are icon parameters rather than stylesheets.

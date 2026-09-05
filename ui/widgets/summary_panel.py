@@ -79,25 +79,25 @@ class SummaryPanel(QFrame):
 
         # ── Accent divider ────────────────────────────────────────────────────
         self._div = QFrame()
+        self._div.setObjectName("SummaryPanelDivider")
         self._div.setFixedHeight(1)
-        self._div.setStyleSheet(f"background: {Theme.DIVIDER};")
         outer.addWidget(self._div)
         outer.addSpacing(12)
 
         # ── Stats area ────────────────────────────────────────────────────────
         if scrollable:
             self._stats_container = QWidget()
-            self._stats_container.setStyleSheet("background: transparent; border: none;")
+            self._stats_container.setObjectName("SummaryPanelContainer")
             self._stats_layout = QVBoxLayout(self._stats_container)
             self._stats_layout.setSpacing(10)
             self._stats_layout.setContentsMargins(0, 0, 0, 0)
             self._stats_layout.addStretch()
 
             scroll = QScrollArea()
+            scroll.setObjectName("SummaryPanelScroll")
             scroll.setWidgetResizable(True)
             scroll.setWidget(self._stats_container)
             scroll.setFrameShape(QFrame.Shape.NoFrame)
-            scroll.setStyleSheet("background: transparent; border: none;")
             outer.addWidget(scroll)
         else:
             self._stats_layout = QVBoxLayout()
@@ -155,7 +155,7 @@ class SummaryPanel(QFrame):
         replaying a color baked in at construction time.
         """
         row_w = QWidget()
-        row_w.setStyleSheet("background: transparent; border: none;")
+        row_w.setObjectName("SummaryPanelRow")
         row = QHBoxLayout(row_w)
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(6)
@@ -168,6 +168,7 @@ class SummaryPanel(QFrame):
                 or value_color or Theme.TEXT_PRIMARY
         weight = "700" if bold else "500"
         val = QLabel(value)
+        val.setObjectName("SummaryPanelValue")
         val.setStyleSheet(
             f"font-size: {value_size}px; font-weight: {weight};"
             f" color: {color}; background: transparent; border: none;"
@@ -188,8 +189,8 @@ class SummaryPanel(QFrame):
 
     def add_divider(self) -> None:
         line = QFrame()
+        line.setObjectName("SummaryPanelDivider")
         line.setFixedHeight(1)
-        line.setStyleSheet(f"background: {Theme.DIVIDER};")
         self._insert_widget(line)
         self._dividers.append(line)
 
