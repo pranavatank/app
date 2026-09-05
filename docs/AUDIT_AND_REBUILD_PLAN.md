@@ -1429,7 +1429,7 @@ were found by an explicit sweep of the diff and are fixed, with all 9 screens
 now construction-tested under all 4 themes. Any further pass at this task
 should keep that sweep.
 
-## Z18. T042 hits its target in real use, not in the worst case (accepted)
+## Z18. T042 theme-switch timing (RE-MEASURED after Z17 - see note at end)
 T042 asks for `ThemeManager.apply()` under 150 ms. Measured after removing
 `_deep_refresh()`:
     fresh dashboard, 1 screen built (the real case)   140-159 ms   TARGET MET
@@ -1525,3 +1525,34 @@ The only literals left outside `ui/theme/` are the theme-picker preview
 swatches in settings — which deliberately draw a theme that is NOT active and
 therefore cannot read live tokens — and some `color="#FFFFFF"` icon-tint
 arguments, which are icon parameters rather than stylesheets.
+
+
+## Z18 UPDATE — Z17 and Z18 pull against each other; the trade was taken deliberately
+Re-measured after Z17 moved 63 more inline styles into the global QSS:
+
+    building the stylesheet   get_stylesheet()      3.7 ms
+    applying it              app.setStyleSheet()  250   ms
+    stylesheet size                              36,188 chars
+
+The entire theme-switch cost is Qt parsing and applying the stylesheet. Our own
+code contributes under 4 ms. Median switch with one screen built is now ~245 ms,
+against ~145 ms before Z17 and the 150 ms target; the all-9-screens case runs
+650-1000 ms.
+
+This is a direct consequence of closing Z17. Every inline setStyleSheet call
+removed became a rule in the global QSS, so the stylesheet Qt must parse on each
+switch grew. The two items are in tension: Z17 wants styling centralised, Z18
+wants the centralised sheet small.
+
+The trade was taken deliberately in favour of Z17. Theme switching is an
+infrequent, deliberate action in Settings, and ~100 ms more on it buys styling
+that is centralised, theme-correct by construction, and no longer needs 13
+hand-written refresh_theme() methods to stay in sync. Correctness of the
+rendered theme matters more than a tenth of a second on an action taken rarely.
+
+If this is ever revisited, the levers are: split the QSS so per-screen rules are
+applied only to the screen that needs them rather than to the whole application;
+or defer restyling built-but-hidden screens until they are next shown. Both add
+a real risk of a screen painting with stale colours, which is why neither was
+attempted here.
+NOT a defect. Recorded so the number is not mistaken for a regression later.
