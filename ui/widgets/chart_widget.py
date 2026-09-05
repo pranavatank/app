@@ -134,7 +134,7 @@ class ChartWidget(QWidget):
 
     def _show_unavailable(self):
         lbl = QLabel(
-            "📊  Charts unavailable\n\n"
+            "Charts unavailable\n\n"
             "Install matplotlib:\n"
             "pip install matplotlib"
         )
@@ -219,7 +219,7 @@ class ChartWidget(QWidget):
         for spine in ax.spines.values():
             spine.set_visible(False)
         ax.tick_params(left=False, bottom=False, labelleft=False, labelbottom=False)
-        ax.text(0.5, 0.5, f"📊  {message}", ha="center", va="center",
+        ax.text(0.5, 0.5, f"— {message}", ha="center", va="center",
                 transform=ax.transAxes, fontsize=13,
                 color=Theme.TEXT_MUTED, style="italic")
         self._fig.patch.set_facecolor(Theme.SURFACE)

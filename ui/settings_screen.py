@@ -40,6 +40,9 @@ from core.auth import (
     set_privacy_mode, get_privacy_mode,
 )
 from config import BACKUP_DIR
+from engines.statement_parser import is_ollama_available
+from ui.ollama_worker import OllamaModelStartWorker
+from PyQt6.QtCore import QThread
 
 
 def _device_info() -> dict:
@@ -231,6 +234,12 @@ class SettingsScreen(QWidget):
         self.confirm_pwd = None
         self.totp_checkbox    = None
         self.privacy_checkbox = None
+        # AI fields
+        self.ai_status_lbl = None
+        self.btn_ai_check = None
+        self.btn_ai_warmup = None
+        self._warmup_thread = None
+        self._warmup_worker = None
 
         self._build_ui()
         # Register AFTER build so callback has valid widget refs
@@ -268,7 +277,8 @@ class SettingsScreen(QWidget):
         grid.addWidget(self._section_data(),     0, 1)
         grid.addWidget(self._section_privacy(),  1, 0)
         grid.addWidget(self._section_backup(),   1, 1)
-        grid.addWidget(self._section_device(),   2, 0, 1, 2)
+        grid.addWidget(self._section_ai(),       2, 0)
+        grid.addWidget(self._section_device(),   2, 1)
         cl.addLayout(grid)
         cl.addStretch()
 
@@ -550,6 +560,45 @@ class SettingsScreen(QWidget):
         gl.addWidget(c2)
         return g
 
+    def _section_ai(self) -> QGroupBox:
+        g = self._group("Parser Configuration"); gl = QVBoxLayout(g); gl.setSpacing(10)
+
+        c = self._card(); lc = QVBoxLayout(c); lc.setSpacing(8)
+        lc.addWidget(self._card_title("Local AI Parser"))
+        lc.addWidget(self._muted("For advanced statement parsing using local AI models."))
+
+        # Status row
+        status_row = QHBoxLayout(); status_row.setSpacing(10)
+        self.ai_status_lbl = QLabel("")
+        self.ai_status_lbl.setMinimumHeight(24)
+        self.ai_status_lbl.setProperty("textrole", "muted-sm")
+        status_row.addWidget(self.ai_status_lbl)
+        status_row.addStretch()
+
+        btn_check = Theme.btn("Check Status", "secondary", height=32, min_width=120)
+        btn_check.clicked.connect(self._refresh_ai_status)
+        btn_check.setAccessibleName("Check AI availability")
+        btn_check.setAccessibleDescription("Check whether the local AI parser is available.")
+        btn_check.setToolTip("Check whether the local AI parser is available.")
+        self.btn_ai_check = btn_check
+        status_row.addWidget(btn_check)
+
+        btn_warmup = Theme.btn("Warm Up AI", "secondary", height=32, min_width=120)
+        btn_warmup.clicked.connect(self._warm_up_ai_model)
+        btn_warmup.setAccessibleName("Warm up local AI model")
+        btn_warmup.setAccessibleDescription("Pre-load the local AI model to avoid timeouts on first parse.")
+        btn_warmup.setToolTip("Pre-load the local AI model to avoid cold-start timeouts.")
+        self.btn_ai_warmup = btn_warmup
+        status_row.addWidget(btn_warmup)
+
+        lc.addLayout(status_row)
+        lc.addWidget(self._muted("AI Check shows parser availability. Warm Up pre-loads the model."))
+        gl.addWidget(c)
+
+        # Initial status check
+        self._refresh_ai_status()
+        return g
+
     def _section_device(self) -> QGroupBox:
         g = self._group("Device Information"); gl = QVBoxLayout(g)
         c = self._card(); fl = QFormLayout(c)
@@ -685,6 +734,64 @@ class SettingsScreen(QWidget):
         except Exception as e:
             show_warning(str(e))
 
+    def _refresh_ai_status(self):
+        """Check and display AI parser availability"""
+        try:
+            ok = is_ollama_available()
+            if ok:
+                self.ai_status_lbl.setText("✓ AI Available")
+                self.ai_status_lbl.setStyleSheet(
+                    Theme.badge_style(Theme.SUCCESS_LIGHT, Theme.SUCCESS_DARK, radius=8, padding='4px 8px', size=11))
+            else:
+                self.ai_status_lbl.setText("✗ AI Unavailable")
+                self.ai_status_lbl.setStyleSheet(
+                    Theme.badge_style(Theme.DANGER_LIGHT, Theme.DANGER, radius=8, padding='4px 8px', size=11))
+        except Exception:
+            self.ai_status_lbl.setText("? AI Unknown")
+            self.ai_status_lbl.setStyleSheet(
+                Theme.badge_style(Theme.WARNING_LIGHT, Theme.WARNING, radius=8, padding='4px 8px', size=11))
+
+    def _warm_up_ai_model(self):
+        """Pre-load the local Ollama model in background"""
+        if self._warmup_thread:
+            return
+        self.btn_ai_warmup.setEnabled(False)
+        self.btn_ai_warmup.setText("Warming up…")
+        self._warmup_thread = QThread(self)
+        self._warmup_worker = OllamaModelStartWorker()
+        self._warmup_worker.moveToThread(self._warmup_thread)
+        self._warmup_thread.started.connect(self._warmup_worker.run)
+        self._warmup_worker.finished.connect(self._on_ai_warmup_finished)
+        self._warmup_worker.failed.connect(self._on_ai_warmup_failed)
+        self._warmup_worker.finished.connect(self._finish_ai_warmup)
+        self._warmup_worker.failed.connect(self._finish_ai_warmup)
+        self._warmup_thread.start()
+
+    def _on_ai_warmup_finished(self, message: str):
+        """Callback when AI warmup succeeds"""
+        self.ai_status_lbl.setText("✓ AI Ready")
+        self.ai_status_lbl.setStyleSheet(
+            Theme.badge_style(Theme.SUCCESS_LIGHT, Theme.SUCCESS_DARK, radius=8, padding='4px 8px', size=11))
+        show_success("AI model is ready for parsing.")
+
+    def _on_ai_warmup_failed(self, message: str):
+        """Callback when AI warmup fails"""
+        show_warning(message)
+        self._refresh_ai_status()
+
+    def _finish_ai_warmup(self):
+        """Cleanup after AI warmup"""
+        if self._warmup_thread:
+            self._warmup_thread.quit()
+            self._warmup_thread.wait()
+        if self._warmup_worker:
+            self._warmup_worker.deleteLater()
+        if self._warmup_thread:
+            self._warmup_thread.deleteLater()
+        self._warmup_worker = self._warmup_thread = None
+        self.btn_ai_warmup.setText("Warm Up AI")
+        self.btn_ai_warmup.setEnabled(True)
+
     def refresh(self):
         if self.totp_checkbox:
             self.totp_checkbox.setChecked(is_totp_enabled())
@@ -697,3 +804,4 @@ class SettingsScreen(QWidget):
             card.set_active(name == active)
         self._update_desc(active)
         self._refresh_badges()
+        self._refresh_ai_status()

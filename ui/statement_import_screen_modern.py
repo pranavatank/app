@@ -11,10 +11,10 @@ from PyQt6.QtWidgets import (
     QHeaderView, QMessageBox, QFrame, QCheckBox,
     QPlainTextEdit, QApplication, QDialog,
     QInputDialog,
-    QStackedWidget, QScrollArea, QSizePolicy
+    QStackedWidget, QScrollArea, QSizePolicy, QFormLayout
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QThread, QObject
-from PyQt6.QtGui import QFont, QColor
+from PyQt6.QtCore import Qt, pyqtSignal, QThread, QObject, QMimeData
+from PyQt6.QtGui import QFont, QColor, QDragEnterEvent, QDropEvent
 from datetime import datetime
 import json
 import os
@@ -41,8 +41,9 @@ from engines.statement_parser import (
     parse_statement_with_debug, validate_transactions,
     extract_statement_text, is_pdf_encrypted, is_excel_encrypted,
     StatementPasswordError, StatementPasswordInvalidError, StatementPasswordRequiredError,
-    is_ollama_available,
+
 )
+from engines.statement.validate import confidence, balance_walk, extract_control_totals, reconcile_totals, LowConfidenceParse
 from engines.statement_metadata_extractor import extract_account_metadata
 from engines.interest_engine import allocate_savings_interest_to_fy
 from engines.balance_engine import recalculate_account_balance
@@ -50,7 +51,6 @@ from config import get_all_financial_years, fy_date_range
 from ui.dialogs.account_dialog import AccountDialog
 from ui.dialogs.account_metadata_dialog import AccountMetadataDialog
 from ui.dialogs.password_dialog import PasswordDialog
-from ui.ollama_worker import OllamaModelStartWorker
 from ui.dialogs.column_mapping_dialog import ColumnMappingDialog
 
 
@@ -229,11 +229,36 @@ class _TransactionImportWorker(QObject):
         return None
 
 
+class _SelectionScreenWidget(QWidget):
+    """Selection screen with drag-and-drop support"""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.statement_import_screen = parent
+        self.setAcceptDrops(True)
+
+    def dragEnterEvent(self, event: QDragEnterEvent):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event: QDropEvent):
+        if event.mimeData().hasUrls():
+            urls = event.mimeData().urls()
+            if urls:
+                file_path = urls[0].toLocalFile()
+                if file_path:
+                    self.statement_import_screen._handle_file_drop(file_path)
+                    event.acceptProposedAction()
+                    return
+        event.ignore()
+
+
 class StatementImportScreen(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.parent_window = parent
-        
+
         # State
         self.selected_person_id = None
         self.selected_account_id = None
@@ -248,15 +273,15 @@ class StatementImportScreen(QWidget):
         self.duplicate_count = 0
         self.statement_text = ""
         self.fds_created_last_import = 0
+        self.parse_confidence = 0.0
+        self.failing_rows_balance = []
         self._loader = None
-        self._warmup_thread = None
-        self._warmup_worker = None
         self._preview_cell_change_lock = False
         self._selection_tab_order_ready = False
         self._preview_tab_order_ready = False
         self._parse_password = None
         self._parse_save_password = False
-        
+
         self._build_ui()
 
     def _build_ui(self):
@@ -264,19 +289,11 @@ class StatementImportScreen(QWidget):
         layout.setContentsMargins(28, 22, 28, 20)
         layout.setSpacing(16)
 
-        # Header
-        header = QHBoxLayout()
-        header.setSpacing(10)
-        self._header_icon = icon_label("statement_import", size=20, color=Theme.PRIMARY)
-        header.addWidget(self._header_icon)
-        self._title_lbl = title = QLabel("Statement Import")
-        title.setObjectName("importTitle")
-        title.setFont(QFont("Segoe UI", 15, QFont.Weight.Bold))
-        header.addWidget(title)
-        header.addStretch()
-
-        header.addWidget(self._build_stepper())
-        layout.addLayout(header)
+        # Stepper only (title already in top bar)
+        stepper_layout = QHBoxLayout()
+        stepper_layout.addStretch()
+        stepper_layout.addWidget(self._build_stepper())
+        layout.addLayout(stepper_layout)
 
         # Stack for 2 screens
         self.stack = QStackedWidget()
@@ -294,7 +311,7 @@ class StatementImportScreen(QWidget):
         self.btn_back.setAccessibleDescription("Return to the previous step in the import wizard.")
         self.btn_back.setToolTip("Return to the previous step in the import wizard.")
         nav.addWidget(self.btn_back)
-        
+
         self.btn_next = Theme.btn("Parse Statement →", "primary", height=38, min_width=160)
         self.btn_next.clicked.connect(self._go_next)
         self.btn_next.setAccessibleName("Next button")
@@ -304,75 +321,87 @@ class StatementImportScreen(QWidget):
         layout.addLayout(nav)
 
     def _build_selection_screen(self) -> QWidget:
-        """Screen 1: Person + Account + File selection in one view"""
-        container = QWidget()
+        """Screen 1: Person + Account + File selection in one form card"""
+        container = _SelectionScreenWidget(self)
         layout = QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(20)
+        layout.setSpacing(0)
 
-        scroll = QScrollArea()
-        scroll.setObjectName("transparentSurface")
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        # Single form card containing all three selections
+        form_card = self._create_card()
+        form_layout = QVBoxLayout(form_card)
+        form_layout.setSpacing(16)
 
-        content = QWidget()
-        content.setObjectName("transparentSurface")
-        cl = QVBoxLayout(content)
-        cl.setSpacing(20)
-        cl.setContentsMargins(0, 0, 0, 0)
+        # Card title and subtitle
+        form_layout.addWidget(self._card_title_row("browse", "Import Statement"))
+        form_layout.addWidget(self._card_subtitle("Select person, account, and statement file"))
 
-        # Card 1: Person Selection
-        self._card1 = card1 = self._create_card()
-        c1_layout = QVBoxLayout(card1)
-        c1_layout.setSpacing(12)
-        
-        c1_layout.addWidget(self._card_title_row("person", "Select Person"))
-        c1_layout.addWidget(self._card_subtitle("Choose the family member for this statement"))
-        
+        # Form fields
+        form = QFormLayout()
+        form.setSpacing(12)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+
+        # Person selection
         self.person_combo = QComboBox()
-        self.person_combo.setMinimumHeight(42)
+        self.person_combo.setMinimumHeight(38)
         self.person_combo.setAccessibleName("Person selection")
         self.person_combo.setAccessibleDescription("Choose the person associated with this bank statement.")
         self.person_combo.setToolTip("Choose the person associated with this bank statement.")
         self.person_combo.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.person_combo.currentIndexChanged.connect(self._on_person_changed)
-        c1_layout.addWidget(self.person_combo)
-        cl.addWidget(card1)
+        form.addRow(self._form_label("Family Member"), self.person_combo)
 
-        # Card 2: Account Selection
-        self._card2 = card2 = self._create_card()
-        c2_layout = QVBoxLayout(card2)
-        c2_layout.setSpacing(12)
-        
-        c2_layout.addWidget(self._card_title_row("bank", "Select Bank Account"))
-        c2_layout.addWidget(self._card_subtitle("Choose the account for this statement"))
-        
+        # Account selection
         self.account_combo = QComboBox()
-        self.account_combo.setMinimumHeight(42)
+        self.account_combo.setMinimumHeight(38)
         self.account_combo.setEnabled(False)
         self.account_combo.setAccessibleName("Bank account selection")
         self.account_combo.setAccessibleDescription("Choose the bank account for the selected person.")
         self.account_combo.setToolTip("Choose the bank account for the selected person.")
         self.account_combo.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        c2_layout.addWidget(self.account_combo)
-        cl.addWidget(card2)
+        form.addRow(self._form_label("Account"), self.account_combo)
 
-        # Card 3: File Selection
-        self._card3 = card3 = self._create_card()
-        c3_layout = QVBoxLayout(card3)
-        c3_layout.setSpacing(12)
-        
-        c3_layout.addWidget(self._card_title_row("browse", "Choose Statement File"))
-        c3_layout.addWidget(self._card_subtitle("Select a PDF or Excel bank statement"))
-        
-        file_row = QHBoxLayout()
-        self.file_label = QLabel("No file selected")
-        self.file_label.setObjectName("fileLabel")
-        self.file_label.setAccessibleName("Selected statement file")
-        self.file_label.setAccessibleDescription("Shows the currently selected statement file.")
-        file_row.addWidget(self.file_label, stretch=1)
+        # File type selection
+        file_type_layout = QHBoxLayout()
+        self.file_type_combo = QComboBox()
+        self.file_type_combo.addItems(["PDF", "Excel"])
+        self.file_type_combo.setMinimumHeight(38)
+        self.file_type_combo.setMaximumWidth(150)
+        self.file_type_combo.setAccessibleName("Statement file type")
+        self.file_type_combo.setAccessibleDescription("Choose whether the selected file is a PDF or Excel statement.")
+        self.file_type_combo.setToolTip("Choose whether the selected file is a PDF or Excel statement.")
+        self.file_type_combo.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.file_type_combo.currentTextChanged.connect(self._on_file_type_changed)
+        file_type_layout.addWidget(self.file_type_combo)
+        file_type_layout.addStretch()
 
-        btn_browse = Theme.btn("Browse", "secondary", height=42, min_width=120)
+        self._column_mapping = None
+        self.map_columns_btn = Theme.btn("Map Columns", "secondary", height=32, min_width=120)
+        self.map_columns_btn.clicked.connect(self._open_column_mapping_dialog)
+        self.map_columns_btn.setVisible(self.file_type_combo.currentText() == "Excel")
+        self.map_columns_btn.setAccessibleName("Map Excel columns")
+        self.map_columns_btn.setAccessibleDescription("Open the column mapping dialog for Excel imports.")
+        self.map_columns_btn.setToolTip("Open the column mapping dialog for Excel imports.")
+        self.map_columns_btn.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        file_type_layout.addWidget(self.map_columns_btn)
+
+        form.addRow(self._form_label("Format"), file_type_layout)
+
+        form_layout.addLayout(form)
+
+        # File selection section (with drag-and-drop)
+        form_layout.addWidget(QLabel(""))  # Spacer
+        file_section = QVBoxLayout()
+        file_section.setSpacing(10)
+
+        # Drag-and-drop target
+        self._drag_drop_target = self._create_drag_drop_target()
+        file_section.addWidget(self._drag_drop_target)
+
+        # Browse button row
+        button_row = QHBoxLayout()
+        button_row.addStretch()
+        btn_browse = Theme.btn("Or Browse…", "secondary", height=36, min_width=130)
         btn_browse.clicked.connect(self._browse_file)
         btn_browse.setAccessibleName("Browse statement file")
         btn_browse.setAccessibleDescription("Open a file picker to select a bank statement file.")
@@ -380,76 +409,18 @@ class StatementImportScreen(QWidget):
         btn_browse.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         set_btn_icon(btn_browse, "browse")
         self.btn_browse = btn_browse
-        file_row.addWidget(btn_browse)
-        c3_layout.addLayout(file_row)
-        
-        type_row = QHBoxLayout()
-        type_lbl = QLabel("File Type:")
-        type_lbl.setProperty("textrole", "section-label")
-        type_row.addWidget(type_lbl)
-        
-        self.file_type_combo = QComboBox()
-        self.file_type_combo.addItems(["PDF", "Excel"])
-        self.file_type_combo.setMinimumHeight(38)
-        self.file_type_combo.setMinimumWidth(100)
-        self.file_type_combo.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
-        self.file_type_combo.setAccessibleName("Statement file type")
-        self.file_type_combo.setAccessibleDescription("Choose whether the selected file is a PDF or Excel statement.")
-        self.file_type_combo.setToolTip("Choose whether the selected file is a PDF or Excel statement.")
-        self.file_type_combo.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.file_type_combo.currentTextChanged.connect(self._on_file_type_changed)
-        type_row.addWidget(self.file_type_combo)
-        # AI parser status
-        self.ai_status_lbl = QLabel("")
-        self.ai_status_lbl.setMinimumHeight(22)
-        self.ai_status_lbl.setProperty("textrole", "muted-sm")
-        type_row.addWidget(self.ai_status_lbl)
+        button_row.addWidget(btn_browse)
+        file_section.addLayout(button_row)
 
-        btn_ai_check = Theme.btn("AI Check", "secondary", height=28, min_width=90)
-        btn_ai_check.clicked.connect(self._refresh_ai_status)
-        btn_ai_check.setAccessibleName("Check AI availability")
-        btn_ai_check.setAccessibleDescription("Check whether the local AI parser is available.")
-        btn_ai_check.setToolTip("Check whether the local AI parser is available.")
-        btn_ai_check.setShortcut("Alt+A")
-        btn_ai_check.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.btn_ai_check = btn_ai_check
-        type_row.addWidget(btn_ai_check)
+        form_layout.addLayout(file_section)
+        form_layout.addStretch()
 
-        btn_ai_warmup = Theme.btn("Warm Up AI", "secondary", height=28, min_width=100)
-        btn_ai_warmup.clicked.connect(self._warm_up_ai_model)
-        btn_ai_warmup.setAccessibleName("Warm up local AI model")
-        btn_ai_warmup.setAccessibleDescription(
-            "Pre-load the local AI model so the first Parse Statement in AI/auto "
-            "mode doesn't hit a cold-start timeout."
-        )
-        btn_ai_warmup.setToolTip(
-            "Pre-load the local AI model before parsing — avoids a slow first "
-            "run timing out."
-        )
-        btn_ai_warmup.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.btn_ai_warmup = btn_ai_warmup
-        type_row.addWidget(btn_ai_warmup)
-        # Column mapping for Excel
-        self._column_mapping = None
-        self.map_columns_btn = Theme.btn("Map Columns", "secondary", height=28, min_width=120)
-        self.map_columns_btn.clicked.connect(self._open_column_mapping_dialog)
-        self.map_columns_btn.setVisible(self.file_type_combo.currentText() == "Excel")
-        self.map_columns_btn.setAccessibleName("Map Excel columns")
-        self.map_columns_btn.setAccessibleDescription("Open the column mapping dialog for Excel imports.")
-        self.map_columns_btn.setToolTip("Open the column mapping dialog for Excel imports.")
-        self.map_columns_btn.setShortcut("Alt+M")
-        self.map_columns_btn.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        type_row.addWidget(self.map_columns_btn)
-        type_row.addStretch()
-        c3_layout.addLayout(type_row)
-        
-        cl.addWidget(card3)
-        cl.addStretch()
+        layout.addWidget(form_card)
 
-        scroll.setWidget(content)
-        layout.addWidget(scroll)
-        # Initial AI status check
-        self._refresh_ai_status()
+        # Load persons
+        for p in get_all_persons():
+            self.person_combo.addItem(p["full_name"], userData=p["person_id"])
+
         return container
 
     def _build_preview_screen(self) -> QWidget:
@@ -702,6 +673,45 @@ class StatementImportScreen(QWidget):
         lbl.setProperty("textrole", "muted-md")
         return lbl
 
+    def _form_label(self, text: str) -> QLabel:
+        lbl = QLabel(f"{text}:")
+        lbl.setProperty("textrole", "section-label")
+        return lbl
+
+    def _create_drag_drop_target(self) -> QFrame:
+        """Create a drag-and-drop target frame for file selection"""
+        target = QFrame()
+        target.setObjectName("DragDropTarget")
+        target.setCursor(Qt.CursorShape.PointingHandCursor)
+        target.setMinimumHeight(100)
+        target.setAccessibleName("Drag and drop target")
+        target.setAccessibleDescription("Drag a statement file here, or use the Browse button below.")
+        target.setToolTip("Drag a statement file here, or click 'Or Browse…' to select one")
+
+        layout = QVBoxLayout(target)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(8)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        icon_lbl = icon_label("upload", size=32, color=Theme.PRIMARY)
+        layout.addWidget(icon_lbl, alignment=Qt.AlignmentFlag.AlignHCenter)
+
+        text_lbl = QLabel("Drag statement file here")
+        text_lbl.setProperty("textrole", "emphasis-md")
+        text_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(text_lbl)
+
+        sub_lbl = QLabel("PDF or Excel format")
+        sub_lbl.setProperty("textrole", "muted-md")
+        sub_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(sub_lbl)
+
+        # Store refs for theme refresh
+        self._drag_drop_icon = icon_lbl
+        self._drag_drop_text = text_lbl
+
+        return target
+
     def _on_person_changed(self):
         """Load accounts when person changes"""
         self.selected_person_id = self.person_combo.currentData()
@@ -723,71 +733,37 @@ class StatementImportScreen(QWidget):
             self, "Select Bank Statement", "",
             "All Files (*.pdf *.xls *.xlsx);;PDF (*.pdf);;Excel (*.xls *.xlsx)")
         if path:
-            self.selected_file = path
-            filename = path.split("/")[-1] or path.split("\\")[-1]
-            self.file_label.setText(f"✓  {filename}")
-            self.file_label.setStyleSheet(f"""
-                background: {Theme.SUCCESS_LIGHT}; 
-                color: {Theme.SUCCESS_DARK};
-                border: 2px solid {Theme.SUCCESS}; 
-                border-radius: 10px;
-                padding: 12px 16px; 
-                font-size: 13px;
-                font-weight: 600;
-            """)
-            # Reset mapping when file changes
-            self._column_mapping = None
+            self._set_selected_file(path)
 
-    def _refresh_ai_status(self):
-        try:
-            ok = is_ollama_available()
-            if ok:
-                self.ai_status_lbl.setText("AI: Available")
-                self.ai_status_lbl.setStyleSheet(Theme.badge_style(Theme.SUCCESS_LIGHT, Theme.SUCCESS_DARK, radius=8, padding='4px 8px', size=11))
-            else:
-                self.ai_status_lbl.setText("AI: Unavailable")
-                self.ai_status_lbl.setStyleSheet(Theme.badge_style(Theme.DANGER_LIGHT, Theme.DANGER, radius=8, padding='4px 8px', size=11))
-        except Exception:
-            self.ai_status_lbl.setText("AI: Unknown")
-            self.ai_status_lbl.setStyleSheet(Theme.badge_style(Theme.WARNING_LIGHT, Theme.WARNING, radius=8, padding='4px 8px', size=11))
+    def _handle_file_drop(self, path: str):
+        """Handle a file dropped onto the selection screen"""
+        self._set_selected_file(path)
 
-    def _warm_up_ai_model(self):
-        """Pre-load the local Ollama model in the background so the first
-        Parse Statement call in AI/auto mode doesn't hit a cold-start timeout."""
-        if getattr(self, "_warmup_thread", None):
+    def _set_selected_file(self, path: str):
+        """Set the selected file and update UI"""
+        if not path:
             return
-        self.btn_ai_warmup.setEnabled(False)
-        self.btn_ai_warmup.setText("Warming up…")
-        self._warmup_thread = QThread(self)
-        self._warmup_worker = OllamaModelStartWorker()
-        self._warmup_worker.moveToThread(self._warmup_thread)
-        self._warmup_thread.started.connect(self._warmup_worker.run)
-        self._warmup_worker.finished.connect(self._on_ai_warmup_finished)
-        self._warmup_worker.failed.connect(self._on_ai_warmup_failed)
-        self._warmup_worker.finished.connect(self._finish_ai_warmup)
-        self._warmup_worker.failed.connect(self._finish_ai_warmup)
-        self._warmup_thread.start()
-
-    def _on_ai_warmup_finished(self, message: str):
-        self.ai_status_lbl.setText("AI: Ready")
-        self.ai_status_lbl.setStyleSheet(
-            Theme.badge_style(Theme.SUCCESS_LIGHT, Theme.SUCCESS_DARK, radius=8, padding='4px 8px', size=11))
-
-    def _on_ai_warmup_failed(self, message: str):
-        show_warning(message)
-        self._refresh_ai_status()
-
-    def _finish_ai_warmup(self):
-        if self._warmup_thread:
-            self._warmup_thread.quit()
-            self._warmup_thread.wait()
-        if self._warmup_worker:
-            self._warmup_worker.deleteLater()
-        if self._warmup_thread:
-            self._warmup_thread.deleteLater()
-        self._warmup_worker = self._warmup_thread = None
-        self.btn_ai_warmup.setText("Warm Up AI")
-        self.btn_ai_warmup.setEnabled(True)
+        self.selected_file = path
+        filename = path.split("/")[-1] or path.split("\\")[-1]
+        # Update drag-drop target to show selected file
+        if hasattr(self, "_drag_drop_target"):
+            layout = self._drag_drop_target.layout()
+            # Clear layout and rebuild with file info
+            while layout.count():
+                layout.takeAt(0).widget().deleteLater()
+            icon = icon_label("check_circle", size=32, color=Theme.SUCCESS)
+            layout.addWidget(icon, alignment=Qt.AlignmentFlag.AlignHCenter)
+            text = QLabel(f"✓ {filename}")
+            text.setProperty("textrole", "emphasis-md")
+            text.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            layout.addWidget(text)
+            sub = QLabel("Ready to parse")
+            sub.setProperty("textrole", "muted-md")
+            sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            layout.addWidget(sub)
+        # Reset mapping when file changes
+        self._column_mapping = None
+        show_success(f"File selected: {filename}")
 
     def _go_next(self):
         """Handle next button - validate and parse"""
@@ -970,6 +946,25 @@ class StatementImportScreen(QWidget):
             if errors:
                 show_warning(f"{len(errors)} rows were skipped. Check debug panel for details.")
 
+            # Calculate confidence score and check for low confidence
+            self.parse_confidence = confidence(valid)
+            self.failing_rows_balance = balance_walk(valid)
+            balance_pass_rate = 1.0 - (len(self.failing_rows_balance) / len(valid)) if valid else 0.0
+
+            # Block import if confidence is too low (< 0.9 / 90%)
+            if self.parse_confidence < 0.9 and valid:
+                fail_count = sum(1 for txn in valid if any(f["index"] == valid.index(txn) for f in self.failing_rows_balance))
+                reason = f"Balance validation failed for {len(self.failing_rows_balance)} row(s) (confidence: {self.parse_confidence:.0%})"
+                show_warning(f"Import blocked: {reason}\n\nPlease review the statement and try again.")
+                # Still show preview but prevent import
+                self.preview_transactions = valid
+                self.preview_duplicate_flags = [False] * len(valid)
+                self.parsed_transactions = valid
+                self.duplicate_count = 0
+                self._populate_preview_table()
+                self._switch_to_preview()
+                return
+
             # Check duplicates (lightweight DB queries, stay on UI thread)
             self.preview_transactions = valid
             self.preview_duplicate_flags = [
@@ -996,6 +991,7 @@ class StatementImportScreen(QWidget):
 
             self.parsed_transactions = unique
             self._populate_preview_table()
+            self._show_confidence_summary(len(valid), balance_pass_rate)
             self._switch_to_preview()
 
         except Exception as e:
@@ -1133,21 +1129,19 @@ class StatementImportScreen(QWidget):
         parsed rows, in-progress state), which would be destructive mid-import.
         Only re-applies icon pixmaps and child widget themes."""
         # Re-apply card shadow effects after theme change
-        for attr in ("_card1", "_card2", "_card3", "_preview_header_card", "_debug_card"):
+        for attr in ("_preview_header_card", "_debug_card", "_drag_drop_target"):
             card = getattr(self, attr, None)
             if card is not None:
                 card.setGraphicsEffect(Theme.shadow_card())
-        # Re-apply icon pixmaps (colors are baked in)
-        if hasattr(self, "_header_icon"):
-            self._header_icon.setPixmap(icon_pixmap("statement_import", size=20, color=Theme.PRIMARY))
+        # Re-apply drag-drop icon pixmap
+        if hasattr(self, "_drag_drop_icon"):
+            pm = icon_pixmap("upload", size=32, color=Theme.PRIMARY)
+            if not pm.isNull():
+                self._drag_drop_icon.setPixmap(pm)
         if hasattr(self, "preview_table_widget") and self.preview_table_widget:
             self.preview_table_widget.refresh_theme()
         if hasattr(self, "screen_indicator_step"):
             self._set_step(self.screen_indicator_step)
-        for icon_lbl, icon_name in getattr(self, "_title_icons", []):
-            pm = icon_pixmap(icon_name, size=18, color=Theme.PRIMARY)
-            if not pm.isNull():
-                icon_lbl.setPixmap(pm)
 
     def refresh(self):
         """Reset to initial state"""
@@ -1163,18 +1157,37 @@ class StatementImportScreen(QWidget):
         self.validation_errors = []
         self.duplicate_count = 0
         self.fds_created_last_import = 0
-        
+        self.parse_confidence = 0.0
+        self.failing_rows_balance = []
+
         # Reset UI
         self.stack.setCurrentIndex(0)
         self._set_step(1)
         self.btn_back.setEnabled(False)
         self.btn_next.setText("Parse Statement →")
 
+        # Reset drag-drop target
+        if hasattr(self, "_drag_drop_target"):
+            layout = self._drag_drop_target.layout()
+            while layout.count():
+                layout.takeAt(0).widget().deleteLater()
+            icon = icon_label("upload", size=32, color=Theme.PRIMARY)
+            layout.addWidget(icon, alignment=Qt.AlignmentFlag.AlignHCenter)
+            self._drag_drop_icon = icon
+            text = QLabel("Drag statement file here")
+            text.setProperty("textrole", "emphasis-md")
+            text.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            layout.addWidget(text)
+            sub = QLabel("PDF or Excel format")
+            sub.setProperty("textrole", "muted-md")
+            sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            layout.addWidget(sub)
+
         # Reload person combo
         self.person_combo.clear()
         for p in get_all_persons():
             self.person_combo.addItem(p["full_name"], userData=p["person_id"])
-        
+
         if self.selected_person_id:
             for i in range(self.person_combo.count()):
                 if self.person_combo.itemData(i) == self.selected_person_id:
@@ -1206,6 +1219,12 @@ class StatementImportScreen(QWidget):
             self._loader.hide()
         self.btn_next.setEnabled(True)
         self.btn_back.setEnabled(self.stack.currentIndex() == 1)
+
+    def _show_confidence_summary(self, rows_parsed: int, balance_pass_rate: float):
+        """Show confidence summary as a toast notification"""
+        fail_count = len(self.failing_rows_balance)
+        summary = f"Parsed {rows_parsed} rows | Balance validation: {balance_pass_rate:.0%} | Rows needing review: {fail_count}"
+        show_info(summary)
 
     def _populate_preview_table(self):
         """Populate preview table with transactions"""

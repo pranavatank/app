@@ -13,7 +13,7 @@ DB_PATH     = os.path.join(DATA_DIR, "financial.db")
 
 # ── App Meta ─────────────────────────────────────────────────────────────────
 APP_NAME    = "Personal Financial Manager"
-APP_VERSION = "1.0.0"
+APP_VERSION = "2.0.0"
 
 # ── Security ──────────────────────────────────────────────────────────────────
 PBKDF2_ITERATIONS = 100_000

@@ -17,7 +17,7 @@ from PyQt6.QtGui import QFont, QColor, QIcon, QFontMetrics
 
 from core.session import session
 from config import (
-    APP_NAME, get_current_financial_year,
+    APP_NAME, APP_VERSION, get_current_financial_year,
     get_all_financial_years, get_assessment_year
 )
 from models.person import get_all_persons
@@ -198,7 +198,7 @@ class DashboardScreen(QMainWindow):
 
         layout.addStretch()
 
-        self.ver_lbl = QLabel("v1.0")
+        self.ver_lbl = QLabel(f"v{APP_VERSION}")
         self.ver_lbl.setObjectName("verLabel")
         self.ver_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.ver_lbl)
@@ -1170,7 +1170,7 @@ class DashboardScreen(QMainWindow):
         if hasattr(self, 'nav_lbl'):
             self.nav_lbl.setVisible(True)
         if hasattr(self, 'ver_lbl'):
-            self.ver_lbl.setText("v1.0.0  ·  Offline")
+            self.ver_lbl.setText(f"v{APP_VERSION}  ·  Offline")
 
         # Resize icons to natural width (24px) and show all nav labels
         for btn in self._nav_buttons:
@@ -1196,7 +1196,7 @@ class DashboardScreen(QMainWindow):
         if hasattr(self, 'nav_lbl'):
             self.nav_lbl.setVisible(False)
         if hasattr(self, 'ver_lbl'):
-            self.ver_lbl.setText("v1.0")
+            self.ver_lbl.setText(f"v{APP_VERSION}")
 
         # Resize icons to fill rail (76px) and hide all nav labels
         for btn in self._nav_buttons:

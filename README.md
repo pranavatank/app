@@ -21,11 +21,9 @@ A fully offline desktop application for managing personal and family financial d
 - ⚠️ FD interest TDS-threshold reminder — flags, per bank and per quarter, when yearly FD interest crosses the ₹50,000 limit and which form to file to avoid deduction
 
 ### Tax Calculation
-- 🇮🇳 Indian income tax calculation — **New Regime first** (the default regime since FY 2023-24), with Old Regime shown for comparison
-- ⚖️ Old vs New regime comparison with automatic recommendation
-- 🧾 87A rebate + 4% Health & Education cess handled for both regimes
+- 🇮🇳 Indian income tax calculation (New Regime)
+- 🧾 87A rebate + 4% Health & Education cess
 - 💳 Net payable / refund due — total liability minus TDS, TCS, advance tax and self-assessment tax already paid
-- 📋 Deductions support (80C, 80D, HRA, home loan) for the Old Regime
 - 📈 Next-year income projection vs tax slab — projected gross income (income expectations + real next-FY FD interest + carried-forward savings) and the ₹ headroom to the next tax bracket
 
 ### Statement Import
@@ -126,17 +124,18 @@ Financial App/
 ├── ui/                      # User interface
 │   ├── login_screen.py
 │   ├── dashboard_screen.py
+│   ├── accounts_screen.py
 │   ├── transactions_screen.py
+│   ├── income_management_screen.py
 │   ├── fixed_deposits_screen.py
-│   ├── statement_import_screen.py
-│   ├── ais_tis_import_screen.py
+│   ├── statement_import_screen_modern.py
+│   ├── tax_documents_screen.py
 │   ├── tax_screen.py
-│   ├── reports_screen.py
 │   ├── settings_screen.py
 │   └── widgets/
 │       ├── summary_panel.py
 │       ├── chart_widget.py
-│       └── privacy_overlay.py
+│       └── toast_utils.py
 │
 ├── data/                    # Database (auto-created, plaintext SQLite)
 ├── backups/                 # Backup copies (plaintext)
@@ -149,13 +148,14 @@ Financial App/
 
 ### Navigation
 1. **🏠 Overview** - Dashboard with financial summary
-2. **💸 Transactions** - Manage income/expenses
-3. **🏦 Fixed Deposits** - Track FDs and interest
-4. **📄 Statement Import** - Import bank statements
-5. **📑 AIS/TIS Import** - Import Income Tax portal data
-6. **📋 Tax** - Calculate taxes
-7. **📊 Reports** - View analytics
-8. **⚙️ Settings** - Security & preferences
+2. **💼 Accounts** - Manage bank accounts
+3. **💸 Transactions** - Manage income/expenses
+4. **📈 Income & Expectations** - Track expected income
+5. **🏦 Fixed Deposits** - Track FDs and interest
+6. **📄 Statement Import** - Import bank statements
+7. **📋 Tax Documents** - View AIS/TIS import data
+8. **🧮 Tax** - Calculate taxes
+9. **⚙️ Settings** - Security & preferences
 
 ### Key Workflows
 
@@ -175,13 +175,9 @@ Financial App/
 
 #### Importing Bank Statements
 1. Go to Statement Import screen
-2. Follow 5-step wizard:
-   - Select person
-   - Select bank account
-   - Choose PDF/Excel file
-   - Preview extracted transactions
-   - Review Import Debug Panel for skipped rows and parse issues
-   - Confirm import
+2. Follow 2-step wizard:
+   - **Select**: Choose person, account, and PDF/Excel file
+   - **Preview**: Review extracted transactions and confirm import
 
 #### Offline AI Statement Extraction (Local)
 The importer now supports a local AI parsing mode through Ollama.
@@ -213,13 +209,11 @@ The app unloads the configured Ollama model when the desktop window closes.
 1. Go to Tax screen
 2. Enter salary and other income
 3. FD/savings interest auto-loads
-4. Add deductions (80C, 80D, etc.) — these apply to the Old Regime only
-5. Enter taxes already paid (TDS, TCS, advance tax, self-assessment)
-6. Click "Estimate Tax"
-7. Review the results:
-   - **New Regime** (shown first) — taxable income, slab tax, 87A rebate, cess, total liability
+4. Enter taxes already paid (TDS, TCS, advance tax, self-assessment)
+5. Click "Estimate Tax"
+6. Review the results:
+   - **Tax Summary** — taxable income, slab tax, 87A rebate, cess, total liability
    - **Net Payable / Refund** — what you still owe or are owed after taxes already paid
-   - **Old Regime** — the comparison figure, plus the recommended regime
    - **Next Year Projection** — projected income and where it lands in the tax slabs
 
 #### Importing AIS/TIS from Income Tax Portal
@@ -280,12 +274,12 @@ The application uses the following tables:
 
 ## 🎨 UI Theme
 
-The app ships **10 themes** with a fully token-driven styling system — every
+The app ships **4 themes** with a fully token-driven styling system — every
 screen reads colours from `Theme.*` tokens, so switching a theme re-colours the
 whole app **live, with no restart**.
 
-- **Light themes**: Aurora (default), Ocean Blue, Arctic Breeze, Forest Light, Rose Gold Luxe, Sunrise Warm
-- **Dark themes**: Nova (default), Midnight Pro, Amethyst Dusk, Finance Pro
+- **Light themes**: Aurora (default), Slate Light
+- **Dark themes**: Nova (default), Midnight Pro
 
 Change the theme in **Settings → Color Theme** (each card shows a live preview).
 Icons come from a unified registry (Fluent / Material Design, with emoji

@@ -120,9 +120,9 @@ def bootstrap():
 
 
 def _qt_message_handler(msg_type, context, message):
-    # Filter known noisy font warning that does not affect rendering.
-    if "QFont::setPointSize: Point size <= 0" in message:
-        return
+    # Previously suppressed "QFont::setPointSize: Point size <= 0" but underlying
+    # issue has been resolved (likely by refactoring inline styles to global QSS).
+    # Keep message handler for other potential Qt warnings.
     print(message)
 
 
