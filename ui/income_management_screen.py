@@ -189,7 +189,10 @@ class IncomeManagementScreen(QWidget):
         layout.addWidget(lbl_title)
 
         lbl_value = QLabel(value)
-        lbl_value.setObjectName(f"{object_name}_value")
+        # Read back by findChild(QLabel, "kpiValue") in _update_kpi_tiles —
+        # keep both sides on this one name.
+        lbl_value.setObjectName("kpiValue")
+        lbl_value.setProperty("textrole", "metric")
         layout.addWidget(lbl_value)
 
         layout.addStretch()

@@ -1,0 +1,853 @@
+{
+  "meta": {
+    "document": "Frontend Redesign Plan — Personal Financial Manager",
+    "version": "1.0",
+    "created": "2026-09-05",
+    "supersedes_nothing": "docs/REBUILD_PLAN.json is COMPLETE. This is the next pass: a visual, structural and interaction redesign of the 9 screens that plan produced.",
+    "companion_documents": {
+      "docs/AUDIT_AND_REBUILD_PLAN.md": "prose audit + Appendix Z (execution findings). Z8, Z9, Z16 are still open there and are NOT restated here.",
+      "docs/REBUILD_PLAN.json": "the completed 60-task correctness plan"
+    },
+    "goal_from_owner": "Make the product visually good, colourful, attractive and interesting, and confirm that every screen, dialog, button, card, table and label earns its place and works.",
+    "method": "The real application was rendered offscreen under PyQt6 6.11 with QT_QPA_FONTDIR=C:/Windows/Fonts (174 font families, Segoe UI present — so unlike the previous audit, typography and layout in the captures are TRUSTWORTHY). All 9 screens and 10 dialogs were screenshotted and introspected; Excel shortcuts were exercised with QTest on every live table."
+  },
+
+  "read_this_first": {
+    "rules": [
+      "Work in `recommended_sequence` order. Phases V1-V3 are foundation; screens (V6) depend on them.",
+      "Run `python -m pytest tests/ -q` after every task. Baseline at time of writing: 234 passed, 1 skipped, 19 xfailed.",
+      "Screens are lazily built, so a constructor error stays hidden until the screen is visited. After ANY screen edit, construct all 9 screens under all 4 themes — Appendix Z17 records six such defects that shipped because nobody did.",
+      "In PyQt6 an unhandled exception inside a reimplemented virtual (showEvent, paintEvent, resizeEvent) ABORTS THE PROCESS with no traceback. Never reference a widget attribute in one without a getattr guard. This exact bug (F002) took the whole app down.",
+      "No raw hex colour anywhere in ui/ outside ui/theme/. The contrast gate (tests/test_theme_contrast.py) must stay green."
+    ],
+    "do_not_regress": [
+      "Inline setStyleSheet() calls outside ui/theme/ are at 59 against a target of 60 (Z17). Any new styling goes in the QSS, not inline.",
+      "Theme switch is ~245 ms with one screen built (Z18). Adding QSS bulk makes this worse — it is a known, accepted trade. Do not add per-widget stylesheets to 'fix' it.",
+      "tests/test_statement_package.py pins parser row counts (38/376/65/27), zero direction errors and IDFC control totals. Never loosen it."
+    ],
+    "verified_non_issues": [
+      "Dialog modality: every dialog is opened with .exec(), which is application-modal. An isModal() probe before exec() returns False — that is expected, NOT a bug. Do not 'fix' it.",
+      "AccountDialog's 31 fields are organised across 5 tabs (Basic Info / Bank Details / Contact / Debit Card / Account Holders), not crammed into one pane.",
+      "AccountDetailsDialog's window title uses a proper em-dash. A mojibake character in console output was the terminal's cp1252 encoding, not the source.",
+      "The all-uppercase text in the PREVIOUS audit's screenshots was a zero-font fallback in that harness. This audit used real fonts; its captures are accurate."
+    ]
+  },
+
+  "already_fixed_in_this_pass": [
+    {
+      "id": "F001",
+      "severity": "blocker",
+      "title": "7 of 9 screens rendered completely blank",
+      "detail": "DashboardScreen._navigate() guarded the placeholder swap with `if self._screen_pages.get(index) != screen:`, but _get_screen_page() populates that same cache before returning, so the condition was always False and stack.insertWidget() never ran. Accounts, Transactions, Fixed Deposits, Statement Import, Tax Documents, Tax and Settings all displayed an empty placeholder QWidget. Only Overview (built eagerly) and the error page (the one path that did not pre-cache) ever appeared.",
+      "fix": "Compare against what is actually in the stack — `self.stack.widget(index) is not screen` — and cache the error page in _get_screen_page() so the cache always reflects the stack.",
+      "files": ["ui/dashboard_screen.py"],
+      "verified": "All 9 screens now return their real class from stack.currentWidget() with 46-188 children each."
+    },
+    {
+      "id": "F002",
+      "severity": "blocker",
+      "title": "Statement Import aborted the entire application",
+      "detail": "showEvent() -> _setup_selection_tab_order() referenced self.btn_ai_check, which was deleted when the AI controls moved to Settings. In PyQt6 an unhandled exception inside a reimplemented virtual calls abort() rather than propagating, so the process died with no traceback and exit code 127. This was MASKED by F001: while the placeholder was showing, the real screen never painted, so showEvent never fired. Fixing F001 exposed it.",
+      "fix": "Added _chain_tab_order(*names) which resolves widgets via getattr and skips missing ones.",
+      "files": ["ui/statement_import_screen_modern.py"],
+      "verified": "Navigating to Statement Import no longer terminates the process."
+    },
+    {
+      "id": "F003",
+      "severity": "blocker",
+      "title": "Income & Expectations crashed to an error page",
+      "detail": "_create_kpi_tile() named the value label `f\"{object_name}_value\"` (e.g. 'kpiExpected_value') while _update_kpi_tiles() read it back with findChild(QLabel, 'kpiValue'), returning None -> AttributeError. The screen the owner most asked for never loaded.",
+      "fix": "Both sides now use the objectName 'kpiValue'; the label also carries textrole='metric' so the QSS can style it.",
+      "files": ["ui/income_management_screen.py"],
+      "verified": "Screen constructs with 97 children; _screen_errors is empty."
+    }
+  ],
+
+  "audit_findings": {
+    "note": "Every item below was observed in a real render or measured in code. Task ids that address them are given.",
+    "screen_motive": [
+      {
+        "screen": "Overview",
+        "motive": "Answer 'where do I stand' in one glance.",
+        "fulfilled": "partly",
+        "problems": [
+          "The same four numbers appear TWICE: as KPI tiles (Total Balance / Income (FY) / Expense (FY) / Net Savings) and again in the 'Financial Summary' card below.",
+          "Bank balances appear THREE times app-wide: the Overview donut, the Overview 'Bank Accounts' card, and the Accounts screen bar chart.",
+          "KPI tiles are ~90px tall with content only in the top ~50px, and lay out 3+2 leaving a ragged gap.",
+          "'Interest Income ₹0.00' — see data_wiring F201.",
+          "The 'Bank Accounts' card scrolls at 3 of 5 rows inside a card with free space."
+        ],
+        "tasks": ["F301", "F310"]
+      },
+      {
+        "screen": "Transactions",
+        "motive": "Browse, filter and edit the ledger.",
+        "fulfilled": "no",
+        "problems": [
+          "The relocated Monthly/Categories chart takes ~500px; the table — the actual subject of the screen — gets ~150px and shows 3 of 10 rows.",
+          "Person / Account / FY appear in the top bar AND again in the screen's own filter row: four duplicated controls that can disagree.",
+          "Column widths are not content-aware: Mode shows 'Bank ...', Description 'INT AUTO REDEEM ...', Account 'Jana Small Finance ...', Person 'Pranav ...' — while 'Reference No' displays '—' in ~140px and a ~230px empty band sits after the last column.",
+          "A raw database 'ID' column is exposed to the user."
+        ],
+        "tasks": ["F302", "F311", "F312"]
+      },
+      {
+        "screen": "Income & Expectations",
+        "motive": "Show expected income for the year against what actually arrived.",
+        "fulfilled": "no",
+        "problems": [
+          "'Received to Date ₹0.00' and no Actual series on the chart, despite matching salary transactions existing in the FY — expectation-to-transaction matching does not run (F202).",
+          "FY and Person selectors are repeated ~60px below the identical top-bar selectors.",
+          "KPI values are bare label/value text with no tile container, while Overview's equivalents are bordered cards — two different KPI treatments in one app.",
+          "Every panel title is printed twice: once as a section heading and again inside the matplotlib figure.",
+          "X-axis reads 'Apr 1', 'May 1' — the day-of-month leaks into the month label.",
+          "A single-category donut renders '100.0%', which carries no information."
+        ],
+        "tasks": ["F303", "F310", "F320", "F202"]
+      },
+      {
+        "screen": "Fixed Deposits",
+        "motive": "Manage deposits and see interest by year.",
+        "fulfilled": "partly",
+        "problems": [
+          "An empty ~490px chart panel reading '— No interest records found' occupies half the screen above the table.",
+          "SIX simultaneously filled toolbar buttons (Add FD, Delete Selected, Link Txn, Auto-Link, Recalculate Selected, Save Changes) — two greens with different meanings, three blues, and no single primary action.",
+          "'Expected Interest' and 'Actual Interest' are '—' on every row.",
+          "Person, Bank and FD No are all truncated ('Pranav ...', 'Jana Small ...', 'FD4522030...'), making FD No useless as an identifier, while Compounding and Method get generous width.",
+          "'Showing 4 fixed deposits.' is rendered in amber — a warning colour for neutral information.",
+          "A text hint ('Tip: Edit cells directly...') substitutes for a real affordance, and F2 does not actually enter edit mode on this table (F330)."
+        ],
+        "tasks": ["F304", "F312", "F330", "F201"]
+      },
+      {
+        "screen": "Statement Import",
+        "motive": "Get a bank statement into the ledger safely.",
+        "fulfilled": "partly",
+        "problems": [
+          "The screen's 'Family Member' selector defaults to the SECOND person while the top bar says 'All Persons', and the Account list is consequently empty — the screen opens broken, and a mis-selection imports one person's statement into another's account.",
+          "Calls the same concept 'Family Member' where the top bar says 'Person'.",
+          "Field widths: two 1390px-wide combos beside a 90px Format select.",
+          "The drop zone is a flat grey band with no dashed border or icon, and 'Or Browse...' is right-aligned far from it.",
+          "~450px of empty card below the drop zone.",
+          "A disabled 'Back' button occupies space at step 1."
+        ],
+        "tasks": ["F305", "F313", "F340"]
+      },
+      {
+        "screen": "Tax Documents",
+        "motive": "Reconcile 26AS, AIS and TIS into one position.",
+        "fulfilled": "yes (structurally)",
+        "problems": [
+          "The three 'drop zones' are only a label plus a ~470px 'Select File' button — no drag-and-drop, unlike Statement Import which does have one. Two different file-input patterns in one app.",
+          "Four buttons that all do the same thing: three secondary 'Select File' plus one primary 'Upload Files' in the empty state.",
+          "The empty-state icon renders at ~16px and reads as a broken glyph.",
+          "~40% of the screen below the panel is dead space."
+        ],
+        "tasks": ["F306", "F340", "F322"]
+      },
+      {
+        "screen": "Tax",
+        "motive": "Produce an auditable New-Regime computation.",
+        "fulfilled": "partly",
+        "problems": [
+          "Section heading reads 'Salary_Pension Income' — a raw underscore in a user-facing label.",
+          "Sections collapse via a bare QCheckBox beside the heading. A checkbox means include/exclude, not expand/collapse; it is ambiguous whether unchecking removes that income from the computation.",
+          "Currency spinboxes are ~765px wide and ~44px tall for a rupee amount, so only ~5 fields fit per screen, and their 11px steppers sit at the far right edge.",
+          "Every empty field displays a formatted '₹ 0.00', so the user cannot tell which fields they have actually filled.",
+          "The right panel shows ~19 consecutive '—' rows, reading as broken rather than 'not yet calculated'.",
+          "The header says 'Please select a person from the top bar' while the top bar defaults to 'All Persons' — the screen is unusable until a global selector is changed.",
+          "The 'waterfall' has no visual encoding at all — no bars, no +/- signs, no grouping. It is a definition list."
+        ],
+        "tasks": ["F307", "F314", "F321", "F350"]
+      },
+      {
+        "screen": "Accounts",
+        "motive": "Manage bank accounts.",
+        "fulfilled": "partly",
+        "problems": [
+          "A ~480px bar chart duplicates exactly the account cards beneath it (same 5 banks, same balances).",
+          "All bars share one teal colour while the Overview donut gives the same five accounts five different colours — two contradictory chart colour strategies.",
+          "A permanently reserved ~340x340px 'No account selected' detail panel squeezes the card grid into two cramped columns that then need their own scrollbar.",
+          "A green 'Active' pill on every card conveys nothing when every account is active."
+        ],
+        "tasks": ["F308", "F320", "F322"]
+      },
+      {
+        "screen": "Settings",
+        "motive": "Configure the app.",
+        "fulfilled": "yes",
+        "problems": [
+          "Theme previews for Aurora vs Slate (and Nova vs Midnight Pro) are near-identical generic bar charts that do not communicate what differs.",
+          "Four ~190px preview cards in a ~1500px row leave ~700px empty.",
+          "'Manage Family' is indigo and the adjacent 'Manage Bank' is CYAN — same function, different colour, and cyan fails contrast under a white label.",
+          "Full-width ~660px buttons and ~610px password fields for short inputs.",
+          "Slowest navigation in the app at ~2.5s."
+        ],
+        "tasks": ["F309", "F310", "F315"]
+      }
+    ],
+
+    "buttons": {
+      "question": "Are buttons needed, working, and is size/colour significant to function?",
+      "measured": "71 Theme.btn() calls: 33 secondary, 23 primary, 7 success, 5 danger, 2 edit, 1 hero.",
+      "verdict": "The variant system exists but carries no hierarchy discipline. 23 'primary' buttons across 9 screens means several screens have 3-6 competing primaries.",
+      "specific_defects": [
+        "Fixed Deposits shows six filled buttons at once, so nothing reads as the primary action and 'Delete Selected' (destructive) shouts as loudly as 'Add FD'.",
+        "Auto-Link and Save Changes are both green with unrelated meanings; Add FD, Link Txn and Recalculate are three similar blues.",
+        "Settings' 'Manage Family' (indigo) and 'Manage Bank' (cyan) do the same kind of thing in different colours.",
+        "Tax Documents has three secondary 'Select File' buttons and one primary 'Upload Files' that all open the same picker.",
+        "Buttons stretch to their container: ~660px in Settings cards, ~470px for 'Select File'.",
+        "Disabled buttons (Edit/Delete on Transactions, Back on Statement Import step 1) occupy space with no hint that a selection is required."
+      ],
+      "tasks": ["F210", "F211", "F212"]
+    },
+
+    "components": {
+      "question": "Are size, shadow, border and radius needed and correct?",
+      "measured": {
+        "border_radius_distinct_values": 13,
+        "border_radius_list_px": [2, 5, 6, 8, 9, 10, 12, 13, 14, 16, 18, 26, 32],
+        "border_widths_px": {"1px": 39, "1.5px": 8, "2px": 6},
+        "shadow_call_sites_outside_theme": 12
+      },
+      "verdict": "REBUILD_PLAN specified a 4-step radius scale (control 8 / card 12 / modal 16 / pill 999). Thirteen values are in use, several appearing once. 1.5px borders render blurry at 100% scaling.",
+      "tasks": ["F201x", "F220", "F221"]
+    },
+
+    "cards": {
+      "question": "Is what is shown in a card needed, and is the right thing highlighted?",
+      "findings": [
+        "Overview's 'Financial Summary' card is a verbatim repeat of the KPI strip directly above it — delete it.",
+        "Overview's 'Bank Accounts' card repeats the donut beside it AND the Accounts screen chart.",
+        "Accounts cards show bank / status / type / person / account no / balance / IFSC / branch. Balance is the only number and it is NOT the most prominent element — the bank name is. For a financial card the amount should lead.",
+        "The 'Active' status pill is present on 100% of cards and therefore carries zero information; show a pill only for a non-Active state.",
+        "Income & Expectations KPIs have no card container at all while Overview's do."
+      ],
+      "tasks": ["F301", "F308", "F310"]
+    },
+
+    "data_tables": {
+      "question": "Do tables show data properly, and do the Excel shortcuts work on every screen?",
+      "measured_with_QTest": [
+        {"screen": "Transactions", "class": "ExcelTable", "ctrl_a": "100 items", "ctrl_c": "1390 chars", "arrows": "ok", "f2": "enters edit", "verdict": "fully working"},
+        {"screen": "Fixed Deposits", "class": "ExcelTable", "ctrl_a": "56 items", "ctrl_c": "595 chars", "arrows": "ok", "f2": "NoState — DOES NOT EDIT", "verdict": "copy works, editing broken despite the on-screen tip telling users to edit cells directly"},
+        {"screen": "Income & Expectations (ledger)", "class": "QTableWidget", "ctrl_a": "96 items", "ctrl_c": "6 chars — copies ONE cell", "arrows": "ok", "f2": "enters edit", "verdict": "copy broken; and a computed read-only ledger is wrongly editable"},
+        {"screen": "Income & Expectations (TDS)", "class": "QTableWidget", "verdict": "no Excel behaviour"},
+        {"screen": "Tax Documents (x3)", "class": "QTableWidget", "verdict": "no Excel behaviour"},
+        {"screen": "Statement Import", "class": "ExcelTable", "verdict": "not exercised — empty without a parsed file"}
+      ],
+      "verdict": "Only 3 of 8 tables are ExcelTable. Ctrl+C/Ctrl+V/Ctrl+A/F2/stats-bar do not exist on the other 5. The README's claim that 'All table screens support the following keyboard shortcuts' is false.",
+      "inconsistencies": "sorting enabled on Transactions and Fixed Deposits but not Statement Import; alternating row colours on the three ExcelTables but on none of the plain ones.",
+      "tasks": ["F330", "F331", "F332"]
+    },
+
+    "naming": {
+      "question": "Are field / input / data labels significant and consistent?",
+      "findings": [
+        {
+          "concept": "money in / money out",
+          "words_in_use": ["Income (FY) / Expense (FY)", "Total Credit (FY) / Total Debit (FY)", "Credit: / Debit: chips", "Type column values Credit/Debit", "DB stores Income/Expense"],
+          "worst_case": "The Overview chart is titled 'Income vs Expense (FY)' while its own legend reads 'Credit' and 'Debit'."
+        },
+        {
+          "concept": "the human being tracked",
+          "words_in_use": ["Person (top bar, most screens)", "Family Member (Statement Import)", "Family Members / Manage Family (Settings)", "Name of Taxpayer / Taxpayer Category (Tax)"]
+        },
+        {
+          "concept": "running balance",
+          "words_in_use": ["Balance After (₹) (Transactions)", "Balance (Statement Import preview)", "Current Balance (Accounts)"]
+        },
+        {
+          "concept": "currency symbol",
+          "words_in_use": ["₹ everywhere", "'Rs ' in ui/dialogs/fd_dialog.py lines 295-308 (5 occurrences)"]
+        },
+        {
+          "concept": "dates",
+          "words_in_use": ["%d/%m/%y via format_display_date (2-digit year)", "dd/MM/yyyy", "%Y-%m-%d", "toString('yyyy-MM-dd') in QDateEdit"],
+          "risk": "A 2-digit year in an app whose whole domain is financial years spanning two calendar years is genuinely ambiguous — '24/02/26' is unreadable without context."
+        },
+        {"label": "Salary_Pension Income", "problem": "raw underscore in a user-facing heading"},
+        {"label": "Reprocess Data", "problem": "vague; no tooltip explains what it reprocesses"}
+      ],
+      "tasks": ["F230", "F231"]
+    },
+
+    "charts": {
+      "findings": [
+        "Chart titles are duplicated: a section heading above the chart and the same string inside the matplotlib figure.",
+        "Donut and pie titles are CLIPPED at the top on both Overview and Income & Expectations.",
+        "Legends are drawn as boxed overlays inside the plot area and obscure data (they cover the Mar bar on Income & Expectations and sit on the donut on Overview).",
+        "Percentage labels collide on the Overview donut ('0.6%', '1.1%', '12.2%' overlap).",
+        "Plot backgrounds use SURFACE_ALT (lavender) inside a white card — a two-tone panel that reads as dated.",
+        "Empty future months (Sep-Mar) consume half the x-axis width on FY charts.",
+        "Colour strategy contradicts itself: five categorical colours for accounts on Overview, one flat teal for the same five accounts on Accounts.",
+        "Bar value labels are printed above every bar AND a y-axis is drawn — redundant encoding.",
+        "matplotlib emits 'findfont: Failed to find font weight 600, now using 700' on every render."
+      ],
+      "tasks": ["F320", "F321", "F322", "F323"]
+    },
+
+    "dialogs": {
+      "question": "Is each dialog needed, or should it be a window / inline panel?",
+      "measured": [
+        {"dialog": "PersonDialog", "size": "420x473", "fields": 8, "verdict": "keep as modal — short focused create/edit"},
+        {"dialog": "BankDialog", "size": "460x260", "fields": 3, "verdict": "keep as modal"},
+        {"dialog": "FDDialog", "size": "533x533", "fields": 17, "verdict": "keep, but 17 fields warrants sectioning"},
+        {"dialog": "TransactionDialog", "size": "500x621", "fields": 12, "verdict": "keep as modal"},
+        {"dialog": "IncomeSourceDialog", "size": "550x805", "fields": 7, "verdict": "TOO TALL — 805px is clipped on a 1366x768 display"},
+        {"dialog": "AccountDialog", "size": "660x580", "fields": 31, "tabs": 5, "verdict": "borderline; 5 tabs inside a modal is heavy but organised"},
+        {"dialog": "PersonManagementDialog", "size": "720x520", "fields": 0, "verdict": "CONVERT — this is a list-management SCREEN wearing a dialog"},
+        {"dialog": "BankManagementDialog", "size": "760x520", "fields": 0, "verdict": "CONVERT — same"},
+        {"dialog": "AccountManagementDialog", "size": "950x540", "fields": 0, "verdict": "CONVERT — same, and at 950px wide it is clearly a screen"},
+        {"dialog": "AccountDetailsDialog", "size": "720x660", "fields": 0, "verdict": "CONVERT to the inline detail panel that already exists (and currently sits empty) on the Accounts screen"}
+      ],
+      "principle": "A modal is for a short decision that must finish before anything else. A list you browse, filter and act on repeatedly is a screen. The three 'Manage X' dialogs are reached from Settings, are 520-540px tall, contain tables and CRUD toolbars, and block the app while open.",
+      "tasks": ["F340", "F341", "F342"]
+    },
+
+    "data_wiring": [
+      {
+        "id": "F201",
+        "severity": "high",
+        "claim": "FD interest records are only created on two of three FD creation paths.",
+        "detail": "allocate_fd_interest_to_fy() is called from ui/dialogs/fd_dialog.py (lines 490, 504) and ui/fixed_deposits_screen.py (line 720), but NOT from models.fixed_deposit.add_fd() itself, and NOT from the statement-import path (ui/statement_import_screen_modern.py calls add_fd_from_statement at line 167 with no allocation). Any FD created outside the dialog leaves FDInterestRecord empty, which zeroes Overview's 'Interest Income', the FD screen's Expected/Actual Interest columns, the FD Interest Runway chart, the TDS threshold panel and the Tax screen's FD interest.",
+        "note": "Statement-created FDs are 'Pending Details' with a NULL maturity, so allocation would return early anyway — but the invariant should live in the model, not be re-remembered at each call site.",
+        "verified_by": "Seeding 4 FDs via add_fd() left FDInterestRecord at 0 rows and get_total_fd_interest('2026-27') at 0.0."
+      },
+      {
+        "id": "F202",
+        "severity": "high",
+        "claim": "Expectation-to-transaction matching does not run, so 'Received to Date' is always ₹0.00.",
+        "detail": "With 4 salary credits present in FY2026-27 and 12 monthly expectations seeded, the Income & Expectations screen reported Received ₹0.00, Still Expected = full ₹2,58,000, and rendered no 'Actual' bars. The screen's stated purpose — expected vs actual — is therefore unfulfilled.",
+        "investigate": "models/income_expectation.auto_link_income_expectations() exists; determine whether it is ever invoked on refresh."
+      }
+    ]
+  },
+
+  "design_direction": {
+    "brief": "Colourful, attractive and interesting WITHOUT becoming decorative. In a financial tool, colour must mean something: the moment two buttons with different jobs share a colour, colour has stopped being information and become noise.",
+    "principles": [
+      "COLOUR CARRIES MEANING. One accent for the primary action per screen. Semantic colour reserved for semantics: green = money in / positive, red = money out / destructive, amber = attention needed, blue/indigo = neutral action. Nothing else gets a fill.",
+      "DATA IS THE DECORATION. The interesting colour should come from charts and money figures, not from chrome. Delete decorative gradient banners; spend that colour on the numbers.",
+      "ONE IDEA PER SURFACE. If a number appears on a screen twice, one of them is wrong.",
+      "DENSITY WITH AIR. Financial users scan. Tighter rows and smaller inputs let more real data show, and whitespace goes between GROUPS rather than inside every control.",
+      "MOTION ONLY TO EXPLAIN. A 120ms ease on hover/expand is enough. No animation on data."
+    ],
+    "specific_moves": [
+      "Give each of the 9 screens a distinct accent hue drawn from the theme's chart palette, used for its section headings and its single primary button. The app then feels colourful and each screen is instantly recognisable, without inventing per-screen palettes.",
+      "Money figures get a tabular-figures font feature and colour by sign (SUCCESS_TEXT positive, DANGER_TEXT negative) so a column of numbers reads at a glance.",
+      "KPI tiles get a large value, a small label, a sparkline and a delta chip — the same component on every screen.",
+      "Cards lose their heavy 1.5px borders in favour of a subtle shadow plus a 1px hairline, with a 3px left accent only where the card has a status."
+    ],
+    "scales_to_enforce": {
+      "radius_px": {"control": 8, "card": 12, "modal": 16, "pill": 999},
+      "border_px": {"hairline": 1, "emphasis": 2},
+      "spacing_px": [4, 8, 12, 16, 24, 32, 48],
+      "control_height_px": {"sm": 28, "md": 36, "lg": 44},
+      "control_max_width_px": {"currency": 200, "date": 160, "select_short": 200, "select_long": 320, "text": 420},
+      "elevation": {"card": "0 1px 2px rgba(0,0,0,.06)", "raised": "0 4px 12px rgba(0,0,0,.10)", "modal": "0 12px 32px rgba(0,0,0,.18)"}
+    }
+  },
+
+  "phases": [
+    {"id": "V1", "name": "Token and scale enforcement", "goal": "One radius scale, one border scale, one control-size scale, semantic colour roles."},
+    {"id": "V2", "name": "Button and action system", "goal": "One primary per screen; colour means function."},
+    {"id": "V3", "name": "Shared components", "goal": "KPI tile, money label, card, empty state, section header — built once."},
+    {"id": "V4", "name": "Terminology", "goal": "One word per concept, everywhere."},
+    {"id": "V5", "name": "Charts", "goal": "A consistent, readable chart system."},
+    {"id": "V6", "name": "Screen redesigns", "goal": "Each screen fulfils its motive with no duplicated data."},
+    {"id": "V7", "name": "Dialogs to screens", "goal": "Lists become screens; modals stay short."},
+    {"id": "V8", "name": "Table unification", "goal": "One table component, Excel parity everywhere."},
+    {"id": "V9", "name": "Data wiring", "goal": "The numbers the redesigned screens display are actually produced."}
+  ],
+
+  "tasks": [
+    {
+      "id": "F220", "phase": "V1", "severity": "medium",
+      "title": "Collapse 13 border-radius values to a 4-step scale",
+      "question_answered": "are radius/border/shadow needed and correct?",
+      "files": ["ui/theme/theme.py", "ui/theme/components.py"],
+      "change": [
+        "Define RADIUS_CONTROL=8, RADIUS_CARD=12, RADIUS_MODAL=16, RADIUS_PILL=999 as theme constants.",
+        "Replace all 13 in-use values (2,5,6,8,9,10,13,14,18,26,32 px) with the nearest scale step. The 26px and 32px values are circular avatars/FABs — use RADIUS_PILL.",
+        "Add a test that greps the QSS for border-radius and fails on any value outside the scale."
+      ],
+      "acceptance": ["grep of ui/theme/theme.py returns only 8px, 12px, 16px and 999px radii", "the new test passes", "all 9 screens render unchanged in structure"],
+      "depends_on": []
+    },
+    {
+      "id": "F221", "phase": "V1", "severity": "low",
+      "title": "Remove 1.5px borders",
+      "files": ["ui/theme/theme.py"],
+      "change": ["Replace the 8 `border: 1.5px` rules with 1px (hairline) or 2px (emphasis/focus). Fractional borders render blurry at 100% scaling."],
+      "acceptance": ["only 1px and 2px border widths remain in the QSS"],
+      "depends_on": []
+    },
+    {
+      "id": "F222", "phase": "V1", "severity": "medium",
+      "title": "Introduce a control-size scale and stop inputs stretching",
+      "question_answered": "are component sizes correct?",
+      "files": ["ui/theme/theme.py", "ui/tax_screen.py", "ui/statement_import_screen_modern.py", "ui/settings_screen.py"],
+      "change": [
+        "Add max-width rules by input role: currency 200px, date 160px, short select 200px, long select 320px, free text 420px.",
+        "Fix the worst offenders: Tax currency spinboxes (~765px), Statement Import person/account combos (~1390px), Settings password fields (~610px), Tax Documents 'Select File' buttons (~470px).",
+        "Inputs should sit left-aligned in their column, not stretch to the panel edge."
+      ],
+      "acceptance": ["no currency input exceeds 200px", "no select exceeds 320px", "Tax shows at least 10 fields per screenful instead of ~5"],
+      "depends_on": ["F220"]
+    },
+    {
+      "id": "F210", "phase": "V2", "severity": "high",
+      "title": "Establish button hierarchy: one primary per screen",
+      "question_answered": "are buttons needed and is their colour significant?",
+      "files": ["ui/theme/theme.py", "ui/fixed_deposits_screen.py", "ui/tax_documents_screen.py", "ui/settings_screen.py", "ui/transactions_screen.py"],
+      "change": [
+        "Define the contract: PRIMARY (filled, one per screen, the main forward action) · SECONDARY (outlined, supporting actions) · GHOST (text-only, tertiary/utility) · DESTRUCTIVE (red outline; filled red ONLY inside a confirmation modal).",
+        "Fixed Deposits: 'Add FD' primary; Link Txn / Auto-Link / Recalculate / Save Changes secondary; 'Delete Selected' destructive-outline.",
+        "Tax Documents: delete the three secondary 'Select File' buttons in favour of the drop zones from F340; keep one primary.",
+        "Settings: 'Manage Family' and 'Manage Bank' become the same variant (secondary) — they do the same kind of thing.",
+        "Cyan must never be a button fill; it fails contrast under a white label."
+      ],
+      "acceptance": [
+        "No screen shows more than one filled primary button.",
+        "No two buttons with different functions share a fill colour on the same screen.",
+        "A test asserts at most one primary-variant button per screen across all 9 screens."
+      ],
+      "depends_on": ["F220"]
+    },
+    {
+      "id": "F211", "phase": "V2", "severity": "medium",
+      "title": "Stop buttons stretching, and explain disabled ones",
+      "files": ["ui/theme/theme.py", "all screens"],
+      "change": [
+        "Buttons size to their label plus padding, with a sensible min-width; they do not fill their container. Fixes ~660px Settings buttons and ~470px 'Select File'.",
+        "Every disabled button gets a tooltip saying what would enable it (e.g. 'Select a transaction to edit').",
+        "Hide rather than disable a control that is meaningless in the current step — e.g. 'Back' on Statement Import step 1."
+      ],
+      "acceptance": ["no button wider than 280px unless it is a full-width mobile-style CTA by design", "every disabled button has a tooltip"],
+      "depends_on": ["F210"]
+    },
+    {
+      "id": "F212", "phase": "V2", "severity": "low",
+      "title": "Give each screen an accent hue",
+      "files": ["ui/theme/theme.py", "ui/dashboard_screen.py"],
+      "change": ["Assign each of the 9 screens an accent from the theme chart palette, applied to its section headings, its active nav item and its single primary button. Delivers 'colourful' without per-screen palettes."],
+      "acceptance": ["each screen's accent is theme-derived (no literals)", "the contrast gate stays green for every accent against SURFACE and as a button fill"],
+      "depends_on": ["F210"]
+    },
+    {
+      "id": "F310", "phase": "V3", "severity": "high",
+      "title": "Build one KPI tile component and use it everywhere",
+      "question_answered": "is what is in a card needed, and is the right thing highlighted?",
+      "files": ["ui/widgets/kpi_tile.py (new)", "ui/dashboard_screen.py", "ui/income_management_screen.py", "ui/tax_screen.py"],
+      "change": [
+        "One component: label (small, muted), value (large, tabular figures, coloured by sign), optional delta chip, optional sparkline. Fixed height with no dead space.",
+        "Replace Overview's bordered tiles AND Income & Expectations' bare label/value text with it — those are currently two different treatments of the same idea.",
+        "Lay tiles out in an even grid that fills the row (no 3+2 ragged gap)."
+      ],
+      "acceptance": ["Overview and Income & Expectations use the identical component", "no KPI tile has more than 16px of empty vertical space below its content"],
+      "depends_on": ["F220", "F222"]
+    },
+    {
+      "id": "F311", "phase": "V3", "severity": "medium",
+      "title": "Money label component with sign colouring and Indian grouping",
+      "files": ["ui/widgets/money_label.py (new)"],
+      "change": [
+        "One widget for every currency figure: ₹ prefix, Indian digit grouping (2,56,642), tabular figures so columns align, SUCCESS_TEXT/DANGER_TEXT by sign, and privacy-mode masking via session.mask().",
+        "Replace ad-hoc f-string formatting across screens, including the five 'Rs ' occurrences in ui/dialogs/fd_dialog.py."
+      ],
+      "acceptance": ["no user-facing string contains 'Rs '", "every currency figure uses Indian grouping", "amount columns visually align on the decimal"],
+      "depends_on": []
+    },
+    {
+      "id": "F312", "phase": "V3", "severity": "high",
+      "title": "Content-aware table column sizing",
+      "question_answered": "does the table show data properly?",
+      "files": ["ui/widgets/excel_table.py"],
+      "change": [
+        "Size columns by content class: dates and amounts get fixed widths, description/narration gets the stretch, identifiers get enough width to be unique.",
+        "The last column stretches so no empty band is left (Transactions currently leaves ~230px).",
+        "Elide with a tooltip carrying the full value rather than silently cutting.",
+        "Hide the raw 'ID' column on Transactions.",
+        "Fixes: 'Bank ...', 'Jana Small Finance ...', 'Pranav ...', 'FD4522030...' — the last of which makes FD No useless as an identifier."
+      ],
+      "acceptance": ["no visible column is truncated below the width needed to distinguish its values", "no empty band after the last column", "no database ID column is user-visible", "every elided cell has a tooltip"],
+      "depends_on": []
+    },
+    {
+      "id": "F313", "phase": "V3", "severity": "medium",
+      "title": "Real drop-zone component, used by both importers",
+      "files": ["ui/widgets/drop_zone.py (new)", "ui/statement_import_screen_modern.py", "ui/tax_documents_screen.py"],
+      "change": [
+        "Dashed 2px border, file icon, primary line, hint line, an inline Browse link, plus hover and drag-over states.",
+        "Tax Documents' three label+button pairs become three of these; Statement Import's flat grey band becomes one."
+      ],
+      "acceptance": ["both screens use the same component", "drag-over produces a visible state change", "no separate right-aligned 'Or Browse...' button remains"],
+      "depends_on": ["F220"]
+    },
+    {
+      "id": "F314", "phase": "V3", "severity": "medium",
+      "title": "Proper collapsible section header",
+      "files": ["ui/widgets/section.py (new)", "ui/tax_screen.py"],
+      "change": [
+        "Replace the bare QCheckBox-beside-a-heading with a disclosure control: chevron + title + optional summary value, the whole header clickable, chevron rotating on expand.",
+        "Removes the ambiguity of whether unchecking excludes that income from the computation or merely hides the section."
+      ],
+      "acceptance": ["no QCheckBox is used as an expand/collapse control", "collapsed sections show a summary of their contents", "keyboard operable with a visible focus ring"],
+      "depends_on": ["F220"]
+    },
+    {
+      "id": "F315", "phase": "V3", "severity": "low",
+      "title": "Make theme previews show the actual theme",
+      "files": ["ui/settings_screen.py"],
+      "change": [
+        "Render a miniature of the real UI — sidebar, top bar, a KPI tile, a table row, a primary button — in that theme's tokens, instead of a generic bar chart. Aurora and Slate are currently indistinguishable.",
+        "Lay the four cards out to fill the row rather than leaving ~700px empty."
+      ],
+      "acceptance": ["the four previews are visually distinguishable at a glance", "the preview row fills its width"],
+      "depends_on": ["F220"]
+    },
+    {
+      "id": "F230", "phase": "V4", "severity": "high",
+      "title": "Adopt one term per concept",
+      "question_answered": "are field/data names significant and consistent?",
+      "files": ["docs/TERMINOLOGY.md (new)", "all ui/"],
+      "change": [
+        "Decide and apply: MONEY IN / MONEY OUT — use 'Income' and 'Expense' everywhere in the UI (matching what the database stores). Retire Credit/Debit from labels, chart legends, chips and the Type column. The Overview chart currently titles itself 'Income vs Expense' while its legend says 'Credit'/'Debit'.",
+        "THE HUMAN — use 'Person' everywhere. Retire 'Family Member' (Statement Import), 'Family Members'/'Manage Family' (Settings). Keep 'Taxpayer' ONLY inside the Tax screen where it is a legal term of art.",
+        "RUNNING BALANCE — 'Balance' in transaction tables, 'Current Balance' for an account's present figure. Retire 'Balance After'.",
+        "Fix 'Salary_Pension Income' -> 'Salary & Pension Income'.",
+        "Rename 'Reprocess Data' to say what it does, and give it a tooltip.",
+        "Record every decision in docs/TERMINOLOGY.md so it stops drifting."
+      ],
+      "acceptance": [
+        "No user-facing string contains 'Credit' or 'Debit' except where naming an actual bank statement column during import.",
+        "No user-facing string contains 'Family Member'.",
+        "No user-facing label contains an underscore.",
+        "docs/TERMINOLOGY.md exists and a test greps the UI for retired terms."
+      ],
+      "depends_on": []
+    },
+    {
+      "id": "F231", "phase": "V4", "severity": "medium",
+      "title": "One date format, with a four-digit year",
+      "files": ["ui/date_utils.py", "all ui/"],
+      "change": [
+        "Standardise display on DD MMM YYYY (24 Feb 2026) — unambiguous, and it reads well beside financial years. Retire %d/%m/%y, dd/MM/yyyy and raw %Y-%m-%d from display paths (ISO stays in the database).",
+        "A 2-digit year in an app whose domain is financial years spanning two calendar years is genuinely ambiguous."
+      ],
+      "acceptance": ["format_display_date returns DD MMM YYYY", "no display path emits a 2-digit year", "QDateEdit widgets use the same display format"],
+      "depends_on": ["F230"]
+    },
+    {
+      "id": "F320", "phase": "V5", "severity": "high",
+      "title": "One chart system",
+      "files": ["ui/widgets/chart_widget.py"],
+      "change": [
+        "Remove the in-figure title — the section header above the chart already names it. Fixes the duplicate title on every panel AND the clipped donut titles on Overview and Income & Expectations.",
+        "Move legends outside the plot area (or use direct labels at <=4 series). Legends currently cover the Mar bar and sit on the donut.",
+        "Plot background becomes the card's own SURFACE — drop the lavender SURFACE_ALT panel-within-a-panel.",
+        "One categorical colour strategy: series get Theme.CHART_COLORS in order. The same five accounts must not be five colours on Overview and one teal on Accounts.",
+        "Drop value labels when a y-axis is present; keep them only on axis-less charts.",
+        "Trim empty trailing months on FY charts, or grey them as 'not yet'.",
+        "Fix the 'findfont: Failed to find font weight 600' warning by requesting a weight matplotlib actually has."
+      ],
+      "acceptance": ["no chart title is clipped", "no legend overlaps a data mark", "no chart emits a findfont warning", "the same data uses the same colours across screens"],
+      "depends_on": []
+    },
+    {
+      "id": "F321", "phase": "V5", "severity": "medium",
+      "title": "Make the tax waterfall an actual waterfall",
+      "files": ["ui/tax_screen.py"],
+      "change": [
+        "Replace the 13-row definition list with a visual waterfall: running bars, +/- direction, subtotal emphasis on Taxable Income / Total Tax Liability / Net Payable, and muted styling for zero rows.",
+        "Show '—' only for genuinely not-yet-computed values; show ₹0 where zero is the answer. Nineteen consecutive dashes currently read as breakage."
+      ],
+      "acceptance": ["the computation is legible as a sequence of additions and subtractions", "subtotals are visually distinct from line items"],
+      "depends_on": ["F320", "F310"]
+    },
+    {
+      "id": "F322", "phase": "V5", "severity": "medium",
+      "title": "Delete charts that duplicate their own screen",
+      "files": ["ui/accounts_screen.py", "ui/fixed_deposits_screen.py", "ui/transactions_screen.py"],
+      "change": [
+        "Accounts: the 'Balance by Bank Account' bar chart repeats the cards beneath it exactly — remove it and let the cards (which carry more information) fill the screen.",
+        "Fixed Deposits: the interest chart must not occupy ~490px above the table, and must never render an empty 490px panel. Collapse it to a compact strip, or move it behind a toggle, and show a proper empty state at ~120px.",
+        "Transactions: the chart must not out-size the table. Give the table at least 60% of the vertical space; make the chart a collapsible strip."
+      ],
+      "acceptance": ["Accounts shows no bar chart", "the Transactions table shows at least 10 rows without scrolling at 1600x900", "no empty chart panel exceeds 160px"],
+      "depends_on": ["F320"]
+    },
+    {
+      "id": "F301", "phase": "V6", "severity": "high",
+      "title": "Overview: remove duplicated data, lead with shape",
+      "files": ["ui/dashboard_screen.py"],
+      "change": [
+        "Delete the 'Financial Summary' card — it repeats the KPI strip above it verbatim.",
+        "Delete the 'Bank Accounts' list card — it repeats the donut beside it; keep the donut and make its slices clickable through to Accounts.",
+        "KPI strip uses the F310 component in one even row.",
+        "Keep two charts: Income vs Expense by month, and account distribution.",
+        "Remove the 'Interest Income' tile until F201 makes it real, or show it with an explicit 'not yet calculated' state."
+      ],
+      "acceptance": ["no number appears twice on the Overview screen", "the screen fits at 1600x900 without vertical scrolling", "every tile is populated or explicitly labelled as unavailable"],
+      "depends_on": ["F310", "F320", "F201"]
+    },
+    {
+      "id": "F302", "phase": "V6", "severity": "high",
+      "title": "Transactions: give the table the screen",
+      "files": ["ui/transactions_screen.py"],
+      "change": [
+        "Table takes the majority of the height; the chart becomes a collapsible strip above it, collapsed by default.",
+        "Delete the screen's duplicate Person/Account/FY controls — the top bar owns global context. Keep only screen-specific filters (Type, Search, date range).",
+        "Apply F312 column sizing and hide the ID column."
+      ],
+      "acceptance": ["at least 10 rows visible at 1600x900", "Person/Account/FY appear exactly once on the screen", "no truncated column below its distinguishing width"],
+      "depends_on": ["F312", "F322"]
+    },
+    {
+      "id": "F303", "phase": "V6", "severity": "high",
+      "title": "Income & Expectations: make it show actuals",
+      "files": ["ui/income_management_screen.py"],
+      "change": [
+        "Depends on F202 — without matching, this screen cannot fulfil its purpose.",
+        "Remove the duplicated FY/Person selectors; use the top bar.",
+        "KPI row uses the F310 component.",
+        "Fix the x-axis labels ('Apr 1' -> 'Apr').",
+        "When only one income source exists, show a bar or a stat instead of a 100% donut.",
+        "Tighten the vertical rhythm — the screen currently needs heavy scrolling for four panels."
+      ],
+      "acceptance": ["'Received to Date' reflects matched transactions", "the Actual series renders", "no axis label contains a day number", "all panels fit in two screenfuls at 1600x900"],
+      "depends_on": ["F202", "F310", "F320"]
+    },
+    {
+      "id": "F304", "phase": "V6", "severity": "high",
+      "title": "Fixed Deposits: table first, one primary action",
+      "files": ["ui/fixed_deposits_screen.py"],
+      "change": [
+        "Apply the F210 button hierarchy to the six-button toolbar.",
+        "Collapse the empty interest chart per F322.",
+        "Populate Expected/Actual Interest (F201).",
+        "Apply F312 column sizing — FD No must be wide enough to distinguish deposits.",
+        "'Showing 4 fixed deposits.' becomes muted text, not amber.",
+        "Either make F2 edit work on this table (F330) or remove the 'edit cells directly' tip, which currently tells users to do something that does not work."
+      ],
+      "acceptance": ["one filled primary button", "FD numbers are distinguishable", "Expected Interest is populated", "the on-screen tip matches actual behaviour"],
+      "depends_on": ["F210", "F312", "F322", "F330", "F201"]
+    },
+    {
+      "id": "F305", "phase": "V6", "severity": "high",
+      "title": "Statement Import: fix the person default and the layout",
+      "files": ["ui/statement_import_screen_modern.py"],
+      "change": [
+        "BUG: the screen's person selector defaults to the second person while the top bar says 'All Persons', leaving the account list empty. Sync it to the top-bar person; when that is 'All Persons', require an explicit choice and disable Parse until both person and account are set.",
+        "Rename 'Family Member' to 'Person' (F230).",
+        "Apply F222 widths — two 1390px combos beside a 90px select is indefensible.",
+        "Use the F313 drop zone; remove the detached 'Or Browse...' button.",
+        "Hide the disabled 'Back' at step 1.",
+        "Remove the ~450px of empty card."
+      ],
+      "acceptance": ["the screen never opens with a person selected who has no accounts", "Parse is disabled until person and account are chosen", "the select step fits above the fold at 1280x720"],
+      "depends_on": ["F222", "F230", "F313"]
+    },
+    {
+      "id": "F306", "phase": "V6", "severity": "medium",
+      "title": "Tax Documents: real drop zones, no dead space",
+      "files": ["ui/tax_documents_screen.py"],
+      "change": [
+        "Three F313 drop zones replace the label+button pairs; delete the redundant 'Upload Files' primary in the empty state.",
+        "Give the empty-state icon a real size (~48px).",
+        "Let the reconciliation panel fill the available height instead of leaving ~40% dead."
+      ],
+      "acceptance": ["one file-input pattern shared with Statement Import", "no more than one control per document does the same job", "no dead band below the panel at 1600x900"],
+      "depends_on": ["F313", "F210"]
+    },
+    {
+      "id": "F307", "phase": "V6", "severity": "high",
+      "title": "Tax: make the form usable and the result legible",
+      "files": ["ui/tax_screen.py"],
+      "change": [
+        "Apply F222 input widths — currency fields at 200px, not 765px.",
+        "Apply the F314 disclosure sections; fix 'Salary_Pension Income'.",
+        "Empty currency fields show a placeholder, not a formatted '₹ 0.00', so filled fields are distinguishable.",
+        "Resolve the 'select a person' dead end: if exactly one person exists, select them; otherwise put the person selector in the screen header rather than telling the user to go elsewhere.",
+        "Delete the redundant 'Current Context' card — the header already states person, FY and source.",
+        "Apply the F321 waterfall."
+      ],
+      "acceptance": ["at least 10 input rows visible per screenful", "no underscore in any heading", "the screen is usable without first changing a global selector", "empty and zero-valued fields are visually distinct"],
+      "depends_on": ["F222", "F314", "F321"]
+    },
+    {
+      "id": "F308", "phase": "V6", "severity": "medium",
+      "title": "Accounts: cards lead with the money",
+      "files": ["ui/accounts_screen.py"],
+      "change": [
+        "Remove the duplicate bar chart (F322).",
+        "Card hierarchy: balance is the largest element, then bank name, then type/person/account number as supporting metadata.",
+        "Show the status pill only when status is NOT Active.",
+        "Collapse the 'No account selected' detail panel until a card is selected, letting the grid use the full width; expand it as a side panel on selection.",
+        "With the chart gone and the panel collapsed, the card grid should fit without its own scrollbar at typical account counts."
+      ],
+      "acceptance": ["no bar chart", "balance is the most prominent element on each card", "no status pill on Active accounts", "no scrollbar on the card grid with 5 accounts at 1600x900"],
+      "depends_on": ["F322", "F310"]
+    },
+    {
+      "id": "F309", "phase": "V6", "severity": "low",
+      "title": "Settings: fix button colour and tighten layout",
+      "files": ["ui/settings_screen.py"],
+      "change": [
+        "'Manage Family' and 'Manage Bank' become the same secondary variant (F210). Cyan is retired as a button fill.",
+        "Apply F222 widths to password fields and buttons.",
+        "Apply F315 theme previews.",
+        "Investigate the ~2.5s navigation cost — the slowest screen in the app; the theme previews are the likely cause.",
+        "The status chips (2FA Off / Privacy Off / theme name) sit on a magenta gradient at poor contrast — move them onto surface, or make them real toggles."
+      ],
+      "acceptance": ["no cyan button fill", "Settings navigation under 800ms", "status chips pass the contrast gate"],
+      "depends_on": ["F210", "F222", "F315"]
+    },
+    {
+      "id": "F340", "phase": "V7", "severity": "medium",
+      "title": "Convert the three 'Manage X' dialogs into a Settings sub-screen",
+      "question_answered": "is a dialog needed, or should it be a window?",
+      "files": ["ui/dialogs/person_dialog.py", "ui/dialogs/bank_dialog.py", "ui/dialogs/account_dialog.py", "ui/settings_screen.py"],
+      "change": [
+        "PersonManagementDialog (720x520), BankManagementDialog (760x520) and AccountManagementDialog (950x540) contain tables and CRUD toolbars, hold zero input fields of their own, and block the whole app while open. They are screens.",
+        "Replace them with a tabbed 'Manage Data' sub-screen (People / Banks / Accounts) reachable from Settings.",
+        "KEEP the short create/edit modals they launch (PersonDialog 420x473, BankDialog 460x260) — those are genuine modal decisions.",
+        "This also removes the last modal-opening-a-modal path."
+      ],
+      "acceptance": ["no management list is presented as a modal", "no code path opens a modal from within a modal", "creating a person still uses a modal"],
+      "depends_on": ["F210"]
+    },
+    {
+      "id": "F341", "phase": "V7", "severity": "medium",
+      "title": "Turn AccountDetailsDialog into the Accounts side panel",
+      "files": ["ui/dialogs/account_details_dialog.py", "ui/accounts_screen.py"],
+      "change": ["The Accounts screen already reserves an empty 'No account selected' panel. Render account details there instead of in a 720x660 modal, so the account list stays visible while reading detail."],
+      "acceptance": ["selecting an account fills the side panel", "no modal is used to view account details"],
+      "depends_on": ["F308"]
+    },
+    {
+      "id": "F342", "phase": "V7", "severity": "low",
+      "title": "Fit IncomeSourceDialog on a 768px display",
+      "files": ["ui/dialogs/income_source_dialog.py"],
+      "change": ["At 550x805 it is clipped on a 1366x768 screen. Reduce to <=640px tall, or make it scrollable with a pinned button row."],
+      "acceptance": ["no dialog exceeds 640px in height", "all dialog action buttons remain reachable at 1366x768"],
+      "depends_on": ["F222"]
+    },
+    {
+      "id": "F330", "phase": "V8", "severity": "high",
+      "title": "Make every data table an ExcelTable",
+      "question_answered": "do the Excel shortcuts work on all screens?",
+      "files": ["ui/widgets/excel_table.py", "ui/income_management_screen.py", "ui/tax_documents_screen.py"],
+      "change": [
+        "Only 3 of 8 tables are ExcelTable. Convert the 5 plain QTableWidgets: Income & Expectations (TDS gauge, expectation ledger) and Tax Documents (reconciliation, non-income, FD drill-down).",
+        "Add a read_only mode so a table can have full copy/selection/keyboard behaviour WITHOUT being editable — the expectation ledger is currently editable via F2 even though its Variance column is computed.",
+        "Fix F2 on Fixed Deposits: it reports NoState, so editing does not start despite the on-screen tip.",
+        "Make sorting and alternating row colours consistent across all tables (currently sorting is on for Transactions and Fixed Deposits but off for Statement Import; alternating colours are on for the three ExcelTables and off for all five plain ones)."
+      ],
+      "acceptance": [
+        "All 8 tables are ExcelTable.",
+        "Ctrl+C on a multi-cell selection returns the whole selection on every table (the expectation ledger currently returns 6 characters — one cell).",
+        "F2 enters edit mode on every editable table and does nothing on read-only ones.",
+        "No computed column is editable.",
+        "A QTest-driven test exercises Ctrl+A / Ctrl+C / F2 / arrows on every table in the app."
+      ],
+      "depends_on": ["F312"]
+    },
+    {
+      "id": "F331", "phase": "V8", "severity": "medium",
+      "title": "Make the README's shortcut claims true",
+      "files": ["README.md", "ui/widgets/excel_table.py"],
+      "change": [
+        "The README states 'All table screens in the Financial App now support the following keyboard shortcuts' and lists Ctrl+A/C/V/X, F2, Enter, Esc, Delete, arrows, Tab, Home/End, Ctrl+Home/End, PageUp/Down. Verify each against the implementation and either implement it or remove the claim.",
+        "keyPressEvent currently handles Copy, Paste, SelectAll, Delete and Cut; Home/End and Ctrl+Home/End rely on Qt defaults and should be confirmed."
+      ],
+      "acceptance": ["every shortcut the README lists is covered by a passing test, or is removed from the README"],
+      "depends_on": ["F330"]
+    },
+    {
+      "id": "F332", "phase": "V8", "severity": "low",
+      "title": "Show a selection stats bar wherever numbers are selectable",
+      "files": ["ui/widgets/excel_table.py", "all table screens"],
+      "change": ["ExcelTable already emits selectionStatsChanged with sum/average of selected numeric cells. Surface it consistently under every table — it is the single most useful spreadsheet affordance for this domain."],
+      "acceptance": ["selecting numeric cells in any table shows count, sum and average"],
+      "depends_on": ["F330"]
+    },
+    {
+      "id": "F201", "phase": "V9", "severity": "high",
+      "title": "Allocate FD interest on every FD creation path",
+      "files": ["models/fixed_deposit.py", "engines/interest_engine.py", "ui/statement_import_screen_modern.py"],
+      "change": [
+        "allocate_fd_interest_to_fy() is called from the FD dialog and the FD screen but not from add_fd() itself nor from the statement-import path, so any FD created elsewhere leaves FDInterestRecord empty — zeroing Overview's Interest Income, the FD screen's interest columns, the runway chart, the TDS panel and the Tax screen's FD interest.",
+        "Move the invariant into the model: add_fd() and update_fd() allocate whenever maturity details are present. Keep the early return for 'Pending Details' FDs.",
+        "Add a test that creating an FD through the model alone produces FDInterestRecord rows."
+      ],
+      "acceptance": ["creating an FD via models.fixed_deposit.add_fd() produces interest records", "Overview 'Interest Income' is non-zero with FDs present", "Fixed Deposits shows Expected Interest for every complete FD"],
+      "depends_on": []
+    },
+    {
+      "id": "F202", "phase": "V9", "severity": "high",
+      "title": "Match expectations to transactions so 'Received to Date' is real",
+      "files": ["models/income_expectation.py", "ui/income_management_screen.py"],
+      "change": [
+        "With 4 matching salary credits in the FY and 12 expectations seeded, the screen reported Received ₹0.00 and rendered no Actual series.",
+        "Determine whether auto_link_income_expectations() is invoked on refresh; if not, wire it, and surface unmatched expectations for manual linking.",
+        "Matching should be by person + account + month + approximate amount, and must be idempotent."
+      ],
+      "acceptance": ["'Received to Date' reflects matched transactions", "the Actual series renders on the monthly chart", "re-running the match does not create duplicate links"],
+      "depends_on": []
+    },
+    {
+      "id": "F350", "phase": "V9", "severity": "low",
+      "title": "Regression-test every screen under every theme",
+      "files": ["tests/test_screen_render.py (new)"],
+      "change": [
+        "Construct all 9 screens under all 4 themes and assert no exception and a non-trivial child count.",
+        "Assert stack.currentWidget() after _navigate(i) is the real screen class, not a placeholder — this is the F001 guard.",
+        "Assert dashboard._screen_errors is empty — this is the F003 guard.",
+        "Exercise showEvent on each screen — this is the F002 guard.",
+        "Set QT_QPA_FONTDIR so captures are not font-fallback artefacts."
+      ],
+      "acceptance": ["the test exists and passes", "reverting any of F001/F002/F003 makes it fail"],
+      "depends_on": []
+    }
+  ],
+
+  "recommended_sequence": [
+    "F350", "F201", "F202",
+    "F220", "F221", "F222",
+    "F210", "F211", "F212",
+    "F311", "F312", "F310", "F313", "F314", "F315",
+    "F230", "F231",
+    "F320", "F322", "F321",
+    "F330", "F331", "F332",
+    "F340", "F342",
+    "F301", "F302", "F303", "F304", "F305", "F306", "F307", "F308", "F341", "F309"
+  ],
+
+  "sequence_rationale": "F350 first so every later change is guarded by a render test — the three blockers fixed in this pass all hid behind lazy screen construction. Then the two data-wiring fixes, because several screens are being redesigned around numbers that currently do not exist. Then tokens, buttons and shared components, because every screen redesign consumes them. Terminology before screens so labels are written once. Charts and tables next. Then the dialog-to-screen conversions that stand alone (F340, F342). Screens last — with F341 placed immediately after F308, because moving account details into the side panel requires that panel to have been rebuilt first.",
+
+  "harness": {
+    "purpose": "Render every screen and dialog with REAL fonts and introspect them.",
+    "create_at": "tests/ui_harness.py",
+    "environment": {"QT_QPA_PLATFORM": "offscreen", "QT_QPA_FONTDIR": "C:/Windows/Fonts"},
+    "critical": "Without QT_QPA_FONTDIR the offscreen plugin exposes ZERO font families and Qt falls back to a capitals-only stub face, making every capture useless for typography. Assert QFontDatabase.families() is non-empty before drawing any visual conclusion.",
+    "pitfalls": [
+      "Guard seed data on the ACCOUNTS table, not the persons table — a crash mid-seed leaves the person row behind and silently skips all later seeding, producing empty screens that look like app bugs.",
+      "Redirect config.DATA_DIR/DB_PATH AND core.database.DB_PATH/DATA_DIR — core.database captures them at import.",
+      "Do not call deleteLater() on a widget removed from a QStackedWidget; the PyQt wrapper and Qt both try to free it and the process segfaults. Keep a reference instead.",
+      "matplotlib builds its font cache on first import — discard the first timing measurement."
+    ]
+  },
+
+  "priority_if_time_is_limited": [
+    "F350 — lock in the three blocker fixes so they cannot silently regress",
+    "F201 and F202 — three screens currently display zeros for data that should exist",
+    "F210 — button hierarchy; the fastest visible quality win",
+    "F330 — Excel shortcuts on 5 of 8 tables that lack them",
+    "F230 — one word per concept; cheap and removes real confusion",
+    "F320 and F322 — charts stop clipping, overlapping and duplicating their own screens",
+    "F301, F302, F304 — the three screens whose motive is most obstructed",
+    "everything else"
+  ]
+}

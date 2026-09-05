@@ -1510,24 +1510,29 @@ class StatementImportScreen(QWidget):
             self._setup_preview_tab_order()
             self._preview_tab_order_ready = True
 
+    def _chain_tab_order(self, *names: str) -> None:
+        """
+        Chain tab order across the named widgets, skipping any that no longer
+        exist. These run from showEvent(), and in PyQt6 an unhandled exception
+        inside a reimplemented virtual ABORTS THE PROCESS rather than raising —
+        so a stale name here takes the whole app down with no traceback. That
+        is exactly what happened when the AI controls moved to Settings and
+        `btn_ai_check` disappeared from this screen.
+        """
+        widgets = [w for w in (getattr(self, n, None) for n in names) if w is not None]
+        for first, second in zip(widgets, widgets[1:]):
+            self.setTabOrder(first, second)
+
     def _setup_selection_tab_order(self):
-        self.setTabOrder(self.person_combo, self.account_combo)
-        self.setTabOrder(self.account_combo, self.file_type_combo)
-        self.setTabOrder(self.file_type_combo, self.btn_browse)
-        self.setTabOrder(self.btn_browse, self.btn_ai_check)
-        self.setTabOrder(self.btn_ai_check, self.map_columns_btn)
-        self.setTabOrder(self.map_columns_btn, self.btn_next)
-        self.setTabOrder(self.btn_next, self.btn_back)
+        self._chain_tab_order(
+            "person_combo", "account_combo", "file_type_combo", "btn_browse",
+            "map_columns_btn", "btn_next", "btn_back")
 
     def _setup_preview_tab_order(self):
-        self.setTabOrder(self.preview_table, self.btn_back)
-        self.setTabOrder(self.btn_back, self.btn_next)
-        self.setTabOrder(self.btn_next, self.bulk_edit_btn)
-        self.setTabOrder(self.bulk_edit_btn, self.shift_dates_btn)
-        self.setTabOrder(self.shift_dates_btn, self.split_row_btn)
-        self.setTabOrder(self.split_row_btn, self.merge_rows_btn)
-        self.setTabOrder(self.merge_rows_btn, self.copy_debug_btn)
-        self.setTabOrder(self.copy_debug_btn, self.export_debug_btn)
+        self._chain_tab_order(
+            "preview_table", "btn_back", "btn_next", "bulk_edit_btn",
+            "shift_dates_btn", "split_row_btn", "merge_rows_btn",
+            "copy_debug_btn", "export_debug_btn")
         self.setTabOrder(self.export_debug_btn, self.debug_toggle_btn)
 
     def _on_preview_row_double_click(self, index):

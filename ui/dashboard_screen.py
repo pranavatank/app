@@ -103,6 +103,7 @@ class DashboardScreen(QMainWindow):
         # Lazy-load screen pages: index -> screen instance or error message
         self._screen_pages: dict[int, QWidget | None] = {}
         self._screen_errors: dict[int, str] = {}
+        self._detached_placeholders: list[QWidget] = []
         self._build_ui()
         self._populate_selectors()
         self._refresh_overview()
@@ -496,18 +497,23 @@ class DashboardScreen(QMainWindow):
         if index in self._screen_pages and self._screen_pages[index] is not None:
             return self._screen_pages[index]
 
+        # Cache the error page too, so a screen that failed to build is not
+        # reconstructed on every navigation — and so callers can rely on
+        # _screen_pages[index] being the widget that is actually in the stack.
         if index in self._screen_errors:
-            return self._build_error_page(index, self._screen_errors[index])
+            page = self._build_error_page(index, self._screen_errors[index])
+            self._screen_pages[index] = page
+            return page
 
         # Try to load the screen
         try:
             page = self._load_screen_page(index)
-            self._screen_pages[index] = page
-            return page
         except Exception as e:
             error_msg = f"{_NAV_ITEMS[index][0]}: {type(e).__name__}: {str(e)}"
             self._screen_errors[index] = error_msg
-            return self._build_error_page(index, error_msg)
+            page = self._build_error_page(index, error_msg)
+        self._screen_pages[index] = page
+        return page
 
     def _load_screen_page(self, index: int) -> QWidget:
         """Load a screen page at the given index. Raises if construction fails."""
@@ -1018,14 +1024,21 @@ class DashboardScreen(QMainWindow):
         if not self._confirm_unsaved_transactions("switch pages"):
             return
 
-        # Lazy-load screen if not yet loaded
+        # Lazy-load screen if not yet loaded.
+        # Compare against what is actually IN the stack, not against the page
+        # cache — _get_screen_page() populates that cache before returning, so
+        # a cache comparison is always equal and the placeholder never gets
+        # swapped out, leaving the screen blank.
         screen = self._get_screen_page(index)
-        if self._screen_pages.get(index) != screen:
-            # First time loading - replace placeholder
-            old_widget = self.stack.widget(index)
+        old_widget = self.stack.widget(index)
+        if old_widget is not screen:
             self.stack.removeWidget(old_widget)
             self.stack.insertWidget(index, screen)
-            self._screen_pages[index] = screen
+            # Keep the detached placeholder referenced. removeWidget() reparents
+            # it to None; dropping the last Python reference (or deleteLater()ing
+            # it here) lets the wrapper and Qt both try to free it, which
+            # segfaults. They are empty QWidgets, so retaining them is cheap.
+            self._detached_placeholders.append(old_widget)
 
         self._set_nav_active(index)
         self.stack.setCurrentIndex(index)
