@@ -30,9 +30,9 @@ def display_transaction_type(value: str | None) -> str:
     """Convert canonical DB values to user-facing labels."""
     canon = normalize_transaction_type(value)
     if canon == "Income":
-        return "Credit"
+        return "Income"
     if canon == "Expense":
-        return "Debit"
+        return "Expense"
     return canon
 
 

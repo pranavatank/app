@@ -170,25 +170,28 @@ class TransactionsScreen(QWidget):
         self.btn_edit = Theme.btn("  Edit", "edit", height=40, min_width=96)
         self.btn_edit.setIcon(app_icon("edit", color="#FFFFFF", size=16))
         self.btn_edit.setEnabled(False)
+        self.btn_edit.setToolTip("Select a transaction from the table to edit")
         self.btn_edit.clicked.connect(self._edit_transaction)
         layout.addWidget(self.btn_edit)
 
         self.btn_delete = Theme.btn("  Delete", "danger", height=40, min_width=105)
         self.btn_delete.setIcon(app_icon("delete", color="#FFFFFF", size=16))
         self.btn_delete.setEnabled(False)
+        self.btn_delete.setToolTip("Select a transaction from the table to delete")
         self.btn_delete.clicked.connect(self._delete_transaction)
         layout.addWidget(self.btn_delete)
 
-        self.btn_reprocess = Theme.btn("Reprocess Data", "secondary", height=40, min_width=130)
+        self.btn_reprocess = Theme.btn("Link Transfers", "secondary", height=40, min_width=130)
         self.btn_reprocess.setIcon(app_icon("refresh", size=16))
+        self.btn_reprocess.setToolTip("Detect and link matching transfers between accounts")
         self.btn_reprocess.clicked.connect(self._reprocess_data)
         layout.addWidget(self.btn_reprocess)
 
         layout.addStretch()
 
         # Pill badges
-        self.lbl_income_sum  = self._badge("Credit: —",  Theme.SUCCESS_LIGHT, Theme.SUCCESS_DARK)
-        self.lbl_expense_sum = self._badge("Debit: —", Theme.DANGER_LIGHT,  Theme.DANGER_DARK)
+        self.lbl_income_sum  = self._badge("Income: —",  Theme.SUCCESS_LIGHT, Theme.SUCCESS_DARK)
+        self.lbl_expense_sum = self._badge("Expense: —", Theme.DANGER_LIGHT,  Theme.DANGER_DARK)
         self.lbl_net_sum     = self._badge("Net: —",     Theme.PRIMARY_LIGHT, Theme.PRIMARY_DARK)
         layout.addWidget(self.lbl_income_sum)
         layout.addWidget(self.lbl_expense_sum)
@@ -210,11 +213,13 @@ class TransactionsScreen(QWidget):
         layout.addWidget(self.unsaved_label)
         layout.addStretch()
 
-        self.btn_save = Theme.btn("Save Changes", "primary", height=32, min_width=120)
+        self.btn_save = Theme.btn("Save Changes", "secondary", height=32, min_width=120)
+        self.btn_save.setToolTip("Save changes to the transaction table")
         self.btn_save.clicked.connect(self._save_table_changes)
         layout.addWidget(self.btn_save)
 
         self.btn_discard = Theme.btn("Discard", "secondary", height=32, min_width=90)
+        self.btn_discard.setToolTip("Discard unsaved changes to the transaction table")
         self.btn_discard.clicked.connect(lambda: self._discard_changes(confirm=True))
         layout.addWidget(self.btn_discard)
 
@@ -285,7 +290,7 @@ class TransactionsScreen(QWidget):
         self.f_type.setMinimumWidth(90)
         self.f_type.setMinimumHeight(32)
         self.f_type.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
-        self.f_type.addItems(["All Types", "Credit", "Debit", "Transfer"])
+        self.f_type.addItems(["All Types", "Income", "Expense", "Transfer"])
         layout.addWidget(self.f_type)
 
         layout.addWidget(lbl("Search"))
@@ -298,7 +303,7 @@ class TransactionsScreen(QWidget):
 
         layout.addStretch()
 
-        btn_filter = Theme.btn("Apply", "primary", height=32, min_width=80)
+        btn_filter = Theme.btn("Apply", "secondary", height=32, min_width=80)
         btn_filter.clicked.connect(self.refresh)
         layout.addWidget(btn_filter)
 
@@ -309,12 +314,12 @@ class TransactionsScreen(QWidget):
         return bar
 
     def _build_table(self) -> QWidget:
-        headers = ["Date","Type","Category","Mode","Reference No","Description","Amount (₹)","Balance After (₹)","Account","Person","ID"]
+        headers = ["Date","Type","Category","Mode","Reference No","Description","Amount (₹)","Balance (₹)","Account","Person","ID"]
         self.table_widget = ExcelTableWithStats(show_checkboxes=True)
         self.table = self.table_widget.table
         self.table.editable = True  # Enable editing for certain columns
         self.table.setHeaders(headers)
-        # Amount and Balance After are the only free-numeric editable columns
+        # Amount and Balance are the only free-numeric editable columns
         # (Category/Mode/Reference/Description are editable but free text).
         self.table.setNumericColumns({_COL_AMOUNT+1, _COL_BAL+1})
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked | QAbstractItemView.EditTrigger.EditKeyPressed)
@@ -324,11 +329,38 @@ class TransactionsScreen(QWidget):
         # Override delete to ensure DB stays in sync when using Delete key.
         self.table.deleteSelectedRows = self._delete_selected_rows
 
+        # Configure content-aware column sizing
+        # Checkbox column (0) stays at 40px
+        # Date (1), Type (2), Amount (7), Balance (8) are FIXED narrow
+        # Description (6), Account (9), Person (10) get STRETCH
+        # Reference No (5) gets identifier width (110px for "—")
+        # Mode (4), Category (3) get moderate width
+        # ID column (11) is hidden (0 width not needed, will be hidden)
+        col_specs = {
+            1: {"mode": "FIXED", "width": 85},      # Date
+            2: {"mode": "FIXED", "width": 75},      # Type
+            3: {"mode": "FIXED", "width": 100},     # Category
+            4: {"mode": "FIXED", "width": 120},     # Mode
+            5: {"mode": "FIXED", "width": 110},     # Reference No (ID-like, shows "—")
+            6: {"mode": "STRETCH"},                  # Description
+            7: {"mode": "FIXED", "width": 130},     # Amount (₹)
+            8: {"mode": "FIXED", "width": 130},     # Balance (₹)
+            9: {"mode": "STRETCH"},                  # Account
+            10: {"mode": "STRETCH"},                 # Person (visible, stretches)
+            11: {"mode": "FIXED", "width": 0},      # ID (hidden)
+        }
+        self.table.setColumnSizing(col_specs)
+
+        # Set tooltip support for columns that may be truncated
+        self.table.setColumnElidedWithTooltip(_COL_MODE+1)     # Mode
+        self.table.setColumnElidedWithTooltip(_COL_DESC+1)     # Description
+        self.table.setColumnElidedWithTooltip(_COL_ACCT+1)     # Account
+        self.table.setColumnElidedWithTooltip(_COL_PERSON+1)   # Person
+
         hdr = self.table.horizontalHeader()
         hdr.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
-        for i, w in enumerate([40,90,80,130,100,150,210,110,130,160,120,0]):
-            self.table.setColumnWidth(i, w)
-        self.table.setColumnHidden(_COL_ID+1, True)
+        self.table.setColumnWidth(0, 40)  # Checkbox column
+        self.table.setColumnHidden(_COL_ID+1, True)  # Hide ID column from user
         self.table.itemSelectionChanged.connect(self._on_selection_changed)
         self.table.doubleClicked.connect(self._edit_transaction)
         return self.table_widget
@@ -428,6 +460,8 @@ class TransactionsScreen(QWidget):
                     parent=self.table_container
                 )
                 self._empty_state.action_clicked.connect(self._trigger_import)
+                # Override button variant to secondary since "Add Transaction" is primary
+                Theme.style_button(self._empty_state.btn_action, "secondary")
                 self.table_container_layout.addWidget(self._empty_state)
             self.table_widget.setVisible(False)
             if self._empty_state:
@@ -497,31 +531,46 @@ class TransactionsScreen(QWidget):
             
             # Mode - editable
             mode_item = item(row.get("mode",""))
+            mode_text = row.get("mode","")
+            if mode_text:
+                mode_item.setToolTip(mode_text)
             mode_item.setFlags(mode_item.flags() | Qt.ItemFlag.ItemIsEditable)
             self.table.setItem(r, _COL_MODE+1, mode_item)
-            
+
             # Reference - editable
             ref_item = item(row.get("reference_no") or "—")
             ref_item.setFlags(ref_item.flags() | Qt.ItemFlag.ItemIsEditable)
             self.table.setItem(r, _COL_REF+1, ref_item)
-            
+
             # Description - editable
             desc_item = item(row.get("description",""))
+            desc_text = row.get("description","")
+            if desc_text:
+                desc_item.setToolTip(desc_text)
             desc_item.setFlags(desc_item.flags() | Qt.ItemFlag.ItemIsEditable)
             self.table.setItem(r, _COL_DESC+1, desc_item)
-            
+
             # Amount - editable
             amt_item_val = amt_item(row.get("amount"))
             amt_item_val.setFlags(amt_item_val.flags() | Qt.ItemFlag.ItemIsEditable)
             self.table.setItem(r, _COL_AMOUNT+1, amt_item_val)
-            
+
             # Balance - editable
             bal_item_val = amt_item(row.get("balance_after"))
             bal_item_val.setFlags(bal_item_val.flags() | Qt.ItemFlag.ItemIsEditable)
             self.table.setItem(r, _COL_BAL+1, bal_item_val)
-            
-            self.table.setItem(r, _COL_ACCT+1,   item(row.get("bank_display_name") or row.get("bank_name", "")))
-            self.table.setItem(r, _COL_PERSON+1, item(row.get("person_name","")))
+
+            acct_text = row.get("bank_display_name") or row.get("bank_name", "")
+            acct_item = item(acct_text)
+            if acct_text:
+                acct_item.setToolTip(acct_text)
+            self.table.setItem(r, _COL_ACCT+1, acct_item)
+
+            person_text = row.get("person_name","")
+            person_item = item(person_text)
+            if person_text:
+                person_item.setToolTip(person_text)
+            self.table.setItem(r, _COL_PERSON+1, person_item)
             self.table.setItem(r, _COL_ID+1,     QTableWidgetItem(str(row["transaction_id"])))
             self.table.setRowHeight(r, 32)
 
@@ -540,8 +589,8 @@ class TransactionsScreen(QWidget):
             if r.get("transaction_type") == "Expense" and not r.get("is_internal_transfer")
         )
         net = income - expense
-        self.lbl_income_sum.setText(f"Credit: ₹ {income:,.2f}")
-        self.lbl_expense_sum.setText(f"Debit: ₹ {expense:,.2f}")
+        self.lbl_income_sum.setText(f"Income: ₹ {income:,.2f}")
+        self.lbl_expense_sum.setText(f"Expense: ₹ {expense:,.2f}")
         sign = "+" if net >= 0 else ""
         self.lbl_net_sum.setText(f"Net: {sign}₹ {net:,.2f}")
 
@@ -581,7 +630,7 @@ class TransactionsScreen(QWidget):
         self.category_chart.plot_pie(
             labels=[c["category"] or "Uncategorised" for c in top],
             values=[c["total"] for c in top],
-            title=f"Debit by Category — FY {fy}",
+            title=f"Expense by Category — FY {fy}",
         )
 
     def _reprocess_data(self):

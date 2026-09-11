@@ -31,6 +31,7 @@ from ui.theme import Theme, ThemeManager
 from ui.icons import icon as app_icon, fallback as icon_fallback, is_available as icons_available
 from ui.widgets.summary_panel import SummaryPanel
 from ui.widgets.chart_widget import ChartWidget
+from ui.widgets.kpi_tile import KpiTile
 
 _NAV_ITEMS = [
     ("Overview",              "overview"),
@@ -295,6 +296,21 @@ class DashboardScreen(QMainWindow):
 
     def _set_nav_active(self, index: int):
         """Set active state for navigation item using dynamic properties and style updates"""
+        screen_key, _ = _NAV_ITEMS[index]  # Get label first, we'll map to key
+        screen_key_map = {
+            "Overview": "overview",
+            "Accounts": "accounts",
+            "Transactions": "transactions",
+            "Income & Expectations": "income",
+            "Fixed Deposits": "fixed_deposits",
+            "Statement Import": "statement_import",
+            "Tax Documents": "ais_tis",
+            "Tax": "tax",
+            "Settings": "settings",
+        }
+        screen_key = screen_key_map.get(screen_key, "overview")
+        accent_color = Theme.screen_accent(screen_key)
+
         for i, btn in enumerate(self._nav_buttons):
             is_active = (i == index)
             btn.setProperty("active", is_active)
@@ -318,6 +334,23 @@ class DashboardScreen(QMainWindow):
             text_label.setProperty("active", is_active)
             text_label.style().unpolish(text_label)
             text_label.style().polish(text_label)
+
+            # Apply screen accent to active nav button background
+            if is_active:
+                btn.setStyleSheet(f"""
+                    QToolButton {{
+                        background-color: {accent_color};
+                        border: none;
+                        border-radius: {Theme.RADIUS_CONTROL}px;
+                        margin: 2px 10px;
+                        padding: 0px;
+                    }}
+                    QToolButton:hover {{
+                        background-color: {accent_color};
+                        border-radius: {Theme.RADIUS_CONTROL}px;
+                        margin: 2px 10px;
+                    }}
+                """)
 
 
     def _on_theme_changed(self, name: str) -> None:
@@ -626,27 +659,22 @@ class DashboardScreen(QMainWindow):
         kpi_layout.addLayout(header)
         kpi_layout.addSpacing(12)
 
-        # KPI tiles grid (responsive)
-        kpi_tiles_layout = QGridLayout()
+        # KPI tiles grid (responsive, even distribution)
+        kpi_tiles_layout = QHBoxLayout()
         kpi_tiles_layout.setSpacing(12)
 
-        # Create KPI tiles
-        self.kpi_balance = self._create_kpi_tile("Total Balance", "₹ —", "primary")
-        self.kpi_income = self._create_kpi_tile("Income (FY)", "₹ —", "success")
-        self.kpi_expense = self._create_kpi_tile("Expense (FY)", "₹ —", "danger")
-        self.kpi_savings = self._create_kpi_tile("Net Savings", "₹ —", "info")
-        self.kpi_interest = self._create_kpi_tile("Interest Income", "₹ —", "teal")
+        # Create KPI tiles using the reusable KpiTile component
+        self.kpi_balance = KpiTile("Total Balance", 0.0, is_currency=True)
+        self.kpi_income = KpiTile("Income (FY)", 0.0, is_currency=True)
+        self.kpi_expense = KpiTile("Expense (FY)", 0.0, is_currency=True)
+        self.kpi_savings = KpiTile("Net Savings", 0.0, is_currency=True)
+        self.kpi_interest = KpiTile("Interest Income", 0.0, is_currency=True)
 
-        kpi_tiles_layout.addWidget(self.kpi_balance, 0, 0)
-        kpi_tiles_layout.addWidget(self.kpi_income, 0, 1)
-        kpi_tiles_layout.addWidget(self.kpi_expense, 0, 2)
-        kpi_tiles_layout.addWidget(self.kpi_savings, 1, 0)
-        kpi_tiles_layout.addWidget(self.kpi_interest, 1, 1)
-
-        for i in range(3):
-            kpi_tiles_layout.setColumnStretch(i, 1)
-        for i in range(2):
-            kpi_tiles_layout.setRowStretch(i, 0)
+        kpi_tiles_layout.addWidget(self.kpi_balance, stretch=1)
+        kpi_tiles_layout.addWidget(self.kpi_income, stretch=1)
+        kpi_tiles_layout.addWidget(self.kpi_expense, stretch=1)
+        kpi_tiles_layout.addWidget(self.kpi_savings, stretch=1)
+        kpi_tiles_layout.addWidget(self.kpi_interest, stretch=1)
 
         kpi_layout.addLayout(kpi_tiles_layout)
         kpi_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
@@ -699,8 +727,8 @@ class DashboardScreen(QMainWindow):
 
         self.panel_financial = SummaryPanel("Financial Summary", "chart_overview", accent=Theme.PRIMARY)
         self.panel_financial.add_stat("balance", "Total Balance", "₹ —", value_size=14)
-        self.panel_financial.add_stat("income", "Total Credit (FY)", "₹ —", value_color_role="SUCCESS")
-        self.panel_financial.add_stat("expense", "Total Debit (FY)", "₹ —", value_color_role="DANGER")
+        self.panel_financial.add_stat("income", "Total Income (FY)", "₹ —", value_color_role="SUCCESS")
+        self.panel_financial.add_stat("expense", "Total Expense (FY)", "₹ —", value_color_role="DANGER")
         self.panel_financial.add_divider()
         self.panel_financial.add_stat("savings", "Net Savings", "₹ —", bold=True)
         self.panel_financial.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
@@ -742,41 +770,6 @@ class DashboardScreen(QMainWindow):
         page_layout.addWidget(scroll)
         return page
 
-    def _create_kpi_tile(self, label: str, value: str, accent: str) -> QFrame:
-        """Create a single KPI tile with label, value, and accent color.
-        accent: "success", "danger", "info", "teal", or default (primary)
-        """
-        tile = QFrame()
-        tile.setObjectName("kpiTile")
-        if accent not in ("primary",):  # primary is default, others are explicit
-            tile.setProperty("accent", accent)
-        tile.setGraphicsEffect(Theme.shadow_card())
-        tile.setMinimumHeight(100)
-
-        layout = QVBoxLayout(tile)
-        layout.setContentsMargins(16, 12, 16, 12)
-        layout.setSpacing(6)
-
-        # Label
-        lbl = QLabel(label)
-        lbl.setFont(QFont("Segoe UI", 10))
-        lbl.setProperty("textrole", "secondary")
-        layout.addWidget(lbl)
-
-        # Value
-        val_lbl = QLabel(value)
-        val_lbl.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
-        val_lbl.setObjectName("kpiValue")
-        layout.addWidget(val_lbl)
-
-        layout.addStretch()
-
-        # Store references for updates
-        tile._label = lbl
-        tile._value = val_lbl
-        tile._accent = accent
-
-        return tile
 
     # ═══════════════════════════════════════════════════════════════════════
     # Selectors
@@ -885,12 +878,12 @@ class DashboardScreen(QMainWindow):
         sav_curr = get_total_savings_interest(fy, person_id=pid)
         total_interest = fd_curr + sav_curr
 
-        # Update KPI tiles
-        self.kpi_balance._value.setText(session.mask(balance))
-        self.kpi_income._value.setText(session.mask(income))
-        self.kpi_expense._value.setText(session.mask(expense))
-        self.kpi_savings._value.setText(session.mask(net))
-        self.kpi_interest._value.setText(session.mask(total_interest))
+        # Update KPI tiles using set_value (passes masked value when privacy mode is on)
+        self.kpi_balance.set_value(session.mask(balance), is_currency=False)
+        self.kpi_income.set_value(session.mask(income), is_currency=False)
+        self.kpi_expense.set_value(session.mask(expense), is_currency=False)
+        self.kpi_savings.set_value(session.mask(net), is_currency=False)
+        self.kpi_interest.set_value(session.mask(total_interest), is_currency=False)
 
     def _refresh_overview_charts(self, fy, pid, aid):
         """Populate income/expense and distribution charts."""

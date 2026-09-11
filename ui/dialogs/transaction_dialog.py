@@ -64,12 +64,12 @@ class TransactionDialog(QDialog):
         form.addRow("Date *", self.date_edit)
 
         self.cmb_type = QComboBox()
-        self.cmb_type.addItems(["Credit","Debit","Transfer"])
+        self.cmb_type.addItems(["Income","Expense","Transfer"])
         self.cmb_type.currentTextChanged.connect(self._on_type_changed)
         form.addRow("Type *", self.cmb_type)
 
         self.cmb_category = QComboBox()
-        self._populate_categories("Credit")
+        self._populate_categories("Income")
         form.addRow("Category", self.cmb_category)
 
         self.cmb_mode = QComboBox()
@@ -94,7 +94,7 @@ class TransactionDialog(QDialog):
         self.bal_spin.setPrefix("₹ ")
         self.bal_spin.setSpecialValueText("—")
         self.bal_spin.setValue(self.bal_spin.minimum())
-        form.addRow("Balance After", self.bal_spin)
+        form.addRow("Balance", self.bal_spin)
 
         self.desc_edit = QTextEdit()
         self.desc_edit.setMinimumHeight(68)

@@ -27,7 +27,7 @@ def _btn(text: str, style: str = "primary") -> QPushButton:
 class PersonManagementDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Manage Family Members")
+        self.setWindowTitle("Manage People")
         self.setMinimumSize(720, 520)
         self._build_ui()
         self._load_persons()
@@ -41,7 +41,7 @@ class PersonManagementDialog(QDialog):
         header = QHBoxLayout()
         header.setSpacing(10)
         header.addWidget(icon_label("persons", size=20, color=Theme.PRIMARY))
-        title = QLabel("Family Members")
+        title = QLabel("People")
         title.setProperty("textrole", "title-sm")
         header.addWidget(title)
         header.addStretch()

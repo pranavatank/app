@@ -99,7 +99,7 @@ class TransactionEditDialog(QDialog):
         self.amount_edit.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         form.addRow(self._label("Amount:"), self.amount_edit)
 
-        # Balance After
+        # Balance
         self.balance_edit = QLineEdit()
         self.balance_edit.setPlaceholderText("Optional")
         self.balance_edit.setMinimumHeight(38)
@@ -107,7 +107,7 @@ class TransactionEditDialog(QDialog):
         self.balance_edit.setAccessibleDescription("Enter the account balance after the transaction, if known.")
         self.balance_edit.setToolTip("Enter the account balance after the transaction, if known.")
         self.balance_edit.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        form.addRow(self._label("Balance After:"), self.balance_edit)
+        form.addRow(self._label("Balance:"), self.balance_edit)
 
         # Description
         self.description_edit = QLineEdit()

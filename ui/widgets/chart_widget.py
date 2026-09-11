@@ -512,10 +512,10 @@ class ChartWidget(QWidget):
             x  = np.arange(len(months))
             w  = 0.36
 
-            b1 = ax.bar(x - w / 2, income,  w, label="Credit",
+            b1 = ax.bar(x - w / 2, income,  w, label="Income",
                         color=Theme.SUCCESS, alpha=0.88,
                         edgecolor=Theme.SURFACE, linewidth=1)
-            b2 = ax.bar(x + w / 2, expense, w, label="Debit",
+            b2 = ax.bar(x + w / 2, expense, w, label="Expense",
                         color=Theme.DANGER,  alpha=0.88,
                         edgecolor=Theme.SURFACE, linewidth=1)
 

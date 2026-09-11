@@ -19,7 +19,7 @@ Transactions Screen (action bar):
   ＋ Add Transaction  → primary   (blue)
   ✏ Edit             → edit      (violet)
   🗑 Delete           → danger    (red)
-  Reprocess Data     → secondary (grey)
+  Link Transfers     → secondary (grey)
   Apply (filter)     → primary   (blue)
   Clear (filter)     → secondary (grey)
 

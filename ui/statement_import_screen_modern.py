@@ -23,6 +23,7 @@ import re
 from ui.widgets.excel_table import ExcelTableWithStats
 from ui.widgets.loader import Loader
 from ui.widgets.toast_utils import show_success, show_warning, show_info
+from ui.widgets.drop_zone import DropZone
 from ui.theme import Theme
 from ui.icons import icon_label, set_btn_icon, pixmap as icon_pixmap
 from ui.date_utils import format_display_date
@@ -309,7 +310,7 @@ class StatementImportScreen(QWidget):
         self.btn_back.clicked.connect(self._go_back)
         self.btn_back.setAccessibleName("Back button")
         self.btn_back.setAccessibleDescription("Return to the previous step in the import wizard.")
-        self.btn_back.setToolTip("Return to the previous step in the import wizard.")
+        self.btn_back.setToolTip("Not available at the first step — proceed to preview to go back")
         nav.addWidget(self.btn_back)
 
         self.btn_next = Theme.btn("Parse Statement →", "primary", height=38, min_width=160)
@@ -344,29 +345,43 @@ class StatementImportScreen(QWidget):
         # Person selection
         self.person_combo = QComboBox()
         self.person_combo.setMinimumHeight(38)
+        self.person_combo.setMaximumWidth(Theme.INPUT_SELECT_LONG_MAX_WIDTH)
         self.person_combo.setAccessibleName("Person selection")
         self.person_combo.setAccessibleDescription("Choose the person associated with this bank statement.")
         self.person_combo.setToolTip("Choose the person associated with this bank statement.")
         self.person_combo.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.person_combo.currentIndexChanged.connect(self._on_person_changed)
-        form.addRow(self._form_label("Family Member"), self.person_combo)
+        person_wrapper = QWidget()
+        person_layout = QHBoxLayout(person_wrapper)
+        person_layout.setContentsMargins(0, 0, 0, 0)
+        person_layout.setSpacing(0)
+        person_layout.addWidget(self.person_combo)
+        person_layout.addStretch()
+        form.addRow(self._form_label("Person"), person_wrapper)
 
         # Account selection
         self.account_combo = QComboBox()
         self.account_combo.setMinimumHeight(38)
+        self.account_combo.setMaximumWidth(Theme.INPUT_SELECT_LONG_MAX_WIDTH)
         self.account_combo.setEnabled(False)
         self.account_combo.setAccessibleName("Bank account selection")
         self.account_combo.setAccessibleDescription("Choose the bank account for the selected person.")
         self.account_combo.setToolTip("Choose the bank account for the selected person.")
         self.account_combo.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        form.addRow(self._form_label("Account"), self.account_combo)
+        account_wrapper = QWidget()
+        account_layout = QHBoxLayout(account_wrapper)
+        account_layout.setContentsMargins(0, 0, 0, 0)
+        account_layout.setSpacing(0)
+        account_layout.addWidget(self.account_combo)
+        account_layout.addStretch()
+        form.addRow(self._form_label("Account"), account_wrapper)
 
         # File type selection
         file_type_layout = QHBoxLayout()
         self.file_type_combo = QComboBox()
         self.file_type_combo.addItems(["PDF", "Excel"])
         self.file_type_combo.setMinimumHeight(38)
-        self.file_type_combo.setMaximumWidth(150)
+        self.file_type_combo.setMaximumWidth(Theme.INPUT_SELECT_SHORT_MAX_WIDTH)
         self.file_type_combo.setAccessibleName("Statement file type")
         self.file_type_combo.setAccessibleDescription("Choose whether the selected file is a PDF or Excel statement.")
         self.file_type_combo.setToolTip("Choose whether the selected file is a PDF or Excel statement.")
@@ -394,23 +409,17 @@ class StatementImportScreen(QWidget):
         file_section = QVBoxLayout()
         file_section.setSpacing(10)
 
-        # Drag-and-drop target
-        self._drag_drop_target = self._create_drag_drop_target()
-        file_section.addWidget(self._drag_drop_target)
-
-        # Browse button row
-        button_row = QHBoxLayout()
-        button_row.addStretch()
-        btn_browse = Theme.btn("Or Browse…", "secondary", height=36, min_width=130)
-        btn_browse.clicked.connect(self._browse_file)
-        btn_browse.setAccessibleName("Browse statement file")
-        btn_browse.setAccessibleDescription("Open a file picker to select a bank statement file.")
-        btn_browse.setToolTip("Open a file picker to select a bank statement file.")
-        btn_browse.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        set_btn_icon(btn_browse, "browse")
-        self.btn_browse = btn_browse
-        button_row.addWidget(btn_browse)
-        file_section.addLayout(button_row)
+        # Drag-and-drop zone
+        self._drop_zone = DropZone(
+            title="Drag statement file here",
+            subtitle="PDF or Excel format",
+            accepted_extensions=[".pdf", ".xls", ".xlsx"],
+            filter_text="All Files (*.pdf *.xls *.xlsx);;PDF (*.pdf);;Excel (*.xls *.xlsx)",
+            parent=self
+        )
+        self._drop_zone.fileSelected.connect(self._set_selected_file)
+        self._drop_zone.setMinimumHeight(140)
+        file_section.addWidget(self._drop_zone)
 
         form_layout.addLayout(file_section)
         form_layout.addStretch()
@@ -627,6 +636,12 @@ class StatementImportScreen(QWidget):
             self._step_line.setStyleSheet(
                 f"background-color: {Theme.PRIMARY if step >= 2 else Theme.BORDER};"
             )
+        # Hide Back button at step 1 (meaningless to go back from first step)
+        if self.btn_back:
+            if step == 1:
+                self.btn_back.setVisible(False)
+            else:
+                self.btn_back.setVisible(True)
 
     def _create_card(self) -> QFrame:
         """Create a modern card container"""
@@ -678,39 +693,6 @@ class StatementImportScreen(QWidget):
         lbl.setProperty("textrole", "section-label")
         return lbl
 
-    def _create_drag_drop_target(self) -> QFrame:
-        """Create a drag-and-drop target frame for file selection"""
-        target = QFrame()
-        target.setObjectName("DragDropTarget")
-        target.setCursor(Qt.CursorShape.PointingHandCursor)
-        target.setMinimumHeight(100)
-        target.setAccessibleName("Drag and drop target")
-        target.setAccessibleDescription("Drag a statement file here, or use the Browse button below.")
-        target.setToolTip("Drag a statement file here, or click 'Or Browse…' to select one")
-
-        layout = QVBoxLayout(target)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(8)
-        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        icon_lbl = icon_label("upload", size=32, color=Theme.PRIMARY)
-        layout.addWidget(icon_lbl, alignment=Qt.AlignmentFlag.AlignHCenter)
-
-        text_lbl = QLabel("Drag statement file here")
-        text_lbl.setProperty("textrole", "emphasis-md")
-        text_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(text_lbl)
-
-        sub_lbl = QLabel("PDF or Excel format")
-        sub_lbl.setProperty("textrole", "muted-md")
-        sub_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(sub_lbl)
-
-        # Store refs for theme refresh
-        self._drag_drop_icon = icon_lbl
-        self._drag_drop_text = text_lbl
-
-        return target
 
     def _on_person_changed(self):
         """Load accounts when person changes"""
@@ -745,22 +727,6 @@ class StatementImportScreen(QWidget):
             return
         self.selected_file = path
         filename = path.split("/")[-1] or path.split("\\")[-1]
-        # Update drag-drop target to show selected file
-        if hasattr(self, "_drag_drop_target"):
-            layout = self._drag_drop_target.layout()
-            # Clear layout and rebuild with file info
-            while layout.count():
-                layout.takeAt(0).widget().deleteLater()
-            icon = icon_label("check_circle", size=32, color=Theme.SUCCESS)
-            layout.addWidget(icon, alignment=Qt.AlignmentFlag.AlignHCenter)
-            text = QLabel(f"✓ {filename}")
-            text.setProperty("textrole", "emphasis-md")
-            text.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            layout.addWidget(text)
-            sub = QLabel("Ready to parse")
-            sub.setProperty("textrole", "muted-md")
-            sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            layout.addWidget(sub)
         # Reset mapping when file changes
         self._column_mapping = None
         show_success(f"File selected: {filename}")
@@ -817,7 +783,7 @@ class StatementImportScreen(QWidget):
 
         # Disable controls and start parse in background thread
         self.btn_next.setEnabled(False)
-        self.btn_browse.setEnabled(False)
+        self._drop_zone.setEnabled(False)
         self.file_type_combo.setEnabled(False)
 
         self._start_statement_parse_worker()
@@ -1145,23 +1111,6 @@ class StatementImportScreen(QWidget):
         self._set_step(1)
         self.btn_back.setEnabled(False)
         self.btn_next.setText("Parse Statement →")
-
-        # Reset drag-drop target
-        if hasattr(self, "_drag_drop_target"):
-            layout = self._drag_drop_target.layout()
-            while layout.count():
-                layout.takeAt(0).widget().deleteLater()
-            icon = icon_label("upload", size=32, color=Theme.PRIMARY)
-            layout.addWidget(icon, alignment=Qt.AlignmentFlag.AlignHCenter)
-            self._drag_drop_icon = icon
-            text = QLabel("Drag statement file here")
-            text.setProperty("textrole", "emphasis-md")
-            text.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            layout.addWidget(text)
-            sub = QLabel("PDF or Excel format")
-            sub.setProperty("textrole", "muted-md")
-            sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            layout.addWidget(sub)
 
         # Reload person combo
         self.person_combo.clear()
@@ -1525,7 +1474,7 @@ class StatementImportScreen(QWidget):
 
     def _setup_selection_tab_order(self):
         self._chain_tab_order(
-            "person_combo", "account_combo", "file_type_combo", "btn_browse",
+            "person_combo", "account_combo", "file_type_combo", "_drop_zone",
             "map_columns_btn", "btn_next", "btn_back")
 
     def _setup_preview_tab_order(self):

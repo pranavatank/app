@@ -70,7 +70,7 @@ class ThemeCard(QAbstractButton):
     """
     selected = pyqtSignal(str)
 
-    W, H = 184, 118
+    W, H = 280, 150
 
     # theme name → module file suffix
     _SUFFIX = {
@@ -88,7 +88,10 @@ class ThemeCard(QAbstractButton):
         self._c         = self._load()
         self.setCheckable(True)
         self.setChecked(is_active)
-        self.setFixedSize(self.W, self.H)
+        self.setMinimumSize(self.W, self.H)
+        self.setMaximumHeight(self.H)
+        from PyQt6.QtWidgets import QSizePolicy
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setToolTip(f"{info.get('emoji','🎨')} {info['name']}\n{info.get('description','')}")
         self.clicked.connect(lambda: self.selected.emit(self._info["name"]))
@@ -134,48 +137,70 @@ class ThemeCard(QAbstractButton):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         c = self._c
-        W, H, SB, TB = self.W, self.H, 24, 16
+        W = self.width()
+        H = self.height()
+        SB = 20  # sidebar width
+        TB = 18  # topbar height
 
         clip = QPainterPath()
         clip.addRoundedRect(0, 0, W, H, 10, 10)
         p.setClipPath(clip)
 
-        # bg
+        # Background
         p.fillRect(0, 0, W, H, QColor(c["bg"]))
-        # sidebar
-        p.fillRect(0, 0, SB, H, QColor(c["sb"]))
-        for y, active in [(TB+4,False),(TB+16,True),(TB+28,False)]:
-            col = QColor(c["nav"]) if active else QColor(c["sb"]).lighter(160)
-            p.fillRect(3, y, SB-6, 8, col)
-        # topbar
-        p.fillRect(SB, 0, W-SB, TB, QColor(c["tb"]))
-        p.fillRect(SB, TB, W-SB, 1, QColor(c["br"]))
-        p.fillRect(SB+4, 4, 22, 8, QColor(c["pri"]))
-        p.fillRect(W-22, 4, 18, 8, QColor(c["sa"]))
-        # stat cards
-        cy = TB+6; cw = (W-SB-10)//2
-        for j, acc in enumerate([c["pri"], c["suc"]]):
-            cx = SB+3+j*(cw+4)
-            p.fillRect(cx, cy, cw, 22, QColor(c["sf"]))
-            p.fillRect(cx, cy, cw, 3, QColor(acc))
-            p.fillRect(cx+3, cy+7, cw-6, 5, QColor(acc))
-            p.fillRect(cx+3, cy+14, cw//2, 4, QColor(c["t2"]))
-        # bar chart
-        chy = cy+26; chh = H-chy-14
-        p.fillRect(SB+3, chy, W-SB-6, chh+2, QColor(c["sf"]))
-        bcolors = [c["pri"],c["suc"],c["war"],c["dan"],c["inf"],c["pri"],c["suc"]]
-        bheights= [0.8,0.5,0.9,0.4,0.7,0.6,0.85]
-        bw = (W-SB-14)//7
-        for k,(bc,bhr) in enumerate(zip(bcolors,bheights)):
-            bh=max(3,int(chh*bhr)); bx=SB+5+k*(bw+2); by=chy+chh-bh+2
-            p.fillRect(bx, by, bw, bh, QColor(bc))
-        # swatch strip
-        sw_y=H-12; sw_h=12
-        sw_w=(W-SB)//4
-        for k,sc in enumerate([c["pri"],c["suc"],c["war"],c["dan"]]):
-            p.fillRect(SB+k*sw_w, sw_y, sw_w, sw_h, QColor(sc))
 
-        # border
+        # SIDEBAR (thin left strip)
+        p.fillRect(0, 0, SB, H, QColor(c["sb"]))
+        # Sidebar nav items (3 indicators)
+        for i, is_active in enumerate([False, True, False]):
+            y = TB + 6 + i * 12
+            col = QColor(c["nav"]) if is_active else QColor(c["sb"]).lighter(120)
+            p.fillRect(4, y, SB - 8, 8, col)
+
+        # TOPBAR (horizontal strip)
+        p.fillRect(SB, 0, W - SB, TB, QColor(c["tb"]))
+        p.fillRect(SB, TB - 1, W - SB, 1, QColor(c["br"]))
+
+        # TOPBAR CONTENT: small icon area + menu icon
+        p.fillRect(SB + 4, 4, 10, 10, QColor(c["pri"]))
+        p.fillRect(W - 16, 4, 10, 10, QColor(c["sa"]))
+
+        content_y = TB + 6
+
+        # KPI TILE (colored card with accent bar)
+        kpi_w = (W - SB - 14) // 2
+        kpi_h = 28
+        p.fillRect(SB + 4, content_y, kpi_w, kpi_h, QColor(c["sf"]))
+        # Accent bar (using primary color)
+        p.fillRect(SB + 4, content_y, kpi_w, 3, QColor(c["pri"]))
+        # Small text placeholder
+        p.fillRect(SB + 7, content_y + 10, kpi_w - 10, 4, QColor(c["t2"]))
+
+        # TABLE ROW (using success accent for variety)
+        row_y = content_y + kpi_h + 6
+        row_h = 18
+        p.fillRect(SB + 4, row_y, W - SB - 8, row_h, QColor(c["sf"]))
+        p.fillRect(SB + 4, row_y, 3, row_h, QColor(c["suc"]))
+        # Row cell separators
+        cell_w = (W - SB - 12) // 3
+        for i in range(1, 3):
+            p.fillRect(SB + 4 + i * cell_w, row_y, 1, row_h, QColor(c["br"]))
+
+        # BUTTON (primary color)
+        btn_y = row_y + row_h + 6
+        btn_w = 60
+        btn_h = 14
+        p.fillRect(SB + 4, btn_y, btn_w, btn_h, QColor(c["pri"]))
+
+        # COLOR SWATCH STRIP (accent colors at bottom)
+        swatch_y = H - 12
+        swatch_h = 12
+        swatch_colors = [c["pri"], c["suc"], c["war"], c["dan"]]
+        swatch_w = (W - SB) // 4
+        for i, col in enumerate(swatch_colors):
+            p.fillRect(SB + i * swatch_w, swatch_y, swatch_w, swatch_h, QColor(col))
+
+        # Border
         p.setClipping(False)
         pen = QPen()
         if self._is_active:
@@ -185,19 +210,21 @@ class ThemeCard(QAbstractButton):
         else:
             pen.setWidth(1); pen.setColor(QColor(Theme.BORDER))
         p.setPen(pen); p.setBrush(Qt.BrushStyle.NoBrush)
-        p.drawRoundedRect(1, 1, W-2, H-2, 9, 9)
+        p.drawRoundedRect(1, 1, W - 2, H - 2, 9, 9)
 
-        # active badge
+        # Active badge
         if self._is_active:
-            r=13; bx=W-r-6; by=6
+            r = 13; bx = W - r - 6; by = 6
             p.setBrush(QColor(Theme.PRIMARY)); p.setPen(Qt.PenStyle.NoPen)
             p.drawEllipse(bx, by, r, r)
             cp = QPen(QColor("#FFFFFF")); cp.setWidth(2); p.setPen(cp)
-            f=p.font(); f.setPixelSize(9); f.setBold(True); p.setFont(f)
+            f = p.font(); f.setPixelSize(9); f.setBold(True); p.setFont(f)
             p.drawText(bx, by, r, r, Qt.AlignmentFlag.AlignCenter, "✓")
         p.end()
 
     def sizeHint(self): return QSize(self.W, self.H)
+
+    def minimumSizeHint(self): return QSize(self.W, self.H)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -383,13 +410,11 @@ class SettingsScreen(QWidget):
 
         # Light / dark rows
         fl.addWidget(self._row_label("☀️  Light Themes"))
-        light_row = QHBoxLayout(); light_row.setSpacing(12)
-        light_row.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        light_row = QHBoxLayout(); light_row.setSpacing(16)
         fl.addLayout(light_row)
 
         fl.addWidget(self._row_label("🌙  Dark Themes"))
-        dark_row = QHBoxLayout(); dark_row.setSpacing(12)
-        dark_row.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        dark_row = QHBoxLayout(); dark_row.setSpacing(16)
         fl.addLayout(dark_row)
 
         self._theme_cards = {}
@@ -405,15 +430,17 @@ class SettingsScreen(QWidget):
 
             cell_w = QWidget(); cell_w.setObjectName("transparentSurface")
             cell   = QVBoxLayout(cell_w); cell.setSpacing(3); cell.setContentsMargins(0,0,0,0)
-            cell.addWidget(card, alignment=Qt.AlignmentFlag.AlignHCenter)
+            cell.addWidget(card, alignment=Qt.AlignmentFlag.AlignCenter)
             n = QLabel(f"{info.get('emoji','🎨')} {info['name']}")
             n.setAlignment(Qt.AlignmentFlag.AlignCenter)
             n.setProperty("textrole", "emphasis-sm")
             cell.addWidget(n)
+            cell.addStretch()
 
-            (light_row if not info["is_dark"] else dark_row).addWidget(cell_w)
+            (light_row if not info["is_dark"] else dark_row).addWidget(cell_w, 1)
 
-        light_row.addStretch(); dark_row.addStretch()
+        # Add small trailing stretch to balance layout
+        light_row.addStretch(0); dark_row.addStretch(0)
 
         # Description bar
         desc = QFrame(); desc.setObjectName("ThemeDescBar")
@@ -490,9 +517,13 @@ class SettingsScreen(QWidget):
         self.current_pwd = self._pwd_field("Current password")
         self.new_pwd     = self._pwd_field("New password")
         self.confirm_pwd = self._pwd_field("Confirm new password")
-        form.addRow(self._form_lbl("Current"), self.current_pwd)
-        form.addRow(self._form_lbl("New"),     self.new_pwd)
-        form.addRow(self._form_lbl("Confirm"), self.confirm_pwd)
+        # Wrap fields in left-aligned containers
+        curr_wrapper = QWidget(); curr_layout = QHBoxLayout(curr_wrapper); curr_layout.setContentsMargins(0,0,0,0); curr_layout.setSpacing(0); curr_layout.addWidget(self.current_pwd); curr_layout.addStretch()
+        new_wrapper = QWidget(); new_layout = QHBoxLayout(new_wrapper); new_layout.setContentsMargins(0,0,0,0); new_layout.setSpacing(0); new_layout.addWidget(self.new_pwd); new_layout.addStretch()
+        conf_wrapper = QWidget(); conf_layout = QHBoxLayout(conf_wrapper); conf_layout.setContentsMargins(0,0,0,0); conf_layout.setSpacing(0); conf_layout.addWidget(self.confirm_pwd); conf_layout.addStretch()
+        form.addRow(self._form_lbl("Current"), curr_wrapper)
+        form.addRow(self._form_lbl("New"),     new_wrapper)
+        form.addRow(self._form_lbl("Confirm"), conf_wrapper)
         l1.addLayout(form)
         b = Theme.btn("Change Password", "primary", height=36, min_width=160)
         b.setAccessibleName("Change password")
@@ -516,8 +547,8 @@ class SettingsScreen(QWidget):
     def _section_data(self) -> QGroupBox:
         g = self._group("Data Management"); gl = QVBoxLayout(g); gl.setSpacing(10)
         for title, desc, variant, handler in [
-            ("Family Members", "Add or manage persons for tracking.",    "primary",   self._on_manage_persons),
-            ("Bank Accounts",  "Manage accounts per family member.",     "info",      self._on_manage_accounts),
+            ("People", "Add or manage persons for tracking.",    "secondary", self._on_manage_persons),
+            ("Bank Accounts",  "Manage accounts per family member.",     "secondary", self._on_manage_accounts),
             ("Banks (Master)", "Master bank list used across the app.",  "secondary", self._on_manage_banks),
         ]:
             c = self._card(); lc = QVBoxLayout(c); lc.setSpacing(6)
@@ -654,7 +685,8 @@ class SettingsScreen(QWidget):
 
     def _pwd_field(self, placeholder: str) -> QLineEdit:
         e = QLineEdit(); e.setEchoMode(QLineEdit.EchoMode.Password)
-        e.setPlaceholderText(placeholder); e.setMinimumHeight(36); return e
+        e.setPlaceholderText(placeholder); e.setMinimumHeight(36)
+        e.setMaximumWidth(Theme.INPUT_TEXT_MAX_WIDTH); return e
 
     def _form_lbl(self, text: str) -> QLabel:
         l = QLabel(f"{text}:"); l.setProperty("textrole", "section-label"); return l
