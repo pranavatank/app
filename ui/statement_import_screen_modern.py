@@ -255,7 +255,7 @@ class StatementImportScreen(QWidget):
         self.selected_person_id = None
         self.selected_account_id = None
         self.selected_file = None
-        self.file_type = None
+        self.file_type = "PDF"  # matches the PDF format button, which is checked by default
         self.parsed_transactions = []
         self.preview_transactions = []
         self.preview_duplicate_flags = []
@@ -351,8 +351,43 @@ class StatementImportScreen(QWidget):
         self._account_cards = {}  # Maps account_id -> card widget
         form_layout.addWidget(self.account_cards_container)
 
-        # File type selection (now per-account format toggle)
-        # This will be moved into each account card
+        # File format selection (single, independent control for all accounts)
+        format_label = self._form_label("Format")
+        form_layout.addWidget(format_label)
+
+        format_selection_widget = QWidget()
+        format_selection_layout = QHBoxLayout(format_selection_widget)
+        format_selection_layout.setContentsMargins(0, 0, 0, 0)
+        format_selection_layout.setSpacing(8)
+
+        self.btn_format_pdf = QPushButton("PDF")
+        self.btn_format_pdf.setCheckable(True)
+        self.btn_format_pdf.setAutoExclusive(True)
+        self.btn_format_pdf.setChecked(True)
+        self.btn_format_pdf.setMinimumHeight(44)
+        self.btn_format_pdf.setMaximumWidth(120)
+        self.btn_format_pdf.clicked.connect(lambda: self._select_format_type("PDF"))
+        self.btn_format_pdf.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.btn_format_pdf.setAccessibleName("Select PDF format")
+        self.btn_format_pdf.setAccessibleDescription("Choose PDF format for statement parsing.")
+        format_selection_layout.addWidget(self.btn_format_pdf)
+
+        self.btn_format_excel = QPushButton("Excel")
+        self.btn_format_excel.setCheckable(True)
+        self.btn_format_excel.setAutoExclusive(True)
+        self.btn_format_excel.setMinimumHeight(44)
+        self.btn_format_excel.setMaximumWidth(120)
+        self.btn_format_excel.clicked.connect(lambda: self._select_format_type("Excel"))
+        self.btn_format_excel.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.btn_format_excel.setAccessibleName("Select Excel format")
+        self.btn_format_excel.setAccessibleDescription("Choose Excel format for statement parsing.")
+        format_selection_layout.addWidget(self.btn_format_excel)
+
+        format_selection_layout.addStretch()
+        form_layout.addWidget(format_selection_widget)
+
+        # Update format button styling
+        self._update_format_button_styles()
 
         # Column mapping button
         self._column_mapping = None
@@ -756,7 +791,7 @@ class StatementImportScreen(QWidget):
                 widget.deleteLater()
         self._account_cards.clear()
         self.selected_account_id = None
-        self.file_type = None
+        # Do NOT reset self.file_type here — format choice is independent
 
         accounts = get_accounts_for_person(person_id)
         for acc in accounts:
@@ -771,162 +806,110 @@ class StatementImportScreen(QWidget):
         # Update map columns button visibility
         self.map_columns_btn.setVisible(False)
 
-    def _create_account_card(self, label: str, account_id: str) -> QWidget:
-        """Create an account card with format toggle buttons"""
-        card_container = QFrame()
-        card_layout = QVBoxLayout(card_container)
-        card_layout.setContentsMargins(12, 10, 12, 10)
-        card_layout.setSpacing(8)
-
-        # Account name button (checkable) — with elision support
-        btn_account = QPushButton(label)
-        btn_account.setCheckable(True)
-        btn_account.setAutoExclusive(True)
-        btn_account.setMinimumHeight(40)
-        btn_account.setMaximumWidth(320)
-        btn_account.setProperty("account_id", account_id)
-        btn_account.clicked.connect(lambda checked=True, aid=account_id: self._select_account_card(aid))
-        btn_account.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        btn_account.setAccessibleName(f"Select account: {label}")
-        btn_account.setAccessibleDescription(f"Choose {label} for statement import.")
+    def _create_account_card(self, label: str, account_id: str) -> QPushButton:
+        """Create a simple clickable account card button (styled like person cards, no format toggle)"""
+        card = QPushButton(label)
+        card.setCheckable(True)
+        card.setAutoExclusive(True)
+        card.setMinimumHeight(44)
+        card.setMaximumWidth(320)
+        card.setProperty("account_id", account_id)
+        card.clicked.connect(lambda checked=True, aid=account_id: self._select_account_card(aid))
+        card.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        card.setAccessibleName(f"Select account: {label}")
+        card.setAccessibleDescription(f"Choose {label} for statement import.")
         # Apply elision and tooltip with full name
-        self._elide_button_text(btn_account, 320)
-        card_layout.addWidget(btn_account)
-
-        # Format toggle (PDF/Excel) in a small horizontal layout
-        format_layout = QHBoxLayout()
-        format_layout.setContentsMargins(0, 0, 0, 0)
-        format_layout.setSpacing(4)
-
-        # Format label — ensure it has no unwanted borders or styling
-        format_label = QLabel("Format:")
-        format_label.setStyleSheet("border: none; background: transparent;")
-        format_label.setProperty("textrole", "section-label")
-
-        btn_pdf = QPushButton("PDF")
-        btn_pdf.setCheckable(True)
-        btn_pdf.setAutoExclusive(True)
-        btn_pdf.setChecked(True)
-        btn_pdf.setMaximumWidth(70)
-        btn_pdf.setMinimumHeight(28)
-        btn_pdf.setProperty("account_id", account_id)
-        btn_pdf.setProperty("file_type", "PDF")
-        btn_pdf.clicked.connect(lambda checked=True, aid=account_id: self._update_account_format(aid, "PDF"))
-        btn_pdf.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-
-        btn_excel = QPushButton("Excel")
-        btn_excel.setCheckable(True)
-        btn_excel.setAutoExclusive(True)
-        btn_excel.setMaximumWidth(70)
-        btn_excel.setMinimumHeight(28)
-        btn_excel.setProperty("account_id", account_id)
-        btn_excel.setProperty("file_type", "Excel")
-        btn_excel.clicked.connect(lambda checked=True, aid=account_id: self._update_account_format(aid, "Excel"))
-        btn_excel.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-
-        format_layout.addWidget(format_label)
-        format_layout.addWidget(btn_pdf)
-        format_layout.addWidget(btn_excel)
-        format_layout.addStretch()
-
-        card_layout.addLayout(format_layout)
-
-        # Store references for styling
-        card_container._btn_account = btn_account
-        card_container._btn_pdf = btn_pdf
-        card_container._btn_excel = btn_excel
-        card_container._account_id = account_id
-        card_container._file_type = "PDF"  # Default
-
-        # Apply initial styling to format buttons
-        btn_pdf.setStyleSheet(self._get_format_btn_style(True))
-        btn_excel.setStyleSheet(self._get_format_btn_style(False))
-
-        self._update_account_card_style(card_container, False)
-        return card_container
+        self._elide_button_text(card, 320)
+        self._update_account_card_style(card, False)
+        return card
 
     def _select_account_card(self, account_id: str):
         """Handle account card selection"""
         self.selected_account_id = account_id
         if account_id in self._account_cards:
             card = self._account_cards[account_id]
-            card._btn_account.setChecked(True)
+            card.setChecked(True)
             self._update_account_card_style(card, True)
-            # Update file_type from the selected card
-            self.file_type = card._file_type
 
         # Update all other account cards' style
         for aid, card in self._account_cards.items():
             if aid != account_id:
                 self._update_account_card_style(card, False)
 
-        # Update map columns button visibility if Excel is selected
+        # Update map columns button visibility based on current file_type
         self.map_columns_btn.setVisible(self.file_type == "Excel" if self.file_type else False)
         self._update_parse_button_state()
 
-    def _update_account_format(self, account_id: str, file_type: str):
-        """Update the file format for an account card"""
-        if account_id in self._account_cards:
-            card = self._account_cards[account_id]
-            card._file_type = file_type
+    def _select_format_type(self, file_type: str):
+        """Handle format type selection (PDF or Excel)"""
+        self.file_type = file_type
+        self._update_format_button_styles()
+        # Update map columns button visibility based on format
+        self.map_columns_btn.setVisible(file_type == "Excel")
 
-            # Only update self.file_type if this is the currently selected account
-            if account_id == self.selected_account_id:
-                self.file_type = file_type
+    def _update_format_button_styles(self):
+        """Update format button styling based on current selection"""
+        pdf_selected = self.file_type == "PDF" if self.file_type else True
+        excel_selected = self.file_type == "Excel" if self.file_type else False
 
-                # Update button checked states first
-                if file_type == "PDF":
-                    card._btn_pdf.setChecked(True)
-                    card._btn_excel.setChecked(False)
-                else:
-                    card._btn_pdf.setChecked(False)
-                    card._btn_excel.setChecked(True)
+        for btn, selected in [(self.btn_format_pdf, pdf_selected), (self.btn_format_excel, excel_selected)]:
+            if selected:
+                bg = Theme.PRIMARY
+                border = f"2px solid {Theme.PRIMARY}"
+                text_color = Theme.TEXT_ON_PRIMARY
+            else:
+                bg = Theme.SURFACE
+                border = f"1px solid {Theme.BORDER}"
+                text_color = Theme.TEXT_PRIMARY
 
-                # Update button styles for both PDF and Excel to ensure visual difference
-                card._btn_pdf.setStyleSheet(self._get_format_btn_style(file_type == "PDF"))
-                card._btn_excel.setStyleSheet(self._get_format_btn_style(file_type == "Excel"))
-
-                # Update map columns button visibility
-                self.map_columns_btn.setVisible(file_type == "Excel")
-
-    def _get_format_btn_style(self, selected: bool) -> str:
-        """Get stylesheet for format toggle buttons"""
-        if selected:
-            return f"""
+            btn.setStyleSheet(f"""
                 QPushButton {{
+                    background-color: {bg};
+                    border: {border};
+                    border-radius: 8px;
+                    color: {text_color};
+                    font-weight: 500;
+                    padding: 8px 12px;
+                    text-align: center;
+                }}
+                QPushButton:hover {{
+                    background-color: {Theme.PRIMARY_LIGHT};
+                    border: 2px solid {Theme.PRIMARY};
+                }}
+                QPushButton:pressed {{
                     background-color: {Theme.PRIMARY};
                     color: {Theme.TEXT_ON_PRIMARY};
-                    border: 1px solid {Theme.PRIMARY};
-                    border-radius: 4px;
-                    font-weight: 500;
-                    padding: 4px 8px;
                 }}
-            """
-        else:
-            return f"""
-                QPushButton {{
-                    background-color: {Theme.SURFACE};
-                    color: {Theme.TEXT_PRIMARY};
-                    border: 1px solid {Theme.BORDER};
-                    border-radius: 4px;
-                    padding: 4px 8px;
-                }}
-            """
+            """)
 
-    def _update_account_card_style(self, card: QFrame, selected: bool):
-        """Update account card styling based on selection state"""
+    def _update_account_card_style(self, card: QPushButton, selected: bool):
+        """Update account card styling based on selection state (same as person cards)"""
         if selected:
             bg = Theme.PRIMARY_LIGHT
             border = f"2px solid {Theme.PRIMARY}"
+            text_color = Theme.TEXT_PRIMARY
         else:
             bg = Theme.SURFACE
             border = f"1px solid {Theme.BORDER}"
+            text_color = Theme.TEXT_PRIMARY
 
         card.setStyleSheet(f"""
-            QFrame {{
+            QPushButton {{
                 background-color: {bg};
                 border: {border};
                 border-radius: 8px;
+                color: {text_color};
+                font-weight: 500;
+                padding: 8px 12px;
+                text-align: center;
+            }}
+            QPushButton:hover {{
+                background-color: {Theme.PRIMARY_LIGHT};
+                border: 2px solid {Theme.PRIMARY};
+            }}
+            QPushButton:pressed {{
+                background-color: {Theme.PRIMARY};
+                color: {Theme.TEXT_ON_PRIMARY};
             }}
         """)
 
@@ -1026,7 +1009,7 @@ class StatementImportScreen(QWidget):
         self._drop_zone.setEnabled(False)
         # Disable account cards during parsing
         for card in self._account_cards.values():
-            card._btn_account.setEnabled(False)
+            card.setEnabled(False)
 
         self._start_statement_parse_worker()
 
@@ -1074,7 +1057,7 @@ class StatementImportScreen(QWidget):
         self._drop_zone.setEnabled(True)
         # Re-enable account cards during error
         for card in self._account_cards.values():
-            card._btn_account.setEnabled(True)
+            card.setEnabled(True)
 
         if isinstance(exc, StatementPasswordRequiredError):
             saved_password = self._get_saved_statement_password()
@@ -1103,7 +1086,7 @@ class StatementImportScreen(QWidget):
         self._drop_zone.setEnabled(True)
         # Re-enable account cards after parsing
         for card in self._account_cards.values():
-            card._btn_account.setEnabled(True)
+            card.setEnabled(True)
 
         try:
             # Extract metadata (lightweight operation, can stay on UI thread)
@@ -1336,11 +1319,12 @@ class StatementImportScreen(QWidget):
         )
 
     def refresh(self):
-        """Reset to initial state"""
-        self.selected_person_id = None
-        self.selected_account_id = None
+        """Reset wizard state (file, parsed results, preview) but preserve person/account/format selections.
+        This is called when navigating back to this screen, and ALSO when top-bar changes via _on_refresh_all().
+        To prevent top-bar interference, we only reset file/parsing state, NOT the card selections.
+        """
+        # Clear file and parsing state
         self.selected_file = None
-        self.file_type = None
         self.parsed_transactions = []
         self.preview_transactions = []
         self.preview_duplicate_flags = []
@@ -1352,15 +1336,14 @@ class StatementImportScreen(QWidget):
         self.parse_confidence = 0.0
         self.failing_rows_balance = []
 
-        # Reset UI
+        # Reset UI to selection screen step 1
         self.stack.setCurrentIndex(0)
         self._set_step(1)
         self.btn_back.setEnabled(False)
         self.btn_next.setText("Parse Statement →")
 
-        # Rebuild person cards with proper default selection
-        self._rebuild_person_cards()
-
+        # Preserve person/account/format selections — do NOT rebuild cards
+        # The person/account cards remain as they were, allowing independent selection
         self._update_parse_button_state()
 
     # Helper methods — use the shared branded Loader overlay (same widget

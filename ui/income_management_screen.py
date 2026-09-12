@@ -20,6 +20,7 @@ from ui.widgets.states import EmptyState
 from ui.widgets.toast_utils import show_success, show_warning, show_info
 from ui.widgets.excel_table import ExcelTable, ExcelTableWithStats
 from ui.widgets.money_label import format_inr
+from ui.widgets.section import CollapsibleSection
 from ui.theme import Theme
 from ui.icons import set_btn_icon, set_btn_icon_auto
 from ui.date_utils import format_display_date
@@ -112,8 +113,16 @@ class IncomeManagementScreen(QWidget):
 
         # Panels: manage individual expectations, then analysis panels, then ledger
         panel_layout.addWidget(self._build_panel_manage_expectations())
-        panel_layout.addWidget(self._build_panel_1_vs_actual())
-        panel_layout.addWidget(self._build_panel_2_composition())
+
+        # Chart panels wrapped in collapsible sections (collapsed by default)
+        section_1 = CollapsibleSection("Expected vs Actual by Month", expanded=False)
+        section_1.content_layout().addWidget(self._build_panel_1_vs_actual())
+        panel_layout.addWidget(section_1)
+
+        section_2 = CollapsibleSection("Income Composition by Source", expanded=False)
+        section_2.content_layout().addWidget(self._build_panel_2_composition())
+        panel_layout.addWidget(section_2)
+
         panel_layout.addWidget(self._build_panel_3_fd_runway())
         panel_layout.addWidget(self._build_panel_4_tds_gauges())
         panel_layout.addWidget(self._build_panel_5_ledger())
@@ -215,41 +224,17 @@ class IncomeManagementScreen(QWidget):
 
         return panel
 
-    def _build_panel_1_vs_actual(self) -> QFrame:
+    def _build_panel_1_vs_actual(self) -> ChartWidget:
         """Panel 1: Expected vs Actual by month (grouped bars)."""
-        panel = QFrame()
-        panel.setObjectName("analysisPanel")
-
-        layout = QVBoxLayout(panel)
-        layout.setSpacing(8)
-
-        title = QLabel("Expected vs Actual by Month")
-        title.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
-        layout.addWidget(title)
-
         self.chart_vs_actual = ChartWidget()
         self.chart_vs_actual.setMinimumHeight(260)
-        layout.addWidget(self.chart_vs_actual)
+        return self.chart_vs_actual
 
-        return panel
-
-    def _build_panel_2_composition(self) -> QFrame:
+    def _build_panel_2_composition(self) -> ChartWidget:
         """Panel 2: Income composition (stacked bars by FY or donut for single FY)."""
-        panel = QFrame()
-        panel.setObjectName("analysisPanel")
-
-        layout = QVBoxLayout(panel)
-        layout.setSpacing(8)
-
-        title = QLabel("Income Composition by Source")
-        title.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
-        layout.addWidget(title)
-
         self.chart_composition = ChartWidget()
         self.chart_composition.setMinimumHeight(260)
-        layout.addWidget(self.chart_composition)
-
-        return panel
+        return self.chart_composition
 
     def _build_panel_3_fd_runway(self) -> QFrame:
         """Panel 3: FD interest accrual by FY with current FY marked."""

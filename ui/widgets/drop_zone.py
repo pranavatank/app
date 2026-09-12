@@ -66,6 +66,7 @@ class DropZone(QWidget):
 
         # Icon
         self.icon_label = icon_label("import", size=32, color=Theme.PRIMARY)
+        self.icon_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         layout.addWidget(self.icon_label, alignment=Qt.AlignmentFlag.AlignHCenter)
 
         # Primary text
@@ -73,6 +74,7 @@ class DropZone(QWidget):
         self.title_label.setFont(QFont("Segoe UI", 13, QFont.Weight.DemiBold))
         self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.title_label.setProperty("textrole", "emphasis-md")
+        self.title_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         layout.addWidget(self.title_label)
 
         # Inline text with browse link
@@ -84,6 +86,7 @@ class DropZone(QWidget):
         self.subtitle_label.setFont(QFont("Segoe UI", 12))
         self.subtitle_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.subtitle_label.setProperty("textrole", "muted-md")
+        self.subtitle_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         layout.addWidget(self.subtitle_label)
 
         # Browse link (styled as a link, not a separate button)

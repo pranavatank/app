@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (
     QStyledItemDelegate, QStyle, QStyleOptionViewItem, QLineEdit,
     QAbstractItemView
 )  # QHeaderView is imported for column sizing in _apply_column_sizing()
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal, QModelIndex
 from PyQt6.QtGui import QKeySequence, QKeyEvent
 from ui.theme import Theme
 
@@ -203,6 +203,9 @@ class ExcelTable(QTableWidget):
             cb_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
             cb_layout.setContentsMargins(0, 0, 0, 0)
             self.setCellWidget(r, 0, cb_widget)
+            # Sync checkbox state to row selection if initially checked
+            if checked:
+                self._sync_row_selection_to_checkbox(r, checked)
 
         for col, value in enumerate(row_data):
             text = str(value) if value is not None else "—"
@@ -239,9 +242,40 @@ class ExcelTable(QTableWidget):
                 if cb and cb.isChecked():
                     checked.append(r)
         return checked
-    
+
+    def _sync_row_selection_to_checkbox(self, row: int, checked: bool):
+        """Sync checkbox state to Qt row selection.
+
+        When a checkbox is checked, select the entire row in Qt's selection model.
+        When unchecked, deselect just that row (leaving other checked rows selected).
+        """
+        if not self.show_checkboxes or row >= self.rowCount():
+            return
+
+        selection_model = self.selectionModel()
+        if not selection_model:
+            return
+
+        if checked:
+            # Select the entire row
+            selection_model.select(
+                self.model().index(row, 0),
+                selection_model.SelectionFlag.Select | selection_model.SelectionFlag.Rows
+            )
+        else:
+            # Deselect just this row by rebuilding selection from remaining checked rows
+            # Clear current selection first
+            selection_model.clearSelection()
+            # Re-select all currently-checked rows
+            for r in self.getCheckedRows():
+                if r != row:  # Skip the one we just unchecked
+                    selection_model.select(
+                        self.model().index(r, 0),
+                        selection_model.SelectionFlag.Select | selection_model.SelectionFlag.Rows
+                    )
+
     def setRowChecked(self, row: int, checked: bool):
-        """Set checkbox state for a row."""
+        """Set checkbox state for a row and sync to Qt row selection."""
         if not self.show_checkboxes or row >= self.rowCount():
             return
         widget = self.cellWidget(row, 0)
@@ -249,6 +283,7 @@ class ExcelTable(QTableWidget):
             cb = widget.findChild(QCheckBox)
             if cb:
                 cb.setChecked(checked)
+                self._sync_row_selection_to_checkbox(row, checked)
                 
     def selectAllRows(self):
         """Select all rows."""
@@ -394,13 +429,15 @@ class ExcelTable(QTableWidget):
                 f"{rejected} cell(s) skipped — that column requires a numeric value.")
             
     def _on_cell_clicked(self, row: int, col: int):
-        """Handle cell clicks. If checkbox column is clicked, toggle the checkbox."""
+        """Handle cell clicks. If checkbox column is clicked, toggle the checkbox and sync selection."""
         if self.show_checkboxes and col == 0:
             widget = self.cellWidget(row, 0)
             if widget:
                 cb = widget.findChild(QCheckBox)
                 if cb:
-                    cb.setChecked(not cb.isChecked())
+                    new_state = not cb.isChecked()
+                    cb.setChecked(new_state)
+                    self._sync_row_selection_to_checkbox(row, new_state)
 
     def _on_header_section_clicked(self, section: int):
         """Handle header section clicks. If checkbox column header is clicked, toggle all checkboxes."""

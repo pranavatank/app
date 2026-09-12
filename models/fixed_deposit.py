@@ -616,6 +616,9 @@ def apply_statement_redemption_event(account_id: int, person_id: int,
 
 def delete_fd(fd_id: int) -> None:
     conn = get_connection()
+    # Delete related FDInterestRecord entries first (FK constraint)
+    conn.execute("DELETE FROM FDInterestRecord WHERE fd_id = ?", (fd_id,))
+    # Then delete the FD itself
     conn.execute("DELETE FROM FixedDeposit WHERE fd_id = ?", (fd_id,))
     conn.commit()
     conn.close()

@@ -87,7 +87,7 @@ class FixedDepositsScreen(QWidget):
         btn_del = Theme.btn("  Delete Selected", "destructive", height=38, min_width=145)
         btn_del.setIcon(app_icon("delete", color=Theme.DANGER, size=16))
         btn_del.setAccessibleName("Delete selected fixed deposit")
-        btn_del.clicked.connect(self._on_delete_fd)
+        btn_del.clicked.connect(self._delete_selected_fds)
         header.addWidget(btn_del)
 
         btn_link = Theme.btn("  Link Txn", "secondary", height=38, min_width=108)
@@ -449,25 +449,15 @@ class FixedDepositsScreen(QWidget):
             self.refresh()
             if self.parent_window: self.parent_window.refresh_overview()
 
-    def _on_delete_fd(self):
-        row = self.table.currentRow()
-        if row < 0:
-            show_warning("Please select an FD."); return
-        fd_id = self.table.item(row, 0+1).data(Qt.ItemDataRole.UserRole)
-        reply = QMessageBox.question(self, "Delete FD", "Delete this Fixed Deposit?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-        if reply == QMessageBox.StandardButton.Yes:
-            delete_fd(fd_id)
-            self.refresh()
-            if self.parent_window: self.parent_window.refresh_overview()
-
     def _delete_selected_fds(self):
-        """Delete key handler for the table — unlike the base ExcelTable
+        """Delete checked FDs from the table — unlike the base ExcelTable
         implementation, this actually deletes the underlying FD records,
         not just the UI rows (mirrors transactions_screen.py's override)."""
-        selected_rows = sorted({item.row() for item in self.table.selectedItems()}, reverse=True)
-        if not selected_rows:
+        # Get checked rows from checkboxes (synchronized with Qt selection)
+        checked_rows = self.table.getCheckedRows()
+        if not checked_rows:
             return
+        selected_rows = sorted(checked_rows, reverse=True)
         reply = QMessageBox.question(
             self, "Delete Fixed Deposits",
             f"Delete {len(selected_rows)} selected fixed deposit(s)?\n\nThis action cannot be undone.",
