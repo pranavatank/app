@@ -317,3 +317,117 @@ enough that someone could fix it without re-running your test:
   account/statement-import flow the owner asked to be tested. **Next session should
   resume directly at the "Specific flows to run end-to-end for real" list above,
   step 1 (Add Person).**
+
+### 2026-09-12 — harness rebuilt: pyautogui coordinate-clicking replaced (§3.7, §3.8)
+
+Continuing the resume point above (Add Person flow) surfaced two more real,
+reproducible bugs in the **harness itself** — not the app — severe enough that the
+harness's default interaction method changed. `tools/real_ui_test_harness.py` and
+`tools/real_ui_tests/test_add_person_flow.py` (a new, permanent, self-cleaning
+end-to-end test — see §6) are both in the repo now; read the harness's module
+docstring for the full design rationale, summarized here:
+
+#### 3.7 Blind-coordinate OS clicks misclick (confirmed, severe)
+
+Driving the UI purely via `pyautogui` coordinates (`widget.mapToGlobal(widget.rect()
+.center())` → physical pixels → `pyautogui.click()`) produced a real, reproducible
+misclick: a click intended for the "Add Person" button instead landed on the
+Manage Data dialog's own close (X) button, closing the whole dialog instead of
+opening a new one. There is no error, no exception — the coordinate is just wrong
+by the time the click lands, because it was computed once and trusted blindly, with
+no way to confirm what was actually under the cursor at click time. Separately,
+`win32gui.SetForegroundWindow` was observed to sometimes raise
+`pywintypes.error: (0, 'SetForegroundWindow', 'No error message is available')`
+outright (Windows' focus-stealing prevention refusing the call, not just silently
+ignoring it) — worse than the "no error, click just does nothing" case §3.3
+originally documented.
+
+**Fix — the harness's default interaction method changed.** Since this app runs
+in-process with the test script (never offscreen, always a real visible window),
+there is a strictly more reliable option than OS-level coordinates: find the
+target widget by its accessible name (this codebase already calls
+`setAccessibleName()` on essentially every interactive control) and drive it via
+`QTest.mouseClick()`/`keyClicks()` **on the widget object directly**. This still
+goes through Qt's real event loop and produces a real repaint — it only skips the
+OS input queue, which is exactly the layer where DPI math and focus-stealing
+prevention live. `harness.click(root, "Accessible Name")` and
+`harness.type_into(root, "Accessible Name", text)` are now the default, primary
+API. The old OS-coordinate path still exists as an explicit opt-in escape hatch —
+`harness.click_via_os(widget)` / `harness.type_text_via_os(text)` — for the rare
+case for you specifically need to prove genuine OS input delivery (e.g. a
+focus-stealing-sensitive modal). `harness.find_via_uia()` (via `pywinauto`, now a
+project dependency) is available as an independent cross-check that a control is
+genuinely reachable through Windows UI Automation, not just present in Qt's own
+object tree.
+
+**Why this matters beyond testing:** none of this is an app bug — `setAccessibleName()`
+calls throughout `ui/` are exactly what made the fix possible. No app code changed.
+
+#### 3.8 A modal `dlg.exec()` call blocks `QTest.mouseClick()` itself (confirmed)
+
+After switching to `QTest.mouseClick()`, clicking "Add Person" appeared to silently
+do nothing — the dialog never showed up in `QApplication.allWidgets()` even after
+polling. Root cause: `ManageDataScreen._on_add_person()` does
+`dlg = PersonDialog(self); dlg.exec()` — a **blocking** modal call. `QTest
+.mouseClick()` delivers the click synchronously, and the slot it triggers
+(`_on_add_person`) runs to completion inside that same delivery — including the
+nested event loop `exec()` spins up. That nested loop only returns when the dialog
+is closed, and nothing was closing it, so the click call itself was still on the
+stack, waiting, the entire time the test script thought it had "returned."
+
+**Fix:** schedule the fill-in-fields-and-click-Save steps with
+`QTimer.singleShot(0, callback)` **before** clicking the button that opens the
+modal dialog, not after. The scheduled callback fires once `exec()`'s nested loop
+is already spinning, and `harness.settle()` (which pumps `app.processEvents()` in a
+loop) is what actually drives that nested loop forward, letting the callback run,
+fill the form, click Save, and let `exec()` return. See
+`tools/real_ui_tests/test_add_person_flow.py` for the concrete pattern — any test
+that needs to interact with a **modal** (`.exec()`-opened) dialog must use this
+`QTimer.singleShot` pattern, not a plain sequential click-then-interact script.
+
+**This is a real, general gotcha for testing this codebase specifically**, since
+`manage_data_screen.py` and other dialogs (`PersonDialog`, `BankDialog`,
+`AccountDialog`) are all opened via blocking `.exec()` calls, not non-modal
+`.show()`. It is not an app bug — blocking modal dialogs are completely normal,
+correct Qt usage — it only matters for how a test script must be structured.
+
+### 2026-09-12 — Add Person end-to-end flow: PASSED
+
+Running `tools/real_ui_tests/test_add_person_flow.py` after the §3.7/§3.8 fixes,
+fully automated start to finish (real on-screen window, real `QTest`-driven
+clicks/typing, no OS coordinates), all checks passed:
+
+- Settings page title updates correctly on real sidebar navigation.
+- "Manage People" button opens the Manage Data dialog.
+- "Add Person" button opens the Add Person modal (confirmed via the
+  `QTimer.singleShot` pattern above).
+- Typed nickname is held correctly by the QLineEdit.
+- Save closes the dialog.
+- The new person is present in the database immediately after Save.
+- The new person is present in the visible People table with **no manual
+  refresh needed** — `ManageDataScreen._load_people()` is called correctly after
+  `add_person()`.
+
+The test cleans up its own test person record after every run (success or
+failure), so it can be re-run freely without accumulating junk data. It does
+**not** yet cover Add Bank / Add Account / Statement Import / Tax Documents —
+those remain open per §4/§5; the pattern established here (accessible-name lookup,
+`QTimer.singleShot` for modals) should carry over directly.
+
+---
+
+## 6. Adding a new real-click test
+
+Follow `tools/real_ui_tests/test_add_person_flow.py` as the template:
+
+1. Put new test scripts under `tools/real_ui_tests/`, one file per flow.
+2. Use `harness.click(root, "Accessible Name")` / `harness.type_into(...)` as the
+   default — never hand-roll coordinate math.
+3. If the flow opens a **modal** dialog (anything opened via `.exec()`, not
+   `.show()`), use the `QTimer.singleShot(0, callback)` pattern from §3.8 — do not
+   click-then-immediately-look-for-the-dialog in a straight line.
+4. If the flow creates any database row, delete it in a `finally`-equivalent
+   cleanup path (see `report()` in the template) so repeated runs never pollute
+   real data — this project's database is not a disposable test fixture.
+5. Cross-check both a screenshot AND direct widget/DB state per §3.5 — never
+   trust a screenshot alone.

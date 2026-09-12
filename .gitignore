@@ -53,3 +53,6 @@ htmlcov/
 build/
 dist/
 *.egg-info/
+
+# Real UI test screenshots (generated evidence, not source)
+tools/real_ui_tests/screenshots/

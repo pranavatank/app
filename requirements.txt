@@ -14,3 +14,10 @@ numpy>=1.26.0
 Pillow>=10.0.0
 python-dateutil>=2.8.0
 PyYAML>=6.0
+
+# --- Real UI testing (dev-only, tools/real_ui_test_harness.py) ---
+pyautogui>=0.9.54
+pywin32>=306
+pygetwindow>=0.0.9
+mss>=9.0.1
+pywinauto>=0.6.9
