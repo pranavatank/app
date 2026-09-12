@@ -19,10 +19,12 @@ from ui.widgets.kpi_tile import KpiTile
 from ui.widgets.states import EmptyState
 from ui.widgets.toast_utils import show_success, show_warning, show_info
 from ui.widgets.excel_table import ExcelTable, ExcelTableWithStats
+from ui.widgets.money_label import format_inr
 from ui.theme import Theme
-from ui.icons import set_btn_icon
+from ui.icons import set_btn_icon, set_btn_icon_auto
 from ui.date_utils import format_display_date
 from core.session import session
+from ui.dialogs.income_expectation_dialog import IncomeExpectationDialog
 
 from config import (
     get_current_financial_year, get_all_financial_years, fy_date_range,
@@ -108,7 +110,8 @@ class IncomeManagementScreen(QWidget):
         panel_layout.setSpacing(14)
         panel_layout.setContentsMargins(0, 0, 0, 0)
 
-        # 5 panels
+        # Panels: manage individual expectations, then analysis panels, then ledger
+        panel_layout.addWidget(self._build_panel_manage_expectations())
         panel_layout.addWidget(self._build_panel_1_vs_actual())
         panel_layout.addWidget(self._build_panel_2_composition())
         panel_layout.addWidget(self._build_panel_3_fd_runway())
@@ -149,6 +152,68 @@ class IncomeManagementScreen(QWidget):
         kpi_layout.addWidget(self.kpi_tax, stretch=1)
 
         return kpi_layout
+
+    def _build_panel_manage_expectations(self) -> QFrame:
+        """Panel: Manage individual income expectations (Add/Edit/Delete/Link)."""
+        panel = QFrame()
+        panel.setObjectName("analysisPanel")
+
+        layout = QVBoxLayout(panel)
+        layout.setSpacing(8)
+
+        # Title and buttons
+        title_layout = QHBoxLayout()
+        title = QLabel("Manage Income Expectations")
+        title.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
+        title_layout.addWidget(title)
+        title_layout.addStretch()
+
+        btn_add = Theme.btn("Add Expected Income", "primary", height=32, min_width=140)
+        set_btn_icon(btn_add, "add")
+        btn_add.setAccessibleName("Add income expectation")
+        btn_add.clicked.connect(self._add_expectation)
+        title_layout.addWidget(btn_add)
+
+        btn_edit = Theme.btn("Edit", "edit", height=32, min_width=80)
+        set_btn_icon(btn_edit, "edit")
+        btn_edit.setAccessibleName("Edit selected income expectation")
+        btn_edit.clicked.connect(self._edit_expectation)
+        title_layout.addWidget(btn_edit)
+
+        btn_delete = Theme.btn("Delete", "destructive", height=32, min_width=80)
+        set_btn_icon_auto(btn_delete, "delete")
+        btn_delete.setAccessibleName("Delete selected income expectation")
+        btn_delete.clicked.connect(self._delete_expectation)
+        title_layout.addWidget(btn_delete)
+
+        layout.addLayout(title_layout)
+
+        # Table with individual expectation records
+        self.table_expectations_widget = ExcelTableWithStats(show_checkboxes=True, read_only=True)
+        self.table_expectations = self.table_expectations_widget.table
+        self.table_expectations.setHeaders([
+            "Income Type", "Frequency", "Expected Date", "Expected Amount",
+            "Actual Amount", "Variance", "Status", "Account", "ID"
+        ])
+        self.table_expectations.setColumnHidden(8, True)  # Hide ID column
+        self.table_expectations.setAccessibleName("Income expectations")
+        self.table_expectations.setAccessibleDescription("List of individual income expectations with their status and matching transactions.")
+        self.table_expectations.setSortingEnabled(False)
+        self.table_expectations_widget.setMinimumHeight(280)
+        layout.addWidget(self.table_expectations_widget)
+
+        # Empty state
+        self.empty_state_expectations = EmptyState(
+            icon_name="income_src",
+            headline="No Income Expectations",
+            explanation="Add income expectations to track expected income and match with actual transactions.",
+            action_text="Add Expected Income"
+        )
+        self.empty_state_expectations.action_clicked.connect(self._add_expectation)
+        self.empty_state_expectations.setVisible(False)
+        layout.addWidget(self.empty_state_expectations)
+
+        return panel
 
     def _build_panel_1_vs_actual(self) -> QFrame:
         """Panel 1: Expected vs Actual by month (grouped bars)."""
@@ -278,6 +343,10 @@ class IncomeManagementScreen(QWidget):
             fy = get_current_financial_year()
             person_id = None
 
+        # Store for later use in handlers
+        self._selected_fy = fy
+        self._selected_person_id = person_id
+
         # Fetch data
         expectations = self._fetch_expectations(person_id, fy)
 
@@ -294,10 +363,14 @@ class IncomeManagementScreen(QWidget):
         self._populate_chart_3(person_id, fy)
         self._populate_table_4_tds(person_id, fy)
         self._populate_table_5_ledger(expectations)
+        self._populate_table_expectations(expectations)
 
     def _show_empty_state(self):
         """Show empty state when no data."""
         # Clear all panels
+        self.table_expectations.setRowCount(0)
+        self.table_expectations_widget.setVisible(False)
+        self.empty_state_expectations.setVisible(True)
         self.chart_vs_actual.show_empty_state("No income expectations for this selection")
         self.chart_composition.show_empty_state("Add income expectations to analyze composition")
         self.chart_fd_runway.show_empty_state("No FD interest data available")
@@ -609,6 +682,216 @@ class IncomeManagementScreen(QWidget):
                     status_item.setForeground(QColor(color))
         except Exception as e:
             show_warning(f"Error populating ledger: {e}")
+
+    def _populate_table_expectations(self, expectations):
+        """Populate the individual expectations table."""
+        try:
+            self.table_expectations.setRowCount(0)
+
+            # Show table, hide empty state
+            self.table_expectations_widget.setVisible(True)
+            self.empty_state_expectations.setVisible(False)
+
+            for exp in expectations:
+                # Income Type
+                exp_type = exp["income_type"]
+
+                # Frequency
+                freq = exp["frequency"]
+
+                # Expected Date
+                try:
+                    exp_date = datetime.strptime(exp["expected_date"], "%Y-%m-%d").date()
+                    expected_date_str = exp_date.strftime("%d/%m/%Y")
+                except ValueError:
+                    # Recurring frequency with day number
+                    expected_date_str = f"Day {exp['expected_date']}"
+
+                # Expected Amount
+                expected_str = format_inr(exp["expected_amount"])
+
+                # Actual Amount
+                actual = exp.get("actual_amount", 0) if exp["actual_transaction_id"] else None
+                actual_str = format_inr(actual) if actual else "—"
+
+                # Variance
+                if actual:
+                    variance = actual - exp["expected_amount"]
+                    variance_str = format_inr(variance)
+                else:
+                    variance_str = "—"
+
+                # Status
+                if exp["actual_transaction_id"]:
+                    status = "Received"
+                else:
+                    exp_date_obj = datetime.strptime(exp["expected_date"], "%Y-%m-%d").date() if "-" in exp["expected_date"] else date.today()
+                    if exp_date_obj < date.today():
+                        status = "Overdue"
+                    else:
+                        status = "Pending"
+
+                # Account
+                account_str = f"{exp.get('bank_display_name', exp['bank_name'])} ({exp['account_type']})"
+
+                # Row data (matches column order in _build_panel_manage_expectations)
+                row_data = [
+                    exp_type,
+                    freq,
+                    expected_date_str,
+                    expected_str,
+                    actual_str,
+                    variance_str,
+                    status,
+                    account_str,
+                    str(exp["expectation_id"])
+                ]
+                self.table_expectations.addDataRow(row_data, user_data=exp["expectation_id"])
+
+                # Apply colors to the newly added row
+                row = self.table_expectations.rowCount() - 1
+
+                # Right-align amounts (columns 3, 4, 5)
+                for col in [3, 4, 5]:
+                    item = self.table_expectations.item(row, col)
+                    if item:
+                        item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+
+                # Color actual amount
+                if actual:
+                    actual_item = self.table_expectations.item(row, 4)
+                    if actual_item:
+                        actual_item.setForeground(QColor(Theme.SUCCESS))
+
+                # Color variance
+                if actual:
+                    variance_item = self.table_expectations.item(row, 5)
+                    if variance_item:
+                        color = Theme.SUCCESS if variance >= 0 else Theme.DANGER
+                        variance_item.setForeground(QColor(color))
+
+                # Color status
+                status_item = self.table_expectations.item(row, 6)
+                if status_item:
+                    if exp["actual_transaction_id"]:
+                        color = Theme.SUCCESS
+                    else:
+                        exp_date_obj = datetime.strptime(exp["expected_date"], "%Y-%m-%d").date() if "-" in exp["expected_date"] else date.today()
+                        if exp_date_obj < date.today():
+                            color = Theme.DANGER
+                        else:
+                            color = Theme.WARNING
+                    status_item.setForeground(QColor(color))
+        except Exception as e:
+            show_warning(f"Error populating expectations table: {e}")
+
+    def _add_expectation(self):
+        """Open dialog to add a new income expectation."""
+        persons = get_all_persons()
+        if not persons:
+            show_warning("Please add a person first.")
+            return
+
+        # Preselect current person from top bar if available
+        preselect_id = self._selected_person_id
+        dlg = IncomeExpectationDialog(self, persons=persons, preselect_person_id=preselect_id)
+
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            data = dlg.get_data()
+            try:
+                freq = data["frequency"]
+                # For recurring frequencies, ask if user wants full year's worth of records
+                if freq in ("Monthly", "Quarterly", "Half-Yearly"):
+                    count_map = {"Monthly": 12, "Quarterly": 4, "Half-Yearly": 2}
+                    count = count_map[freq]
+                    reply = QMessageBox.question(
+                        self,
+                        "Create Recurring Expectations",
+                        f"Create {count} income expectation records for the full financial year?\n\nFrequency: {freq}",
+                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                    )
+                    if reply != QMessageBox.StandardButton.Yes:
+                        return
+
+                add_income_expectation(**data)
+                show_success("Income expectation added.")
+                self.refresh()
+                if self._parent_window:
+                    self._parent_window.refresh_overview()
+            except Exception as e:
+                show_warning(f"Error adding expectation: {e}")
+
+    def _edit_expectation(self):
+        """Edit selected income expectation."""
+        row = self.table_expectations.currentRow()
+        if row < 0:
+            show_warning("Please select an expectation to edit.")
+            return
+
+        exp_id_item = self.table_expectations.item(row, 8)
+        if not exp_id_item:
+            return
+
+        exp_id = int(exp_id_item.text())
+        expectations = get_income_expectations()
+        existing = next((e for e in expectations if e["expectation_id"] == exp_id), None)
+
+        if not existing:
+            show_warning("Expectation record no longer exists.")
+            self.refresh()
+            return
+
+        persons = get_all_persons()
+        dlg = IncomeExpectationDialog(self, persons=persons, existing=existing)
+
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            data = dlg.get_data()
+            try:
+                update_income_expectation(
+                    exp_id,
+                    expected_amount=data.get("expected_amount"),
+                    expected_date=data.get("expected_date"),
+                    frequency=data.get("frequency"),
+                    notes=data.get("notes")
+                )
+                show_success("Income expectation updated.")
+                self.refresh()
+                if self._parent_window:
+                    self._parent_window.refresh_overview()
+            except Exception as e:
+                show_warning(f"Error updating expectation: {e}")
+
+    def _delete_expectation(self):
+        """Delete selected income expectations (checked rows)."""
+        checked_rows = self.table_expectations.getCheckedRows()
+        if not checked_rows:
+            show_warning("Please select expectation(s) to delete.")
+            return
+
+        count = len(checked_rows)
+        reply = QMessageBox.question(
+            self,
+            "Confirm Delete",
+            f"Delete {count} selected expectation{'s' if count != 1 else ''}?\n\nThis action cannot be undone.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        try:
+            for row in sorted(checked_rows, reverse=True):
+                exp_id_item = self.table_expectations.item(row, 8)
+                if exp_id_item:
+                    exp_id = int(exp_id_item.text())
+                    delete_income_expectation(exp_id)
+
+            show_success(f"Deleted {count} expectation{'s' if count != 1 else ''}.")
+            self.refresh()
+            if self._parent_window:
+                self._parent_window.refresh_overview()
+        except Exception as e:
+            show_warning(f"Error deleting expectation: {e}")
 
     def _on_auto_match_ledger(self):
         """Auto-match expectations with transactions."""
