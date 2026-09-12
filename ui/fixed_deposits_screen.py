@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (
     QFormLayout, QLineEdit, QComboBox, QDateEdit, QMessageBox, QFrame,
     QPlainTextEdit, QSpinBox, QScrollArea, QCheckBox
 )
-from PyQt6.QtCore import Qt, QDate
+from PyQt6.QtCore import Qt, QDate, QTimer
 from PyQt6.QtGui import QFont, QColor, QDoubleValidator
 
 from datetime import date
@@ -174,8 +174,8 @@ class FixedDepositsScreen(QWidget):
         # Tenure, Compounding, Method are short enums -> FIXED narrow
         # Dates and calculated fields -> FIXED
         col_specs = {
-            1: {"mode": "STRETCH"},                  # Person (wider, can stretch)
-            2: {"mode": "STRETCH"},                  # Bank (wider, can stretch)
+            1: {"mode": "FIXED", "width": 150},     # Person (identifier, enough to distinguish)
+            2: {"mode": "FIXED", "width": 150},     # Bank (identifier, enough to distinguish)
             3: {"mode": "FIXED", "width": 150},     # FD No (identifier, enough to distinguish)
             4: {"mode": "FIXED", "width": 110},     # Principal
             5: {"mode": "FIXED", "width": 80},      # Rate %
@@ -348,6 +348,11 @@ class FixedDepositsScreen(QWidget):
         self.status_label.setText(f"Showing {count} fixed deposit{'s' if count!=1 else ''}.")
         self.status_label.setStyleSheet("")  # Reset style
         self._update_tds_banner()
+
+        # Reset horizontal scroll position to show Person/Bank columns from the start.
+        # Deferred via singleShot: the scrollbar's range isn't finalized until Qt
+        # finishes laying out the just-populated columns on the next event loop pass.
+        QTimer.singleShot(0, lambda: self.table.horizontalScrollBar().setValue(0))
 
     def _update_tds_banner(self):
         """Show a reminder when a person's FD interest with any bank crosses

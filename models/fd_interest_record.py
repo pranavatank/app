@@ -106,3 +106,14 @@ def delete_fd_interest_records(fd_id: int) -> None:
     )
     conn.commit()
     conn.close()
+
+
+def get_total_fd_interest_for_fd(fd_id: int) -> float:
+    """Sum of all interest_earned for a specific FD across all FYs."""
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT SUM(interest_earned) AS total FROM FDInterestRecord WHERE fd_id = ?",
+        (fd_id,)
+    ).fetchone()
+    conn.close()
+    return row["total"] or 0.0

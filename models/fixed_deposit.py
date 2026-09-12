@@ -229,6 +229,22 @@ def update_fd_status(fd_id: int, status: str) -> None:
     conn.close()
 
 
+def update_fd_interest_summary(fd_id: int, expected_interest_amount: float,
+                               actual_interest_amount: float) -> None:
+    """Update just the expected and actual interest amount columns."""
+    conn = get_connection()
+    conn.execute(
+        """
+        UPDATE FixedDeposit
+        SET expected_interest_amount = ?, actual_interest_amount = ?
+        WHERE fd_id = ?
+        """,
+        (expected_interest_amount, actual_interest_amount, fd_id)
+    )
+    conn.commit()
+    conn.close()
+
+
 def update_fd(fd_id: int, principal_amount: float, start_date: str,
               tenure_months: int, interest_rate: float,
               compounding_type: str, maturity_date: str,

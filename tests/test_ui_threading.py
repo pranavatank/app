@@ -134,7 +134,9 @@ class TestStatementParsingThreading:
         # Enable controls initially
         screen.btn_next.setEnabled(True)
         screen._drop_zone.setEnabled(True)
-        screen.file_type_combo.setEnabled(True)
+        # Enable account cards
+        for card in screen._account_cards.values():
+            card._btn_account.setEnabled(True)
 
         def mock_parse(*args, **kwargs):
             return [], {}
@@ -151,7 +153,9 @@ class TestStatementParsingThreading:
             # Verify controls are disabled
             assert not screen.btn_next.isEnabled(), "btn_next should be disabled during parse"
             assert not screen._drop_zone.isEnabled(), "_drop_zone should be disabled during parse"
-            assert not screen.file_type_combo.isEnabled(), "file_type_combo should be disabled during parse"
+            # Check account cards are disabled
+            for card in screen._account_cards.values():
+                assert not card._btn_account.isEnabled(), "account cards should be disabled during parse"
 
     def test_controls_reenabled_on_parse_error(self, qapp):
         """Verify that _handle_parse_error re-enables controls."""
@@ -164,7 +168,9 @@ class TestStatementParsingThreading:
         # Disable controls to simulate being in a parse
         screen.btn_next.setEnabled(False)
         screen._drop_zone.setEnabled(False)
-        screen.file_type_combo.setEnabled(False)
+        # Disable account cards
+        for card in screen._account_cards.values():
+            card._btn_account.setEnabled(False)
 
         # Mock the password prompt to return None (user cancels)
         with patch.object(screen, "_prompt_statement_password", return_value=(None, False)), \
@@ -175,7 +181,9 @@ class TestStatementParsingThreading:
         # After error handling, controls should be re-enabled
         assert screen.btn_next.isEnabled(), "btn_next should be re-enabled after error"
         assert screen._drop_zone.isEnabled(), "_drop_zone should be re-enabled after error"
-        assert screen.file_type_combo.isEnabled(), "file_type_combo should be re-enabled after error"
+        # Check account cards are re-enabled
+        for card in screen._account_cards.values():
+            assert card._btn_account.isEnabled(), "account cards should be re-enabled after error"
 
 
 class TestAISTISThreading:

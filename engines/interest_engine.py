@@ -415,6 +415,22 @@ def calculate_fd_quarterly_credit_breakdown(principal: float, rate: float,
     return rows
 
 
+def _update_fd_interest_rollup(fd_id: int) -> None:
+    """
+    Update FixedDeposit's expected_interest_amount and actual_interest_amount
+    columns based on the sum of interest_earned from all FDInterestRecord rows
+    for this FD. Sets both columns to the same sum (simplified interpretation:
+    expected interest = calculated total, actual interest = same unless/until
+    a redemption event occurs).
+    """
+    from models.fd_interest_record import get_total_fd_interest_for_fd
+    from models.fixed_deposit import update_fd_interest_summary
+
+    total_interest = get_total_fd_interest_for_fd(fd_id)
+    if total_interest > 0:
+        update_fd_interest_summary(fd_id, total_interest, total_interest)
+
+
 def allocate_fd_interest_to_fy(fd_id: int) -> None:
     """Allocate FD interest across all relevant FYs and store in DB."""
     fd = get_fd(fd_id)
@@ -426,7 +442,7 @@ def allocate_fd_interest_to_fy(fd_id: int) -> None:
 
     # Rebuild FY allocations for this FD to avoid stale/duplicate records.
     delete_fd_interest_records(fd_id)
-    
+
     fd_start = date.fromisoformat(fd["start_date"])
     fd_end = date.fromisoformat(fd["maturity_date"])
     total_interest = _effective_maturity_amount(fd) - float(fd["principal_amount"])
@@ -452,6 +468,9 @@ def allocate_fd_interest_to_fy(fd_id: int) -> None:
             period_start=row["period_start"],
             period_end=row["period_end"],
         )
+
+    # Update the FD's interest rollup columns after all records are written
+    _update_fd_interest_rollup(fd_id)
 
 
 def calculate_savings_interest_for_fy(account_id: int, financial_year: str,

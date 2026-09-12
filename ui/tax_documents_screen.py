@@ -301,7 +301,7 @@ class TaxDocumentsScreen(QWidget):
             self.zone_26as.pdf_path = path
             fy = _extract_financial_year(result)
             self.zone_26as.set_status("✓ Loaded", fy=fy)
-            show_success(self, "Form 26AS loaded successfully")
+            show_success("Form 26AS loaded successfully")
             self._try_merge()
 
         def on_error(exc):
@@ -323,7 +323,7 @@ class TaxDocumentsScreen(QWidget):
             self.zone_ais.pdf_path = path
             fy = _extract_financial_year(result)
             self.zone_ais.set_status("✓ Loaded", fy=fy)
-            show_success(self, "AIS loaded successfully")
+            show_success("AIS loaded successfully")
             self._try_merge()
 
         def on_error(exc):
@@ -345,7 +345,7 @@ class TaxDocumentsScreen(QWidget):
             self.zone_tis.pdf_path = path
             fy = _extract_financial_year(result)
             self.zone_tis.set_status("✓ Loaded", fy=fy)
-            show_success(self, "TIS loaded successfully")
+            show_success("TIS loaded successfully")
             self._try_merge()
 
         def on_error(exc):
@@ -393,7 +393,7 @@ class TaxDocumentsScreen(QWidget):
             self._render_non_income_table()
             self._render_fd_table()
 
-            show_success(self, "Tax documents reconciled successfully")
+            show_success("Tax documents reconciled successfully")
 
         except Exception as e:
             show_danger(f"Merge failed: {str(e)}")

@@ -13,8 +13,8 @@ from PyQt6.QtWidgets import (
     QInputDialog,
     QStackedWidget, QScrollArea, QSizePolicy, QFormLayout
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QThread, QObject, QMimeData
-from PyQt6.QtGui import QFont, QColor, QDragEnterEvent, QDropEvent
+from PyQt6.QtCore import Qt, pyqtSignal, QThread, QObject, QMimeData, QEvent
+from PyQt6.QtGui import QFont, QColor, QDragEnterEvent, QDropEvent, QFontMetrics
 from datetime import datetime
 import json
 import os
@@ -329,73 +329,41 @@ class StatementImportScreen(QWidget):
         form_layout.addWidget(self._card_title_row("browse", "Import Statement"))
         form_layout.addWidget(self._card_subtitle("Select person, account, and statement file"))
 
-        # Form fields
-        form = QFormLayout()
-        form.setSpacing(12)
-        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        # Person cards row
+        person_label = self._form_label("Person")
+        form_layout.addWidget(person_label)
 
-        # Person selection
-        self.person_combo = QComboBox()
-        self.person_combo.setMinimumHeight(38)
-        self.person_combo.setMaximumWidth(Theme.INPUT_SELECT_LONG_MAX_WIDTH)
-        self.person_combo.setAccessibleName("Person selection")
-        self.person_combo.setAccessibleDescription("Choose the person associated with this bank statement.")
-        self.person_combo.setToolTip("Choose the person associated with this bank statement.")
-        self.person_combo.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.person_combo.currentIndexChanged.connect(self._on_person_changed)
-        person_wrapper = QWidget()
-        person_layout = QHBoxLayout(person_wrapper)
-        person_layout.setContentsMargins(0, 0, 0, 0)
-        person_layout.setSpacing(0)
-        person_layout.addWidget(self.person_combo)
-        person_layout.addStretch()
-        form.addRow(self._form_label("Person"), person_wrapper)
+        self.person_cards_container = QWidget()
+        self.person_cards_layout = QHBoxLayout(self.person_cards_container)
+        self.person_cards_layout.setContentsMargins(0, 0, 0, 0)
+        self.person_cards_layout.setSpacing(8)
+        self._person_cards = {}  # Maps person_id -> card widget
+        form_layout.addWidget(self.person_cards_container)
 
-        # Account selection
-        self.account_combo = QComboBox()
-        self.account_combo.setMinimumHeight(38)
-        self.account_combo.setMaximumWidth(Theme.INPUT_SELECT_LONG_MAX_WIDTH)
-        self.account_combo.setEnabled(False)
-        self.account_combo.setAccessibleName("Bank account selection")
-        self.account_combo.setAccessibleDescription("Choose the bank account for the selected person.")
-        self.account_combo.setToolTip("Choose the bank account for the selected person.")
-        self.account_combo.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.account_combo.currentIndexChanged.connect(self._update_parse_button_state)
-        account_wrapper = QWidget()
-        account_layout = QHBoxLayout(account_wrapper)
-        account_layout.setContentsMargins(0, 0, 0, 0)
-        account_layout.setSpacing(0)
-        account_layout.addWidget(self.account_combo)
-        account_layout.addStretch()
-        form.addRow(self._form_label("Account"), account_wrapper)
+        # Account cards row (initially empty, populated when person is selected)
+        account_label = self._form_label("Account")
+        form_layout.addWidget(account_label)
 
-        # File type selection
-        file_type_layout = QHBoxLayout()
-        self.file_type_combo = QComboBox()
-        self.file_type_combo.addItems(["PDF", "Excel"])
-        self.file_type_combo.setMinimumHeight(38)
-        self.file_type_combo.setMaximumWidth(Theme.INPUT_SELECT_SHORT_MAX_WIDTH)
-        self.file_type_combo.setAccessibleName("Statement file type")
-        self.file_type_combo.setAccessibleDescription("Choose whether the selected file is a PDF or Excel statement.")
-        self.file_type_combo.setToolTip("Choose whether the selected file is a PDF or Excel statement.")
-        self.file_type_combo.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.file_type_combo.currentTextChanged.connect(self._on_file_type_changed)
-        file_type_layout.addWidget(self.file_type_combo)
-        file_type_layout.addStretch()
+        self.account_cards_container = QWidget()
+        self.account_cards_layout = QHBoxLayout(self.account_cards_container)
+        self.account_cards_layout.setContentsMargins(0, 0, 0, 0)
+        self.account_cards_layout.setSpacing(8)
+        self._account_cards = {}  # Maps account_id -> card widget
+        form_layout.addWidget(self.account_cards_container)
 
+        # File type selection (now per-account format toggle)
+        # This will be moved into each account card
+
+        # Column mapping button
         self._column_mapping = None
         self.map_columns_btn = Theme.btn("Map Columns", "secondary", height=32, min_width=120)
         self.map_columns_btn.clicked.connect(self._open_column_mapping_dialog)
-        self.map_columns_btn.setVisible(self.file_type_combo.currentText() == "Excel")
+        self.map_columns_btn.setVisible(False)  # Show only when needed
         self.map_columns_btn.setAccessibleName("Map Excel columns")
         self.map_columns_btn.setAccessibleDescription("Open the column mapping dialog for Excel imports.")
         self.map_columns_btn.setToolTip("Open the column mapping dialog for Excel imports.")
         self.map_columns_btn.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        file_type_layout.addWidget(self.map_columns_btn)
-
-        form.addRow(self._form_label("Format"), file_type_layout)
-
-        form_layout.addLayout(form)
+        form_layout.addWidget(self.map_columns_btn)
 
         # File selection section (with drag-and-drop)
         file_section = QVBoxLayout()
@@ -418,23 +386,8 @@ class StatementImportScreen(QWidget):
 
         layout.addWidget(form_card)
 
-        # Load persons
-        for p in get_all_persons():
-            self.person_combo.addItem(p["full_name"], userData=p["person_id"])
-
-        # Set default person selection based on top bar's current selection
-        # If top bar has "All Persons" selected (session.selected_person_id is None),
-        # leave the combo empty (don't select any index) to require explicit choice.
-        # If top bar has a specific person, default to that person.
-        if session.selected_person_id:
-            for i in range(self.person_combo.count()):
-                if self.person_combo.itemData(i) == session.selected_person_id:
-                    self.person_combo.setCurrentIndex(i)
-                    break
-        # If session.selected_person_id is None, leave combo at -1 (no selection)
-        # PyQt6 starts at 0, so we need to explicitly set to -1 or use blockSignals to avoid auto-selection
-        else:
-            self.person_combo.setCurrentIndex(-1)
+        # Build person cards
+        self._rebuild_person_cards()
 
         return container
 
@@ -699,33 +652,293 @@ class StatementImportScreen(QWidget):
         lbl.setProperty("textrole", "section-label")
         return lbl
 
+    def _elide_button_text(self, button: QPushButton, max_width: int):
+        """Apply text elision to a button and set full text as tooltip."""
+        full_text = button.text()
+        metrics = QFontMetrics(button.font())
+        elided = metrics.elidedText(full_text, Qt.TextElideMode.ElideRight, max_width - 12)
+        button.setText(elided)
+        if elided != full_text:
+            button.setToolTip(full_text)
 
-    def _on_person_changed(self):
-        """Load accounts when person changes"""
-        self.selected_person_id = self.person_combo.currentData()
-        if self.selected_person_id:
-            self.account_combo.setEnabled(True)
-            self.account_combo.clear()
-            accounts = get_accounts_for_person(self.selected_person_id)
-            for acc in accounts:
-                masked = acc.get('account_number_masked', '') or ''
-                label = f"{acc.get('bank_display_name', acc['bank_name'])} — {acc['account_type']}"
-                if masked:
-                    label += f" ({masked})"
-                self.account_combo.addItem(label, userData=acc["account_id"])
-        else:
-            self.account_combo.setEnabled(False)
-            self.account_combo.clear()
+
+    def _rebuild_person_cards(self):
+        """Build clickable person cards from get_all_persons()"""
+        # Clear old cards
+        while self.person_cards_layout.count() > 0:
+            widget = self.person_cards_layout.takeAt(0).widget()
+            if widget:
+                widget.deleteLater()
+        self._person_cards.clear()
+
+        persons = get_all_persons()
+        for person in persons:
+            person_id = person["person_id"]
+            full_name = person["full_name"]
+            card = self._create_person_card(full_name, person_id)
+            self._person_cards[person_id] = card
+            self.person_cards_layout.addWidget(card)
+
+        self.person_cards_layout.addStretch()
+
+        # Pre-select person if session has one
+        if session.selected_person_id and session.selected_person_id in self._person_cards:
+            self._select_person_card(session.selected_person_id)
+
+    def _create_person_card(self, name: str, person_id: str) -> QPushButton:
+        """Create a clickable person card button"""
+        card = QPushButton(name)
+        card.setCheckable(True)
+        card.setAutoExclusive(True)
+        card.setMinimumHeight(44)
+        card.setMaximumWidth(200)
+        card.setProperty("person_id", person_id)
+        card.clicked.connect(lambda checked=True, pid=person_id: self._select_person_card(pid))
+        card.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        card.setAccessibleName(f"Select person: {name}")
+        card.setAccessibleDescription(f"Choose {name} as the person for this statement import.")
+        self._update_person_card_style(card, False)
+        return card
+
+    def _select_person_card(self, person_id: str):
+        """Handle person card selection"""
+        self.selected_person_id = person_id
+        if person_id in self._person_cards:
+            self._person_cards[person_id].setChecked(True)
+            self._update_person_card_style(self._person_cards[person_id], True)
+
+        # Update all other person cards' style
+        for pid, card in self._person_cards.items():
+            if pid != person_id:
+                self._update_person_card_style(card, False)
+
+        # Rebuild account cards for the selected person
+        self._rebuild_account_cards(person_id)
         self._update_parse_button_state()
 
+    def _update_person_card_style(self, card: QPushButton, selected: bool):
+        """Update person card styling based on selection state"""
+        if selected:
+            bg = Theme.PRIMARY_LIGHT
+            border = f"2px solid {Theme.PRIMARY}"
+            text_color = Theme.TEXT_PRIMARY
+        else:
+            bg = Theme.SURFACE
+            border = f"1px solid {Theme.BORDER}"
+            text_color = Theme.TEXT_PRIMARY
+
+        card.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {bg};
+                border: {border};
+                border-radius: 8px;
+                color: {text_color};
+                font-weight: 500;
+                padding: 8px 12px;
+                text-align: center;
+            }}
+            QPushButton:hover {{
+                background-color: {Theme.PRIMARY_LIGHT};
+                border: 2px solid {Theme.PRIMARY};
+            }}
+            QPushButton:pressed {{
+                background-color: {Theme.PRIMARY};
+                color: {Theme.TEXT_ON_PRIMARY};
+            }}
+        """)
+
+    def _rebuild_account_cards(self, person_id: str):
+        """Build clickable account cards for the selected person"""
+        # Clear old account cards
+        while self.account_cards_layout.count() > 0:
+            widget = self.account_cards_layout.takeAt(0).widget()
+            if widget:
+                widget.deleteLater()
+        self._account_cards.clear()
+        self.selected_account_id = None
+        self.file_type = None
+
+        accounts = get_accounts_for_person(person_id)
+        for acc in accounts:
+            account_id = acc["account_id"]
+            label = f"{acc.get('bank_display_name', acc['bank_name'])} — {acc['account_type']}"
+            card = self._create_account_card(label, account_id)
+            self._account_cards[account_id] = card
+            self.account_cards_layout.addWidget(card)
+
+        self.account_cards_layout.addStretch()
+
+        # Update map columns button visibility
+        self.map_columns_btn.setVisible(False)
+
+    def _create_account_card(self, label: str, account_id: str) -> QWidget:
+        """Create an account card with format toggle buttons"""
+        card_container = QFrame()
+        card_layout = QVBoxLayout(card_container)
+        card_layout.setContentsMargins(12, 10, 12, 10)
+        card_layout.setSpacing(8)
+
+        # Account name button (checkable) — with elision support
+        btn_account = QPushButton(label)
+        btn_account.setCheckable(True)
+        btn_account.setAutoExclusive(True)
+        btn_account.setMinimumHeight(40)
+        btn_account.setMaximumWidth(320)
+        btn_account.setProperty("account_id", account_id)
+        btn_account.clicked.connect(lambda checked=True, aid=account_id: self._select_account_card(aid))
+        btn_account.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        btn_account.setAccessibleName(f"Select account: {label}")
+        btn_account.setAccessibleDescription(f"Choose {label} for statement import.")
+        # Apply elision and tooltip with full name
+        self._elide_button_text(btn_account, 320)
+        card_layout.addWidget(btn_account)
+
+        # Format toggle (PDF/Excel) in a small horizontal layout
+        format_layout = QHBoxLayout()
+        format_layout.setContentsMargins(0, 0, 0, 0)
+        format_layout.setSpacing(4)
+
+        # Format label — ensure it has no unwanted borders or styling
+        format_label = QLabel("Format:")
+        format_label.setStyleSheet("border: none; background: transparent;")
+        format_label.setProperty("textrole", "section-label")
+
+        btn_pdf = QPushButton("PDF")
+        btn_pdf.setCheckable(True)
+        btn_pdf.setAutoExclusive(True)
+        btn_pdf.setChecked(True)
+        btn_pdf.setMaximumWidth(70)
+        btn_pdf.setMinimumHeight(28)
+        btn_pdf.setProperty("account_id", account_id)
+        btn_pdf.setProperty("file_type", "PDF")
+        btn_pdf.clicked.connect(lambda checked=True, aid=account_id: self._update_account_format(aid, "PDF"))
+        btn_pdf.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+
+        btn_excel = QPushButton("Excel")
+        btn_excel.setCheckable(True)
+        btn_excel.setAutoExclusive(True)
+        btn_excel.setMaximumWidth(70)
+        btn_excel.setMinimumHeight(28)
+        btn_excel.setProperty("account_id", account_id)
+        btn_excel.setProperty("file_type", "Excel")
+        btn_excel.clicked.connect(lambda checked=True, aid=account_id: self._update_account_format(aid, "Excel"))
+        btn_excel.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+
+        format_layout.addWidget(format_label)
+        format_layout.addWidget(btn_pdf)
+        format_layout.addWidget(btn_excel)
+        format_layout.addStretch()
+
+        card_layout.addLayout(format_layout)
+
+        # Store references for styling
+        card_container._btn_account = btn_account
+        card_container._btn_pdf = btn_pdf
+        card_container._btn_excel = btn_excel
+        card_container._account_id = account_id
+        card_container._file_type = "PDF"  # Default
+
+        # Apply initial styling to format buttons
+        btn_pdf.setStyleSheet(self._get_format_btn_style(True))
+        btn_excel.setStyleSheet(self._get_format_btn_style(False))
+
+        self._update_account_card_style(card_container, False)
+        return card_container
+
+    def _select_account_card(self, account_id: str):
+        """Handle account card selection"""
+        self.selected_account_id = account_id
+        if account_id in self._account_cards:
+            card = self._account_cards[account_id]
+            card._btn_account.setChecked(True)
+            self._update_account_card_style(card, True)
+            # Update file_type from the selected card
+            self.file_type = card._file_type
+
+        # Update all other account cards' style
+        for aid, card in self._account_cards.items():
+            if aid != account_id:
+                self._update_account_card_style(card, False)
+
+        # Update map columns button visibility if Excel is selected
+        self.map_columns_btn.setVisible(self.file_type == "Excel" if self.file_type else False)
+        self._update_parse_button_state()
+
+    def _update_account_format(self, account_id: str, file_type: str):
+        """Update the file format for an account card"""
+        if account_id in self._account_cards:
+            card = self._account_cards[account_id]
+            card._file_type = file_type
+
+            # Only update self.file_type if this is the currently selected account
+            if account_id == self.selected_account_id:
+                self.file_type = file_type
+
+                # Update button checked states first
+                if file_type == "PDF":
+                    card._btn_pdf.setChecked(True)
+                    card._btn_excel.setChecked(False)
+                else:
+                    card._btn_pdf.setChecked(False)
+                    card._btn_excel.setChecked(True)
+
+                # Update button styles for both PDF and Excel to ensure visual difference
+                card._btn_pdf.setStyleSheet(self._get_format_btn_style(file_type == "PDF"))
+                card._btn_excel.setStyleSheet(self._get_format_btn_style(file_type == "Excel"))
+
+                # Update map columns button visibility
+                self.map_columns_btn.setVisible(file_type == "Excel")
+
+    def _get_format_btn_style(self, selected: bool) -> str:
+        """Get stylesheet for format toggle buttons"""
+        if selected:
+            return f"""
+                QPushButton {{
+                    background-color: {Theme.PRIMARY};
+                    color: {Theme.TEXT_ON_PRIMARY};
+                    border: 1px solid {Theme.PRIMARY};
+                    border-radius: 4px;
+                    font-weight: 500;
+                    padding: 4px 8px;
+                }}
+            """
+        else:
+            return f"""
+                QPushButton {{
+                    background-color: {Theme.SURFACE};
+                    color: {Theme.TEXT_PRIMARY};
+                    border: 1px solid {Theme.BORDER};
+                    border-radius: 4px;
+                    padding: 4px 8px;
+                }}
+            """
+
+    def _update_account_card_style(self, card: QFrame, selected: bool):
+        """Update account card styling based on selection state"""
+        if selected:
+            bg = Theme.PRIMARY_LIGHT
+            border = f"2px solid {Theme.PRIMARY}"
+        else:
+            bg = Theme.SURFACE
+            border = f"1px solid {Theme.BORDER}"
+
+        card.setStyleSheet(f"""
+            QFrame {{
+                background-color: {bg};
+                border: {border};
+                border-radius: 8px;
+            }}
+        """)
+
     def _update_parse_button_state(self):
-        """Enable Parse button only when both person and account are selected"""
+        """Enable Parse button only when person, account, and file are all selected"""
         if not hasattr(self, "btn_next"):
             # Called during _build_selection_screen(), before btn_next exists
             return
-        person_selected = self.person_combo.currentData() is not None
-        account_selected = self.account_combo.currentData() is not None
-        self.btn_next.setEnabled(person_selected and account_selected)
+        person_selected = self.selected_person_id is not None
+        account_selected = self.selected_account_id is not None
+        file_selected = self.selected_file is not None
+        self.btn_next.setEnabled(person_selected and account_selected and file_selected)
 
     def _browse_file(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -743,10 +956,14 @@ class StatementImportScreen(QWidget):
         if not path:
             return
         self.selected_file = path
-        filename = path.split("/")[-1] or path.split("\\")[-1]
+        filename = os.path.basename(path)
         # Reset mapping when file changes
         self._column_mapping = None
+        # Update DropZone display to show selected file
+        self._drop_zone.set_status(f"✓ {filename}")
         show_success(f"File selected: {filename}")
+        # Enable/disable parse button based on all selections
+        self._update_parse_button_state()
 
     def _go_next(self):
         """Handle next button - validate and parse"""
@@ -755,16 +972,19 @@ class StatementImportScreen(QWidget):
             if not self.selected_person_id:
                 show_warning("Please select a person.")
                 return
-            
-            self.selected_account_id = self.account_combo.currentData()
+
             if not self.selected_account_id:
                 show_warning("Please select an account.")
                 return
-            
+
             if not self.selected_file:
                 show_warning("Please select a statement file.")
                 return
-            
+
+            if not self.file_type:
+                show_warning("Please select a file format (PDF or Excel).")
+                return
+
             # Parse statement (will be implemented in next chunk)
             self._parse_statement()
         else:
@@ -778,11 +998,14 @@ class StatementImportScreen(QWidget):
             self._set_step(1)
             self.btn_back.setEnabled(False)
             self.btn_next.setText("Parse Statement →")
-            self.person_combo.setFocus()
+            if self.selected_person_id and self.selected_person_id in self._person_cards:
+                self._person_cards[self.selected_person_id].setFocus()
+            else:
+                self.person_cards_container.setFocus()
 
     def _parse_statement(self):
         """Parse statement and show preview — running parser in background thread."""
-        self.file_type = self.file_type_combo.currentText()
+        # self.file_type is already set from card selection
         acc = get_account(self.selected_account_id)
         self.bank_name = acc["bank_name"] if acc else "Unknown"
 
@@ -801,7 +1024,9 @@ class StatementImportScreen(QWidget):
         # Disable controls and start parse in background thread
         self.btn_next.setEnabled(False)
         self._drop_zone.setEnabled(False)
-        self.file_type_combo.setEnabled(False)
+        # Disable account cards during parsing
+        for card in self._account_cards.values():
+            card._btn_account.setEnabled(False)
 
         self._start_statement_parse_worker()
 
@@ -847,7 +1072,9 @@ class StatementImportScreen(QWidget):
         """Handle errors from statement parsing."""
         self.btn_next.setEnabled(True)
         self._drop_zone.setEnabled(True)
-        self.file_type_combo.setEnabled(True)
+        # Re-enable account cards during error
+        for card in self._account_cards.values():
+            card._btn_account.setEnabled(True)
 
         if isinstance(exc, StatementPasswordRequiredError):
             saved_password = self._get_saved_statement_password()
@@ -874,7 +1101,9 @@ class StatementImportScreen(QWidget):
         """Process parsed transactions on the GUI thread (after worker returns)."""
         self.btn_next.setEnabled(True)
         self._drop_zone.setEnabled(True)
-        self.file_type_combo.setEnabled(True)
+        # Re-enable account cards after parsing
+        for card in self._account_cards.values():
+            card._btn_account.setEnabled(True)
 
         try:
             # Extract metadata (lightweight operation, can stay on UI thread)
@@ -1108,7 +1337,7 @@ class StatementImportScreen(QWidget):
 
     def refresh(self):
         """Reset to initial state"""
-        self.selected_person_id = session.selected_person_id
+        self.selected_person_id = None
         self.selected_account_id = None
         self.selected_file = None
         self.file_type = None
@@ -1129,19 +1358,8 @@ class StatementImportScreen(QWidget):
         self.btn_back.setEnabled(False)
         self.btn_next.setText("Parse Statement →")
 
-        # Reload person combo with proper default selection
-        self.person_combo.clear()
-        for p in get_all_persons():
-            self.person_combo.addItem(p["full_name"], userData=p["person_id"])
-
-        # Set default person selection based on top bar's current selection
-        if session.selected_person_id:
-            for i in range(self.person_combo.count()):
-                if self.person_combo.itemData(i) == session.selected_person_id:
-                    self.person_combo.setCurrentIndex(i)
-                    break
-        else:
-            self.person_combo.setCurrentIndex(-1)
+        # Rebuild person cards with proper default selection
+        self._rebuild_person_cards()
 
         self._update_parse_button_state()
 
@@ -1280,8 +1498,6 @@ class StatementImportScreen(QWidget):
 
     
 
-    def _on_file_type_changed(self, text: str):
-        self.map_columns_btn.setVisible(text == "Excel")
 
     def _open_column_mapping_dialog(self):
         if not self.selected_file:
@@ -1496,7 +1712,7 @@ class StatementImportScreen(QWidget):
 
     def _setup_selection_tab_order(self):
         self._chain_tab_order(
-            "person_combo", "account_combo", "file_type_combo", "_drop_zone",
+            "person_cards_container", "account_cards_container", "_drop_zone",
             "map_columns_btn", "btn_next", "btn_back")
 
     def _setup_preview_tab_order(self):

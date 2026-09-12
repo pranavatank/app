@@ -5,7 +5,8 @@ ui/widgets/excel_table.py — Excel-like table with copy/paste, selection, stats
 from PyQt6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QCheckBox, QWidget,
     QHBoxLayout, QLabel, QHeaderView, QApplication, QMessageBox,
-    QStyledItemDelegate, QStyle, QStyleOptionViewItem, QLineEdit
+    QStyledItemDelegate, QStyle, QStyleOptionViewItem, QLineEdit,
+    QAbstractItemView
 )  # QHeaderView is imported for column sizing in _apply_column_sizing()
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QKeySequence, QKeyEvent
@@ -96,9 +97,20 @@ class ExcelTable(QTableWidget):
 
     def _apply_column_sizing(self):
         """Apply the configured column sizing modes."""
-        if not self._column_specs:
-            return
         hdr = self.horizontalHeader()
+
+        # If checkboxes are shown, always ensure column 0 is fixed at 40px
+        if self.show_checkboxes:
+            hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+            self.setColumnWidth(0, 40)
+
+        if not self._column_specs:
+            # Ensure last column stretches to avoid empty band (if column sizing not specified)
+            if self.columnCount() > 0:
+                last_col = self.columnCount() - 1
+                hdr.setSectionResizeMode(last_col, QHeaderView.ResizeMode.Stretch)
+            return
+
         for col_idx, spec in self._column_specs.items():
             mode = spec.get("mode", "FIXED")
             if mode == "FIXED":
@@ -149,12 +161,20 @@ class ExcelTable(QTableWidget):
             self.setEditTriggers(QTableWidget.EditTrigger.DoubleClicked | QTableWidget.EditTrigger.EditKeyPressed)
         else:
             self.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+
+        # Connect header section clicks for select-all checkbox (if checkboxes are shown)
+        if self.show_checkboxes:
+            self.horizontalHeader().sectionClicked.connect(self._on_header_section_clicked)
+            self.cellClicked.connect(self._on_cell_clicked)
         
     def setHeaders(self, headers: list[str]):
         """Set headers with optional checkbox column."""
         if self.show_checkboxes:
             self.setColumnCount(len(headers) + 1)
             self.setHorizontalHeaderLabels(["☑"] + headers)
+            # Always set checkbox column (0) to fixed width of 40px
+            hdr = self.horizontalHeader()
+            hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
             self.setColumnWidth(0, 40)
         else:
             self.setColumnCount(len(headers))
@@ -373,6 +393,36 @@ class ExcelTable(QTableWidget):
             QMessageBox.warning(self, "Paste Skipped",
                 f"{rejected} cell(s) skipped — that column requires a numeric value.")
             
+    def _on_cell_clicked(self, row: int, col: int):
+        """Handle cell clicks. If checkbox column is clicked, toggle the checkbox."""
+        if self.show_checkboxes and col == 0:
+            widget = self.cellWidget(row, 0)
+            if widget:
+                cb = widget.findChild(QCheckBox)
+                if cb:
+                    cb.setChecked(not cb.isChecked())
+
+    def _on_header_section_clicked(self, section: int):
+        """Handle header section clicks. If checkbox column header is clicked, toggle all checkboxes."""
+        if self.show_checkboxes and section == 0:
+            # Check if all rows are currently checked
+            all_checked = True
+            for r in range(self.rowCount()):
+                widget = self.cellWidget(r, 0)
+                if widget:
+                    cb = widget.findChild(QCheckBox)
+                    if cb and not cb.isChecked():
+                        all_checked = False
+                        break
+            # Toggle: if all are checked, uncheck all; otherwise check all
+            target_state = not all_checked
+            self._select_all_checkboxes(target_state)
+
+    def _select_all_checkboxes(self, checked: bool):
+        """Check or uncheck all checkboxes in the table."""
+        for r in range(self.rowCount()):
+            self.setRowChecked(r, checked)
+
     def _clean_paste_value(self, value: str) -> str:
         """Clean pasted value by removing common formatting."""
         if not value:
@@ -431,6 +481,17 @@ class ExcelTable(QTableWidget):
                 event.accept()
             else:
                 # In editable mode, let Qt's default EditKeyPressed handling work
+                super().keyPressEvent(event)
+        # Enter/Return - Open record-edit dialog (emit doubleClicked signal) if not currently editing a cell
+        elif event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            if self.state() != QAbstractItemView.State.EditingState:
+                # Not in edit mode, so emit doubleClicked for the current index
+                current_idx = self.currentIndex()
+                if current_idx.isValid():
+                    self.doubleClicked.emit(current_idx)
+                event.accept()
+            else:
+                # Currently editing a cell, let Qt handle Enter normally to commit the edit
                 super().keyPressEvent(event)
         # Ctrl+Home - Jump to first cell
         elif event.matches(QKeySequence.StandardKey.MoveToStartOfDocument):

@@ -247,8 +247,12 @@ class DashboardScreen(QMainWindow):
 
         # Use QToolButton's layout capability
         layout = QHBoxLayout(container)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
+        # In expanded mode: 16px left padding before icon, 12px right padding after text, consistent 10px spacing between icon and text
+        # In collapsed mode: no padding (icon fills 76px width for centered display)
+        margins_expanded = (16, 0, 12, 0)  # left, top, right, bottom
+        margins_collapsed = (0, 0, 0, 0)   # no padding in collapsed mode for icon centering
+        layout.setContentsMargins(*margins_expanded if self.sidebar_expanded else margins_collapsed)
+        layout.setSpacing(10)
 
         # Icon label: width depends on sidebar state
         # In collapsed mode (76px rail), icon fills the width for centered display
@@ -1137,7 +1141,7 @@ class DashboardScreen(QMainWindow):
         if hasattr(self, 'ver_lbl'):
             self.ver_lbl.setText(f"v{APP_VERSION}  ·  Offline")
 
-        # Resize icons to natural width (24px) and show all nav labels
+        # Resize icons to natural width (24px), show all nav labels, and update button layout margins
         for btn in self._nav_buttons:
             icon_label = btn._icon_label
             if icon_label:
@@ -1145,6 +1149,9 @@ class DashboardScreen(QMainWindow):
             text_label = btn._text_label
             if text_label:
                 text_label.setVisible(True)
+            # Update button layout margins to expanded mode (16px left, 12px right, 0 top/bottom)
+            if btn.layout():
+                btn.layout().setContentsMargins(16, 0, 12, 0)
 
     def _collapse_sidebar(self):
         """Collapse sidebar to show only icons"""
@@ -1163,7 +1170,7 @@ class DashboardScreen(QMainWindow):
         if hasattr(self, 'ver_lbl'):
             self.ver_lbl.setText(f"v{APP_VERSION}")
 
-        # Resize icons to fill rail (76px) and hide all nav labels
+        # Resize icons to fill rail (76px), hide all nav labels, and update button layout margins
         for btn in self._nav_buttons:
             icon_label = btn._icon_label
             if icon_label:
@@ -1171,3 +1178,6 @@ class DashboardScreen(QMainWindow):
             text_label = btn._text_label
             if text_label:
                 text_label.setVisible(False)
+            # Update button layout margins to collapsed mode (no padding, 0 spacing on all sides)
+            if btn.layout():
+                btn.layout().setContentsMargins(0, 0, 0, 0)
