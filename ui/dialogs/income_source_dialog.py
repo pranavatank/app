@@ -8,7 +8,7 @@ import re
 
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
-    QLineEdit, QComboBox, QTextEdit, QPushButton, QFormLayout, QFrame
+    QLineEdit, QComboBox, QTextEdit, QPushButton, QFormLayout, QFrame, QScrollArea
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
@@ -29,15 +29,16 @@ class IncomeSourceDialog(QDialog):
         self.source_id = source_id
         self.setWindowTitle("Income Source" if not source_id else "Edit Income Source")
         self.setMinimumWidth(550)
+        self.setMaximumHeight(640)
         self._build_ui()
         if source_id:
             self._load_data()
     
     def _build_ui(self):
         layout = QVBoxLayout(self)
-        layout.setSpacing(16)
+        layout.setSpacing(12)
         layout.setContentsMargins(20, 20, 20, 20)
-        
+
         # Title
         title_row = QHBoxLayout()
         title_row.setSpacing(10)
@@ -48,89 +49,94 @@ class IncomeSourceDialog(QDialog):
         title_row.addWidget(title)
         title_row.addStretch()
         layout.addLayout(title_row)
-        
-        # Form
+
+        # Form wrapped in scroll area
         form_frame = QFrame()
         form_frame.setStyleSheet(Theme.card_style(radius=10, padding=16))
         form_layout = QFormLayout(form_frame)
-        form_layout.setSpacing(12)
-        
+        form_layout.setSpacing(8)
+
         # Source Type
         self.type_combo = QComboBox()
         self.type_combo.addItems(SOURCE_TYPES)
-        self.type_combo.setMinimumHeight(36)
+        self.type_combo.setMinimumHeight(Theme.INPUT_HEIGHT_MD)
         self.type_combo.setAccessibleName("Income source type")
         form_layout.addRow("Source Type:", self.type_combo)
-        
+
         # Source Name
         self.name_input = QLineEdit()
         self.name_input.setPlaceholderText("e.g., ABC Company Ltd")
-        self.name_input.setMinimumHeight(36)
+        self.name_input.setMinimumHeight(Theme.INPUT_HEIGHT_MD)
         self.name_input.setAccessibleName("Income source name")
         form_layout.addRow("Name:*", self.name_input)
-        
+
         # TAN
         self.tan_input = QLineEdit()
         self.tan_input.setPlaceholderText("e.g., ABCD12345E")
-        self.tan_input.setMinimumHeight(36)
+        self.tan_input.setMinimumHeight(Theme.INPUT_HEIGHT_MD)
         self.tan_input.setMaxLength(10)
         self.tan_input.setAccessibleName("Income source TAN")
         form_layout.addRow("TAN:", self.tan_input)
-        
+
         # PAN
         self.pan_input = QLineEdit()
         self.pan_input.setPlaceholderText("e.g., ABCDE1234F")
-        self.pan_input.setMinimumHeight(36)
+        self.pan_input.setMinimumHeight(Theme.INPUT_HEIGHT_MD)
         self.pan_input.setMaxLength(10)
         self.pan_input.setAccessibleName("Income source PAN")
         form_layout.addRow("PAN:", self.pan_input)
-        
+
         # Address
         self.address_input = QTextEdit()
         self.address_input.setPlaceholderText("Full address")
-        self.address_input.setMaximumHeight(80)
+        self.address_input.setMaximumHeight(60)
         self.address_input.setAccessibleName("Income source address")
         form_layout.addRow("Address:", self.address_input)
-        
+
         # Contact Person
         self.contact_input = QLineEdit()
         self.contact_input.setPlaceholderText("Contact person name")
-        self.contact_input.setMinimumHeight(36)
+        self.contact_input.setMinimumHeight(Theme.INPUT_HEIGHT_MD)
         self.contact_input.setAccessibleName("Contact person")
         form_layout.addRow("Contact Person:", self.contact_input)
-        
+
         # Phone
         self.phone_input = QLineEdit()
         self.phone_input.setPlaceholderText("Phone number")
-        self.phone_input.setMinimumHeight(36)
+        self.phone_input.setMinimumHeight(Theme.INPUT_HEIGHT_MD)
         self.phone_input.setAccessibleName("Phone number")
         form_layout.addRow("Phone:", self.phone_input)
-        
+
         # Email
         self.email_input = QLineEdit()
         self.email_input.setPlaceholderText("Email address")
-        self.email_input.setMinimumHeight(36)
+        self.email_input.setMinimumHeight(Theme.INPUT_HEIGHT_MD)
         self.email_input.setAccessibleName("Email address")
         form_layout.addRow("Email:", self.email_input)
-        
+
         # Notes
         self.notes_input = QTextEdit()
         self.notes_input.setPlaceholderText("Additional notes")
-        self.notes_input.setMaximumHeight(80)
+        self.notes_input.setMaximumHeight(60)
         self.notes_input.setAccessibleName("Income source notes")
         form_layout.addRow("Notes:", self.notes_input)
-        
-        layout.addWidget(form_frame)
-        
-        # Buttons
+
+        # Scroll area for form
+        scroll_area = QScrollArea()
+        scroll_area.setWidget(form_frame)
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setStyleSheet(Theme.card_style(radius=10, padding=0))
+        layout.addWidget(scroll_area, 1)  # Take up remaining space
+
+        # Buttons (pinned below scroll area)
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
-        
+
         btn_cancel = Theme.btn("Cancel", "secondary", height=38, min_width=100)
         btn_cancel.setAccessibleName("Cancel income source dialog")
         btn_cancel.clicked.connect(self.reject)
         btn_layout.addWidget(btn_cancel)
-        
+
         btn_save = Theme.btn("Save", "primary", height=38, min_width=100)
         btn_save.setAccessibleName("Save income source")
         btn_save.clicked.connect(self._save)
@@ -146,7 +152,7 @@ class IncomeSourceDialog(QDialog):
         self.setTabOrder(self.email_input, self.notes_input)
         self.setTabOrder(self.notes_input, btn_cancel)
         self.setTabOrder(btn_cancel, btn_save)
-        
+
         layout.addLayout(btn_layout)
     
     def _load_data(self):

@@ -1,0 +1,193 @@
+{
+  "meta": {
+    "document": "Post-Redesign Bugfix Plan — Personal Financial Manager",
+    "created": "2026-09-12",
+    "context": "Follows docs/FRONTEND_REDESIGN_PLAN.json (all 30 tasks executed). This plan captures defects found during a visual + functional review of the redesigned app: screenshots of all 9 screens under offscreen Qt, plus a real end-to-end Statement Import run against a genuine sample PDF (data/PersonalData/Pranav/Statement/Jana - Pranav.pdf) with a temporary test account.",
+    "method": "Each bug below was reproduced and root-caused with a minimal isolated script before being recorded here — none are guesses from reading code alone."
+  },
+
+  "read_this_first": {
+    "rules": [
+      "Run `python -m pytest tests/ -q` after every task. Current baseline (post-redesign, pre-this-plan): 274 passed, 1 skipped, 19 xfailed, 1 pre-existing unrelated failure in tests/test_chart_relocation.py::test_accounts_bank_chart (obsolete assertion — F322 intentionally removed the Accounts bar chart; this test needs updating, see T008).",
+      "After ANY screen or widget edit, construct all 9 screens under all 4 themes (tests/test_screen_render.py already does this — keep it green).",
+      "T001 is the single most important fix in this document: Statement Import currently cannot complete ANY parse (success or failure) without hanging the whole process. This is a pre-existing defect (from commit 2559eb1, predates the redesign pass) that was never caught because no test previously drove a real parse through the full click-to-preview UI path.",
+      "Do not use QMessageBox.critical(), dialog.exec(), or any other modal in a way that blocks headless/offscreen testing — when writing NEW tests for these fixes, monkeypatch QMessageBox.critical and QDialog.exec (see T001's reproduction approach) so tests can run unattended.",
+      "No raw hex colour anywhere in ui/ outside ui/theme/ — keep this invariant when fixing T004/T005."
+    ]
+  },
+
+  "tasks": [
+    {
+      "id": "T001",
+      "severity": "critical",
+      "title": "Statement Import: parse pipeline hangs/crashes on every single parse attempt",
+      "files": ["ui/statement_import_screen_modern.py"],
+      "reproduction": "Built the real DashboardScreen, navigated to Statement Import, selected a person + a freshly created 'Jana Small Finance Bank' account, fed it the real sample PDF data/PersonalData/Pranav/Statement/Jana - Pranav.pdf via _set_selected_file(), then called screen.btn_next.click() and pumped the Qt event loop. The process hung indefinitely (had to be killed). Isolated the exact mechanism with a minimal script (Loader.run() with a fn that returns None, plus an on_done callback that does `txns, debug_info = result`): confirmed on_done is entered, then the process hangs/dies silently with zero traceback output — an unhandled Python exception raised inside a Qt slot invoked via this queued cross-thread signal chain does not print or propagate, it just kills the run.",
+      "root_cause": [
+        "_StatementParseWorker (class at ~line 62) has its own `finished`/`error` pyqtSignal attributes and its run() method does `self.finished.emit((txns, debug_info))` / `self.error.emit(e)` on completion/failure — but nothing anywhere connects to worker.finished or worker.error. Only worker.progress is connected (in _start_statement_parse_worker, ~line 843).",
+        "_StatementParseWorker.run() has NO return statement. It is passed to Loader.run(self, fn=worker.run, ...) (~line 845), whose generic internal _Worker wrapper calls `result = self._fn()` and emits ITS OWN finished(result) signal — so `result` is always None, regardless of whether parsing succeeded, because worker.run() never returns anything.",
+        "The on_parse_done(result) closure (~line 818) immediately does `txns, debug_info = result`, which raises TypeError: cannot unpack non-iterable NoneType object — on EVERY call, success or failure alike.",
+        "Additionally, when parse_statement_with_debug() itself raises inside _StatementParseWorker.run(), the try/except there (~line 91) swallows it and does `self.error.emit(e)` — which, as established, is connected to nothing — so even genuine parse errors never reach on_parse_error either; they get silently converted into the same None-unpack crash."
+      ],
+      "fix": [
+        "In _StatementParseWorker.run(): on success, `return (txns, debug_info)` (this is what Loader.run's wrapper actually needs). On exception, do NOT catch it locally — let it propagate (remove the try/except, or catch-log-then-re-raise) so Loader.run's own internal _Worker.run() try/except (which already correctly routes to the `error` signal → on_error) handles it as designed.",
+        "The worker's own now-provably-dead `finished`/`error`/pyqtSignal declarations and their .emit() calls can be removed entirely (nothing consumes them) — simplifies the class to just a plain callable with a `progress` signal, matching how Loader.run() actually expects `fn` to behave elsewhere in the codebase (check ui/dialogs or other Loader.run() call sites for the established convention and match it exactly).",
+        "Double-check every OTHER Loader.run(...) call site in this same file (there may be more than one — e.g. the import-transactions step) for the identical anti-pattern: a worker class whose run() method emits its own unconnected finished/error signals instead of returning a value / letting exceptions propagate. Fix any duplicates the same way."
+      ],
+      "acceptance": [
+        "Write a new test (tests/test_statement_import_flow.py) that: builds the real DashboardScreen, creates a temporary test account (clean it up in a finally/fixture teardown), navigates to Statement Import, selects person+account, feeds it data/PersonalData/Pranav/Statement/Jana - Pranav.pdf via _set_selected_file(), clicks Parse, pumps the event loop with a timeout (e.g. 15s via QTest.qWait loops), and asserts the screen transitions to the preview step (stack index 1) with exactly 65 parsed transactions (matching tests/test_statement_package.py's pinned Jana row count) and no exception.",
+        "Also test the error path: feed a nonexistent/corrupt file path and assert on_parse_error's QMessageBox.critical is reached (monkeypatch QMessageBox.critical in the test to avoid blocking) rather than a None-unpack crash.",
+        "python -m pytest tests/test_statement_import_flow.py tests/test_ui_threading.py tests/test_screen_render.py -q passes.",
+        "Full suite: python -m pytest tests/ -q shows no new failures."
+      ],
+      "depends_on": []
+    },
+
+    {
+      "id": "T002",
+      "severity": "high",
+      "title": "KpiTile.set_value() silently blanks the tile — breaks every screen that refreshes real KPI data",
+      "files": ["ui/widgets/kpi_tile.py"],
+      "reproduction": "Captured a real screenshot of the Overview screen after DashboardScreen._navigate(0) (which triggers _refresh_kpi_tiles → KpiTile.set_value()): all 5 KPI tiles render as completely empty bordered boxes with zero visible text. Read kpi_tile.py: set_value() calls self._clear_layout() (which takes widgets out of the QVBoxLayout via takeAt(0) + deleteLater(), not immediate deletion) then calls self._build_ui() again, which does `layout = QVBoxLayout(self)` — but `self` (the QFrame) already has a layout from __init__'s original _build_ui() call. Qt refuses to install a second top-level layout on a widget that already has one (this only warns, it does not raise), so the newly created label/value widgets get added to an orphaned QVBoxLayout object that is never actually attached to the visible widget tree — nothing renders.",
+      "why_income_screen_looked_fine_in_the_screenshot": "Income & Expectations' KpiTile instances use the identical set_value() and have the identical bug — they simply had not had set_value() called yet at the moment the screenshot was taken (refresh() is wired to top-bar signal changes, which the review script never triggered after construction), so the screenshot only showed each tile's original constructor state. This is not evidence the bug is Overview-specific — it is universal to every consumer of KpiTile.set_value(), currently: ui/dashboard_screen.py and ui/income_management_screen.py.",
+      "fix": [
+        "Refactor KpiTile so the layout is built exactly ONCE in __init__/_build_ui(), and set_value() only mutates the EXISTING child widgets in place instead of tearing down and rebuilding the layout. Concretely: store self._label_lbl, self._value_lbl, and (if present) self._delta_lbl / self._sparkline_widget as instance attributes when first built. set_value() should then: update self._value_lbl.setText(self._format_value()) and its stylesheet/color by sign; if delta changes from None to a value or vice versa, either keep a persistently-created (but hidden/shown) delta label from the start and just toggle .setVisible()/update its text, rather than conditionally creating/destroying it; same approach for the optional sparkline widget (create it once, hidden if no data, update its data + visibility on set_value()).",
+        "Do not call QVBoxLayout(self) more than once on the same widget instance anywhere in this file.",
+        "Keep the public API (constructor signature, set_value(value, delta=None, is_currency=None) signature) unchanged so existing call sites in dashboard_screen.py and income_management_screen.py need no changes."
+      ],
+      "acceptance": [
+        "Add a test tests/test_kpi_tile.py: construct a KpiTile, call set_value() 2-3 times with different values/signs/delta combinations, and after each call assert the tile's visible QLabel(s) (found via findChildren or the stored attribute) actually show the expected text — i.e. assert the tile has a non-empty rendered value both immediately after construction AND after set_value() is called at least once.",
+        "Re-run the offscreen screenshot capture (or an equivalent programmatic check that reads QLabel.text() from within a KpiTile after a real _refresh_kpi_tiles() call) on the Overview screen and confirm all 5 tiles show non-empty label+value text.",
+        "python -m pytest tests/test_kpi_tile.py tests/test_dashboard_lazy.py tests/test_screen_render.py -q passes."
+      ],
+      "depends_on": []
+    },
+
+    {
+      "id": "T003",
+      "severity": "high",
+      "title": "Fixed Deposits table always shows '—' for Expected/Actual Interest even when interest has been calculated",
+      "files": ["ui/fixed_deposits_screen.py", "models/fixed_deposit.py", "engines/interest_engine.py"],
+      "reproduction": "Queried the live DB directly: FixedDeposit row for fd_id=1 has expected_interest_amount=None and actual_interest_amount=None, while the FDInterestRecord table has 6 real rows for that same fd_id (from FY2025-26 Q1-Q4 plus FY2026-27 Q1 plus a manual override row) totalling real interest_earned values (9650.59, 9951.24, 10151.90, 10131.47, 114.80, 90000.00). ui/fixed_deposits_screen.py reads fd.get('expected_interest_amount') / fd.get('actual_interest_amount') directly from the FixedDeposit row (lines ~323, ~328) — a column that is never populated or synced from FDInterestRecord by the interest-allocation engine. F201 (prior task) made allocate_fd_interest_to_fy() create FDInterestRecord rows reliably, but nothing rolls that data back up into the FixedDeposit table's own summary columns that the UI actually displays.",
+      "fix": [
+        "Read engines/interest_engine.py's allocate_fd_interest_to_fy() in full. After it creates/replaces the FDInterestRecord rows for an FD, add a step that computes the rollup (sum of interest_earned across FDInterestRecord for that fd_id, or however 'expected' vs 'actual' should be distinguished — check if there's already a concept of expected-vs-actual in the interest engine, e.g. based on whether the FD has matured or a linked_transaction_id/actual redemption exists) and writes it back to FixedDeposit.expected_interest_amount and/or actual_interest_amount via a model update call (check models/fixed_deposit.py for an existing update helper, e.g. update_fd(), or add a small dedicated one like update_fd_interest_summary(fd_id, expected, actual) in models/fixed_deposit.py).",
+        "Ensure this rollup runs for EVERY code path that calls allocate_fd_interest_to_fy() (the FD dialog, the FD screen's recalculate action, and — since F201 — add_fd()/update_fd()/add_fd_from_statement() themselves), so the invariant 'FDInterestRecord rows exist implies FixedDeposit summary columns are non-null' always holds.",
+        "Do not change the FDInterestRecord schema or the per-quarter records — only add the rollup write-back."
+      ],
+      "acceptance": [
+        "Add/extend a test in tests/test_interest.py: create an FD via models.fixed_deposit.add_fd() with complete maturity details (as an existing F201 test already does), then assert get_fd(fd_id)['expected_interest_amount'] (or equivalent read function) is non-null and matches the sum of the created FDInterestRecord rows for that FD.",
+        "Manually verify against the existing seeded fd_id=1 data: after running the fix plus a 'Recalculate Selected' pass (or whatever triggers the rollup for pre-existing FDs), the Fixed Deposits screen's Expected/Actual Interest columns for that row are populated, not '—'.",
+        "python -m pytest tests/test_interest.py tests/test_interest_baseline.py tests/test_screen_render.py -q passes."
+      ],
+      "depends_on": []
+    },
+
+    {
+      "id": "T004",
+      "severity": "high",
+      "title": "'Delete Selected' (destructive variant) renders as a solid filled red button instead of an outlined one",
+      "files": ["ui/theme/theme.py"],
+      "reproduction": "Screenshot of the Fixed Deposits screen shows 'Delete Selected' with a solid red fill, identical visual weight to a filled primary button — this directly contradicts the button-hierarchy contract established earlier in the redesign: 'DESTRUCTIVE (red outline; filled red ONLY inside a confirmation modal).'",
+      "fix": [
+        "Find the 'destructive' variant's QSS/style definition in Theme.btn() (ui/theme/theme.py). It is currently defined with a solid background-color fill. Change its DEFAULT (outside-a-modal) styling to: transparent/surface background, a red border (2px), red text — matching the SECONDARY button's outline treatment but in the danger/red hue instead of the neutral hue.",
+        "Add a way for a destructive button used INSIDE a confirmation modal to still render filled (e.g. an optional parameter to Theme.btn(), such as `filled=True`, or a distinct variant name like 'destructive-filled', used only by confirmation-dialog code) — grep the codebase for any existing delete-confirmation modals to see if they currently use the 'destructive' variant and would need updating to the new filled variant so THEY keep their filled-red emphasis while the OUTSIDE-of-modal 'Delete Selected' style becomes outlined.",
+        "Re-check tests/test_button_hierarchy.py's test_no_conflicting_fills_on_same_screen and any color/contrast assertions — the destructive text/border color must still pass tests/test_theme_contrast.py."
+      ],
+      "acceptance": [
+        "Fixed Deposits' 'Delete Selected' button renders as a red-outlined button (not filled) in a fresh screenshot.",
+        "Any confirmation-modal delete button (if one exists) still renders filled/high-emphasis.",
+        "python -m pytest tests/test_theme_contrast.py tests/test_theme_qss.py tests/test_button_hierarchy.py -q passes."
+      ],
+      "depends_on": []
+    },
+
+    {
+      "id": "T005",
+      "severity": "high",
+      "title": "DropZone's dashed border cascades onto its own child labels, rendering as 3 nested dashed boxes",
+      "files": ["ui/widgets/drop_zone.py"],
+      "reproduction": "Screenshots of both Statement Import and Tax Documents show each DropZone rendering as THREE separate dashed-border boxes stacked vertically (one around the title label, one around the subtitle label, one around the Browse link) instead of a single unified dashed drop-zone panel. Root cause: _update_style() in drop_zone.py sets a stylesheet with the bare selector `QWidget { border: 2px dashed ...; background-color: ...; border-radius: ...; }` on the DropZone instance. Qt stylesheets cascade to ALL descendant widgets matching the same selector unless explicitly scoped — since QLabel children are QWidget subclasses and no scoping/objectName is used, every child label also receives the dashed border and background.",
+      "fix": [
+        "Give the DropZone's top-level widget a unique objectName (e.g. self.setObjectName('dropZoneRoot') in __init__ or _build_ui()).",
+        "Change the QSS selector in _update_style() from bare `QWidget { ... }` to the scoped form `QWidget#dropZoneRoot { ... }` so the dashed border/background only applies to the DropZone itself, not its children.",
+        "Verify the hover pseudo-state rule (`QWidget:hover { ... }`) is scoped the same way (`QWidget#dropZoneRoot:hover { ... }`), otherwise hovering over a child label would also incorrectly restyle just that child.",
+        "After the fix, visually confirm (via a fresh screenshot) that each DropZone renders as ONE dashed box containing plain (unbordered) icon/title/subtitle/browse-link content."
+      ],
+      "acceptance": [
+        "A fresh screenshot of Statement Import's selection screen and Tax Documents' three drop zones shows exactly one dashed border per drop zone, not three.",
+        "python -c \"import ui.widgets.drop_zone, ui.statement_import_screen_modern, ui.tax_documents_screen\" succeeds.",
+        "python -m pytest tests/test_screen_render.py -q passes."
+      ],
+      "depends_on": []
+    },
+
+    {
+      "id": "T006",
+      "severity": "medium",
+      "title": "Fixed Deposits table opens horizontally scrolled, clipping the Person/Bank column headers",
+      "files": ["ui/fixed_deposits_screen.py"],
+      "reproduction": "A fresh screenshot of the Fixed Deposits screen (freshly constructed, never manually scrolled) shows the table's horizontal scroll position already offset — the Person and Bank column headers are visibly clipped ('rso', 'an' instead of 'Person', 'Bank') with the checkbox/select column pushed off the left edge.",
+      "fix": [
+        "After populating the table (wherever the FD rows are loaded/added, likely in a _load_fds() or _populate_table() method), explicitly reset the horizontal scroll position to the start: call self.table.horizontalScrollBar().setValue(0) (or the ExcelTable-equivalent accessor) after the data load / column-sizing logic (from F312) runs, since resizing/adding columns can otherwise leave an inherited or auto-computed scroll offset.",
+        "If the root cause is instead that the sum of column widths exceeds the viewport and Qt is auto-scrolling to keep some previously-focused/selected cell in view, ensure no cell gets programmatically selected/focused during initial population in a way that forces an unwanted scroll."
+      ],
+      "acceptance": [
+        "A fresh screenshot of the Fixed Deposits screen (no user interaction) shows the table starting at horizontal scroll position 0, with Person/Bank headers fully visible.",
+        "python -m pytest tests/test_screen_render.py tests/test_excel_table_parity.py -q passes."
+      ],
+      "depends_on": ["T003"]
+    },
+
+    {
+      "id": "T007",
+      "severity": "medium",
+      "title": "Unstyled scrollbar overlaps card content on some screens",
+      "files": ["ui/theme/theme.py", "ui/income_management_screen.py"],
+      "reproduction": "A fresh screenshot of the Income & Expectations screen shows a thick, unstyled grey/blue vertical bar running down the right edge of the 'Expected vs Actual by Month' chart card, visually overlapping the card's border. The same right-edge position shows a fainter grey bar on other screens (e.g. Settings), suggesting a page-level QScrollArea's default (unstyled) scrollbar is being used inconsistently — sometimes it renders over content instead of being confined to a proper track outside/beside card borders.",
+      "fix": [
+        "Check ui/theme/theme.py's QSS for a QScrollBar:vertical / QScrollBar:horizontal rule — if one exists, confirm it's actually being applied to whatever QScrollArea wraps this screen's content (some screens may use a raw QScrollArea without inheriting the app-wide QSS if it's a child of a widget with its own stylesheet override, since Qt stylesheets don't always cascade past an intermediate widget with setStyleSheet() called on it).",
+        "If no scrollbar QSS exists yet, add one: a slim (8-10px), themed, rounded scrollbar track+handle consistent with the app's radius scale, applied globally so every QScrollArea in the app inherits it.",
+        "Specifically check ui/income_management_screen.py's chart panel container for whether it wraps its chart in a QScrollArea with a fixed/wrong size policy that's forcing a scrollbar to appear where one shouldn't be needed at all (i.e. the real fix might be 'this panel shouldn't need to scroll,' not just 'style the scrollbar nicer') — read the layout code around the 'Expected vs Actual by Month' panel before choosing between (a) eliminating the unwanted scrollbar entirely by fixing the panel's sizing, or (b) styling it properly if scrolling is actually appropriate there."
+      ],
+      "acceptance": [
+        "A fresh screenshot of Income & Expectations shows no scrollbar overlapping the chart card content — either the scrollbar is gone (because the panel no longer needs to scroll) or it renders as a themed, non-overlapping slim bar.",
+        "python -m pytest tests/test_theme_qss.py tests/test_screen_render.py -q passes."
+      ],
+      "depends_on": []
+    },
+
+    {
+      "id": "T008",
+      "severity": "low",
+      "title": "Account labels show a trailing empty '()' when the masked account number is blank",
+      "files": ["ui/statement_import_screen_modern.py"],
+      "reproduction": "Statement Import's Account dropdown and the 'Account:' field on the selection screen both show 'Test Bank — Savings ()' / 'Jana Small Finance Bank — Savings ()' — an empty pair of parentheses — for accounts whose account_number_masked is blank/None.",
+      "fix": [
+        "Find the account label formatting logic in ui/statement_import_screen_modern.py (search for the f-string building '{bank} — {type} ({masked})' pattern, e.g. around _on_person_changed's account_combo.addItem call). Change it to omit the parenthesised segment entirely when account_number_masked is falsy, e.g. build the label conditionally: `f\"{bank} — {type}\" + (f\" ({masked})\" if masked else \"\")`.",
+        "Grep the rest of ui/ for the same 'Bank — Type (Number)' formatting pattern (e.g. ui/manage_data_screen.py, ui/dialogs/account_dialog.py) and apply the identical fix anywhere it's duplicated, so account labels are consistent app-wide."
+      ],
+      "acceptance": [
+        "No account label anywhere in the app shows a trailing empty '()' for accounts with a blank masked account number.",
+        "python -m pytest tests/test_screen_render.py -q passes."
+      ],
+      "depends_on": []
+    },
+
+    {
+      "id": "T009",
+      "severity": "low",
+      "title": "Update the obsolete test_accounts_bank_chart assertion left over from F322's intentional chart removal",
+      "files": ["tests/test_chart_relocation.py"],
+      "reproduction": "Full suite run shows exactly 1 failure: tests/test_chart_relocation.py::test_accounts_bank_chart, which asserts the Accounts screen HAS a bank_chart attribute — but F322 (an earlier, intentional redesign task) deliberately removed that duplicate chart from the Accounts screen. This is not a regression, it's a stale test that needs updating to match the new, intended behavior.",
+      "fix": [
+        "Read the failing test and update its assertion to reflect that Accounts screen no longer has a bar chart (e.g. assert `not hasattr(screen, 'bank_chart')` or remove the test if it no longer has a meaningful purpose, whichever better matches the surrounding file's conventions)."
+      ],
+      "acceptance": ["python -m pytest tests/test_chart_relocation.py -q passes with 0 failures."],
+      "depends_on": []
+    }
+  ],
+
+  "recommended_sequence": ["T001", "T002", "T004", "T005", "T003", "T006", "T007", "T008", "T009"],
+
+  "sequence_rationale": "T001 first — it's a total blocker on the app's core workflow and touches only statement_import_screen_modern.py. T002 (KpiTile) and T004 (destructive button) and T005 (DropZone) are independent, high-severity, single-file fixes — run in parallel. T003 (FD interest rollup) touches the interest engine and should follow after the isolated fixes land, since T006 (FD table scroll) depends on seeing T003's data actually populated to verify the full row renders correctly. T007/T008/T009 are independent low/medium polish items that can run any time, in parallel with everything else, since none share a file with T001-T006."
+}

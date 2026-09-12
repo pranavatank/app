@@ -369,7 +369,7 @@ class DashboardScreen(QMainWindow):
             self._update_sidebar_toggle_btn()
 
         # Refresh all SummaryPanel cards (left-accent + card border are inline)
-        for panel_name in ('panel_financial', 'panel_bank', 'panel_interest', 'panel_tax'):
+        for panel_name in ('panel_interest', 'panel_tax'):
             panel = getattr(self, panel_name, None)
             if panel is not None:
                 panel.refresh_theme()
@@ -711,7 +711,7 @@ class DashboardScreen(QMainWindow):
         charts_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         outer.addWidget(charts_container)
 
-        # Summary panels (compact)
+        # Summary panels (compact) - Interest & Tax only
         panels_container = QWidget()
         panels_layout = QVBoxLayout(panels_container)
         panels_layout.setContentsMargins(0, 0, 0, 0)
@@ -721,22 +721,9 @@ class DashboardScreen(QMainWindow):
         panels_header.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
         panels_layout.addWidget(panels_header)
 
-        # 2-column layout for summary panels
+        # 2-column layout for interest & tax panels
         panels_grid = QGridLayout()
         panels_grid.setSpacing(16)
-
-        self.panel_financial = SummaryPanel("Financial Summary", "chart_overview", accent=Theme.PRIMARY)
-        self.panel_financial.add_stat("balance", "Total Balance", "₹ —", value_size=14)
-        self.panel_financial.add_stat("income", "Total Income (FY)", "₹ —", value_color_role="SUCCESS")
-        self.panel_financial.add_stat("expense", "Total Expense (FY)", "₹ —", value_color_role="DANGER")
-        self.panel_financial.add_divider()
-        self.panel_financial.add_stat("savings", "Net Savings", "₹ —", bold=True)
-        self.panel_financial.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        panels_grid.addWidget(self.panel_financial, 0, 0)
-
-        self.panel_bank = SummaryPanel("Bank Accounts", "bank", accent=Theme.TEAL, scrollable=True)
-        self.panel_bank.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        panels_grid.addWidget(self.panel_bank, 0, 1)
 
         self.panel_interest = SummaryPanel("Interest Summary", "trend", accent=Theme.SUCCESS)
         self.panel_interest.add_stat("fd_curr", "FD Interest (Current FY)", "₹ —")
@@ -745,7 +732,7 @@ class DashboardScreen(QMainWindow):
         self.panel_interest.add_stat("sav_curr", "Savings Interest (FY)", "₹ —")
         self.panel_interest.add_stat("total_int", "Total Interest Income", "₹ —", bold=True)
         self.panel_interest.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        panels_grid.addWidget(self.panel_interest, 1, 0)
+        panels_grid.addWidget(self.panel_interest, 0, 0)
 
         self.panel_tax = SummaryPanel("Tax Summary", "tax", accent=Theme.WARNING)
         self.panel_tax.add_stat("gross", "Gross Total Income", "₹ —")
@@ -753,7 +740,7 @@ class DashboardScreen(QMainWindow):
         self.panel_tax.add_divider()
         self.panel_tax.add_stat("tax_new", "Tax (New Regime)", "₹ —", bold=True)
         self.panel_tax.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        panels_grid.addWidget(self.panel_tax, 1, 1)
+        panels_grid.addWidget(self.panel_tax, 0, 1)
 
         panels_grid.setColumnStretch(0, 1)
         panels_grid.setColumnStretch(1, 1)
@@ -855,8 +842,6 @@ class DashboardScreen(QMainWindow):
         aid = session.selected_account_id
         self.banner_fy_lbl.setText(f"FY {fy}  ·  AY {get_assessment_year(fy)}")
         self._refresh_kpi_tiles(fy, pid, aid)
-        self._refresh_financial_panel(fy, pid, aid)
-        self._refresh_bank_panel(pid)
         self._refresh_interest_panel(fy, pid)
         self._refresh_tax_panel(fy, pid)
         self._refresh_overview_charts(fy, pid, aid)
@@ -952,32 +937,6 @@ class DashboardScreen(QMainWindow):
         except Exception as e:
             self.chart_income_expense.show_empty_state(f"Error loading chart: {type(e).__name__}")
             self.chart_distribution.show_empty_state("Unable to load data")
-
-    def _refresh_financial_panel(self, fy, pid, aid):
-        if aid is not None:
-            from models.bank_account import get_account
-            acc = get_account(aid)
-            balance = acc["current_balance"] if acc else 0.0
-        else:
-            balance = get_total_balance(person_id=pid)
-        income  = get_income_total(person_id=pid,  financial_year=fy)
-        expense = get_expense_total(person_id=pid, financial_year=fy)
-        net     = income - expense
-        self.panel_financial.update_stat("balance", session.mask(balance))
-        self.panel_financial.update_stat("income",  session.mask(income))
-        self.panel_financial.update_stat("expense", session.mask(expense))
-        self.panel_financial.update_stat("savings", session.mask(net))
-
-    def _refresh_bank_panel(self, pid):
-        self.panel_bank.clear_stats()
-        accounts = get_accounts_for_person(pid) if pid else get_all_accounts()
-        if not accounts:
-            return
-        for acc in accounts:
-            self.panel_bank.add_stat(
-                f"acc_{acc['account_id']}",
-                f"{acc.get('bank_display_name', acc['bank_name'])}  ·  {acc['account_type']}",
-                session.mask(acc["current_balance"]))
 
     def _refresh_interest_panel(self, fy, pid):
         next_start = int(fy.split("-")[0]) + 1

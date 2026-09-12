@@ -22,7 +22,8 @@ from ui.icons import set_btn_icon
 from ui.widgets.loader import Loader
 from ui.widgets.states import EmptyState
 from ui.widgets.toast_utils import show_success, show_warning, show_danger
-from ui.widgets.excel_table import ExcelTableWithStats
+from ui.widgets.excel_table import ExcelTableWithStats, ExcelTable
+from ui.widgets.drop_zone import DropZone
 from core.session import session
 from engines.taxdocs.form26as import parse_form26as_pdf
 from engines.taxdocs.ais import parse_ais_pdf
@@ -99,76 +100,6 @@ def _extract_financial_year(pdf_data: dict) -> str:
     return "—"
 
 
-class _FileDropZone(QFrame):
-    """Reusable file drop zone for a single document type."""
-    file_selected = pyqtSignal(str)  # path
-
-    def __init__(self, title: str, doc_type: str, parent=None):
-        super().__init__(parent)
-        self.doc_type = doc_type
-        self.pdf_data = None
-        self.pdf_path = None
-        self.setObjectName("fileDropZone")
-        self._build_ui(title)
-
-    def _build_ui(self, title: str):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 12, 16, 12)
-        layout.setSpacing(8)
-
-        # Title
-        title_lbl = QLabel(title)
-        title_lbl.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
-        title_lbl.setProperty("textrole", "subtitle-md")
-        layout.addWidget(title_lbl)
-
-        # Status
-        self.status_lbl = QLabel("No file uploaded")
-        self.status_lbl.setProperty("textrole", "secondary-sm")
-        layout.addWidget(self.status_lbl)
-
-        # FY
-        self.fy_lbl = QLabel("")
-        self.fy_lbl.setProperty("textrole", "muted-sm")
-        self.fy_lbl.setVisible(False)
-        layout.addWidget(self.fy_lbl)
-
-        # Button
-        self.btn_upload = Theme.btn("  Select File", "secondary", height=32, min_width=120)
-        set_btn_icon(self.btn_upload, "upload")
-        self.btn_upload.setAccessibleName(f"Select {title} file")
-        self.btn_upload.setAccessibleDescription(f"Open a file picker to select a {self.doc_type} PDF file to upload.")
-        self.btn_upload.clicked.connect(self._pick_file)
-        layout.addWidget(self.btn_upload)
-
-    def _pick_file(self):
-        """Open file picker."""
-        path, _ = QFileDialog.getOpenFileName(
-            self,
-            f"Select {self.doc_type} PDF",
-            "",
-            "PDF files (*.pdf)"
-        )
-        if path:
-            self.file_selected.emit(path)
-
-    def set_status(self, status: str, fy: str = "", error: bool = False):
-        """Update status display."""
-        self.status_lbl.setText(status)
-        if error:
-            self.status_lbl.setProperty("textrole", "danger-md")
-        else:
-            self.status_lbl.setProperty("textrole", "secondary-sm")
-        self.status_lbl.style().unpolish(self.status_lbl)
-        self.status_lbl.style().polish(self.status_lbl)
-
-        if fy:
-            self.fy_lbl.setText(fy)
-            self.fy_lbl.setVisible(True)
-        else:
-            self.fy_lbl.setVisible(False)
-
-
 class TaxDocumentsScreen(QWidget):
     """Screen for uploading and reconciling tax documents."""
 
@@ -197,17 +128,38 @@ class TaxDocumentsScreen(QWidget):
         upload_layout.setContentsMargins(0, 0, 0, 0)
         upload_layout.setSpacing(16)
 
-        self.zone_26as = _FileDropZone("Form 26AS", "26AS")
-        self.zone_ais = _FileDropZone("AIS", "AIS")
-        self.zone_tis = _FileDropZone("TIS", "TIS")
+        self.zone_26as = DropZone(
+            title="Form 26AS",
+            subtitle="Drag PDF here or click to browse",
+            accepted_extensions=[".pdf"],
+            filter_text="PDF files (*.pdf)",
+            parent=self
+        )
+        self.zone_26as.setMinimumHeight(120)
+        self.zone_ais = DropZone(
+            title="AIS",
+            subtitle="Drag PDF here or click to browse",
+            accepted_extensions=[".pdf"],
+            filter_text="PDF files (*.pdf)",
+            parent=self
+        )
+        self.zone_ais.setMinimumHeight(120)
+        self.zone_tis = DropZone(
+            title="TIS",
+            subtitle="Drag PDF here or click to browse",
+            accepted_extensions=[".pdf"],
+            filter_text="PDF files (*.pdf)",
+            parent=self
+        )
+        self.zone_tis.setMinimumHeight(120)
 
         upload_layout.addWidget(self.zone_26as)
         upload_layout.addWidget(self.zone_ais)
         upload_layout.addWidget(self.zone_tis)
 
-        self.zone_26as.file_selected.connect(self._on_26as_selected)
-        self.zone_ais.file_selected.connect(self._on_ais_selected)
-        self.zone_tis.file_selected.connect(self._on_tis_selected)
+        self.zone_26as.fileSelected.connect(self._on_26as_selected)
+        self.zone_ais.fileSelected.connect(self._on_ais_selected)
+        self.zone_tis.fileSelected.connect(self._on_tis_selected)
 
         layout.addWidget(upload_frame)
 
@@ -227,10 +179,8 @@ class TaxDocumentsScreen(QWidget):
         self.empty_state = EmptyState(
             icon_name="document",
             headline="No tax documents yet",
-            explanation="Upload Form 26AS, AIS, and TIS PDFs to view reconciliation.",
-            action_text="Upload Files"
+            explanation="Upload Form 26AS, AIS, and TIS PDFs to view reconciliation."
         )
-        self.empty_state.action_clicked.connect(self.zone_26as._pick_file)
         inner_layout.addWidget(self.empty_state)
 
         # Position table (hidden until data loaded)
@@ -266,20 +216,17 @@ class TaxDocumentsScreen(QWidget):
         title.setProperty("textrole", "subtitle-md")
         layout.addWidget(title)
 
-        # Table
-        self.position_table = QTableWidget()
-        self.position_table.setColumnCount(6)
-        self.position_table.setHorizontalHeaderLabels([
+        # Table (read-only)
+        self.position_table_widget = ExcelTableWithStats(show_checkboxes=False, read_only=True)
+        self.position_table = self.position_table_widget.table
+        self.position_table.setHeaders([
             "Category", "TIS", "AIS", "26AS", "In App", "Status"
         ])
         self.position_table.setAccessibleName("Reconciled financial position table")
         self.position_table.setAccessibleDescription("Shows the comparison of financial data across TIS, AIS, Form 26AS, and in-app records.")
-        self.position_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
-        self.position_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.position_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
-        layout.addWidget(self.position_table)
+        self.position_table.setSortingEnabled(False)
+        layout.addWidget(self.position_table_widget, stretch=1)
 
-        frame.setMaximumHeight(400)
         return frame
 
     def _build_non_income_frame(self) -> QFrame:
@@ -300,16 +247,14 @@ class TaxDocumentsScreen(QWidget):
         layout.addWidget(title)
         layout.addWidget(subtitle)
 
-        # Table
-        self.non_income_table = QTableWidget()
-        self.non_income_table.setColumnCount(2)
-        self.non_income_table.setHorizontalHeaderLabels(["Category", "Amount"])
+        # Table (read-only)
+        self.non_income_table_widget = ExcelTableWithStats(show_checkboxes=False, read_only=True)
+        self.non_income_table = self.non_income_table_widget.table
+        self.non_income_table.setHeaders(["Category", "Amount"])
         self.non_income_table.setAccessibleName("Non-income items disclosure table")
         self.non_income_table.setAccessibleDescription("Lists transactions that are disclosed but not counted as taxable income.")
-        self.non_income_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.non_income_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.non_income_table.setMaximumHeight(200)
-        layout.addWidget(self.non_income_table)
+        self.non_income_table.setSortingEnabled(False)
+        layout.addWidget(self.non_income_table_widget, stretch=1)
 
         return frame
 
@@ -331,18 +276,16 @@ class TaxDocumentsScreen(QWidget):
         layout.addWidget(title)
         layout.addWidget(subtitle)
 
-        # Table
-        self.fd_table = QTableWidget()
-        self.fd_table.setColumnCount(4)
-        self.fd_table.setHorizontalHeaderLabels([
+        # Table (read-only)
+        self.fd_table_widget = ExcelTableWithStats(show_checkboxes=False, read_only=True)
+        self.fd_table = self.fd_table_widget.table
+        self.fd_table.setHeaders([
             "Account Number", "AIS Amount", "FD Record", "Status"
         ])
         self.fd_table.setAccessibleName("Fixed deposit reconciliation table")
         self.fd_table.setAccessibleDescription("Shows matching between AIS account numbers and Fixed Deposit records.")
-        self.fd_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.fd_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.fd_table.setMaximumHeight(300)
-        layout.addWidget(self.fd_table)
+        self.fd_table.setSortingEnabled(False)
+        layout.addWidget(self.fd_table_widget, stretch=1)
 
         return frame
 
@@ -527,15 +470,8 @@ class TaxDocumentsScreen(QWidget):
 
     def _add_position_row(self, category: str, tis: str, ais: str, form26as: str, in_app: str, status: str):
         """Add a row to the position table."""
-        row = self.position_table.rowCount()
-        self.position_table.insertRow(row)
-
-        self.position_table.setItem(row, 0, QTableWidgetItem(category))
-        self.position_table.setItem(row, 1, QTableWidgetItem(tis))
-        self.position_table.setItem(row, 2, QTableWidgetItem(ais))
-        self.position_table.setItem(row, 3, QTableWidgetItem(form26as))
-        self.position_table.setItem(row, 4, QTableWidgetItem(in_app))
-        self.position_table.setItem(row, 5, QTableWidgetItem(status))
+        row_data = [category, tis, ais, form26as, in_app, status]
+        self.position_table.addDataRow(row_data)
 
     def _render_non_income_table(self):
         """Render the non-income items table."""
@@ -548,9 +484,6 @@ class TaxDocumentsScreen(QWidget):
 
         for category, amount in sorted(non_income.items()):
             if amount > 0:
-                row = self.non_income_table.rowCount()
-                self.non_income_table.insertRow(row)
-
                 # Format category name
                 category_display = category.replace('_', ' ').title()
                 if category == 'purchase_of_time_deposits':
@@ -558,8 +491,8 @@ class TaxDocumentsScreen(QWidget):
                 elif category.startswith('SFT-'):
                     category_display = f"{category} Disclosure"
 
-                self.non_income_table.setItem(row, 0, QTableWidgetItem(category_display))
-                self.non_income_table.setItem(row, 1, QTableWidgetItem(_format_inr(amount)))
+                row_data = [category_display, _format_inr(amount)]
+                self.non_income_table.addDataRow(row_data)
 
     def _render_fd_table(self):
         """Render the FD reconciliation table."""
@@ -573,26 +506,20 @@ class TaxDocumentsScreen(QWidget):
 
         # Matched FDs
         for account_no, match_data in sorted(fd_matches.items()):
-            row = self.fd_table.rowCount()
-            self.fd_table.insertRow(row)
-
             fd_id = match_data.get('fd_id', '—')
             ais_amount = match_data.get('ais_amount', 0)
 
-            self.fd_table.setItem(row, 0, QTableWidgetItem(account_no))
-            self.fd_table.setItem(row, 1, QTableWidgetItem(_format_inr(ais_amount)))
-            self.fd_table.setItem(row, 2, QTableWidgetItem(str(fd_id)))
-            self.fd_table.setItem(row, 3, QTableWidgetItem("✓ Matched"))
+            row_data = [account_no, _format_inr(ais_amount), str(fd_id), "✓ Matched"]
+            self.fd_table.addDataRow(row_data)
 
         # Unmatched FDs
         for account_no in sorted(fd_not_in_app):
-            row = self.fd_table.rowCount()
-            self.fd_table.insertRow(row)
+            row_data = [account_no, "—", "—", "⚠ Not in App"]
+            self.fd_table.addDataRow(row_data)
 
-            self.fd_table.setItem(row, 0, QTableWidgetItem(account_no))
-            self.fd_table.setItem(row, 1, QTableWidgetItem("—"))
-            self.fd_table.setItem(row, 2, QTableWidgetItem("—"))
-            status_item = QTableWidgetItem("⚠ Not in App")
-            status_item.setForeground(QColor(Theme.WARNING))
-            self.fd_table.setItem(row, 3, status_item)
+            # Apply warning color to status
+            row = self.fd_table.rowCount() - 1
+            status_item = self.fd_table.item(row, 3)
+            if status_item:
+                status_item.setForeground(QColor(Theme.WARNING))
 

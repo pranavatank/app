@@ -133,7 +133,7 @@ class TestStatementParsingThreading:
 
         # Enable controls initially
         screen.btn_next.setEnabled(True)
-        screen.btn_browse.setEnabled(True)
+        screen._drop_zone.setEnabled(True)
         screen.file_type_combo.setEnabled(True)
 
         def mock_parse(*args, **kwargs):
@@ -150,7 +150,7 @@ class TestStatementParsingThreading:
 
             # Verify controls are disabled
             assert not screen.btn_next.isEnabled(), "btn_next should be disabled during parse"
-            assert not screen.btn_browse.isEnabled(), "btn_browse should be disabled during parse"
+            assert not screen._drop_zone.isEnabled(), "_drop_zone should be disabled during parse"
             assert not screen.file_type_combo.isEnabled(), "file_type_combo should be disabled during parse"
 
     def test_controls_reenabled_on_parse_error(self, qapp):
@@ -163,7 +163,7 @@ class TestStatementParsingThreading:
 
         # Disable controls to simulate being in a parse
         screen.btn_next.setEnabled(False)
-        screen.btn_browse.setEnabled(False)
+        screen._drop_zone.setEnabled(False)
         screen.file_type_combo.setEnabled(False)
 
         # Mock the password prompt to return None (user cancels)
@@ -174,7 +174,7 @@ class TestStatementParsingThreading:
 
         # After error handling, controls should be re-enabled
         assert screen.btn_next.isEnabled(), "btn_next should be re-enabled after error"
-        assert screen.btn_browse.isEnabled(), "btn_browse should be re-enabled after error"
+        assert screen._drop_zone.isEnabled(), "_drop_zone should be re-enabled after error"
         assert screen.file_type_combo.isEnabled(), "file_type_combo should be re-enabled after error"
 
 

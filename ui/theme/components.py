@@ -17,6 +17,24 @@ def gradient_v(start: str, end: str) -> str:
     return f"qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 {start},stop:1 {end})"
 
 
+def darken_hex(hex_color: str, factor: float = 0.8) -> str:
+    """Darken a hex color by multiplying RGB channels by factor (0.0-1.0).
+
+    Args:
+        hex_color: 6-digit hex color like "#FFFFFF"
+        factor: Darkening factor (0.8 = 80% of original, effectively 20% darker)
+
+    Returns:
+        Darkened hex color as "#RRGGBB"
+    """
+    h = hex_color.lstrip("#")
+    r, g, b = (int(h[i:i+2], 16) for i in (0, 2, 4))
+    r = int(r * factor)
+    g = int(g * factor)
+    b = int(b * factor)
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
 # ── Shadow ────────────────────────────────────────────────────────────────────
 def make_shadow(blur=18, offset_x=0, offset_y=4, color_rgba=(15, 23, 42, 18)):
     from PyQt6.QtWidgets import QGraphicsDropShadowEffect
@@ -72,8 +90,9 @@ def muted_style(theme, size=12):
     return text_style(theme, color=theme.TEXT_SECONDARY, size=size, weight=400)
 
 
-def section_label_style(theme, size=12):
-    return text_style(theme, color=theme.TEXT_SECONDARY, size=size, weight=600)
+def section_label_style(theme, size=12, accent_color=None):
+    color = accent_color or theme.TEXT_SECONDARY
+    return text_style(theme, color=color, size=size, weight=600)
 
 
 # ── Badge / pill ──────────────────────────────────────────────────────────────
@@ -127,7 +146,7 @@ def group_box_style(theme):
     return f"""
         QGroupBox {{
             border: 1px solid {theme.BORDER};
-            border-radius: 14px;
+            border-radius: {theme.RADIUS_CARD}px;
             margin-top: 18px;
             padding: 16px 16px 12px 16px;
             background-color: {theme.SURFACE};
@@ -262,7 +281,7 @@ def sidebar_nav_normal():
     return f"""
         QPushButton {{
             background: transparent; color: {Theme.SIDEBAR_TEXT};
-            border: none; border-radius: 10px;
+            border: none; border-radius: {Theme.RADIUS_CONTROL}px;
             text-align: left; padding-left: 8px; font-size: 13px;
             margin: 2px 8px;
         }}
@@ -277,7 +296,7 @@ def sidebar_nav_active():
             background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
                 stop:0 {Theme.SIDEBAR_ACTIVE}, stop:1 {Theme.SIDEBAR_HOVER});
             color: white; border: none;
-            border-radius: 10px; text-align: left;
+            border-radius: {Theme.RADIUS_CONTROL}px; text-align: left;
             padding-left: 8px; font-size: 13px; font-weight: 700;
             margin: 2px 8px;
         }}
@@ -288,7 +307,7 @@ def chat_bubble_user(theme):
     return f"""
         QFrame {{
             background: {gradient(theme.PRIMARY_GRADIENT_START, theme.PRIMARY_GRADIENT_END)};
-            border: none; border-radius: 16px;
+            border: none; border-radius: {theme.RADIUS_MODAL}px;
             padding: 12px 16px;
         }}
     """
@@ -299,7 +318,7 @@ def chat_bubble_assistant(theme):
         QFrame {{
             background-color: {theme.SURFACE};
             border: 1px solid {theme.BORDER};
-            border-radius: 16px;
+            border-radius: {theme.RADIUS_MODAL}px;
             padding: 12px 16px;
         }}
     """
@@ -311,7 +330,7 @@ def chat_input_box(theme):
             background-color: {theme.SURFACE};
             color: {theme.TEXT_PRIMARY};
             border: 2px solid {theme.BORDER};
-            border-radius: 12px;
+            border-radius: {theme.RADIUS_CARD}px;
             padding: 12px 16px;
             font-size: 14px;
         }}
@@ -326,7 +345,7 @@ def attachment_chip(theme):
         QFrame {{
             background-color: {theme.SURFACE_ALT};
             border: 1px solid {theme.BORDER};
-            border-radius: 8px;
+            border-radius: {theme.RADIUS_CONTROL}px;
             padding: 6px 10px;
         }}
     """

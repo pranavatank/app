@@ -16,6 +16,7 @@ from dateutil.relativedelta import relativedelta
 
 from ui.widgets.excel_table import ExcelTableWithStats
 from ui.widgets.chart_widget import ChartWidget
+from ui.widgets.section import CollapsibleSection
 from ui.widgets.states import EmptyState
 from ui.widgets.toast_utils import show_success, show_warning, show_info
 
@@ -47,7 +48,6 @@ from engines.interest_engine import (
     calculate_fd_maturity_date,
     calculate_fd_maturity_flexible,
     calculate_fd_quarterly_credit_breakdown,
-    allocate_fd_interest_to_fy,
     fd_tds_threshold_status,
 )
 
@@ -84,32 +84,32 @@ class FixedDepositsScreen(QWidget):
         btn_add.clicked.connect(self._on_add_fd)
         header.addWidget(btn_add)
 
-        btn_del = Theme.btn("  Delete Selected", "danger", height=38, min_width=145)
-        btn_del.setIcon(app_icon("delete", color="#FFFFFF", size=16))
+        btn_del = Theme.btn("  Delete Selected", "destructive", height=38, min_width=145)
+        btn_del.setIcon(app_icon("delete", color=Theme.DANGER, size=16))
         btn_del.setAccessibleName("Delete selected fixed deposit")
         btn_del.clicked.connect(self._on_delete_fd)
         header.addWidget(btn_del)
 
-        btn_link = Theme.btn("  Link Txn", "success", height=38, min_width=108)
-        btn_link.setIcon(app_icon("link", color="#FFFFFF", size=16))
+        btn_link = Theme.btn("  Link Txn", "secondary", height=38, min_width=108)
+        btn_link.setIcon(app_icon("link", color=Theme.TEXT_PRIMARY, size=16))
         btn_link.setAccessibleName("Link transaction to fixed deposit")
         btn_link.clicked.connect(self._on_link_fd_transaction)
         header.addWidget(btn_link)
 
-        btn_auto = Theme.btn("  Auto-Link", "success", height=38, min_width=108)
-        btn_auto.setIcon(app_icon("auto_link", color="#FFFFFF", size=16))
+        btn_auto = Theme.btn("  Auto-Link", "secondary", height=38, min_width=108)
+        btn_auto.setIcon(app_icon("auto_link", color=Theme.TEXT_PRIMARY, size=16))
         btn_auto.setAccessibleName("Auto-link fixed deposit transactions")
         btn_auto.clicked.connect(self._on_auto_link)
         header.addWidget(btn_auto)
 
-        btn_recalc = Theme.btn("  Recalculate Selected", "primary", height=38, min_width=165)
-        btn_recalc.setIcon(app_icon("recalculate", color="#FFFFFF", size=16))
+        btn_recalc = Theme.btn("  Recalculate Selected", "secondary", height=38, min_width=165)
+        btn_recalc.setIcon(app_icon("recalculate", color=Theme.TEXT_PRIMARY, size=16))
         btn_recalc.setAccessibleName("Recalculate selected fixed deposits")
         btn_recalc.clicked.connect(self._on_recalculate_selected)
         header.addWidget(btn_recalc)
 
-        btn_save = Theme.btn("  Save Changes", "success", height=38, min_width=125)
-        btn_save.setIcon(app_icon("save", color="#FFFFFF", size=16))
+        btn_save = Theme.btn("  Save Changes", "secondary", height=38, min_width=125)
+        btn_save.setIcon(app_icon("save", color=Theme.TEXT_PRIMARY, size=16))
         btn_save.setAccessibleName("Save fixed deposit changes")
         btn_save.clicked.connect(self._on_save_changes)
         header.addWidget(btn_save)
@@ -133,10 +133,12 @@ class FixedDepositsScreen(QWidget):
         self.tds_banner.setVisible(False)
         layout.addWidget(self.tds_banner)
 
-        # Interest trend chart
+        # Interest trend chart (collapsible, initially collapsed)
         self.interest_chart = ChartWidget()
-        self.interest_chart.setMinimumHeight(350)
-        layout.addWidget(self.interest_chart)
+        self.interest_chart.setMinimumHeight(120)
+        self.interest_chart_section = CollapsibleSection("Interest Trend", expanded=False)
+        self.interest_chart_section.content_layout().addWidget(self.interest_chart)
+        layout.addWidget(self.interest_chart_section)
 
         # Table
         self.table_widget = ExcelTableWithStats(show_checkboxes=True)
@@ -165,7 +167,37 @@ class FixedDepositsScreen(QWidget):
         # Override the base ExcelTable delete (which only removes UI rows)
         # so pressing Delete also removes the underlying FD records.
         self.table.deleteSelectedRows = self._delete_selected_fds
-        for i, w in enumerate([40,110,120,110,110,70,90,100,100,110,130,130,120,110,85]):
+
+        # Configure content-aware column sizing
+        # Person, Bank, FD No should get enough width to distinguish values (~140-180px)
+        # Principal, Rate %, Actual Interest are amounts -> FIXED narrow
+        # Tenure, Compounding, Method are short enums -> FIXED narrow
+        # Dates and calculated fields -> FIXED
+        col_specs = {
+            1: {"mode": "STRETCH"},                  # Person (wider, can stretch)
+            2: {"mode": "STRETCH"},                  # Bank (wider, can stretch)
+            3: {"mode": "FIXED", "width": 150},     # FD No (identifier, enough to distinguish)
+            4: {"mode": "FIXED", "width": 110},     # Principal
+            5: {"mode": "FIXED", "width": 80},      # Rate %
+            6: {"mode": "FIXED", "width": 100},     # Tenure
+            7: {"mode": "FIXED", "width": 110},     # Compounding
+            8: {"mode": "FIXED", "width": 110},     # Start Date
+            9: {"mode": "FIXED", "width": 115},     # Maturity Date
+            10: {"mode": "FIXED", "width": 130},    # Maturity Amount
+            11: {"mode": "FIXED", "width": 130},    # Expected Interest
+            12: {"mode": "FIXED", "width": 130},    # Actual Interest
+            13: {"mode": "FIXED", "width": 100},    # Method
+            14: {"mode": "FIXED", "width": 100},    # Status
+        }
+        self.table.setColumnSizing(col_specs)
+
+        # Set tooltip support for columns that may be truncated
+        self.table.setColumnElidedWithTooltip(1)    # Person
+        self.table.setColumnElidedWithTooltip(2)    # Bank
+        self.table.setColumnElidedWithTooltip(3)    # FD No
+
+        # Set manual column width for checkbox (done by setHeaders via setColumnWidth(0, 40))
+        for i, w in enumerate([40]):  # Just the checkbox
             self.table.setColumnWidth(i, w)
 
         # Table container (will hold table or empty state)
@@ -179,7 +211,7 @@ class FixedDepositsScreen(QWidget):
         layout.addWidget(self.table_container)
 
         # Info label
-        self._info_lbl = info_label = QLabel("Tip: Edit cells directly, then click 'Save Changes' or 'Recalculate Selected' to update database")
+        self._info_lbl = info_label = QLabel("Tip: Edit cells directly (F2 or double-click), then click 'Save Changes' or 'Recalculate Selected' to apply changes")
         info_label.setObjectName("fdInfoLabel")
         info_label.setWordWrap(True)
         layout.addWidget(info_label)
@@ -204,6 +236,8 @@ class FixedDepositsScreen(QWidget):
                     parent=self.table_container
                 )
                 self._empty_state.action_clicked.connect(self._on_add_fd)
+                # Override button variant to secondary since header already has primary
+                Theme.style_button(self._empty_state.btn_action, "secondary")
                 self.table_container_layout.insertWidget(0, self._empty_state)
             self.table_widget.setVisible(False)
             if self._empty_state:
@@ -253,11 +287,20 @@ class FixedDepositsScreen(QWidget):
 
             # Checkbox column is at index 0, data starts at index 1
             # Read-only columns
-            self.table.setItem(r, 0+1, item(fd["person_name"], editable=False))
-            self.table.setItem(r, 1+1, item(fd["bank_name"], editable=False))
+            person_item = item(fd["person_name"], editable=False)
+            person_item.setToolTip(fd["person_name"])
+            self.table.setItem(r, 0+1, person_item)
+
+            bank_item = item(fd["bank_name"], editable=False)
+            bank_item.setToolTip(fd["bank_name"])
+            self.table.setItem(r, 1+1, bank_item)
             
             # Editable columns
-            self.table.setItem(r, 2+1, item(fd.get("fd_reference_no") or "—", editable=True))
+            fd_no_item = item(fd.get("fd_reference_no") or "—", editable=True)
+            fd_no_text = fd.get("fd_reference_no") or ""
+            if fd_no_text:
+                fd_no_item.setToolTip(fd_no_text)
+            self.table.setItem(r, 2+1, fd_no_item)
             self.table.setItem(r, 3+1, item(session.mask(fd["principal_amount"]), Qt.AlignmentFlag.AlignRight, editable=True))
             
             rate = fd.get("interest_rate")
@@ -368,6 +411,8 @@ class FixedDepositsScreen(QWidget):
             self.table_widget.refresh_theme()
         if hasattr(self, "interest_chart") and self.interest_chart:
             self.interest_chart.refresh_theme()
+        if hasattr(self, "interest_chart_section") and self.interest_chart_section:
+            pass  # CollapsibleSection uses theme colors from CSS, refreshed automatically
         self.refresh()
 
     def _format_tenure(self, fd: dict) -> str:
@@ -717,7 +762,6 @@ class FixedDepositsScreen(QWidget):
                     None,  # source_statement_file
                     None   # source_transaction_id
                 )
-                allocate_fd_interest_to_fy(fd_id)
                 recalculated += 1
 
             except Exception as e:

@@ -12,9 +12,9 @@ from PyQt6.QtGui import QFont
 
 from ui.theme.theme import Theme
 from ui.icons import set_btn_icon, icon_label as app_icon_label, pixmap as app_pixmap, is_available as icons_available, tab_icon
-from ui.widgets.chart_widget import ChartWidget
 from ui.widgets.states import EmptyState
 from ui.widgets.toast_utils import show_success, show_warning
+from ui.widgets.money_label import MoneyLabel
 from ui.dialogs.account_dialog import AccountDialog
 from ui.dialogs.account_details_dialog import AccountDetailsPanel
 from models.bank_account import get_all_accounts, add_account, update_account, delete_account, get_account
@@ -69,11 +69,6 @@ class AccountsScreen(QWidget):
         header.addWidget(btn_add)
         layout.addLayout(header)
 
-        # Bank-wise balance chart
-        self.bank_chart = ChartWidget()
-        self.bank_chart.setMinimumHeight(350)
-        layout.addWidget(self.bank_chart)
-
         # Master-detail layout: list on left, details panel on right
         master_detail = QHBoxLayout()
         master_detail.setSpacing(16)
@@ -94,21 +89,23 @@ class AccountsScreen(QWidget):
         scroll.setWidget(self.container)
         master_detail.addWidget(scroll, stretch=3)
 
-        # Details panel (right side)
-        self.detail_panel = AccountDetailsPanel(self, on_updated=self._on_account_updated, on_deleted=self._on_accounts_reload)
-        detail_frame = QFrame()
-        detail_frame.setObjectName("detailPanel")
-        detail_frame.setStyleSheet(f"""
+        # Details panel (right side) — collapsed by default, expands when account selected
+        self.detail_frame = QFrame()
+        self.detail_frame.setObjectName("detailPanel")
+        self.detail_frame.setStyleSheet(f"""
             QFrame#detailPanel {{
                 background: {Theme.SURFACE};
                 border: 1px solid {Theme.BORDER};
                 border-radius: 8px;
             }}
         """)
-        detail_layout = QVBoxLayout(detail_frame)
+        self.detail_frame.setMinimumWidth(0)
+        self.detail_frame.setMaximumWidth(0)
+        detail_layout = QVBoxLayout(self.detail_frame)
         detail_layout.setContentsMargins(0, 0, 0, 0)
+        self.detail_panel = AccountDetailsPanel(self, on_updated=self._on_account_updated, on_deleted=self._on_accounts_reload, on_closed=self._on_detail_panel_closed)
         detail_layout.addWidget(self.detail_panel)
-        master_detail.addWidget(detail_frame, stretch=2)
+        master_detail.addWidget(self.detail_frame, stretch=0)
 
         layout.addLayout(master_detail, stretch=1)
 
@@ -142,16 +139,15 @@ class AccountsScreen(QWidget):
                 parent=self.container
             )
             empty_state.action_clicked.connect(self._on_add_account)
+            # Override button variant to secondary since header already has primary
+            Theme.style_button(empty_state.btn_action, "secondary")
             self.container_layout.addWidget(empty_state)
-            self._refresh_bank_chart()
             return
 
         if self.view_mode == "card":
             self._render_card_view(accounts)
         else:
             self._render_list_view(accounts)
-
-        self._refresh_bank_chart()
 
     def _render_card_view(self, accounts):
         grid_widget = QWidget()
@@ -328,7 +324,17 @@ class AccountsScreen(QWidget):
         layout.setSpacing(10)
         layout.setContentsMargins(20, 16, 20, 16)
 
-        # Bank + status
+        # BALANCE — most prominent element (LARGEST FONT, TOP)
+        bal_lbl = QLabel("Balance")
+        bal_lbl.setProperty("textrole", "muted-sm")
+        layout.addWidget(bal_lbl)
+
+        bal_val = MoneyLabel(account['current_balance'], parent=card)
+        bal_val.setFont(QFont("Segoe UI", 28, QFont.Weight.Bold))
+        bal_val.setProperty("textrole", "metric")
+        layout.addWidget(bal_val)
+
+        # Bank name + status
         header = QHBoxLayout()
         bank_label = QLabel(account.get('bank_display_name', account['bank_name']))
         bank_label.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
@@ -336,23 +342,24 @@ class AccountsScreen(QWidget):
         header.addWidget(bank_label)
         header.addStretch()
 
+        # Status pill — only show if NOT Active
         status = account.get("account_status", "Active")
-        sc = {
-            "Active":   (Theme.SUCCESS,  Theme.SUCCESS_LIGHT),
-            "Inactive": (Theme.WARNING,  Theme.WARNING_LIGHT),
-            "Closed":   (Theme.DANGER,   Theme.DANGER_LIGHT),
-        }.get(status, (Theme.TEXT_SECONDARY, Theme.SURFACE_ALT))
-        status_lbl = QLabel(status)
-        status_lbl.setStyleSheet(f"""
-            background: {sc[1]}; color: {sc[0]};
-            padding: 4px 12px; border-radius: 12px;
-            font-size: 11px; font-weight: 700; border: none;
-        """)
-        status_lbl.setMinimumHeight(24)
-        header.addWidget(status_lbl)
+        if status != "Active":
+            sc = {
+                "Inactive": (Theme.WARNING,  Theme.WARNING_LIGHT),
+                "Closed":   (Theme.DANGER,   Theme.DANGER_LIGHT),
+            }.get(status, (Theme.TEXT_SECONDARY, Theme.SURFACE_ALT))
+            status_lbl = QLabel(status)
+            status_lbl.setStyleSheet(f"""
+                background: {sc[1]}; color: {sc[0]};
+                padding: 4px 12px; border-radius: 12px;
+                font-size: 11px; font-weight: 700; border: none;
+            """)
+            status_lbl.setMinimumHeight(24)
+            header.addWidget(status_lbl)
         layout.addLayout(header)
 
-        # Type + person
+        # Type + person + account (smaller metadata)
         info = QLabel(f"{account['account_type']}  ·  {account.get('person_name','—')}")
         info.setProperty("textrole", "secondary-md")
         layout.addWidget(info)
@@ -367,18 +374,6 @@ class AccountsScreen(QWidget):
         div.setFixedHeight(1)
         div.setObjectName("divider")
         layout.addWidget(div)
-
-        # Balance
-        bal_row = QHBoxLayout()
-        bal_lbl = QLabel("Current Balance")
-        bal_lbl.setProperty("textrole", "muted-sm")
-        bal_row.addWidget(bal_lbl)
-        bal_row.addStretch()
-        bal_val = QLabel(f"₹ {account['current_balance']:,.2f}")
-        bal_val.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
-        bal_val.setProperty("textrole", "metric")
-        bal_row.addWidget(bal_val)
-        layout.addLayout(bal_row)
 
         # IFSC / branch
         parts = []
@@ -400,8 +395,15 @@ class AccountsScreen(QWidget):
         return card
 
     def _on_card_clicked(self, account: dict):
-        """Show account details in the detail panel (non-modal)."""
+        """Show account details in the detail panel (non-modal) and expand the panel."""
+        self.detail_frame.setMinimumWidth(340)
+        self.detail_frame.setMaximumWidth(16777215)  # Max width to allow expansion
         self.detail_panel.update_account(account)
+
+    def _on_detail_panel_closed(self):
+        """Collapse the detail panel when close is clicked."""
+        self.detail_frame.setMinimumWidth(0)
+        self.detail_frame.setMaximumWidth(0)
 
     def _on_account_updated(self, account_id):
         """Reload when account is updated in the detail panel."""
@@ -424,44 +426,7 @@ class AccountsScreen(QWidget):
     def refresh_theme(self):
         """Called after a live theme switch — cards are rebuilt fresh on every
         _load_accounts() call, so simply reloading picks up the new colours."""
-        if hasattr(self, 'bank_chart') and self.bank_chart:
-            self.bank_chart.refresh_theme()
         self._load_accounts()
-
-    def _refresh_bank_chart(self):
-        """Refresh the bank-wise balance chart."""
-        if not hasattr(self, 'bank_chart') or not self.bank_chart:
-            return
-
-        if self.selected_person_id is not None:
-            accounts = [a for a in get_all_accounts() if a["person_id"] == self.selected_person_id]
-        else:
-            accounts = get_all_accounts()
-
-        if not accounts:
-            self.bank_chart.show_empty_state("No bank accounts found")
-            return
-
-        # Sort by balance descending
-        accounts = sorted(accounts, key=lambda a: a["current_balance"], reverse=True)
-
-        labels = [
-            f"{a.get('bank_display_name', a['bank_name'])}\n({a['account_type']})"
-            for a in accounts
-        ]
-        values = [a["current_balance"] for a in accounts]
-
-        if all(v == 0 for v in values):
-            self.bank_chart.show_empty_state("All account balances are zero")
-            return
-
-        self.bank_chart.plot_bar(
-            categories=labels,
-            values=values,
-            title="Balance by Bank Account",
-            ylabel="Balance (₹)",
-            color=Theme.TEAL,
-        )
 
     def _on_add_account(self):
         persons = get_all_persons()

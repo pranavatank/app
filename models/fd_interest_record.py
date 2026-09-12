@@ -9,8 +9,18 @@ def upsert_fd_interest(fd_id: int, financial_year: str,
                        interest_earned: float, assessment_year: str,
                        quarter: str | None = None,
                        period_start: str | None = None,
-                       period_end: str | None = None) -> None:
-    """Insert or replace an FD interest record for a given FY."""
+                       period_end: str | None = None,
+                       replace_all: bool = True) -> None:
+    """Insert or replace an FD interest record for a given FY.
+
+    If quarter is provided, only update that quarter's record.
+    If quarter is None and replace_all is True (default), delete ALL records for this FD/FY.
+    If quarter is None and replace_all is False, only update the non-quarterly record.
+
+    The default behavior (replace_all=True) ensures that manually setting interest via
+    upsert_fd_interest() completely replaces auto-calculated quarterly records, avoiding
+    double-counting in threshold calculations.
+    """
     conn = get_connection()
     if quarter:
         conn.execute(
@@ -18,10 +28,20 @@ def upsert_fd_interest(fd_id: int, financial_year: str,
             (fd_id, financial_year, quarter)
         )
     else:
-        conn.execute(
-            "DELETE FROM FDInterestRecord WHERE fd_id = ? AND financial_year = ? AND quarter IS NULL",
-            (fd_id, financial_year)
-        )
+        # When setting a total without quarter, by default replace all records
+        # (this handles the case where auto-calculated quarterly records exist
+        # and we want to replace them with a manual total)
+        if replace_all:
+            conn.execute(
+                "DELETE FROM FDInterestRecord WHERE fd_id = ? AND financial_year = ?",
+                (fd_id, financial_year)
+            )
+        else:
+            # Legacy behavior: only delete non-quarterly records
+            conn.execute(
+                "DELETE FROM FDInterestRecord WHERE fd_id = ? AND financial_year = ? AND quarter IS NULL",
+                (fd_id, financial_year)
+            )
     conn.execute("""
         INSERT INTO FDInterestRecord
             (fd_id, financial_year, quarter, period_start, period_end, interest_earned, assessment_year)

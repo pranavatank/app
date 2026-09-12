@@ -14,6 +14,7 @@ from PyQt6.QtGui import QFont, QColor
 
 from ui.widgets.excel_table import ExcelTableWithStats
 from ui.widgets.chart_widget import ChartWidget
+from ui.widgets.section import CollapsibleSection
 from ui.widgets.states import EmptyState
 from ui.widgets.toast_utils import show_success, show_warning
 
@@ -126,7 +127,7 @@ class TransactionsScreen(QWidget):
         # Filter bar
         layout.addWidget(self._build_filter_bar())
 
-        # Charts tabs (Monthly and Categories)
+        # Charts tabs (Monthly and Categories) in a collapsible section (initially collapsed)
         self.charts_tabs = QTabWidget()
         self.charts_tabs.setAccessibleName("Transaction charts")
         self.charts_tabs.setAccessibleDescription("View monthly and category breakdowns.")
@@ -134,8 +135,11 @@ class TransactionsScreen(QWidget):
         self.category_chart = ChartWidget()
         self.charts_tabs.addTab(self.monthly_chart, "Monthly")
         self.charts_tabs.addTab(self.category_chart, "Categories")
-        self.charts_tabs.setMinimumHeight(380)
-        layout.addWidget(self.charts_tabs)
+        self.charts_tabs.setMinimumHeight(120)
+
+        self.charts_section = CollapsibleSection("Transaction Charts", expanded=False)
+        self.charts_section.content_layout().addWidget(self.charts_tabs)
+        layout.addWidget(self.charts_section)
 
         # Table container (will hold table or empty state)
         self.table_container = QWidget()
@@ -258,33 +262,6 @@ class TransactionsScreen(QWidget):
             l.setProperty("textrole", "section-label")
             return l
 
-        layout.addWidget(lbl("Person"))
-        self.f_person = QComboBox()
-        self.f_person.setMinimumWidth(110)
-        self.f_person.setMinimumHeight(32)
-        self.f_person.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        self.f_person.addItem("All Persons", userData=None)
-        self.f_person.currentIndexChanged.connect(self._on_filter_person_changed)
-        layout.addWidget(self.f_person)
-
-        layout.addWidget(lbl("Account"))
-        self.f_account = QComboBox()
-        self.f_account.setMinimumWidth(150)
-        self.f_account.setMinimumHeight(32)
-        self.f_account.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        self.f_account.addItem("All Accounts", userData=None)
-        layout.addWidget(self.f_account)
-
-        layout.addWidget(lbl("FY"))
-        self.f_fy = QComboBox()
-        self.f_fy.setMinimumWidth(75)
-        self.f_fy.setMinimumHeight(32)
-        self.f_fy.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
-        for fy in reversed(get_all_financial_years(since_year=2020)):
-            self.f_fy.addItem(fy)
-        self.f_fy.setCurrentText(session.selected_fy)
-        layout.addWidget(self.f_fy)
-
         layout.addWidget(lbl("Type"))
         self.f_type = QComboBox()
         self.f_type.setMinimumWidth(90)
@@ -368,7 +345,6 @@ class TransactionsScreen(QWidget):
     def refresh(self):
         if not self._confirm_unsaved("refresh transactions"):
             return
-        self._reload_filter_persons()
         self._fetch_and_display()
         self._refresh_charts()
 
@@ -394,44 +370,17 @@ class TransactionsScreen(QWidget):
             self.monthly_chart.refresh_theme()
         if hasattr(self, 'category_chart') and self.category_chart:
             self.category_chart.refresh_theme()
+        if hasattr(self, 'charts_section') and self.charts_section:
+            pass  # CollapsibleSection uses theme colors from CSS, refreshed automatically
         # Re-populate the table so row text colours (baked QColor) refresh too
         if hasattr(self, '_current_rows') and self._current_rows is not None:
             self._populate_table(self._current_rows)
 
-    def _reload_filter_persons(self):
-        self.f_person.blockSignals(True)
-        self.f_person.clear()
-        self._all_persons = get_all_persons()
-        self.f_person.addItem("All Persons", userData=None)
-        for p in self._all_persons:
-            self.f_person.addItem(p["full_name"], userData=p["person_id"])
-        if session.selected_person_id:
-            for i in range(self.f_person.count()):
-                if self.f_person.itemData(i) == session.selected_person_id:
-                    self.f_person.setCurrentIndex(i); break
-        self.f_person.blockSignals(False)
-        self._reload_filter_accounts()
-
-    def _reload_filter_accounts(self):
-        self.f_account.blockSignals(True)
-        self.f_account.clear()
-        pid = self.f_person.currentData()
-        if pid is None:
-            self._all_accounts = get_all_accounts()
-            self.f_account.addItem("All Accounts", userData=None)
-            for a in self._all_accounts:
-                self.f_account.addItem(f"{a['person_name']} — {a.get('bank_display_name', a['bank_name'])} ({a['account_type']})", userData=a["account_id"])
-        else:
-            self._all_accounts = get_accounts_for_person(pid)
-            self.f_account.addItem("All Accounts", userData=None)
-            for a in self._all_accounts:
-                self.f_account.addItem(f"{a.get('bank_display_name', a['bank_name'])} ({a['account_type']})", userData=a["account_id"])
-        self.f_account.blockSignals(False)
 
     def _fetch_and_display(self):
-        pid  = self.f_person.currentData()
-        aid  = self.f_account.currentData()
-        fy   = self.f_fy.currentText() or None
+        pid  = session.selected_person_id
+        aid  = session.selected_account_id
+        fy   = session.selected_fy
         typ_text = self.f_type.currentText()
         typ = None if typ_text == "All Types" else normalize_transaction_type(typ_text)
         term = self.f_search.text().strip().lower()
@@ -596,9 +545,9 @@ class TransactionsScreen(QWidget):
 
     def _refresh_charts(self):
         """Refresh the monthly and category charts based on current filters."""
-        pid = self.f_person.currentData()
-        aid = self.f_account.currentData()
-        fy  = self.f_fy.currentText() or session.selected_fy
+        pid = session.selected_person_id
+        aid = session.selected_account_id
+        fy  = session.selected_fy
         if not fy:
             return
         self._refresh_monthly_chart(pid, aid, fy)
@@ -927,14 +876,9 @@ class TransactionsScreen(QWidget):
         self._clear_dirty()
         self._fetch_and_display()
 
-    def _on_filter_person_changed(self): self._reload_filter_accounts()
-
     def _clear_filters(self):
         if not self._confirm_unsaved("clear filters"):
             return
-        self.f_person.setCurrentIndex(0)
-        self.f_account.setCurrentIndex(0)
-        self.f_fy.setCurrentText(get_current_financial_year())
         self.f_type.setCurrentIndex(0)
         self.f_search.clear()
         self._fetch_and_display()

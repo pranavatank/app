@@ -15,6 +15,7 @@ from datetime import date
 
 from ui.theme import Theme
 from ui.widgets.toast_utils import show_success, show_warning
+from ui.widgets.money_label import format_inr
 from config import COMPOUNDING_TYPES, fy_date_range, get_current_financial_year, get_all_financial_years
 from models.person import get_all_persons
 from models.bank_account import get_accounts_for_person
@@ -27,7 +28,6 @@ from engines.interest_engine import (
     calculate_fd_maturity_date,
     calculate_fd_maturity_flexible,
     calculate_fd_quarterly_credit_breakdown,
-    allocate_fd_interest_to_fy,
 )
 
 
@@ -292,7 +292,7 @@ class FDDialog(QDialog):
         lines = [
             "FD Calculation Report",
             "=" * 70,
-            f"Principal:            Rs {snap['principal']:,.2f}",
+            f"Principal:            {format_inr(snap['principal'])}",
             f"Rate:                 {snap['rate']:.2f}%",
             f"Compounding:          {snap['compounding']}",
             f"Start Date:           {snap['start'].strftime('%d/%m/%y')}",
@@ -301,11 +301,11 @@ class FDDialog(QDialog):
             "",
             "Method-wise Maturity",
             "-" * 70,
-            f"Current Formula:      Rs {snap['maturity_formula']:,.2f}",
-            f"Bank-style Daily:     Rs {snap['maturity_bank']:,.2f}",
+            f"Current Formula:      {format_inr(snap['maturity_formula'])}",
+            f"Bank-style Daily:     {format_inr(snap['maturity_bank'])}",
             f"Selected Method:      {method_text}",
-            f"Selected Maturity:    Rs {snap['maturity_selected']:,.2f}",
-            f"Selected Interest:    Rs {total_interest:,.2f}",
+            f"Selected Maturity:    {format_inr(snap['maturity_selected'])}",
+            f"Selected Interest:    {format_inr(total_interest)}",
             "",
             "Quarter-wise Interest Allocation (Selected Method)",
             "-" * 70,
@@ -318,7 +318,7 @@ class FDDialog(QDialog):
         next_fy_interest = 0.0
 
         for row in quarter_rows:
-            lines.append(f"{row['fy']:<10} {row['ay']:<10} {row['quarter']:<8} {row['days']:<5} Rs {row['interest']:,.2f}")
+            lines.append(f"{row['fy']:<10} {row['ay']:<10} {row['quarter']:<8} {row['days']:<5} {format_inr(row['interest'])}")
             if row["fy"] == current_fy:
                 current_fy_interest += row["interest"]
             if row["fy"] == next_fy:
@@ -326,8 +326,8 @@ class FDDialog(QDialog):
 
         lines.extend([
             "",
-            f"Current FY ({current_fy}) Interest: Rs {current_fy_interest:,.2f}",
-            f"Next FY ({next_fy}) Interest:    Rs {next_fy_interest:,.2f}",
+            f"Current FY ({current_fy}) Interest: {format_inr(current_fy_interest)}",
+            f"Next FY ({next_fy}) Interest:    {format_inr(next_fy_interest)}",
         ])
 
         return "\n".join(lines)
@@ -487,7 +487,6 @@ class FDDialog(QDialog):
                         expected_interest,
                         actual_interest,
                     )
-                    allocate_fd_interest_to_fy(fd_id)
                     created += 1
                 show_success(f"{created} Fixed Deposit record(s) added!")
             else:
@@ -501,7 +500,6 @@ class FDDialog(QDialog):
                           self.fd_data.get("linked_transaction_id"),
                           self.fd_data.get("source_statement_file"),
                           self.fd_data.get("source_transaction_id"))
-                allocate_fd_interest_to_fy(self.fd_id)
                 show_success("Fixed Deposit updated!")
             self.accept()
         except ValueError:

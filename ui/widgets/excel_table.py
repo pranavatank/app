@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QCheckBox, QWidget,
     QHBoxLayout, QLabel, QHeaderView, QApplication, QMessageBox,
     QStyledItemDelegate, QStyle, QStyleOptionViewItem, QLineEdit
-)
+)  # QHeaderView is imported for column sizing in _apply_column_sizing()
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QKeySequence, QKeyEvent
 from ui.theme import Theme
@@ -51,18 +51,30 @@ class NoFocusRectDelegate(QStyledItemDelegate):
 
 class ExcelTable(QTableWidget):
     """Table with Excel-like features: cell/row selection, copy/paste, checkboxes, stats."""
-    
+
     selectionStatsChanged = pyqtSignal(str)  # Emits stats text
     cellDataChanged = pyqtSignal()  # Emits when data is pasted/changed
     deleteRequested = pyqtSignal()  # Emits when Delete key pressed
-    
-    def __init__(self, parent=None, show_checkboxes=True, editable=False):
+
+    def __init__(self, parent=None, show_checkboxes=True, editable=False, read_only=False):
         super().__init__(parent)
         self.show_checkboxes = show_checkboxes
         self.editable = editable
+        self.read_only = read_only
         self._checkbox_col = 0 if show_checkboxes else -1
         self._numeric_cols: set[int] = set()
+        self._column_specs: dict[int, dict] = {}  # Column sizing specs: {col_index: {"mode": "FIXED"/"STRETCH", "width": int}}
+        self._elided_cols: set[int] = set()  # Columns that should show tooltips when elided
         self._setup_table()
+
+    def setReadOnly(self, read_only: bool) -> None:
+        """Set read-only mode. In read-only mode, F2 does nothing but Ctrl+A/Ctrl+C/arrows/stats-bar still work."""
+        self.read_only = read_only
+        # Update edit triggers based on new read-only state
+        if self.editable and not self.read_only:
+            self.setEditTriggers(QTableWidget.EditTrigger.DoubleClicked | QTableWidget.EditTrigger.EditKeyPressed)
+        else:
+            self.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
 
     def setNumericColumns(self, cols) -> None:
         """Restrict which column indices (post-checkbox-offset) must contain
@@ -71,6 +83,44 @@ class ExcelTable(QTableWidget):
         accepted as text. Default is empty — no restriction, unchanged
         behavior for any screen that doesn't opt in."""
         self._numeric_cols = set(cols or [])
+
+    def setColumnSizing(self, specs: dict[int, dict]) -> None:
+        """Configure column sizing modes. Specs is {col_index: {"mode": "FIXED"/"STRETCH", "width": int}}.
+        Modes:
+        - "FIXED": Column gets fixed width (no resize)
+        - "STRETCH": Column stretches to fill available space
+        Example: {3: {"mode": "FIXED", "width": 140}, 5: {"mode": "STRETCH"}}
+        """
+        self._column_specs = specs or {}
+        self._apply_column_sizing()
+
+    def _apply_column_sizing(self):
+        """Apply the configured column sizing modes."""
+        if not self._column_specs:
+            return
+        hdr = self.horizontalHeader()
+        for col_idx, spec in self._column_specs.items():
+            mode = spec.get("mode", "FIXED")
+            if mode == "FIXED":
+                width = spec.get("width", 100)
+                hdr.setSectionResizeMode(col_idx, QHeaderView.ResizeMode.Fixed)
+                self.setColumnWidth(col_idx, width)
+            elif mode == "STRETCH":
+                hdr.setSectionResizeMode(col_idx, QHeaderView.ResizeMode.Stretch)
+        # Ensure last column stretches to avoid empty band
+        if self.columnCount() > 0:
+            last_col = self.columnCount() - 1
+            if last_col not in self._column_specs or self._column_specs[last_col].get("mode") != "FIXED":
+                hdr.setSectionResizeMode(last_col, QHeaderView.ResizeMode.Stretch)
+
+    def setColumnElidedWithTooltip(self, col_index: int, elide=True) -> None:
+        """Enable text eliding with tooltip for a column. When text is elided ('...'),
+        the full value shows in the tooltip."""
+        # Mark the column so addDataRow knows which columns need tooltips.
+        if elide:
+            self._elided_cols.add(col_index)
+        else:
+            self._elided_cols.discard(col_index)
 
     def _paste_allowed(self, col: int, cleaned_value: str) -> bool:
         """Whether a cleaned pasted value may be written into this column."""
@@ -92,6 +142,13 @@ class ExcelTable(QTableWidget):
         self.setShowGrid(False)
         self.setItemDelegate(NoFocusRectDelegate(self))
         self.itemSelectionChanged.connect(self._update_stats)
+
+        # Set edit triggers: if editable and not read_only, allow DoubleClick and F2 (EditKeyPressed)
+        # Otherwise, no edit triggers (read-only mode or not editable)
+        if self.editable and not self.read_only:
+            self.setEditTriggers(QTableWidget.EditTrigger.DoubleClicked | QTableWidget.EditTrigger.EditKeyPressed)
+        else:
+            self.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         
     def setHeaders(self, headers: list[str]):
         """Set headers with optional checkbox column."""
@@ -105,7 +162,7 @@ class ExcelTable(QTableWidget):
             
     def addDataRow(self, row_data: list, user_data=None, checked=False, editable_cols=None):
         """Add row with optional checkbox and user data.
-        
+
         Args:
             row_data: List of cell values
             user_data: Data to store in first data column
@@ -114,9 +171,9 @@ class ExcelTable(QTableWidget):
         """
         r = self.rowCount()
         self.insertRow(r)
-        
+
         col_offset = 1 if self.show_checkboxes else 0
-        
+
         if self.show_checkboxes:
             cb = QCheckBox()
             cb.setChecked(checked)
@@ -126,12 +183,19 @@ class ExcelTable(QTableWidget):
             cb_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
             cb_layout.setContentsMargins(0, 0, 0, 0)
             self.setCellWidget(r, 0, cb_widget)
-            
+
         for col, value in enumerate(row_data):
-            item = QTableWidgetItem(str(value) if value is not None else "—")
+            text = str(value) if value is not None else "—"
+            item = QTableWidgetItem(text)
             if user_data is not None and col == 0:
                 item.setData(Qt.ItemDataRole.UserRole, user_data)
-            
+
+            # Set tooltip for columns that need eliding (show full value on hover)
+            # _elided_cols stores table column indices (including checkbox offset)
+            table_col = col + col_offset
+            if table_col in self._elided_cols:
+                item.setToolTip(text)
+
             # Set editable flag
             if self.editable:
                 if editable_cols is None or col in editable_cols:
@@ -140,8 +204,8 @@ class ExcelTable(QTableWidget):
                     item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             else:
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                
-            self.setItem(r, col + col_offset, item)
+
+            self.setItem(r, table_col, item)
             
     def getCheckedRows(self) -> list[int]:
         """Return list of checked row indices."""
@@ -360,6 +424,27 @@ class ExcelTable(QTableWidget):
                     item.setText("")
             self.cellDataChanged.emit()
             event.accept()
+        # F2 - Edit cell (in read-only mode, do nothing; otherwise let Qt handle it)
+        elif event.key() == Qt.Key.Key_F2:
+            if self.read_only:
+                # In read-only mode, F2 does nothing
+                event.accept()
+            else:
+                # In editable mode, let Qt's default EditKeyPressed handling work
+                super().keyPressEvent(event)
+        # Ctrl+Home - Jump to first cell
+        elif event.matches(QKeySequence.StandardKey.MoveToStartOfDocument):
+            start_col = 1 if self.show_checkboxes else 0
+            if self.rowCount() > 0 and start_col < self.columnCount():
+                self.setCurrentCell(0, start_col)
+            event.accept()
+        # Ctrl+End - Jump to last cell
+        elif event.matches(QKeySequence.StandardKey.MoveToEndOfDocument):
+            if self.rowCount() > 0 and self.columnCount() > 0:
+                last_row = self.rowCount() - 1
+                last_col = self.columnCount() - 1
+                self.setCurrentCell(last_row, last_col)
+            event.accept()
         else:
             super().keyPressEvent(event)
             
@@ -393,10 +478,10 @@ class ExcelTable(QTableWidget):
 
 class ExcelTableWithStats(QWidget):
     """Excel table with stats bar at bottom."""
-    
-    def __init__(self, parent=None, show_checkboxes=True):
+
+    def __init__(self, parent=None, show_checkboxes=True, editable=False, read_only=False):
         super().__init__(parent)
-        self.table = ExcelTable(parent=self, show_checkboxes=show_checkboxes)
+        self.table = ExcelTable(parent=self, show_checkboxes=show_checkboxes, editable=editable, read_only=read_only)
         
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)

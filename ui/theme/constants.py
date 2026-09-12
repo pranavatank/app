@@ -45,6 +45,12 @@ from .theme_aurora_light import (
     CHART_COLORS, CHART_COLORS_LIGHT,
 )
 
+# Radius scale constants
+RADIUS_CONTROL = 8       # Small controls (buttons, inputs, small elements)
+RADIUS_CARD = 12         # Card containers and medium elements
+RADIUS_MODAL = 16        # Modal dialogs and large containers
+RADIUS_PILL = 999        # Circular avatars and FABs
+
 # Legacy aliases kept for any old code that referenced these names
 SHADOW_COLOR_LIGHT   = "rgba(15,23,42,0.07)"
 SHADOW_COLOR_MEDIUM  = "rgba(15,23,42,0.12)"

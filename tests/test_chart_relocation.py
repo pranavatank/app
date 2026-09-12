@@ -24,7 +24,7 @@ def test_transactions_charts():
 
 
 def test_accounts_bank_chart():
-    """Verify Bank-wise chart exists on AccountsScreen."""
+    """Verify bank_chart was intentionally removed from AccountsScreen (F322)."""
     from PyQt6.QtWidgets import QApplication
     os.environ["QT_QPA_PLATFORM"] = "offscreen"
     app = QApplication.instance() or QApplication([])
@@ -32,9 +32,9 @@ def test_accounts_bank_chart():
     from ui.accounts_screen import AccountsScreen
     screen = AccountsScreen()
 
-    assert hasattr(screen, 'bank_chart'), "AccountsScreen missing bank_chart"
-    assert screen.bank_chart is not None, "bank_chart is None"
-    print("[PASS] Accounts bank chart present")
+    assert not hasattr(screen, 'bank_chart'), "AccountsScreen should not have bank_chart (removed in F322)"
+    assert hasattr(screen, 'container'), "AccountsScreen missing account container"
+    print("[PASS] Accounts bank chart correctly removed")
 
 
 def test_fixed_deposits_interest_chart():

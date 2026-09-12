@@ -15,8 +15,10 @@ from datetime import date, datetime
 from dateutil.relativedelta import relativedelta
 
 from ui.widgets.chart_widget import ChartWidget
+from ui.widgets.kpi_tile import KpiTile
 from ui.widgets.states import EmptyState
 from ui.widgets.toast_utils import show_success, show_warning, show_info
+from ui.widgets.excel_table import ExcelTable, ExcelTableWithStats
 from ui.theme import Theme
 from ui.icons import set_btn_icon
 from ui.date_utils import format_display_date
@@ -77,18 +79,20 @@ class IncomeManagementScreen(QWidget):
     def __init__(self, parent_window=None):
         super().__init__()
         self._parent_window = parent_window
-        self._selected_fy = get_current_financial_year()
-        self._selected_person_id = None
         self._build_ui()
+        # Connect to parent window's selectors if available
+        if self._parent_window:
+            self._parent_window.person_combo.currentIndexChanged.connect(self.refresh)
+            self._parent_window.fy_combo.currentTextChanged.connect(self.refresh)
         self.refresh()
 
     def _build_ui(self):
         """Build main screen layout."""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 22, 28, 18)
-        layout.setSpacing(16)
+        layout.setSpacing(12)
 
-        # Header with title, FY selector, and person selector
+        # Header with title only (FY/Person selectors now in top bar)
         layout.addLayout(self._build_header())
 
         # KPI tiles
@@ -101,7 +105,7 @@ class IncomeManagementScreen(QWidget):
 
         panel_container = QWidget()
         panel_layout = QVBoxLayout(panel_container)
-        panel_layout.setSpacing(20)
+        panel_layout.setSpacing(14)
         panel_layout.setContentsMargins(0, 0, 0, 0)
 
         # 5 panels
@@ -116,7 +120,7 @@ class IncomeManagementScreen(QWidget):
         layout.addWidget(scroll, stretch=1)
 
     def _build_header(self) -> QHBoxLayout:
-        """Build header with title, FY, and person selectors."""
+        """Build header with title only (FY/Person selectors are in top bar)."""
         header = QHBoxLayout()
         header.setSpacing(16)
 
@@ -126,77 +130,25 @@ class IncomeManagementScreen(QWidget):
         title.setProperty("textrole", "title-md")
         header.addWidget(title)
 
-        header.addSpacing(20)
-
-        # FY selector
-        lbl_fy = QLabel("FY")
-        lbl_fy.setProperty("textrole", "section-label")
-        header.addWidget(lbl_fy)
-
-        self.cmb_fy = QComboBox()
-        self.cmb_fy.setMinimumWidth(90)
-        for fy in reversed(get_all_financial_years(since_year=2020)):
-            self.cmb_fy.addItem(fy)
-        self.cmb_fy.setCurrentText(self._selected_fy)
-        self.cmb_fy.currentTextChanged.connect(self._on_fy_changed)
-        header.addWidget(self.cmb_fy)
-
-        # Person selector (including HUF and "All")
-        lbl_person = QLabel("Person")
-        lbl_person.setProperty("textrole", "section-label")
-        header.addWidget(lbl_person)
-
-        self.cmb_person = QComboBox()
-        self.cmb_person.setMinimumWidth(140)
-        self.cmb_person.addItem("All Persons", userData=None)
-        for p in get_all_persons():
-            self.cmb_person.addItem(p["full_name"], userData=p["person_id"])
-        self.cmb_person.currentIndexChanged.connect(self._on_person_changed)
-        header.addWidget(self.cmb_person)
-
         header.addStretch()
         return header
 
     def _build_kpi_tiles(self) -> QHBoxLayout:
-        """Build 4 KPI tiles: Expected, Received, Still Expected, Projected Tax."""
+        """Build 4 KPI tiles: Expected, Received, Still Expected, Projected Tax using the reusable KpiTile component."""
         kpi_layout = QHBoxLayout()
         kpi_layout.setSpacing(14)
 
-        self.kpi_expected = self._create_kpi_tile("Expected Income", "₹ —", "kpiExpected")
-        self.kpi_received = self._create_kpi_tile("Received to Date", "₹ —", "kpiReceived")
-        self.kpi_pending = self._create_kpi_tile("Still Expected", "₹ —", "kpiPending")
-        self.kpi_tax = self._create_kpi_tile("Projected Tax", "₹ —", "kpiTax")
+        self.kpi_expected = KpiTile("Expected Income", 0.0, is_currency=True)
+        self.kpi_received = KpiTile("Received to Date", 0.0, is_currency=True)
+        self.kpi_pending = KpiTile("Still Expected", 0.0, is_currency=True)
+        self.kpi_tax = KpiTile("Projected Tax", 0.0, is_currency=True)
 
-        kpi_layout.addWidget(self.kpi_expected)
-        kpi_layout.addWidget(self.kpi_received)
-        kpi_layout.addWidget(self.kpi_pending)
-        kpi_layout.addWidget(self.kpi_tax)
+        kpi_layout.addWidget(self.kpi_expected, stretch=1)
+        kpi_layout.addWidget(self.kpi_received, stretch=1)
+        kpi_layout.addWidget(self.kpi_pending, stretch=1)
+        kpi_layout.addWidget(self.kpi_tax, stretch=1)
 
         return kpi_layout
-
-    def _create_kpi_tile(self, title: str, value: str, object_name: str) -> QFrame:
-        """Create a single KPI tile using QSS class."""
-        tile = QFrame()
-        tile.setObjectName(object_name)
-        tile.setMinimumHeight(85)
-
-        layout = QVBoxLayout(tile)
-        layout.setContentsMargins(16, 12, 16, 12)
-        layout.setSpacing(6)
-
-        lbl_title = QLabel(title)
-        lbl_title.setProperty("textrole", "section-label")
-        layout.addWidget(lbl_title)
-
-        lbl_value = QLabel(value)
-        # Read back by findChild(QLabel, "kpiValue") in _update_kpi_tiles —
-        # keep both sides on this one name.
-        lbl_value.setObjectName("kpiValue")
-        lbl_value.setProperty("textrole", "metric")
-        layout.addWidget(lbl_value)
-
-        layout.addStretch()
-        return tile
 
     def _build_panel_1_vs_actual(self) -> QFrame:
         """Panel 1: Expected vs Actual by month (grouped bars)."""
@@ -204,14 +156,14 @@ class IncomeManagementScreen(QWidget):
         panel.setObjectName("analysisPanel")
 
         layout = QVBoxLayout(panel)
-        layout.setSpacing(12)
+        layout.setSpacing(8)
 
         title = QLabel("Expected vs Actual by Month")
         title.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
         layout.addWidget(title)
 
         self.chart_vs_actual = ChartWidget()
-        self.chart_vs_actual.setMinimumHeight(280)
+        self.chart_vs_actual.setMinimumHeight(260)
         layout.addWidget(self.chart_vs_actual)
 
         return panel
@@ -222,14 +174,14 @@ class IncomeManagementScreen(QWidget):
         panel.setObjectName("analysisPanel")
 
         layout = QVBoxLayout(panel)
-        layout.setSpacing(12)
+        layout.setSpacing(8)
 
         title = QLabel("Income Composition by Source")
         title.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
         layout.addWidget(title)
 
         self.chart_composition = ChartWidget()
-        self.chart_composition.setMinimumHeight(280)
+        self.chart_composition.setMinimumHeight(260)
         layout.addWidget(self.chart_composition)
 
         return panel
@@ -240,14 +192,14 @@ class IncomeManagementScreen(QWidget):
         panel.setObjectName("analysisPanel")
 
         layout = QVBoxLayout(panel)
-        layout.setSpacing(12)
+        layout.setSpacing(8)
 
         title = QLabel("FD Interest Runway (By Financial Year)")
         title.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
         layout.addWidget(title)
 
         self.chart_fd_runway = ChartWidget()
-        self.chart_fd_runway.setMinimumHeight(280)
+        self.chart_fd_runway.setMinimumHeight(260)
         layout.addWidget(self.chart_fd_runway)
 
         return panel
@@ -258,23 +210,21 @@ class IncomeManagementScreen(QWidget):
         panel.setObjectName("analysisPanel")
 
         layout = QVBoxLayout(panel)
-        layout.setSpacing(12)
+        layout.setSpacing(8)
 
         title = QLabel("FD TDS Threshold Status by Bank")
         title.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
         layout.addWidget(title)
 
-        # Use a table for TDS status
-        self.table_tds = QTableWidget()
-        self.table_tds.setColumnCount(5)
-        self.table_tds.setHorizontalHeaderLabels(["Bank", "Total Interest", "Status", "Crossing Quarter", "Form"])
+        # Use a table for TDS status (read-only)
+        self.table_tds_widget = ExcelTableWithStats(show_checkboxes=False, read_only=True)
+        self.table_tds = self.table_tds_widget.table
+        self.table_tds.setHeaders(["Bank", "Total Interest", "Status", "Crossing Quarter", "Form"])
         self.table_tds.setAccessibleName("FD TDS threshold status table")
         self.table_tds.setAccessibleDescription("Shows per-bank TDS threshold status and whether the threshold is exceeded.")
-        self.table_tds.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.table_tds.setMaximumHeight(250)
-        self.table_tds.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.table_tds.verticalHeader().setVisible(False)
-        layout.addWidget(self.table_tds)
+        self.table_tds.setSortingEnabled(False)
+        self.table_tds_widget.setMaximumHeight(220)
+        layout.addWidget(self.table_tds_widget)
 
         return panel
 
@@ -284,7 +234,7 @@ class IncomeManagementScreen(QWidget):
         panel.setObjectName("analysisPanel")
 
         layout = QVBoxLayout(panel)
-        layout.setSpacing(12)
+        layout.setSpacing(8)
 
         # Title and button
         title_layout = QHBoxLayout()
@@ -302,35 +252,31 @@ class IncomeManagementScreen(QWidget):
 
         layout.addLayout(title_layout)
 
-        # Ledger table
-        self.table_ledger = QTableWidget()
-        self.table_ledger.setColumnCount(8)
-        self.table_ledger.setHorizontalHeaderLabels([
+        # Ledger table (read-only - it's a computed summary)
+        self.table_ledger_widget = ExcelTableWithStats(show_checkboxes=False, read_only=True)
+        self.table_ledger = self.table_ledger_widget.table
+        self.table_ledger.setHeaders([
             "Month", "Type", "Source", "Expected", "Actual", "Variance", "Status", "Matched Txn"
         ])
         self.table_ledger.setAccessibleName("Income expectation ledger table")
         self.table_ledger.setAccessibleDescription("Shows income expectations with expected amounts, actual receipts, variance, and matching transaction status.")
-        self.table_ledger.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.table_ledger.setMinimumHeight(300)
-        self.table_ledger.verticalHeader().setVisible(False)
-        layout.addWidget(self.table_ledger)
+        self.table_ledger.setSortingEnabled(False)
+        self.table_ledger_widget.setMinimumHeight(280)
+        layout.addWidget(self.table_ledger_widget)
 
         return panel
 
-    def _on_fy_changed(self, fy):
-        """Handle FY change."""
-        self._selected_fy = fy
-        self.refresh()
-
-    def _on_person_changed(self):
-        """Handle person change."""
-        self._selected_person_id = self.cmb_person.currentData()
-        self.refresh()
 
     def refresh(self):
-        """Refresh all panels with current selections."""
-        fy = self._selected_fy
-        person_id = self._selected_person_id
+        """Refresh all panels with current selections from top bar."""
+        # Get FY and person_id from parent window's top bar selectors
+        if self._parent_window:
+            fy = self._parent_window.fy_combo.currentText()
+            person_id = self._parent_window.person_combo.currentData()
+        else:
+            # Fallback for testing
+            fy = get_current_financial_year()
+            person_id = None
 
         # Fetch data
         expectations = self._fetch_expectations(person_id, fy)
@@ -343,7 +289,7 @@ class IncomeManagementScreen(QWidget):
         self._update_kpi_tiles(expectations, person_id, fy)
 
         # Update charts and tables
-        self._populate_chart_1(expectations)
+        self._populate_chart_1(expectations, fy)
         self._populate_chart_2(person_id, fy)
         self._populate_chart_3(person_id, fy)
         self._populate_table_4_tds(person_id, fy)
@@ -376,14 +322,11 @@ class IncomeManagementScreen(QWidget):
         fd_interest_total = self._get_total_fd_interest(person_id, fy)
         projected_tax = max(0, (fd_interest_total - 50000) * 0.10) if fd_interest_total > 50000 else 0
 
-        # Update tiles
-        self.kpi_expected.findChild(QLabel, "kpiValue").setText(_format_inr(total_expected))
-        self.kpi_received.findChild(QLabel, "kpiValue").setText(_format_inr(total_received))
-
-        # Percentage for received
-        pct = (total_received / total_expected * 100) if total_expected > 0 else 0
-        self.kpi_pending.findChild(QLabel, "kpiValue").setText(_format_inr(total_pending))
-        self.kpi_tax.findChild(QLabel, "kpiValue").setText(_format_inr(projected_tax))
+        # Update tiles using set_value
+        self.kpi_expected.set_value(total_expected, is_currency=True)
+        self.kpi_received.set_value(total_received, is_currency=True)
+        self.kpi_pending.set_value(total_pending, is_currency=True)
+        self.kpi_tax.set_value(projected_tax, is_currency=True)
 
     def _get_total_fd_interest(self, person_id, fy):
         """Get total FD interest for person in FY."""
@@ -399,18 +342,19 @@ class IncomeManagementScreen(QWidget):
         except Exception:
             return 0.0
 
-    def _populate_chart_1(self, expectations):
+    def _populate_chart_1(self, expectations, fy):
         """Chart 1: Expected vs Actual by month."""
         try:
             # Group by month
             months_data = {}
-            fy_start, fy_end = fy_date_range(self._selected_fy)
+            fy_start, fy_end = fy_date_range(fy)
 
-            # Initialize all months
+            # Initialize all months (key: month abbreviation only, not day)
             current = fy_start
             while current <= fy_end:
-                month_key = f"{current.strftime('%b')} {current.day}"
-                months_data[month_key] = {"expected": 0, "actual": 0}
+                month_key = current.strftime('%b')
+                if month_key not in months_data:
+                    months_data[month_key] = {"expected": 0, "actual": 0}
                 current += relativedelta(months=1)
 
             # Populate with expectations
@@ -421,7 +365,7 @@ class IncomeManagementScreen(QWidget):
                     # For recurring frequencies stored as day number
                     continue
 
-                month_key = f"{exp_date.strftime('%b')} {exp_date.day}"
+                month_key = exp_date.strftime('%b')
                 months_data[month_key]["expected"] += exp["expected_amount"]
 
                 if exp["actual_transaction_id"]:
@@ -447,7 +391,7 @@ class IncomeManagementScreen(QWidget):
             self.chart_vs_actual.show_empty_state(f"Error: {str(e)[:50]}")
 
     def _populate_chart_2(self, person_id, fy):
-        """Chart 2: Income composition by source (donut chart)."""
+        """Chart 2: Income composition by source (donut chart for multiple sources, bar for single)."""
         try:
             expectations = get_income_expectations(person_id=person_id, financial_year=fy)
 
@@ -458,15 +402,24 @@ class IncomeManagementScreen(QWidget):
                 composition[income_type] = composition.get(income_type, 0) + exp["expected_amount"]
 
             if composition:
-                # Use pie/donut chart for single FY
                 labels = list(composition.keys())
                 values = list(composition.values())
 
-                self.chart_composition.plot_pie(
-                    labels=labels,
-                    values=values,
-                    title="Income Composition by Source"
-                )
+                # For single source, show a simple bar instead of donut (more informative)
+                if len(composition) == 1:
+                    self.chart_composition.plot_bar(
+                        categories=labels,
+                        values=values,
+                        title="Income Composition by Source",
+                        color=Theme.PRIMARY
+                    )
+                else:
+                    # Use pie/donut chart for multiple sources
+                    self.chart_composition.plot_pie(
+                        labels=labels,
+                        values=values,
+                        title="Income Composition by Source"
+                    )
             else:
                 self.chart_composition.show_empty_state("No income composition data")
         except Exception as e:
@@ -508,56 +461,65 @@ class IncomeManagementScreen(QWidget):
     def _populate_table_4_tds(self, person_id, fy):
         """Table 4: Per-bank TDS threshold status."""
         try:
+            self.table_tds.setRowCount(0)
             if not person_id:
-                self.table_tds.setRowCount(0)
                 return
 
             status = fd_tds_threshold_status(person_id, fy)
             banks = status.get("banks", [])
 
-            self.table_tds.setRowCount(len(banks))
-
-            for row, bank in enumerate(banks):
-                # Bank name
-                self.table_tds.setItem(row, 0, QTableWidgetItem(bank["bank_name"]))
-
-                # Total interest
-                interest_item = QTableWidgetItem(_format_inr(bank["total_interest"]))
-                interest_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-                self.table_tds.setItem(row, 1, interest_item)
-
+            for bank in banks:
                 # Status (exceeds or OK)
                 status_text = "⚠ Exceeds" if bank["exceeds"] else "✓ OK"
-                status_item = QTableWidgetItem(status_text)
-                color = Theme.DANGER if bank["exceeds"] else Theme.SUCCESS
-                status_item.setForeground(QColor(color))
-                self.table_tds.setItem(row, 2, status_item)
-
-                # Crossing quarter
-                crossing = bank.get("crossing_quarter", "—")
-                self.table_tds.setItem(row, 3, QTableWidgetItem(str(crossing)))
 
                 # Form badge
                 form_text = bank["form_name"]
                 if bank["form_on_file"]:
                     form_text += " ✓ On file"
-                    form_item = QTableWidgetItem(form_text)
-                    form_item.setForeground(QColor(Theme.SUCCESS))
-                else:
-                    form_item = QTableWidgetItem(form_text)
-                    if bank["exceeds"]:
-                        form_item.setForeground(QColor(Theme.DANGER))
 
-                self.table_tds.setItem(row, 4, form_item)
+                # Crossing quarter
+                crossing = bank.get("crossing_quarter", "—")
+
+                # Add row using addDataRow
+                row_data = [
+                    bank["bank_name"],
+                    _format_inr(bank["total_interest"]),
+                    status_text,
+                    str(crossing),
+                    form_text
+                ]
+                self.table_tds.addDataRow(row_data)
+
+                # Apply colors to the newly added row
+                row = self.table_tds.rowCount() - 1
+
+                # Color interest amount (right-aligned)
+                interest_item = self.table_tds.item(row, 1)
+                if interest_item:
+                    interest_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+
+                # Color status
+                status_item = self.table_tds.item(row, 2)
+                if status_item:
+                    color = Theme.DANGER if bank["exceeds"] else Theme.SUCCESS
+                    status_item.setForeground(QColor(color))
+
+                # Color form badge
+                form_item = self.table_tds.item(row, 4)
+                if form_item:
+                    if bank["form_on_file"]:
+                        form_item.setForeground(QColor(Theme.SUCCESS))
+                    elif bank["exceeds"]:
+                        form_item.setForeground(QColor(Theme.DANGER))
         except Exception as e:
             show_warning(f"Error loading TDS status: {e}")
 
     def _populate_table_5_ledger(self, expectations):
         """Table 5: Expectation ledger."""
         try:
-            self.table_ledger.setRowCount(len(expectations))
+            self.table_ledger.setRowCount(0)
 
-            for row, exp in enumerate(expectations):
+            for exp in expectations:
                 # Month
                 try:
                     exp_date = datetime.strptime(exp["expected_date"], "%Y-%m-%d").date()
@@ -565,59 +527,86 @@ class IncomeManagementScreen(QWidget):
                 except ValueError:
                     month_text = f"Day {exp['expected_date']}"
 
-                self.table_ledger.setItem(row, 0, QTableWidgetItem(month_text))
-
                 # Type
-                self.table_ledger.setItem(row, 1, QTableWidgetItem(exp["income_type"]))
+                exp_type = exp["income_type"]
 
                 # Source (account)
                 source = f"{exp.get('bank_display_name', exp['bank_name'])} ({exp['account_type']})"
-                self.table_ledger.setItem(row, 2, QTableWidgetItem(source))
 
                 # Expected amount
-                exp_item = QTableWidgetItem(_format_inr(exp["expected_amount"]))
-                exp_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-                self.table_ledger.setItem(row, 3, exp_item)
+                expected_str = _format_inr(exp["expected_amount"])
 
                 # Actual amount
                 actual = exp.get("actual_amount", 0) if exp["actual_transaction_id"] else None
-                actual_item = QTableWidgetItem(_format_inr(actual) if actual else "—")
-                actual_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-                if actual:
-                    actual_item.setForeground(QColor(Theme.SUCCESS))
-                self.table_ledger.setItem(row, 4, actual_item)
+                actual_str = _format_inr(actual) if actual else "—"
 
                 # Variance
                 if actual:
                     variance = actual - exp["expected_amount"]
-                    variance_item = QTableWidgetItem(_format_inr(variance))
-                    variance_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-                    color = Theme.SUCCESS if variance >= 0 else Theme.DANGER
-                    variance_item.setForeground(QColor(color))
-                    self.table_ledger.setItem(row, 5, variance_item)
+                    variance_str = _format_inr(variance)
                 else:
-                    self.table_ledger.setItem(row, 5, QTableWidgetItem("—"))
+                    variance_str = "—"
 
                 # Status
                 if exp["actual_transaction_id"]:
                     status = "Received"
-                    color = Theme.SUCCESS
                 else:
                     exp_date_obj = datetime.strptime(exp["expected_date"], "%Y-%m-%d").date() if "-" in exp["expected_date"] else date.today()
                     if exp_date_obj < date.today():
                         status = "Overdue"
-                        color = Theme.DANGER
                     else:
                         status = "Pending"
-                        color = Theme.WARNING
-
-                status_item = QTableWidgetItem(status)
-                status_item.setForeground(QColor(color))
-                self.table_ledger.setItem(row, 6, status_item)
 
                 # Matched transaction
                 matched_text = f"Txn #{exp['actual_transaction_id']}" if exp["actual_transaction_id"] else "—"
-                self.table_ledger.setItem(row, 7, QTableWidgetItem(matched_text))
+
+                # Add row
+                row_data = [
+                    month_text,
+                    exp_type,
+                    source,
+                    expected_str,
+                    actual_str,
+                    variance_str,
+                    status,
+                    matched_text
+                ]
+                self.table_ledger.addDataRow(row_data)
+
+                # Apply colors to the newly added row
+                row = self.table_ledger.rowCount() - 1
+
+                # Right-align amounts
+                for col in [3, 4, 5]:  # Expected, Actual, Variance
+                    item = self.table_ledger.item(row, col)
+                    if item:
+                        item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+
+                # Color actual amount
+                if actual:
+                    actual_item = self.table_ledger.item(row, 4)
+                    if actual_item:
+                        actual_item.setForeground(QColor(Theme.SUCCESS))
+
+                # Color variance
+                if actual:
+                    variance_item = self.table_ledger.item(row, 5)
+                    if variance_item:
+                        color = Theme.SUCCESS if variance >= 0 else Theme.DANGER
+                        variance_item.setForeground(QColor(color))
+
+                # Color status
+                status_item = self.table_ledger.item(row, 6)
+                if status_item:
+                    if exp["actual_transaction_id"]:
+                        color = Theme.SUCCESS
+                    else:
+                        exp_date_obj = datetime.strptime(exp["expected_date"], "%Y-%m-%d").date() if "-" in exp["expected_date"] else date.today()
+                        if exp_date_obj < date.today():
+                            color = Theme.DANGER
+                        else:
+                            color = Theme.WARNING
+                    status_item.setForeground(QColor(color))
         except Exception as e:
             show_warning(f"Error populating ledger: {e}")
 

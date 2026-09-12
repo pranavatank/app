@@ -150,7 +150,7 @@ class ChartWidget(QWidget):
         if tight:
             self._fig.subplots_adjust(left=0.13, right=0.97, top=0.88, bottom=0.18)
         ax = self._fig.add_subplot(111)
-        ax.set_facecolor(Theme.SURFACE_ALT)
+        ax.set_facecolor(Theme.SURFACE)
         ax.tick_params(colors=Theme.TEXT_SECONDARY, labelsize=9)
         ax.tick_params(axis="x", colors=Theme.TEXT_SECONDARY)
         ax.tick_params(axis="y", colors=Theme.TEXT_SECONDARY)
@@ -162,8 +162,7 @@ class ChartWidget(QWidget):
         return ax
 
     def _finish(self, ax, title: str, xlabel: str = "", ylabel: str = ""):
-        ax.set_title(title, color=Theme.TEXT_PRIMARY, fontsize=12,
-                     fontweight="bold", pad=10)
+        # Note: in-figure title removed — section heading above chart names it
         if xlabel:
             ax.set_xlabel(xlabel, color=Theme.TEXT_SECONDARY, fontsize=10, labelpad=6)
         if ylabel:
@@ -184,7 +183,7 @@ class ChartWidget(QWidget):
                     _inr(val),
                     ha="center", va="bottom",
                     fontsize=8, color=Theme.TEXT_SECONDARY,
-                    fontweight="600",
+                    fontweight="bold",
                 )
 
     def _inr_formatter(self, x, _):
@@ -263,7 +262,6 @@ class ChartWidget(QWidget):
                                rotation=30 if n > 5 else 0,
                                ha="right" if n > 5 else "center")
             ax.yaxis.set_major_formatter(mticker.FuncFormatter(self._inr_formatter))
-            self._add_bar_labels(ax, bars, values)
             self._finish(ax, title, xlabel, ylabel)
         except Exception:
             traceback.print_exc()
@@ -294,10 +292,10 @@ class ChartWidget(QWidget):
             w = 0.36
 
             bars1 = ax.bar(x - w / 2, values1, w,
-                           label=label1, color=Theme.SUCCESS,
+                           label=label1, color=Theme.CHART_COLORS[0],
                            alpha=0.88, edgecolor=Theme.SURFACE, linewidth=1)
             bars2 = ax.bar(x + w / 2, values2, w,
-                           label=label2, color=Theme.DANGER,
+                           label=label2, color=Theme.CHART_COLORS[1],
                            alpha=0.88, edgecolor=Theme.SURFACE, linewidth=1)
 
             ax.set_xticks(x)
@@ -307,8 +305,6 @@ class ChartWidget(QWidget):
                 ha="right" if len(categories) > 5 else "center",
             )
             ax.yaxis.set_major_formatter(mticker.FuncFormatter(self._inr_formatter))
-            self._add_bar_labels(ax, bars1, values1)
-            self._add_bar_labels(ax, bars2, values2)
 
             leg = ax.legend(
                 facecolor=Theme.SURFACE,
@@ -316,6 +312,7 @@ class ChartWidget(QWidget):
                 labelcolor=Theme.TEXT_PRIMARY,
                 fontsize=9,
                 framealpha=0.95,
+                bbox_to_anchor=(1.02, 1), loc='upper left',
             )
             self._finish(ax, title, xlabel, ylabel)
         except Exception:
@@ -374,8 +371,7 @@ class ChartWidget(QWidget):
                 fontsize=8,
                 labelcolor=Theme.TEXT_PRIMARY,
             )
-            ax.set_title(title, color=Theme.TEXT_PRIMARY, fontsize=12,
-                         fontweight="bold", pad=10)
+            # Note: in-figure title removed — section heading above chart names it
             self._fig.patch.set_facecolor(Theme.SURFACE)
             self._canvas.draw()
         except Exception:
@@ -414,16 +410,6 @@ class ChartWidget(QWidget):
             )
             ax.fill_between(x, y_data, alpha=0.12, color=c)
 
-            # Annotate points
-            for i, v in enumerate(y_data):
-                if v > 0:
-                    ax.annotate(
-                        _inr(v), (i, v),
-                        textcoords="offset points", xytext=(0, 8),
-                        ha="center", fontsize=8,
-                        color=Theme.TEXT_SECONDARY, fontweight="600",
-                    )
-
             ax.set_xticks(list(x))
             ax.set_xticklabels(
                 x_data,
@@ -446,10 +432,12 @@ class ChartWidget(QWidget):
         title: str = "",
         xlabel: str = "",
         ylabel: str = "",
+        trim_trailing_empty: bool = True,
     ):
         """
         Plot multiple trend lines.
         series = {"FD Interest": [v1, v2, ...], "Savings Interest": [...]}
+        trim_trailing_empty: if True, remove trailing all-zero/None months
         """
         if not self._canvas:
             return
@@ -457,6 +445,21 @@ class ChartWidget(QWidget):
             self.show_empty_state("No data to display")
             return
         try:
+            # Trim trailing empty months if all series end with 0/None
+            if trim_trailing_empty and categories and series:
+                trim_idx = len(categories)
+                for i in range(len(categories) - 1, -1, -1):
+                    all_empty = all(
+                        (not values or i >= len(values) or values[i] is None or values[i] == 0)
+                        for values in series.values()
+                    )
+                    if not all_empty:
+                        trim_idx = i + 1
+                        break
+                if trim_idx < len(categories):
+                    categories = categories[:trim_idx]
+                    series = {k: v[:trim_idx] for k, v in series.items()}
+
             ax   = self._new_ax()
             x    = range(len(categories))
             cols = Theme.CHART_COLORS
@@ -485,6 +488,7 @@ class ChartWidget(QWidget):
                 edgecolor=Theme.BORDER,
                 labelcolor=Theme.TEXT_PRIMARY,
                 fontsize=9,
+                bbox_to_anchor=(1.02, 1), loc='upper left',
             )
             self._finish(ax, title, xlabel, ylabel)
         except Exception:
@@ -513,10 +517,10 @@ class ChartWidget(QWidget):
             w  = 0.36
 
             b1 = ax.bar(x - w / 2, income,  w, label="Income",
-                        color=Theme.SUCCESS, alpha=0.88,
+                        color=Theme.CHART_COLORS[0], alpha=0.88,
                         edgecolor=Theme.SURFACE, linewidth=1)
             b2 = ax.bar(x + w / 2, expense, w, label="Expense",
-                        color=Theme.DANGER,  alpha=0.88,
+                        color=Theme.CHART_COLORS[1],  alpha=0.88,
                         edgecolor=Theme.SURFACE, linewidth=1)
 
             ax.set_xticks(x)
@@ -527,6 +531,7 @@ class ChartWidget(QWidget):
                 edgecolor=Theme.BORDER,
                 labelcolor=Theme.TEXT_PRIMARY,
                 fontsize=9,
+                bbox_to_anchor=(1.02, 1), loc='upper left',
             )
             self._finish(ax, title, ylabel="Amount (₹)")
         except Exception:

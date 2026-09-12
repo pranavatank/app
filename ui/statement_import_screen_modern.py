@@ -62,10 +62,9 @@ from ui.dialogs.column_mapping_dialog import ColumnMappingDialog
 class _StatementParseWorker(QObject):
     """
     Worker that parses a statement in a background thread.
-    Runs parse_statement_with_debug() and emits results via signals.
+    Runs parse_statement_with_debug() and returns results via return value.
+    The progress signal is still available for real-time updates.
     """
-    finished = pyqtSignal(tuple)  # Emits (txns, debug_info)
-    error = pyqtSignal(object)    # Emits exception
     progress = pyqtSignal(str)    # Emits progress message
 
     def __init__(self, file_path, file_type, bank_name, password, column_mapping):
@@ -77,19 +76,16 @@ class _StatementParseWorker(QObject):
         self.column_mapping = column_mapping
 
     def run(self):
-        """Parse statement in background thread and emit result."""
-        try:
-            self.progress.emit("Parsing statement...")
-            txns, debug_info = parse_statement_with_debug(
-                self.file_path,
-                self.file_type,
-                self.bank_name,
-                password=self.password,
-                column_mapping=self.column_mapping,
-            )
-            self.finished.emit((txns, debug_info))
-        except Exception as e:
-            self.error.emit(e)
+        """Parse statement in background thread and return result."""
+        self.progress.emit("Parsing statement...")
+        txns, debug_info = parse_statement_with_debug(
+            self.file_path,
+            self.file_type,
+            self.bank_name,
+            password=self.password,
+            column_mapping=self.column_mapping,
+        )
+        return (txns, debug_info)
 
 
 class _TransactionImportWorker(QObject):
@@ -98,8 +94,6 @@ class _TransactionImportWorker(QObject):
     Handles database insertion, FD creation, and logging.
     Does NOT call allocate_savings_interest_to_fy or recalculate_account_balance — those run on GUI thread.
     """
-    finished = pyqtSignal(dict)  # Emits result dict with keys: inserted_ids, imported, fds_created, batch_rows
-    error = pyqtSignal(object)   # Emits exception
     progress = pyqtSignal(str)   # Emits progress message
 
     def __init__(self, selected_account_id, selected_person_id, preview_transactions,
@@ -115,99 +109,96 @@ class _TransactionImportWorker(QObject):
         self.checked_rows = checked_rows
 
     def run(self):
-        """Import transactions in background thread."""
+        """Import transactions in background thread and return result."""
+        imported = 0
+        fds_created = 0
+        batch_rows = []
+        batch_preview_rows = []
+
+        # Collect transactions to import
+        for idx in self.checked_rows:
+            if idx % 25 == 0:
+                count = len([i for i in self.checked_rows if i <= idx])
+                self.progress.emit(f"Importing... {count}/{len(self.checked_rows)} processed")
+
+            is_duplicate = self.preview_duplicate_flags[idx] if idx < len(self.preview_duplicate_flags) else False
+            if is_duplicate:
+                continue
+
+            txn = self.preview_transactions[idx]
+            batch_rows.append(txn)
+            batch_preview_rows.append(idx)
+
+        # Add transactions to database
+        inserted_ids = add_transactions_batch(
+            account_id=self.selected_account_id,
+            person_id=self.selected_person_id,
+            transactions=batch_rows,
+            source="Statement Import",
+        )
+
         try:
-            imported = 0
-            fds_created = 0
-            batch_rows = []
-            batch_preview_rows = []
+            for txn_id, txn in zip(inserted_ids, batch_rows):
+                imported += 1
 
-            # Collect transactions to import
-            for idx in self.checked_rows:
-                if idx % 25 == 0:
-                    count = len([i for i in self.checked_rows if i <= idx])
-                    self.progress.emit(f"Importing... {count}/{len(self.checked_rows)} processed")
+                # Handle FD maturity
+                if txn.get("transaction_type") == "Income":
+                    apply_statement_redemption_event(
+                        account_id=self.selected_account_id,
+                        person_id=self.selected_person_id,
+                        transaction_id=txn_id,
+                        transaction_date=txn["transaction_date"],
+                        amount=float(txn["amount"]),
+                        description=txn.get("description") or "",
+                        reference_no=txn.get("reference_no"),
+                    )
 
-                is_duplicate = self.preview_duplicate_flags[idx] if idx < len(self.preview_duplicate_flags) else False
-                if is_duplicate:
-                    continue
+                # Handle FD opening
+                if self._is_fd_opening_transaction(txn):
+                    desc = txn.get("description") or ""
+                    fd_ref = self._extract_fd_reference(desc) or txn.get("reference_no")
+                    maturity_amt = self._extract_maturity_amount(desc)
+                    fd_id = add_fd_from_statement(
+                        account_id=self.selected_account_id,
+                        person_id=self.selected_person_id,
+                        principal_amount=float(txn["amount"]),
+                        start_date=txn["transaction_date"],
+                        fd_reference_no=fd_ref,
+                        tenure_months=None,
+                        interest_rate=None,
+                        compounding_type=None,
+                        maturity_date=None,
+                        maturity_amount=maturity_amt,
+                        maturity_amount_formula=maturity_amt,
+                        maturity_amount_bank=maturity_amt,
+                        expected_interest_amount=(maturity_amt - float(txn["amount"])) if maturity_amt else None,
+                        source_statement_file=os.path.basename(self.selected_file) if self.selected_file else None,
+                        source_transaction_id=txn_id,
+                        source_description=desc
+                    )
+                    if fd_id:
+                        fds_created += 1
+        except Exception:
+            delete_transactions_by_ids(inserted_ids)
+            raise
 
-                txn = self.preview_transactions[idx]
-                batch_rows.append(txn)
-                batch_preview_rows.append(idx)
+        self.progress.emit("Finalizing import log...")
+        log_import(
+            account_id=self.selected_account_id,
+            person_id=self.selected_person_id,
+            bank_name=self.bank_name,
+            file_name=(self.selected_file.split("/")[-1] or self.selected_file.split("\\")[-1]),
+            file_type=self.file_type,
+            records_imported=imported,
+            status="Success"
+        )
 
-            # Add transactions to database
-            inserted_ids = add_transactions_batch(
-                account_id=self.selected_account_id,
-                person_id=self.selected_person_id,
-                transactions=batch_rows,
-                source="Statement Import",
-            )
-
-            try:
-                for txn_id, txn in zip(inserted_ids, batch_rows):
-                    imported += 1
-
-                    # Handle FD maturity
-                    if txn.get("transaction_type") == "Income":
-                        apply_statement_redemption_event(
-                            account_id=self.selected_account_id,
-                            person_id=self.selected_person_id,
-                            transaction_id=txn_id,
-                            transaction_date=txn["transaction_date"],
-                            amount=float(txn["amount"]),
-                            description=txn.get("description") or "",
-                            reference_no=txn.get("reference_no"),
-                        )
-
-                    # Handle FD opening
-                    if self._is_fd_opening_transaction(txn):
-                        desc = txn.get("description") or ""
-                        fd_ref = self._extract_fd_reference(desc) or txn.get("reference_no")
-                        maturity_amt = self._extract_maturity_amount(desc)
-                        fd_id = add_fd_from_statement(
-                            account_id=self.selected_account_id,
-                            person_id=self.selected_person_id,
-                            principal_amount=float(txn["amount"]),
-                            start_date=txn["transaction_date"],
-                            fd_reference_no=fd_ref,
-                            tenure_months=None,
-                            interest_rate=None,
-                            compounding_type=None,
-                            maturity_date=None,
-                            maturity_amount=maturity_amt,
-                            maturity_amount_formula=maturity_amt,
-                            maturity_amount_bank=maturity_amt,
-                            expected_interest_amount=(maturity_amt - float(txn["amount"])) if maturity_amt else None,
-                            source_statement_file=os.path.basename(self.selected_file) if self.selected_file else None,
-                            source_transaction_id=txn_id,
-                            source_description=desc
-                        )
-                        if fd_id:
-                            fds_created += 1
-            except Exception:
-                delete_transactions_by_ids(inserted_ids)
-                raise
-
-            self.progress.emit("Finalizing import log...")
-            log_import(
-                account_id=self.selected_account_id,
-                person_id=self.selected_person_id,
-                bank_name=self.bank_name,
-                file_name=(self.selected_file.split("/")[-1] or self.selected_file.split("\\")[-1]),
-                file_type=self.file_type,
-                records_imported=imported,
-                status="Success"
-            )
-
-            self.finished.emit({
-                "inserted_ids": inserted_ids,
-                "imported": imported,
-                "fds_created": fds_created,
-                "batch_rows": batch_rows
-            })
-        except Exception as e:
-            self.error.emit(e)
+        return {
+            "inserted_ids": inserted_ids,
+            "imported": imported,
+            "fds_created": fds_created,
+            "batch_rows": batch_rows
+        }
 
     def _is_fd_opening_transaction(self, txn):
         """Check if transaction opens a fixed deposit."""
@@ -318,6 +309,7 @@ class StatementImportScreen(QWidget):
         self.btn_next.setAccessibleName("Next button")
         self.btn_next.setAccessibleDescription("Continue to parse the statement or import the selected rows.")
         self.btn_next.setToolTip("Continue to parse the statement or import the selected rows.")
+        self.btn_next.setEnabled(False)  # Disabled until both person and account are selected
         nav.addWidget(self.btn_next)
         layout.addLayout(nav)
 
@@ -368,6 +360,7 @@ class StatementImportScreen(QWidget):
         self.account_combo.setAccessibleDescription("Choose the bank account for the selected person.")
         self.account_combo.setToolTip("Choose the bank account for the selected person.")
         self.account_combo.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.account_combo.currentIndexChanged.connect(self._update_parse_button_state)
         account_wrapper = QWidget()
         account_layout = QHBoxLayout(account_wrapper)
         account_layout.setContentsMargins(0, 0, 0, 0)
@@ -405,7 +398,6 @@ class StatementImportScreen(QWidget):
         form_layout.addLayout(form)
 
         # File selection section (with drag-and-drop)
-        form_layout.addWidget(QLabel(""))  # Spacer
         file_section = QVBoxLayout()
         file_section.setSpacing(10)
 
@@ -429,6 +421,20 @@ class StatementImportScreen(QWidget):
         # Load persons
         for p in get_all_persons():
             self.person_combo.addItem(p["full_name"], userData=p["person_id"])
+
+        # Set default person selection based on top bar's current selection
+        # If top bar has "All Persons" selected (session.selected_person_id is None),
+        # leave the combo empty (don't select any index) to require explicit choice.
+        # If top bar has a specific person, default to that person.
+        if session.selected_person_id:
+            for i in range(self.person_combo.count()):
+                if self.person_combo.itemData(i) == session.selected_person_id:
+                    self.person_combo.setCurrentIndex(i)
+                    break
+        # If session.selected_person_id is None, leave combo at -1 (no selection)
+        # PyQt6 starts at 0, so we need to explicitly set to -1 or use blockSignals to avoid auto-selection
+        else:
+            self.person_combo.setCurrentIndex(-1)
 
         return container
 
@@ -637,7 +643,7 @@ class StatementImportScreen(QWidget):
                 f"background-color: {Theme.PRIMARY if step >= 2 else Theme.BORDER};"
             )
         # Hide Back button at step 1 (meaningless to go back from first step)
-        if self.btn_back:
+        if hasattr(self, 'btn_back') and self.btn_back:
             if step == 1:
                 self.btn_back.setVisible(False)
             else:
@@ -702,13 +708,24 @@ class StatementImportScreen(QWidget):
             self.account_combo.clear()
             accounts = get_accounts_for_person(self.selected_person_id)
             for acc in accounts:
-                self.account_combo.addItem(
-                    f"{acc.get('bank_display_name', acc['bank_name'])} — {acc['account_type']} ({acc.get('account_number_masked','') or ''})",
-                    userData=acc["account_id"]
-                )
+                masked = acc.get('account_number_masked', '') or ''
+                label = f"{acc.get('bank_display_name', acc['bank_name'])} — {acc['account_type']}"
+                if masked:
+                    label += f" ({masked})"
+                self.account_combo.addItem(label, userData=acc["account_id"])
         else:
             self.account_combo.setEnabled(False)
             self.account_combo.clear()
+        self._update_parse_button_state()
+
+    def _update_parse_button_state(self):
+        """Enable Parse button only when both person and account are selected"""
+        if not hasattr(self, "btn_next"):
+            # Called during _build_selection_screen(), before btn_next exists
+            return
+        person_selected = self.person_combo.currentData() is not None
+        account_selected = self.account_combo.currentData() is not None
+        self.btn_next.setEnabled(person_selected and account_selected)
 
     def _browse_file(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -829,7 +846,7 @@ class StatementImportScreen(QWidget):
     def _handle_parse_error(self, exc):
         """Handle errors from statement parsing."""
         self.btn_next.setEnabled(True)
-        self.btn_browse.setEnabled(True)
+        self._drop_zone.setEnabled(True)
         self.file_type_combo.setEnabled(True)
 
         if isinstance(exc, StatementPasswordRequiredError):
@@ -856,7 +873,7 @@ class StatementImportScreen(QWidget):
     def _process_parsed_statement(self, txns):
         """Process parsed transactions on the GUI thread (after worker returns)."""
         self.btn_next.setEnabled(True)
-        self.btn_browse.setEnabled(True)
+        self._drop_zone.setEnabled(True)
         self.file_type_combo.setEnabled(True)
 
         try:
@@ -1112,16 +1129,21 @@ class StatementImportScreen(QWidget):
         self.btn_back.setEnabled(False)
         self.btn_next.setText("Parse Statement →")
 
-        # Reload person combo
+        # Reload person combo with proper default selection
         self.person_combo.clear()
         for p in get_all_persons():
             self.person_combo.addItem(p["full_name"], userData=p["person_id"])
 
-        if self.selected_person_id:
+        # Set default person selection based on top bar's current selection
+        if session.selected_person_id:
             for i in range(self.person_combo.count()):
-                if self.person_combo.itemData(i) == self.selected_person_id:
+                if self.person_combo.itemData(i) == session.selected_person_id:
                     self.person_combo.setCurrentIndex(i)
                     break
+        else:
+            self.person_combo.setCurrentIndex(-1)
+
+        self._update_parse_button_state()
 
     # Helper methods — use the shared branded Loader overlay (same widget
     # Settings uses for backup/restore) instead of a bespoke QProgressDialog,

@@ -23,7 +23,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QGroupBox,
     QFormLayout, QLineEdit, QCheckBox, QFileDialog,
     QMessageBox, QScrollArea, QFrame, QGridLayout,
-    QButtonGroup, QAbstractButton,
+    QButtonGroup, QAbstractButton, QDialog,
 )
 from PyQt6.QtCore import Qt, QSize, pyqtSignal, QTimer
 from PyQt6.QtGui import QFont, QColor, QPainter, QPainterPath, QPen
@@ -267,6 +267,8 @@ class SettingsScreen(QWidget):
         self.btn_ai_warmup = None
         self._warmup_thread = None
         self._warmup_worker = None
+        self._ai_status_cache = None  # Cache (is_available, timestamp)
+        self._ai_status_cache_ttl = 10  # seconds
 
         self._build_ui()
         # Register AFTER build so callback has valid widget refs
@@ -368,8 +370,8 @@ class SettingsScreen(QWidget):
     def _hdr_badge(self, text: str) -> QLabel:
         l = QLabel(text)
         l.setStyleSheet(
-            "background: rgba(255,255,255,0.22); color: white; border-radius: 10px; "
-            "padding: 3px 10px; font-size: 11px; font-weight: 600; border: none;")
+            f"background: {Theme.SURFACE}; color: {Theme.TEXT_PRIMARY}; border-radius: 10px; "
+            f"padding: 3px 10px; font-size: 11px; font-weight: 600; border: 1px solid {Theme.BORDER};")
         return l
 
     def _refresh_badges(self):
@@ -766,33 +768,61 @@ class SettingsScreen(QWidget):
             QMessageBox.critical(self, "Restore Failed", str(e))
 
     def _on_manage_persons(self):
-        from ui.dialogs.person_dialog import PersonManagementDialog
-        PersonManagementDialog(self).exec()
+        self._show_manage_data_screen()
 
     def _on_manage_accounts(self):
-        from ui.dialogs.account_dialog import AccountManagementDialog
-        AccountManagementDialog(self).exec()
+        self._show_manage_data_screen()
 
     def _on_manage_banks(self):
+        self._show_manage_data_screen()
+
+    def _show_manage_data_screen(self):
+        """Show the Manage Data sub-screen as a non-modal dialog."""
         try:
-            from ui.dialogs.bank_dialog import BankManagementDialog
-            BankManagementDialog(self).exec()
+            from ui.manage_data_screen import ManageDataScreen
+            dlg = QDialog(self)
+            dlg.setWindowTitle("Manage Data")
+            dlg.setMinimumSize(900, 600)
+            layout = QVBoxLayout(dlg)
+            layout.setContentsMargins(0, 0, 0, 0)
+            manage_widget = ManageDataScreen(dlg)
+            layout.addWidget(manage_widget)
+            dlg.show()
         except Exception as e:
             show_warning(str(e))
 
     def _refresh_ai_status(self):
-        """Check and display AI parser availability"""
+        """Check and display AI parser availability (with caching)"""
+        import time
+        now = time.time()
+
+        # Use cached result if valid
+        if self._ai_status_cache is not None:
+            ok, timestamp = self._ai_status_cache
+            if now - timestamp < self._ai_status_cache_ttl:
+                self._display_ai_status(ok)
+                return
+
+        # Cache expired or empty — refresh
         try:
             ok = is_ollama_available()
-            if ok:
-                self.ai_status_lbl.setText("✓ AI Available")
-                self.ai_status_lbl.setStyleSheet(
-                    Theme.badge_style(Theme.SUCCESS_LIGHT, Theme.SUCCESS_DARK, radius=8, padding='4px 8px', size=11))
-            else:
-                self.ai_status_lbl.setText("✗ AI Unavailable")
-                self.ai_status_lbl.setStyleSheet(
-                    Theme.badge_style(Theme.DANGER_LIGHT, Theme.DANGER, radius=8, padding='4px 8px', size=11))
+            self._ai_status_cache = (ok, now)
+            self._display_ai_status(ok)
         except Exception:
+            self._ai_status_cache = (False, now)
+            self._display_ai_status(None)
+
+    def _display_ai_status(self, ok: bool | None):
+        """Display the AI status badge"""
+        if ok is True:
+            self.ai_status_lbl.setText("✓ AI Available")
+            self.ai_status_lbl.setStyleSheet(
+                Theme.badge_style(Theme.SUCCESS_LIGHT, Theme.SUCCESS_DARK, radius=8, padding='4px 8px', size=11))
+        elif ok is False:
+            self.ai_status_lbl.setText("✗ AI Unavailable")
+            self.ai_status_lbl.setStyleSheet(
+                Theme.badge_style(Theme.DANGER_LIGHT, Theme.DANGER, radius=8, padding='4px 8px', size=11))
+        else:
             self.ai_status_lbl.setText("? AI Unknown")
             self.ai_status_lbl.setStyleSheet(
                 Theme.badge_style(Theme.WARNING_LIGHT, Theme.WARNING, radius=8, padding='4px 8px', size=11))

@@ -22,11 +22,12 @@ from ui.dialogs.account_dialog import AccountDialog
 class AccountDetailsPanel(QWidget):
     """Read-only or editable account details panel that can be used in-screen."""
 
-    def __init__(self, parent=None, account: dict = None, on_updated=None, on_deleted=None):
+    def __init__(self, parent=None, account: dict = None, on_updated=None, on_deleted=None, on_closed=None):
         super().__init__(parent)
         self.account = account
         self.on_updated = on_updated
         self.on_deleted = on_deleted
+        self.on_closed = on_closed
         self._build_ui()
 
     def _build_ui(self):
@@ -241,6 +242,8 @@ class AccountDetailsPanel(QWidget):
         """Clear selection when close is clicked."""
         self.account = None
         self._build_ui()
+        if self.on_closed:
+            self.on_closed()
 
 
 class AccountDetailsDialog(QDialog):

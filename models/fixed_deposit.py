@@ -23,7 +23,7 @@ def add_fd(account_id: int, person_id: int, principal_amount: float,
            linked_transaction_id: int | None = None,
            source_statement_file: str | None = None,
            source_transaction_id: int | None = None) -> int:
-    """Insert a Fixed Deposit record. Returns new fd_id."""
+    """Insert a Fixed Deposit record and allocate interest to FY. Returns new fd_id."""
     conn = get_connection()
     cur = conn.execute("""
         INSERT INTO FixedDeposit
@@ -50,6 +50,12 @@ def add_fd(account_id: int, person_id: int, principal_amount: float,
     conn.commit()
     fd_id = cur.lastrowid
     conn.close()
+
+    # Allocate FD interest to FY if maturity details are present
+    # (safe no-op for "Pending Details" FDs with NULL maturity)
+    from engines.interest_engine import allocate_fd_interest_to_fy
+    allocate_fd_interest_to_fy(fd_id)
+
     return fd_id
 
 
@@ -117,7 +123,7 @@ def add_fd_from_statement(account_id: int, person_id: int, principal_amount: flo
                           source_statement_file: Optional[str] = None,
                           source_transaction_id: Optional[int] = None) -> int:
     """
-    Insert an FD inferred from statement narration.
+    Insert an FD inferred from statement narration and allocate interest to FY.
     Unknown details remain NULL by design and can be filled later.
     Returns fd_id, or 0 if a likely duplicate already exists.
     """
@@ -171,6 +177,12 @@ def add_fd_from_statement(account_id: int, person_id: int, principal_amount: flo
     conn.commit()
     fd_id = cur.lastrowid
     conn.close()
+
+    # Allocate FD interest to FY if maturity details are present
+    # (safe no-op for "Pending Details" FDs with NULL maturity)
+    from engines.interest_engine import allocate_fd_interest_to_fy
+    allocate_fd_interest_to_fy(fd_id)
+
     return fd_id
 
 
@@ -252,6 +264,11 @@ def update_fd(fd_id: int, principal_amount: float, start_date: str,
                     status, fd_id))
     conn.commit()
     conn.close()
+
+    # Allocate FD interest to FY if maturity details are present
+    # (safe no-op for "Pending Details" FDs with NULL maturity)
+    from engines.interest_engine import allocate_fd_interest_to_fy
+    allocate_fd_interest_to_fy(fd_id)
 
 
 def link_fd_transaction(fd_id: int, transaction_id: int) -> None:

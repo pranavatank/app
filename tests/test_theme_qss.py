@@ -114,26 +114,29 @@ class TestThemeScrollbars:
     """Verify scrollbars meet size requirements."""
 
     def test_scrollbar_size(self):
-        """Scrollbars should be 12px with 24px effective hit area."""
+        """Scrollbars should be slim (8-10px) to avoid visual overlap."""
         ThemeManager.apply("Aurora", save=False, notify=False)
         qss = Theme.get_stylesheet()
 
         # Check vertical scrollbar
-        assert "width: 16px" in qss or "width:16px" in qss, (
-            "Vertical scrollbar track should be 16px wide (12px handle + 2px padding each side)"
+        assert "width: 10px" in qss or "width:10px" in qss, (
+            "Vertical scrollbar track should be 10px wide (8px handle + 1px padding each side)"
         )
 
         # Check horizontal scrollbar
-        assert "height: 16px" in qss or "height:16px" in qss, (
-            "Horizontal scrollbar track should be 16px tall (12px handle + 2px padding each side)"
+        assert "height: 10px" in qss or "height:10px" in qss, (
+            "Horizontal scrollbar track should be 10px tall (8px handle + 1px padding each side)"
         )
 
         # Check handle sizes
-        assert "min-height: 12px" in qss or "min-height:12px" in qss, (
-            "Vertical scrollbar handle should have min-height: 12px"
+        assert "min-height: 28px" in qss or "min-height:28px" in qss, (
+            "Vertical scrollbar handle should have min-height: 28px"
         )
-        assert "min-width: 12px" in qss or "min-width:12px" in qss, (
-            "Horizontal scrollbar handle should have min-width: 12px"
+        assert "min-width: 8px" in qss or "min-width:8px" in qss, (
+            "Vertical scrollbar handle should have min-width: 8px"
+        )
+        assert "min-height: 8px" in qss or "min-height:8px" in qss, (
+            "Horizontal scrollbar handle should have min-height: 8px"
         )
 
 

@@ -60,8 +60,9 @@ class EmptyState(QFrame):
         icon_w = QLabel()
         icon_w.setAlignment(Qt.AlignmentFlag.AlignCenter)
         icon_w.setObjectName("EmptyStateIcon")
+        icon_w.setMinimumHeight(48)
         if icons_available():
-            pm = icon_pixmap(icon_name, size=64, color="muted")
+            pm = icon_pixmap(icon_name, size=48, color="muted")
             if not pm.isNull():
                 icon_w.setPixmap(pm)
             else:
