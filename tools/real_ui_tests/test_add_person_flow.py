@@ -22,6 +22,14 @@ import os
 import sys
 
 os.environ.setdefault("QT_QPA_FONTDIR", "C:/Windows/Fonts")
+
+# Amounts print with the rupee sign; the Windows console defaults to cp1252 and
+# raises UnicodeEncodeError on it, which would kill a passing test at the report.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 from PySide6.QtCore import Qt, QTimer
@@ -179,5 +187,37 @@ def report(harness, after=None):
     return 1 if failures else 0
 
 
+def _close_all_windows():
+    """Close every top-level window, whatever happened. A failed assertion must
+    never leave a test window (or a blocking modal) on the user's screen."""
+    try:
+        from PySide6.QtWidgets import QApplication, QDialog
+        app = QApplication.instance()
+        if not app:
+            return
+        for w in list(app.topLevelWidgets()):
+            try:
+                if isinstance(w, QDialog) and w.isVisible():
+                    w.reject()
+            except Exception:
+                pass
+        for w in list(app.topLevelWidgets()):
+            try:
+                w.close()
+            except Exception:
+                pass
+        app.processEvents()
+    except Exception:
+        pass
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        rc = main()
+    except BaseException:
+        import traceback
+        traceback.print_exc()
+        rc = 1
+    finally:
+        _close_all_windows()
+    sys.exit(rc)

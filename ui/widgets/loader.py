@@ -40,7 +40,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QApplication
 )
 from PySide6.QtCore import (
-    Qt, QTimer, QThread, Signal, QObject, QRect
+    Qt, QTimer, QThread, Signal, Slot, QObject, QRect
 )
 from PySide6.QtGui import (
     QPainter, QPen, QColor, QBrush, QFont, QPainterPath, QConicalGradient, QPixmap
@@ -329,8 +329,15 @@ class Loader(QWidget):
 
         thread = QThread(parent)
         worker.moveToThread(thread)
-        worker.finished.connect(_done)
-        worker.error.connect(_error)
+        # _done/_error touch widgets, so they MUST run on the GUI thread. A plain
+        # callable has no thread affinity, so Qt would invoke it directly on the
+        # worker thread — building a dialog there deadlocks. Passing the loader
+        # (a GUI-thread QObject) as context with an explicit queued connection
+        # marshals them back to the GUI thread.
+        relay = _GuiRelay(_done, _error, loader)
+        worker.finished.connect(relay.on_finished, Qt.ConnectionType.QueuedConnection)
+        worker.error.connect(relay.on_error, Qt.ConnectionType.QueuedConnection)
+        loader._relay = relay
         thread.started.connect(worker.run)
         thread.start()
         loader.show()
@@ -340,6 +347,30 @@ class Loader(QWidget):
 # ══════════════════════════════════════════════════════════════════════════════
 # Background worker
 # ══════════════════════════════════════════════════════════════════════════════
+
+class _GuiRelay(QObject):
+    """Receives the worker's results on the GUI thread.
+
+    A plain Python callable has no thread affinity, so Qt invokes it directly on
+    the emitting (worker) thread. The callbacks here touch widgets and can open
+    dialogs, which deadlocks off the GUI thread. This relay is parented to a
+    GUI-thread widget, so a queued connection to its slots marshals the result
+    back to the GUI thread.
+    """
+
+    def __init__(self, on_done, on_error, parent):
+        super().__init__(parent)
+        self._on_done = on_done
+        self._on_error = on_error
+
+    @Slot(object)
+    def on_finished(self, result):
+        self._on_done(result)
+
+    @Slot(object)
+    def on_error(self, exc):
+        self._on_error(exc)
+
 
 class _Worker(QObject):
     finished = Signal(object)

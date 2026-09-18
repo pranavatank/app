@@ -54,6 +54,13 @@ from ui.dialogs.account_metadata_dialog import AccountMetadataDialog
 from ui.dialogs.password_dialog import PasswordDialog
 from ui.dialogs.column_mapping_dialog import ColumnMappingDialog
 
+# The post-parse "Update Account Details" modal is DISABLED. It opened as a
+# blocking dialog in the middle of processing parse results, so the import
+# appeared to hang: the preview table never populated and the dialog could sit
+# behind the main window with no visible cue. Set True to restore it once it is
+# reworked to be non-modal or deferred until after the preview is shown.
+SHOW_METADATA_DIALOG = False
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Worker class for parsing statements in background thread
@@ -1094,7 +1101,7 @@ class StatementImportScreen(QWidget):
                 self.statement_text = extract_statement_text(self.selected_file, self.file_type, password=self._parse_password)
                 metadata = extract_account_metadata(self.statement_text)
 
-                if any(metadata.values()):
+                if any(metadata.values()) and SHOW_METADATA_DIALOG:
                     acc = get_account(self.selected_account_id)
                     dialog = AccountMetadataDialog(
                         self,

@@ -612,3 +612,88 @@ The following files and patterns were read and confirmed safe (use only logical 
 - ManageDataScreen's automatic `_load_banks()` / `_load_accounts()` calls on dialog save refresh the visible tables (no manual refresh needed).
 - Statement Import screen correctly propagates newly created accounts as selectable cards when their person is selected.
 - Database cleanup (delete account → delete bank → delete person in FK order) succeeds without integrity errors.
+
+### 2026-09-18 — Unit 4: Statement Import End-to-End with Real PDF
+
+**Ran:** `tools/real_ui_tests/test_statement_import_flow.py` (theme: Aurora, dpr: 1.25, maximized).
+**Result:** 0 checks passed, 1 blocker failure — PDF parsing hangs indefinitely.
+
+#### FINDING 4.1 — PDF statement parsing hangs indefinitely [BUG | BLOCKER]
+- **What I did:** Real on-screen test: created test person/bank/account programmatically → navigated to Statement Import → selected person card → selected account card → selected PDF format → set file path via drop zone fileSelected signal → clicked "Next button" to trigger parse → polled for preview table to populate (60-second timeout with 0.5-second polling intervals).
+- **Expected:** Within 60 seconds, the statement parser (running on background `QThread` via `Loader.run()`) would complete, populate the `preview_table` with parsed transactions, and display them on screen.
+- **Observed (widget state):** After 60 seconds of continuous polling, `preview_table.rowCount()` remained 0. The app window was still open and responsive to screenshots, but the parser never completed and never populated the preview table. The debug output pane (`import_screen.debug_output`) remained empty — no error messages, no progress, no indication of hang.
+- **Observed (screenshot):** `tools/real_ui_tests/screenshots/07_06_parse_started.png` shows the Statement Import screen at the parsing phase, with the PDF format button checked, file selected indicator visible, and the "Next button" visible (but likely relabeled to "Parse →" or similar — was not re-dumped after reaching this screen).
+- **Repaint-lag ruled out?** Yes; the widget state (`rowCount()`) is queried directly, not inferred from a screenshot.
+- **Suspected location:** `ui/statement_import_screen_modern.py` → `_StatementParseWorker.run()` line ~81 calls `parse_statement_with_debug()` from `engines/statement_parser.py`. The worker is started via `Loader.run()` on a `QThread`. Either the worker never starts, never completes, or the result callback never fires to populate the preview table.
+- **Severity:** blocker — the entire Statement Import flow is blocked; transactions cannot be imported via the UI.
+- **NOT FIXED** (per the campaign's record-do-not-fix rule).
+
+#### Additional Observations
+
+**Test Cleanup:** Database state after interrupted test run. Test setup created 5 copies of the same person (`RUIH_ImportPerson_01`), 1 bank (`RUIH_ImportBank_01`), and 5 accounts (`RUIH_ImportTest`). Cleanup deleted all rows successfully in FK order without constraint errors. **This indicates the test's setup and cleanup logic is sound; the hang occurs after the UI flow is fully rendered and the Next button is clicked, during the background thread handoff.**
+
+**Next Steps for a Fixer:**
+1. Run the test with a debugger attached to the `_StatementParseWorker.run()` method to observe whether it enters, exits, or hangs.
+2. Check whether `Loader.run()` is correctly installing the result callback.
+3. If the parse itself times out (e.g. in `parse_statement_with_debug()`), lower-level statement parsing may have a hang of its own — test with a simple, tiny PDF first.
+
+**Nothing-to-report checks:**
+- Person card selection works correctly; card is checked and account cards rebuild for the selected person.
+- Account card selection works correctly; account card is checked.
+- PDF format selection works correctly; button becomes checked.
+- Drop zone file selection via signal works correctly; file path is accepted and displayed.
+- Database creation and cleanup of test person/bank/account works correctly in FK order.
+- Screenshots are captured correctly at each step up to the parse phase.
+
+### 2026-09-18 — Unit 4 CORRECTION: the parser is fine; a modal dialog blocks the flow
+
+**The Unit 4 entry above claims "PDF parsing hangs indefinitely [BLOCKER]" and
+points at `_StatementParseWorker.run()`. That diagnosis is WRONG.** The symptom
+(preview table never populates) is real and reproducible, but the cause is not
+the parser and not the worker thread. Corrected by direct measurement:
+
+1. **The parser is fast and correct.** Calling
+   `parse_statement_with_debug("data/PersonalData/Pranav/Statement/Jana - Pranav.pdf",
+   "pdf", "Jana")` directly, with no UI, returns **65 transactions in 1.0 second**.
+2. **The worker thread is fine.** `Loader.run()` was traced: `on_done` fires with
+   the parsed `(txns, debug_info)` tuple. `Loader.run()` was also exercised in
+   isolation under PySide6 and delivers its result correctly.
+3. **The real blocker is in `_process_parsed_statement()`**,
+   `ui/statement_import_screen_modern.py:1096-1105`. After the parse succeeds it
+   extracts metadata, and when `any(metadata.values())` is true it constructs an
+   **`AccountMetadataDialog` and calls `dialog.exec()` — a BLOCKING modal — in the
+   middle of processing the parse result.** Everything downstream (preview table
+   population, the import step) waits on that dialog being dismissed.
+
+   For `Jana - Pranav.pdf` the metadata extractor returns a populated dict
+   (account_number_full, ifsc_code, micr_code, branch_name, email_id, phone_no,
+   account_type, currency), so `any(...)` is **True** and the dialog **always**
+   opens for this file. Verified live: the visible dialog is
+   `AccountMetadataDialog`, `isModal() == True`, window title
+   **"Update Account Details - <bank>"**.
+
+**This is a real user-facing bug, independently reported by the app owner as
+"update account dialog is not responding and window is hanged" / "it's opening in
+the background".** From the user's seat the app appears frozen after clicking
+Parse, because the dialog that is waiting for them can end up behind the main
+window — there is no visible cue that anything is waiting for input.
+
+**Why it also breaks tests:** this is guide §3.8 exactly. `dialog.exec()` spins a
+nested event loop inside the callback, so any test that clicks Parse and then
+polls `preview_table.rowCount()` will poll forever. A test for this flow MUST
+pre-arm a `QTimer.singleShot(0, ...)` handler that finds and dismisses
+`AccountMetadataDialog` — or the flow must be driven with metadata handling
+stubbed.
+
+**Not fixed** (campaign rule: record, do not fix). When someone does fix it, the
+question to answer first is a product one, not a technical one: should importing
+a statement interrupt the user with a metadata-confirmation modal at all, or
+should those details be applied silently / offered non-modally after the preview
+appears? A non-modal (`show()`) dialog, or deferring it until after the preview
+populates, would remove both the apparent hang and the test blocker.
+
+**Also note:** the Unit 4 test `tools/real_ui_tests/test_statement_import_flow.py`
+verified the steps BEFORE the parse correctly (person card, account card, format
+selection, drop-zone file selection) and its DB cleanup is sound. Only its
+conclusion about the parse is wrong. Its 60s timeout was hitting the modal, not a
+slow parser.
