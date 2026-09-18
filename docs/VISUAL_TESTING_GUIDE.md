@@ -757,3 +757,66 @@ called directly. Keep the symptom, discard the cause.
 Aurora `TEXT_MUTED` (#75718F) on `BG` (#F7F7FD) is **4.36:1**. Every other
 text/background pair checked passes in Aurora, Nova, Slate and Midnight Pro,
 including all the dark themes. Not fixed (record-only).
+
+### 2026-09-18 — Unit 5: Tax Documents drop zones (real files)
+
+New test: `tools/real_ui_tests/test_tax_documents_flow.py`. Navigates to Tax
+Documents (nav index 6) and hands each of the three real PDFs to its drop zone
+via `fileSelected(str)` — the same signal the browse button emits once a path is
+chosen. The literal browse click is NOT covered (a native QFileDialog cannot be
+driven by QTest). Read-only: nothing is written to the database.
+
+**Results:**
+- Navigation, screen construction and all three drop zones: PASS.
+- **Form 26AS parsed successfully in 4.7s with no blocking modal.** This is an
+  independent confirmation of the `Loader.run()` GUI-thread fix on a code path
+  completely separate from statement import — all three handlers here go through
+  `Loader.run()`, and before the fix that meant GUI work on the worker thread.
+- **AIS: FAILED to parse. TIS: same cause.**
+
+#### FINDING 5.1 — Tax Documents cannot import encrypted AIS/TIS at all [MAJOR]
+
+Measured: `26AS.pdf` `is_encrypted=False`; **`AIS.pdf` and `TIS.pdf` are both
+`is_encrypted=True`.** Parsing either directly with `password=None` raises
+`pdfplumber.utils.exceptions.PdfminerException`.
+
+`ui/tax_documents_screen.py` hardcodes `password=None` in all three handlers
+(lines 297, 319, 341) and never checks whether the file is encrypted:
+```python
+def parse_ais(): return parse_ais_pdf(path, password=None)
+```
+There is no encryption check and no password prompt, so **an encrypted AIS or TIS
+can never be imported through the UI** — which, for this user's real documents,
+is both of them.
+
+This is an inconsistency rather than an oversight in isolation, because the
+infrastructure already exists:
+- `ui/statement_import_screen_modern.py` DOES do this properly:
+  `_is_statement_file_encrypted()` -> `_prompt_statement_password()` -> passes the
+  password through to the parser.
+- `models/person.py` already has `get_ais_tis_password()` / `set_ais_tis_password()`,
+  backed by an `ais_tis_password_enc` column on `Person`. **Grep confirms
+  `get_ais_tis_password` is never called from anywhere in `ui/`.** The storage
+  layer for this exact feature was built and left unwired.
+
+Fix direction (not applied — record-only): mirror the statement-import path.
+Check encryption, look up the person's stored AIS/TIS password, prompt if absent,
+and pass it to `parse_ais_pdf` / `parse_tis_pdf` / `parse_form26as_pdf`.
+
+**Good news on error handling:** the app did NOT hang or crash on the failed
+parse. The `on_error` path fired, the zone showed an error status, and the window
+stayed responsive — so the failure is clean and recoverable, just not actionable
+by the user.
+
+**Not covered yet:** the reconciliation view, because it needs all three
+documents parsed. Re-run this test once the password path is wired.
+
+**Test-script caveats (not app bugs), fix before trusting a re-run:**
+- The "App still responsive after all three parses" check FAILED, but a
+  screenshot taken at that moment shows the test window was already closed, so
+  the assertion was measuring a closed window rather than a frozen one. The app
+  did not freeze. Treat that single FAIL as a test defect.
+- AIS and TIS each burned the full 91s timeout because the wait polled only for
+  `zone.pdf_data`, which never arrives on failure. The parse itself fails fast.
+  The wait now also accepts an "Error:" status on the zone, so a failed parse
+  reports in seconds instead of 90s.
