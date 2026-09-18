@@ -142,6 +142,19 @@ class Theme:
     RADIUS_MODAL              = c.RADIUS_MODAL
     RADIUS_PILL               = c.RADIUS_PILL
 
+    HEIGHT_SM                 = c.HEIGHT_SM
+    HEIGHT_MD                 = c.HEIGHT_MD
+    HEIGHT_LG                 = c.HEIGHT_LG
+
+    MOTION_FAST               = c.MOTION_FAST
+    MOTION_BASE               = c.MOTION_BASE
+    MOTION_SLOW               = c.MOTION_SLOW
+    MOTION_EASING             = c.MOTION_EASING
+
+    ELEVATION_CARD            = c.ELEVATION_CARD
+    ELEVATION_RAISED          = c.ELEVATION_RAISED
+    ELEVATION_MODAL           = c.ELEVATION_MODAL
+
     # ── Control size scale ───────────────────────────────────────────────────
     INPUT_HEIGHT_SM           = 28
     INPUT_HEIGHT_MD           = 36
@@ -568,7 +581,7 @@ QSpinBox[readOnly="true"], QDoubleSpinBox[readOnly="true"] {{
 QComboBox {{
     background-color: {t.SURFACE}; color: {t.TEXT_PRIMARY};
     border: 1px solid {t.BORDER}; border-radius: {t.RADIUS_CONTROL}px;
-    padding: 7px 12px; font-size: 14px; min-height: 18px;
+    padding: 7px 12px; font-size: 14px; min-height: {t.HEIGHT_MD}px;
 }}
 QComboBox:hover {{ border-color: {t.BORDER_FOCUS}; }}
 QComboBox:focus {{ border-color: {t.PRIMARY}; outline: 2px solid {t.FOCUS_RING}; outline-offset: 2px; }}
@@ -585,7 +598,7 @@ QComboBox QAbstractItemView {{
 QSpinBox, QDoubleSpinBox, QDateEdit {{
     background-color: {t.SURFACE}; color: {t.TEXT_PRIMARY};
     border: 1px solid {t.BORDER}; border-radius: {t.RADIUS_CONTROL}px;
-    padding: 7px 10px; font-size: 14px;
+    padding: 7px 10px; font-size: 14px; min-height: {t.HEIGHT_MD}px;
 }}
 QSpinBox:focus, QDoubleSpinBox:focus, QDateEdit:focus {{ border-color: {t.PRIMARY}; outline: 2px solid {t.FOCUS_RING}; outline-offset: 2px; }}
 QSpinBox:hover, QDoubleSpinBox:hover, QDateEdit:hover {{ border-color: {t.BORDER_FOCUS}; }}
@@ -620,7 +633,7 @@ QCalendarWidget QWidget#qt_calendar_navigationbar {{ background-color: {t.SURFAC
 QPushButton {{
     background: {t.gradient(t.PRIMARY_GRADIENT_START, t.PRIMARY_GRADIENT_END)};
     color: {t.TEXT_ON_PRIMARY}; border: none; border-radius: {t.RADIUS_CONTROL}px;
-    padding: 8px 18px; font-size: 14px; font-weight: 600; min-height: 22px;
+    padding: 8px 18px; font-size: 14px; font-weight: 600; min-height: {t.HEIGHT_MD}px;
 }}
 QPushButton:hover   {{ background: {t.gradient(t.PRIMARY_GRADIENT_HOVER_START, t.PRIMARY_GRADIENT_HOVER_END)}; }}
 QPushButton:focus   {{ outline: 2px solid {t.FOCUS_RING}; outline-offset: 2px; }}
@@ -762,7 +775,7 @@ QScrollArea > QWidget > QWidget {{ background: transparent; }}
 /* ═══════════════════════════ MESSAGE BOX ════════════════════ */
 QMessageBox {{ background-color: {t.SURFACE}; color: {t.TEXT_PRIMARY}; }}
 QMessageBox QLabel {{ color: {t.TEXT_PRIMARY}; }}
-QMessageBox QPushButton {{ min-width: 88px; min-height: 34px; }}
+QMessageBox QPushButton {{ min-width: 88px; min-height: {t.HEIGHT_MD}px; }}
 
 /* ═══════════════════════════ SPLITTER ═══════════════════════ */
 QSplitter::handle {{ background-color: {t.DIVIDER}; }}

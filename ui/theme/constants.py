@@ -51,6 +51,22 @@ RADIUS_CARD = 12         # Card containers and medium elements
 RADIUS_MODAL = 16        # Modal dialogs and large containers
 RADIUS_PILL = 999        # Circular avatars and FABs
 
+# Control height scale
+HEIGHT_SM = 28           # Compact controls (chips, inline actions)
+HEIGHT_MD = 36           # Default inputs and buttons
+HEIGHT_LG = 44           # Prominent / primary actions
+
+# Motion scale - see ui/widgets/motion.py. Durations in ms.
+MOTION_FAST   = 120      # hover, press, chip toggle
+MOTION_BASE   = 180      # fade in/out, expand/collapse
+MOTION_SLOW   = 260      # page/route transitions
+MOTION_EASING = "OutCubic"   # QEasingCurve.Type member name
+
+# Elevation scale - QGraphicsDropShadowEffect params (blur, offset_y, alpha)
+ELEVATION_CARD   = (2,  1,  16)
+ELEVATION_RAISED = (12, 4,  26)
+ELEVATION_MODAL  = (32, 12, 46)
+
 # Legacy aliases kept for any old code that referenced these names
 SHADOW_COLOR_LIGHT   = "rgba(15,23,42,0.07)"
 SHADOW_COLOR_MEDIUM  = "rgba(15,23,42,0.12)"
