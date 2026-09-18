@@ -697,3 +697,63 @@ verified the steps BEFORE the parse correctly (person card, account card, format
 selection, drop-zone file selection) and its DB cleanup is sound. Only its
 conclusion about the parse is wrong. Its 60s timeout was hitting the modal, not a
 slow parser.
+
+### 2026-09-18 — Statement Import FIXED end-to-end (supersedes the Unit 4 finding)
+
+`tools/real_ui_tests/test_statement_import_flow.py` now passes completely:
+**65 transactions parsed, previewed, and imported**, with the DB verified clean
+afterwards (0 transactions, 0 RUIH_ rows, the one real person/account intact).
+
+Three distinct bugs were blocking it. All were found by dumping thread stacks at
+the hang with `faulthandler.dump_traceback_later()` — worth remembering as the
+technique, because none of them produced an exception or any on-screen error.
+
+**BUG A (root cause, affects the whole app) — `Loader.run()` ran its callbacks on
+the worker thread.** `ui/widgets/loader.py` connected `on_done`/`on_error` as
+plain Python callables. A plain callable has **no thread affinity**, so Qt
+invoked them *directly on the emitting (worker) thread*. Everything in
+`_process_parsed_statement` — populating the preview table, switching the
+QStackedWidget page, showing dialogs — was therefore executing off the GUI
+thread. Constructing a `QMessageBox` there deadlocked the process outright: the
+window went "Not Responding" (Windows showed a `Ghost` class window) with **no
+dialog visible anywhere**. Fixed by routing results through a `_GuiRelay`
+QObject parented to the loader, with an explicit `Qt.ConnectionType.QueuedConnection`.
+Note this was never PySide6-specific — it is a latent Qt threading bug that
+affected **every** `Loader.run()` caller, i.e. statement import, settings warmup
+and any other background operation.
+
+**BUG B — a blocking modal in the middle of the parse result handler.**
+`_process_parsed_statement` opened `AccountMetadataDialog.exec()` as soon as
+metadata extracted cleanly (which for `Jana - Pranav.pdf` is always). The import
+flow then waited on user input that the user could not see, because the dialog
+could sit behind the main window. Reported independently by the app owner as
+"update account dialog is not responding and window is hanged / it's opening in
+the background". Disabled behind `SHOW_METADATA_DIALOG = False` in
+`ui/statement_import_screen_modern.py`; restore it once it is reworked to be
+non-modal or deferred until after the preview renders.
+
+**BUG C — `QMessageBox.critical` in the catch-all handler** at the end of the
+same method. Harmless in principle, but combined with BUG A it was the thing
+that actually deadlocked. Resolved by fixing BUG A.
+
+**The Unit 4 entry's "PDF parsing hangs indefinitely [BLOCKER]" diagnosis was
+wrong on the mechanism** — the parser returns 65 transactions in 1.0s when
+called directly. Keep the symptom, discard the cause.
+
+**Test-harness fixes made at the same time:**
+- All four tests now close their window in an always-runs teardown
+  (`_close_all_windows()`), dismissing stray dialogs first. Previously
+  `harness.close()` only ran on the success path, so any failing test left a
+  window — and sometimes a blocking modal — stranded on screen. This is what the
+  app owner reported as "why are you not closing the tab after completion".
+- `sys.stdout`/`sys.stderr` are reconfigured to UTF-8. A `UnicodeEncodeError` on
+  the rupee sign was killing an otherwise-passing run at the reporting step on a
+  cp1252 Windows console.
+- Cleanup note: deleting FDs before transactions raises `FOREIGN KEY constraint
+  failed` on the transaction delete, but the rows go anyway via cascade. Verified
+  clean afterwards. Harmless, but delete transactions first to avoid the noise.
+
+**Theme contrast (all four themes measured, WCAG AA 4.5:1):** only one failure —
+Aurora `TEXT_MUTED` (#75718F) on `BG` (#F7F7FD) is **4.36:1**. Every other
+text/background pair checked passes in Aurora, Nova, Slate and Midnight Pro,
+including all the dark themes. Not fixed (record-only).
