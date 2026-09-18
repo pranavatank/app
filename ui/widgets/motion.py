@@ -29,9 +29,14 @@ def _start(widget: QWidget, anim: QPropertyAnimation) -> QPropertyAnimation:
     """Keep the animation alive for its lifetime, replacing any running one."""
     previous = getattr(widget, "_motion_anim", None)
     # DeleteWhenStopped frees the C++ object while this Python reference lives on,
-    # so the stale wrapper has to be checked before it is touched.
+    # so the stale wrapper has to be checked before it is touched. Stopping it
+    # mid-flight would strand the widget at the interrupted value, so it is
+    # snapped to its end value first.
     if previous is not None and shiboken6.isValid(previous):
+        end = previous.endValue()
         previous.stop()
+        if end is not None:
+            previous.targetObject().setProperty(previous.propertyName().data().decode(), end)
     widget._motion_anim = anim
     anim.setEasingCurve(_curve())
     anim.start(QAbstractAnimation.DeletionPolicy.DeleteWhenStopped)
@@ -63,6 +68,9 @@ def fade_in(widget: QWidget, duration: int | None = None) -> QPropertyAnimation 
     anim.setDuration(Theme.MOTION_BASE if duration is None else duration)
     anim.setStartValue(0.0)
     anim.setEndValue(1.0)
+    # A starved event loop would otherwise leave the widget stuck at opacity 0,
+    # i.e. laid out and "visible" but painting nothing.
+    anim.finished.connect(lambda: effect.setOpacity(1.0))
     return _start(widget, anim)
 
 
