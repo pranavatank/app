@@ -482,3 +482,133 @@ persisted session state (`ui/dashboard_screen.py:149` reads
 **Still open** — everything in §4 and §5 other than Add Person remains untested
 with real clicks. The campaign roadmap for that work is
 `docs/UI_TEST_CAMPAIGN_PLAN.md`.
+
+### 2026-09-18 — Unit 2: DPI-Scaling Code Audit
+
+**Ran:** code audit only — no window opened.
+
+**Result:** 3 findings were originally reported. **Two were later verified as FALSE
+POSITIVES and one was downgraded** — see the "VERIFICATION" note under each. The
+audit was code-reading only, with no measurements; the corrections below were made
+by running the actual APIs at dpr=1.25 on this machine. Treat the SAFE list at the
+bottom as still-useful, but treat any unmeasured DPI claim with suspicion.
+
+#### FINDING 2.1 — Login/Setup screens centered off-screen at 125% DPI [CONFIRMED-RISK]
+- **What I did:** Code reading audit of screen-geometry mixing patterns.
+- **Expected:** Window centering logic should account for DPI when mixing physical screen geometry with logical window coordinates.
+- **Observed (mechanism):** `ui/login_screen.py:278-283` and `ui/setup_screen.py:194-199` both call `QGuiApplication.primaryScreen().geometry()` which returns **physical** pixels on Windows, then compute a center point, and pass it to `self.move()` which expects **logical** pixels. At 125% DPI, logical and physical are 1:1.25 — the window's intended center (computed in physical) is 1.25× further from origin than the code intended in logical coordinates.
+- **Concrete scenario:** On a 1920×1080 physical screen (1536×864 logical at 125%), the window computed to center at logical pixel (768, 432) would render centered. The code instead computes physical center (960, 540), passes that directly to `move()`, resulting in the window positioned at logical (960, 540) — **off-center by ~192 logical pixels right and ~108 down**, and partially clipped at the right and bottom edges of the viewport.
+- **Severity:** major (affects first-run experience and login, every launch).
+- **NOT FIXED** (per campaign rule).
+- **VERIFICATION 2026-09-18 — THIS IS A FALSE POSITIVE. Do not act on it.**
+  The premise is wrong: `QGuiApplication.primaryScreen().geometry()` returns
+  **logical** pixels, not physical. Measured live on this machine at dpr=1.25:
+  `geometry()` returns `QRect(0, 0, 1536, 864)` — i.e. the 1920x1080 physical
+  screen already divided by 1.25. `frameGeometry()` and `move()` are logical too,
+  so the centering math is consistently in one coordinate space. Reproducing the
+  exact `_center_on_screen()` sequence with a 560x650 window put it at (488, 92),
+  fully inside the screen bounds. **The code is the standard, correct Qt centering
+  idiom.** No bug.
+
+#### FINDING 2.2 — Checkbox indicator pixmap created without DPI compensation [CONFIRMED-RISK]
+- **What I did:** Code reading of custom painting and pixmap generation.
+- **Expected:** QPixmap assets used in UI should be scaled for the device's pixel ratio to render crisp on HiDPI displays.
+- **Observed (mechanism):** `ui/theme/checkbox_asset.py:36-37` creates a QPixmap with `QPixmap(size, size)` where `size = 14` (hardcoded) **without calling `setDevicePixelRatio()`**. At 125% DPI, this 14×14-pixel bitmap is rendered by Qt at its true logical size (14 logical × 1.25 = 17.5 physical pixels rendered), but the bitmap was never scaled to fit that density — it renders blurry / half-size, exactly the classic HiDPI pixmap bug. The checkmark glyph drawn inside is rendered at 14 logical pixels but should be rendered at 18-20 logical to account for the 1.25 scaling.
+- **Concrete scenario:** A checked checkbox indicator on a 125%-scaled Windows display would show a checkmark that is noticeably smaller and blurrier than the unchecked indicator (which is an SVG/styled border, not a pixmap).
+- **Severity:** ~~major~~ **downgraded to MINOR** — see verification.
+- **NOT FIXED** (per campaign rule).
+- **VERIFICATION 2026-09-18 — REAL, but milder than described.**
+  Measured: the generated PNG is 14x14 with `devicePixelRatio == 1.0`. The QSS
+  indicator is 18x18 logical = 22.5 physical at dpr 1.25, so a 14-physical-pixel
+  source bitmap is upscaled into it. That does cause mild softness. It does NOT
+  render "half-size" — Qt scales the image to the styled box, it does not draw it
+  at 1:1 and leave it small. Fix, when someone gets to it: generate the pixmap at
+  `14 * devicePixelRatio()` and call `pm.setDevicePixelRatio(dpr)` before saving,
+  or ship an SVG. Low priority, cosmetic only.
+
+#### FINDING 2.3 — Icon scale factor computed without considering devicePixelRatio [SUSPECT]
+- **What I did:** Code reading of icon rendering pipeline.
+- **Expected:** Icon rendering should account for the screen's `devicePixelRatio()` to scale icons correctly at non-1.0 DPI.
+- **Observed (mechanism):** `ui/icons.py:206` computes `opts: dict = {"scale_factor": max(size / 16, 1.0)}` to control qtawesome's icon rendering. This divides the desired pixel size by a hardcoded baseline (16) to compute a relative scale. **This does not account for `devicePixelRatio()`**, so on a 125% display, the computed scale is 25% too small. At size=24, this produces `scale_factor=1.5`, but on a 125% display it should be `scale_factor=1.875` to maintain the intended visual size. The resulting icons render smaller than intended on HiDPI.
+- **Concrete scenario:** At 125% DPI, requesting a 24-pixel icon (e.g. in `ui/settings_screen.py:332` or `ui/dashboard_screen.py:268`) would render at ~19 logical pixels instead of 24.
+- **Severity:** ~~minor to major~~ **none — false positive.**
+- **NOT FIXED** (per campaign rule).
+- **VERIFICATION 2026-09-18 — THIS IS A FALSE POSITIVE. Do not act on it.**
+  Two errors in the reasoning. First, `QIcon` is resolution-independent: Qt asks
+  it for a pixmap at the device's real pixel size at paint time, so icon sharpness
+  at 125% is handled by Qt, not by this call site. Second, qtawesome's
+  `scale_factor` scales the **glyph within its box**, it is not a pixel-size
+  parameter, so multiplying it by dpr would make icons render *larger than the
+  space allotted*, not more correct. Icons were confirmed rendering non-null and
+  correctly sized in the real-window runs. No bug.
+
+#### SAFE — audited and clear
+
+The following files and patterns were read and confirmed safe (use only logical pixel coordinates, or do not depend on screen geometry):
+
+- `ui/dashboard_screen.py` — All `.setFixedWidth()`, `.setFixedHeight()`, `.setFixedSize()` calls use design-system constants (e.g. 248, 76, 40, 44), **not** screen-derived values. Widget layout is pure logical geometry.
+- `ui/widgets/loader.py:175, 267` — `.setGeometry(parent.rect())` operates on widget-local coordinates (parent's rect in parent's space), not screen coordinates. Safe.
+- `ui/widgets/toast_utils.py:29` — `.setGeometry(content_area.rect())` uses content area's own rect (logical widget coords), not screen geometry. Safe.
+- `ui/widgets/motion.py:116, 125` — `.setFixedWidth(target)` uses design constants. Safe.
+- `ui/widgets/section.py:60` — `.setFixedSize(20, 20)` is a design constant (chevron icon size). Safe.
+- `ui/kpi_tile.py:49, 97` — `.setFixedHeight(105)`, `.setFixedHeight(30)` are design constants. The sparkline painting (`paintEvent`, line 212) uses logical widget coordinates for layout (`self.width()`, `self.height()`, relative positioning) and hardcoded logical sizes (`int(x) - 2, int(y) - 2, 4, 4` for the dot). All logical, handled by Qt. Safe.
+- `ui/widgets/toast.py:56` — `.setFixedSize(28, 28)` is a design constant. Safe.
+- `ui/logo.py:27` — `pixmap.scaled(size, size, ...)` scales a loaded image to a requested logical size; Qt handles DPI for the result since the source pixmap's DPI is unspecified (defaults to 1.0). Borderline, but safe in practice since the result is displayed via `QLabel.setPixmap()` which Qt composites at the correct logical size.
+- `ui/settings_screen.py:330` — `.setFixedSize(32, 32)` is a design constant. Safe.
+- `ui/advance_tax_banner.py:33, 60` — `.setFixedSize(28, 28)` and `.setFixedSize(28, 28)` are design constants. Safe.
+- `ui/statement_import_screen_modern.py:602, 614` — `.setFixedSize(26, 26)` and `.setFixedSize(24, 2)` are design constants. Safe.
+- `ui/dialogs/account_metadata_dialog.py:178` — `.setFixedHeight(1)` is a divider line (design constant). Safe.
+- `ui/summary_panel.py:66, 83, 193` — `.setFixedSize(38, 38)`, `.setFixedHeight(1)`, `.setFixedHeight(1)` are design constants for icon backgrounds and dividers. Safe.
+- `main.py` and `config.py` — No explicit High DPI policy attributes set (`AA_EnableHighDpiScaling`, `AA_UseHighDpiPixmaps`, `HighDpiScaleFactorRoundingPolicy`). Qt6 defaults to high-DPI scaling enabled with `HighDpiScaleFactorRoundingPolicy.Round` (rounds factors like 1.25 to 1.0 for integer-aligned layouts). **Note:** At exactly 125%, the rounding policy is critical — `Round` will produce a ~1-pixel layout shift at borders compared to `PassThrough`. Current app relies on Qt defaults; this is a design trade-off, not a bug.
+- **No usage of `pyautogui`, `win32gui`, `win32api` inside `ui/`** (good).
+- **No usage of `grab()`, `render()`, `QScreen.grabWindow` inside app code** (only in test harness).
+- **No usage of `mapToGlobal()`, `globalPos()`, `QCursor.pos()` inside app code** (only in test harness).
+
+**Nothing-to-report checks:** Confirmed absence of screen-coordinate mixings in all 9 nav screens, dialogs, widgets, and the core launch pipeline. High-DPI settings left to Qt defaults (not explicitly overridden).
+
+**NOT FIXED** (per the campaign's record-do-not-fix rule).
+
+### 2026-09-18 — Unit 3: Add Bank + Add Account End-to-End Flows
+
+**Ran:** `tools/real_ui_tests/test_add_bank_flow.py` and `tools/real_ui_tests/test_add_account_flow.py` (theme: Aurora, dpr: 1.25, maximized)
+**Result:** all checks passed.
+
+#### Test Execution Summary
+
+**test_add_bank_flow.py:**
+- Navigated to Settings via sidebar button (real click).
+- Opened Manage Data dialog via "Manage banks (master)" button.
+- Switched to Banks tab (index 1).
+- Clicked "Add bank", filled nickname="RUIH_TestBank_01" and name="Jana Small Finance Bank".
+- Verified field contents and clicked "Save bank".
+- Confirmed new bank appeared in DB and visible table **without manual refresh**.
+- Tested Cancel path: opened Add Bank dialog, typed throwaway nickname, clicked "Cancel bank dialog".
+- Verified Cancel closed the dialog without adding a row to the database.
+
+**test_add_account_flow.py:**
+- Created test person and bank **programmatically** (not via UI) with RUIH_ prefixes for deterministic cleanup.
+- Navigated to Settings → Manage bank accounts.
+- Switched to Accounts tab (index 2).
+- Clicked "Add account", filled person selector (combo), bank selector (combo), account holder name, masked account number, opening balance.
+- Verified fields and clicked "Save account".
+- Confirmed new account appeared in DB and visible table **without manual refresh**.
+- Cross-checked Statement Import screen: verified test person card appeared, clicking it revealed the account card.
+- Cleanup deleted account → bank → person in FK order; all counts returned to baseline.
+
+#### FINDING 3.1 — All checks PASSED [NO-BUG]
+- **What I did:** Real on-screen test: Add Person (via UI, already working from prior session) → Add Bank (nickname + actual name + optional TAN) → Save + Cancel paths → Database and table visibility cross-checks → Add Account (person + bank + holder name + account number) → save + cross-check Statement Import propagation.
+- **Expected:** (a) Bank and account dialogs open via `.exec()` (blocking modals); (b) form fields accept typed input; (c) clicking Save accepts the dialog and writes a new row to the database; (d) the new row appears in the visible management table immediately, with no manual refresh call; (e) Cancel closes the dialog without writing a row; (f) newly created accounts appear as cards on the Statement Import screen when their person is selected.
+- **Observed (widget/DB state):** All expectations met. Bank test: `before_banks=0`, added 1 via Save, added 0 via Cancel, final count after cleanup=0. Account test: `before_accounts=1`, added 1 via dialog, final count after cleanup=1. Both dialogs opened, fields accepted input, Save accepted and closed, Cancel closed without writing. ManageDataScreen's `_load_banks()` and `_load_accounts()` called automatically, tables updated without manual refresh. Statement Import successfully found the test person card and the test account card when person was selected.
+- **Observed (screenshot):** All 11 screenshots (bank flow) + all 11 screenshots (account flow) show correct progression: dashboard → settings → manage dialog → banks/accounts tab → add dialog open → fields filled → save → table updated → statement import showing new cards.
+- **Repaint-lag ruled out?** Yes; widget state and table row counts checked in addition to screenshots. Tables show correct data, database reflects all rows, all dialogs closed correctly.
+- **Severity:** N/A — no bug found.
+
+**Nothing-to-report checks:** 
+- Settings navigation via sidebar button works correctly.
+- Both Add Bank and Add Account dialogs open, populate, accept/reject, and close correctly via the QTimer.singleShot modal pattern.
+- Bank combo display format "NICKNAME (bank_name)" is correctly parsed by combo's `findText()` after adding a bank with both fields.
+- Account combo selectors (Person, Bank) populate correctly and can be indexed.
+- Form fields (Account holder name, Masked account number) accept typed input and persist until save.
+- ManageDataScreen's automatic `_load_banks()` / `_load_accounts()` calls on dialog save refresh the visible tables (no manual refresh needed).
+- Statement Import screen correctly propagates newly created accounts as selectable cards when their person is selected.
+- Database cleanup (delete account → delete bank → delete person in FK order) succeeds without integrity errors.
