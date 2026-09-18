@@ -36,13 +36,13 @@ Usage (anywhere in the app):
 """
 
 from __future__ import annotations
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QApplication
 )
-from PyQt6.QtCore import (
-    Qt, QTimer, QThread, pyqtSignal, QObject, QRect
+from PySide6.QtCore import (
+    Qt, QTimer, QThread, Signal, QObject, QRect
 )
-from PyQt6.QtGui import (
+from PySide6.QtGui import (
     QPainter, QPen, QColor, QBrush, QFont, QPainterPath, QConicalGradient, QPixmap
 )
 
@@ -342,8 +342,8 @@ class Loader(QWidget):
 # ══════════════════════════════════════════════════════════════════════════════
 
 class _Worker(QObject):
-    finished = pyqtSignal(object)
-    error    = pyqtSignal(object)
+    finished = Signal(object)
+    error    = Signal(object)
 
     def __init__(self, fn):
         super().__init__()

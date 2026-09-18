@@ -2,15 +2,15 @@
 ui/transactions_screen.py — Transaction management with modern theme.
 """
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QComboBox, QLineEdit, QTableWidget,
     QTableWidgetItem, QHeaderView, QDialog, QDialogButtonBox,
     QFormLayout, QDateEdit, QDoubleSpinBox, QTextEdit,
     QMessageBox, QFrame, QAbstractItemView, QCheckBox, QTabWidget, QSizePolicy
 )
-from PyQt6.QtCore import Qt, QDate, QTimer
-from PyQt6.QtGui import QFont, QColor
+from PySide6.QtCore import Qt, QDate, QTimer
+from PySide6.QtGui import QFont, QColor
 
 from ui.widgets.excel_table import ExcelTableWithStats
 from ui.widgets.chart_widget import ChartWidget

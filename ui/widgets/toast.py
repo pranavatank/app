@@ -5,9 +5,9 @@ Toasts appear anchored to the content area, stack vertically if multiple fire,
 auto-dismiss after a timer, and do not steal focus.
 """
 
-from PyQt6.QtWidgets import QWidget, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QFont
+from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
+from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtGui import QFont
 
 from ui.theme.theme import Theme
 
@@ -15,7 +15,7 @@ from ui.theme.theme import Theme
 class Toast(QWidget):
     """Single toast notification."""
 
-    closed = pyqtSignal()
+    closed = Signal()
 
     def __init__(self, message: str, variant: str = "info", duration_ms: int = 4000, parent=None):
         """

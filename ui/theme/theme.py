@@ -4,8 +4,8 @@ by ThemeManager.apply(). All UI code imports Theme from here and calls
 Theme.ATTRIBUTE or Theme.method() — never imports from theme_*.py directly.
 """
 
-from PyQt6.QtGui import QFont
-from PyQt6.QtWidgets import QPushButton, QGraphicsDropShadowEffect
+from PySide6.QtGui import QFont
+from PySide6.QtWidgets import QPushButton, QGraphicsDropShadowEffect
 
 from . import components as tc
 from . import constants as c   # default (Aurora) values at import time

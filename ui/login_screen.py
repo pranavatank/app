@@ -2,12 +2,12 @@
 ui/login_screen.py — Login screen. Fully theme-aware via Theme tokens.
 """
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QLineEdit, QFrame, QSizePolicy
 )
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QFont
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QFont
 
 from core.auth import verify_login, is_totp_enabled, get_privacy_mode
 from core.session import session
@@ -276,7 +276,7 @@ class LoginScreen(QWidget):
         self.error_label.show()
 
     def _center_on_screen(self):
-        from PyQt6.QtGui import QGuiApplication
+        from PySide6.QtGui import QGuiApplication
         screen = QGuiApplication.primaryScreen().geometry()
         frame_geo = self.frameGeometry()
         frame_geo.moveCenter(screen.center())

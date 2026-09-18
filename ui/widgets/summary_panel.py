@@ -3,12 +3,12 @@ ui/widgets/summary_panel.py — Summary card widget for dashboard panels.
 Supports live theme switching via refresh_theme().
 """
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QLabel,
     QSizePolicy, QScrollArea, QWidget
 )
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QFont
 from ui.theme import Theme
 from ui.icons import pixmap as icon_pixmap, fallback as icon_fallback, is_available as icons_available
 

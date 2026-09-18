@@ -2,14 +2,14 @@
 ui/fixed_deposits_screen.py — FD management screen with modern theme.
 """
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView, QDialog,
     QFormLayout, QLineEdit, QComboBox, QDateEdit, QMessageBox, QFrame,
     QPlainTextEdit, QSpinBox, QScrollArea, QCheckBox
 )
-from PyQt6.QtCore import Qt, QDate, QTimer
-from PyQt6.QtGui import QFont, QColor, QDoubleValidator
+from PySide6.QtCore import Qt, QDate, QTimer
+from PySide6.QtGui import QFont, QColor, QDoubleValidator
 
 from datetime import date
 from dateutil.relativedelta import relativedelta

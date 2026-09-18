@@ -9,9 +9,9 @@ Features:
 - Fixed height (100-110px) with no dead space below content
 """
 
-from PyQt6.QtWidgets import QFrame, QVBoxLayout, QHBoxLayout, QLabel, QWidget
-from PyQt6.QtGui import QFont, QPainter, QPen, QColor
-from PyQt6.QtCore import Qt
+from PySide6.QtWidgets import QFrame, QVBoxLayout, QHBoxLayout, QLabel, QWidget
+from PySide6.QtGui import QFont, QPainter, QPen, QColor
+from PySide6.QtCore import Qt
 
 from ui.theme import Theme
 from ui.widgets.money_label import format_inr

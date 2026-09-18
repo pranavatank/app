@@ -29,8 +29,8 @@ def checkmark_url() -> str:
 
 
 def _generate() -> None:
-    from PyQt6.QtGui import QPixmap, QPainter, QPen, QColor
-    from PyQt6.QtCore import Qt, QPoint
+    from PySide6.QtGui import QPixmap, QPainter, QPen, QColor
+    from PySide6.QtCore import Qt, QPoint
 
     os.makedirs(_ASSET_DIR, exist_ok=True)
     size = 14

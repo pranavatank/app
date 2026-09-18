@@ -4,9 +4,9 @@ ui/widgets/advance_tax_banner.py — Quarterly Advance Tax Reminder Banner.
 Displays upcoming/overdue advance tax installments with amount and due date.
 """
 
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QVBoxLayout, QLabel, QPushButton
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QVBoxLayout, QLabel, QPushButton
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QFont
 
 from ui.theme import Theme
 from ui.icons import icon as app_icon, is_available as icons_available

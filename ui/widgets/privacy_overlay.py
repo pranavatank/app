@@ -3,11 +3,11 @@ ui/widgets/privacy_overlay.py — Privacy mode PIN-reveal dialog.
 FIX: verify_password now called with correct arguments via verify_login.
 """
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QLabel, QLineEdit, QMessageBox
 )
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QFont
 from ui.theme import Theme
 from ui.icons import icon_label as app_icon_label
 

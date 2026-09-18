@@ -5,7 +5,7 @@ Screen 1: Selection (Person + Account + File in one view)
 Screen 2: Preview & Import (Editable table + Import)
 """
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QComboBox, QFileDialog, QTableWidget, QTableWidgetItem,
     QHeaderView, QMessageBox, QFrame, QCheckBox,
@@ -13,8 +13,8 @@ from PyQt6.QtWidgets import (
     QInputDialog,
     QStackedWidget, QScrollArea, QSizePolicy, QFormLayout
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QThread, QObject, QMimeData, QEvent
-from PyQt6.QtGui import QFont, QColor, QDragEnterEvent, QDropEvent, QFontMetrics
+from PySide6.QtCore import Qt, Signal, QThread, QObject, QMimeData, QEvent
+from PySide6.QtGui import QFont, QColor, QDragEnterEvent, QDropEvent, QFontMetrics
 from datetime import datetime
 import json
 import os
@@ -65,7 +65,7 @@ class _StatementParseWorker(QObject):
     Runs parse_statement_with_debug() and returns results via return value.
     The progress signal is still available for real-time updates.
     """
-    progress = pyqtSignal(str)    # Emits progress message
+    progress = Signal(str)    # Emits progress message
 
     def __init__(self, file_path, file_type, bank_name, password, column_mapping):
         super().__init__()
@@ -94,7 +94,7 @@ class _TransactionImportWorker(QObject):
     Handles database insertion, FD creation, and logging.
     Does NOT call allocate_savings_interest_to_fy or recalculate_account_balance — those run on GUI thread.
     """
-    progress = pyqtSignal(str)   # Emits progress message
+    progress = Signal(str)   # Emits progress message
 
     def __init__(self, selected_account_id, selected_person_id, preview_transactions,
                  preview_duplicate_flags, bank_name, selected_file, file_type, checked_rows):
@@ -1683,7 +1683,7 @@ class StatementImportScreen(QWidget):
     def _chain_tab_order(self, *names: str) -> None:
         """
         Chain tab order across the named widgets, skipping any that no longer
-        exist. These run from showEvent(), and in PyQt6 an unhandled exception
+        exist. These run from showEvent(), and in PySide6 an unhandled exception
         inside a reimplemented virtual ABORTS THE PROCESS rather than raising —
         so a stale name here takes the whole app down with no traceback. That
         is exactly what happened when the AI controls moved to Settings and

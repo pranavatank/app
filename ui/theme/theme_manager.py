@@ -169,7 +169,7 @@ class ThemeManager:
     @staticmethod
     def _set_stylesheet() -> None:
         try:
-            from PyQt6.QtWidgets import QApplication
+            from PySide6.QtWidgets import QApplication
             from ui.theme.theme import Theme
             app = QApplication.instance()
             if app:

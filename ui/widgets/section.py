@@ -8,9 +8,9 @@ A QWidget-based collapsible section with:
 - Theme-aware styling
 """
 
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QFont
 
 from ui.theme import Theme
 from ui.icons import icon as app_icon, pixmap as app_pixmap, is_available as icons_available

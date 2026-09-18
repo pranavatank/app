@@ -1,6 +1,6 @@
-from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QHBoxLayout, QComboBox, QPushButton
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont
+from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QHBoxLayout, QComboBox, QPushButton
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QFont
 from ui.theme import Theme
 from ui.icons import icon_label
 import pandas as pd

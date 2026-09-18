@@ -2,12 +2,12 @@
 ui/dialogs/account_metadata_dialog.py — Confirm account metadata from statement
 """
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QLineEdit, QTextEdit, QCheckBox, QFrame, QScrollArea, QWidget, QGridLayout
 )
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QFont
 
 from ui.theme import Theme
 from ui.icons import icon_label

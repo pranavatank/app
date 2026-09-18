@@ -4,6 +4,7 @@ import tempfile
 import shutil
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+os.environ.setdefault("QT_API", "pyside6")
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
@@ -57,6 +58,6 @@ def setup_test_database():
 
 @pytest.fixture(scope="session")
 def qapp():
-    from PyQt6.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication
     app = QApplication.instance() or QApplication([])
     yield app

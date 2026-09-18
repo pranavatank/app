@@ -3,7 +3,7 @@ tools/real_ui_test_harness.py — Reusable helpers for REAL (not headless) UI te
 
 WHY THIS FILE EXISTS
 ---------------------
-Every prior round of "verification" in this project's redesign work used PyQt6's
+Every prior round of "verification" in this project's redesign work used PySide6's
 QTest.mouseClick()/keyClick() under QT_QPA_PLATFORM=offscreen. That approach
 INJECTS events directly into Qt's internal event queue — it never goes through the
 real OS input pipeline. It is fast and fine for pure logic checks, but it produces
@@ -29,7 +29,7 @@ occasionally landed on the wrong control (e.g. closing a dialog instead of openi
 one), because a coordinate is only correct at the instant it's computed and this
 harness had no way to confirm what was actually under the cursor before clicking.
 
-Since this app is a normal on-screen (non-offscreen) PyQt6 window running in the
+Since this app is a normal on-screen (non-offscreen) PySide6 window running in the
 same process as the test script, there is a strictly more reliable option that
 doesn't go through OS input at all: **find the target widget by its accessible
 name (this codebase already calls `setAccessibleName()` on essentially every
@@ -90,15 +90,18 @@ USAGE
     harness.close()
 """
 import os
+import sys
 import time
+
+os.environ.setdefault("QT_API", "pyside6")
 
 import pyautogui
 import win32api
 import win32con
 import win32gui
-from PyQt6.QtCore import Qt, QPoint
-from PyQt6.QtTest import QTest
-from PyQt6.QtWidgets import QApplication, QScrollArea, QWidget
+from PySide6.QtCore import Qt, QPoint
+from PySide6.QtTest import QTest
+from PySide6.QtWidgets import QApplication, QScrollArea, QWidget
 
 pyautogui.FAILSAFE = True   # slam mouse to a screen corner to abort a runaway script
 pyautogui.PAUSE = 0.15

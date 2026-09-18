@@ -1,5 +1,5 @@
 import pytest
-from PyQt6.QtWidgets import QLabel
+from PySide6.QtWidgets import QLabel
 from ui.widgets.summary_panel import SummaryPanel
 
 

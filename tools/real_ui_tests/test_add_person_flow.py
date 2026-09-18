@@ -24,8 +24,8 @@ import sys
 os.environ.setdefault("QT_QPA_FONTDIR", "C:/Windows/Fonts")
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtWidgets import QDialog, QApplication
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtWidgets import QDialog, QApplication
 
 from tools.real_ui_test_harness import RealUIHarness
 from ui.dashboard_screen import DashboardScreen

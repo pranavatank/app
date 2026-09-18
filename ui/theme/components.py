@@ -37,8 +37,8 @@ def darken_hex(hex_color: str, factor: float = 0.8) -> str:
 
 # ── Shadow ────────────────────────────────────────────────────────────────────
 def make_shadow(blur=18, offset_x=0, offset_y=4, color_rgba=(15, 23, 42, 18)):
-    from PyQt6.QtWidgets import QGraphicsDropShadowEffect
-    from PyQt6.QtGui import QColor
+    from PySide6.QtWidgets import QGraphicsDropShadowEffect
+    from PySide6.QtGui import QColor
     effect = QGraphicsDropShadowEffect()
     effect.setBlurRadius(blur)
     effect.setOffset(offset_x, offset_y)

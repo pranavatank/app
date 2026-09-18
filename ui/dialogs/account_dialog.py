@@ -5,14 +5,14 @@ FIX: All buttons now have explicit inline styles (no objectName dependency in QD
 
 import re
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView, QLineEdit,
     QFormLayout, QMessageBox, QComboBox, QDoubleSpinBox,
     QCheckBox, QDateEdit, QTextEdit, QTabWidget, QWidget, QFrame, QScrollArea
 )
-from PyQt6.QtCore import Qt, QDate
-from PyQt6.QtGui import QFont
+from PySide6.QtCore import Qt, QDate
+from PySide6.QtGui import QFont
 
 from ui.theme import Theme
 from ui.widgets.excel_table import enable_copy_shortcut
@@ -577,7 +577,7 @@ class AccountDialog(QDialog):
         # Simple selection dialog
         names = [p["full_name"] for p in available]
         names_str = "\n".join(names)
-        from PyQt6.QtWidgets import QInputDialog
+        from PySide6.QtWidgets import QInputDialog
         selected, ok = QInputDialog.getItem(
             self, "Add Holder", "Select a family member:", names, 0, False
         )

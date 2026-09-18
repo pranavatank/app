@@ -2,12 +2,12 @@
 ui/dialogs/income_expectation_dialog.py — Income expectation CRUD and transaction linking dialogs.
 """
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QComboBox,
     QFormLayout, QDateEdit, QDoubleSpinBox, QTextEdit, QMessageBox, QFrame, QSpinBox
 )
-from PyQt6.QtCore import Qt, QDate
-from PyQt6.QtGui import QFont, QColor
+from PySide6.QtCore import Qt, QDate
+from PySide6.QtGui import QFont, QColor
 
 from datetime import date, datetime
 from dateutil.relativedelta import relativedelta

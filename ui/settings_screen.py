@@ -19,14 +19,14 @@ LIVE THEME SWITCHING — HOW IT WORKS:
 
 from __future__ import annotations
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QGroupBox,
     QFormLayout, QLineEdit, QCheckBox, QFileDialog,
     QMessageBox, QScrollArea, QFrame, QGridLayout,
     QButtonGroup, QAbstractButton, QDialog,
 )
-from PyQt6.QtCore import Qt, QSize, pyqtSignal, QTimer
-from PyQt6.QtGui import QFont, QColor, QPainter, QPainterPath, QPen
+from PySide6.QtCore import Qt, QSize, Signal, QTimer
+from PySide6.QtGui import QFont, QColor, QPainter, QPainterPath, QPen
 
 import os
 from datetime import datetime
@@ -42,7 +42,7 @@ from core.auth import (
 from config import BACKUP_DIR
 from engines.statement_parser import is_ollama_available
 from ui.ollama_worker import OllamaModelStartWorker
-from PyQt6.QtCore import QThread
+from PySide6.QtCore import QThread
 
 
 def _device_info() -> dict:
@@ -68,7 +68,7 @@ class ThemeCard(QAbstractButton):
     Loads colours directly from the theme module so preview
     is always accurate regardless of active theme.
     """
-    selected = pyqtSignal(str)
+    selected = Signal(str)
 
     W, H = 280, 150
 
@@ -90,7 +90,7 @@ class ThemeCard(QAbstractButton):
         self.setChecked(is_active)
         self.setMinimumSize(self.W, self.H)
         self.setMaximumHeight(self.H)
-        from PyQt6.QtWidgets import QSizePolicy
+        from PySide6.QtWidgets import QSizePolicy
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setToolTip(f"{info.get('emoji','🎨')} {info['name']}\n{info.get('description','')}")

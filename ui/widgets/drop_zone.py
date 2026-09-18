@@ -8,9 +8,9 @@ A themed QWidget supporting:
 - Emits fileSelected(str) signal carrying the file path
 """
 
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFileDialog
-from PyQt6.QtCore import Qt, pyqtSignal, QMimeData
-from PyQt6.QtGui import QFont, QDragEnterEvent, QDragMoveEvent, QDropEvent
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFileDialog
+from PySide6.QtCore import Qt, Signal, QMimeData
+from PySide6.QtGui import QFont, QDragEnterEvent, QDragMoveEvent, QDropEvent
 
 from ui.theme import Theme
 from ui.icons import icon_label
@@ -22,7 +22,7 @@ class DropZone(QWidget):
 
     Emits fileSelected(str) signal carrying the selected file path.
     """
-    fileSelected = pyqtSignal(str)  # Emits file path (str)
+    fileSelected = Signal(str)  # Emits file path (str)
 
     def __init__(
         self,

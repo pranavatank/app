@@ -14,7 +14,7 @@ os.environ['QT_QPA_PLATFORM'] = 'offscreen'
 
 sys.path.insert(0, str(__import__('pathlib').Path(__file__).parent.parent))
 
-from PyQt6.QtWidgets import QApplication, QLabel
+from PySide6.QtWidgets import QApplication, QLabel
 from ui.widgets.kpi_tile import KpiTile
 from ui.theme import Theme
 

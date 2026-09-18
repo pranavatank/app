@@ -9,13 +9,13 @@ Displays parsed tax documents (Form 26AS, AIS, TIS) with:
 - TDS disagreement surface
 """
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame,
     QPushButton, QTableWidget, QTableWidgetItem, QHeaderView,
     QFileDialog, QScrollArea, QTableWidgetSelectionRange
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QObject
-from PyQt6.QtGui import QFont, QColor
+from PySide6.QtCore import Qt, Signal, QObject
+from PySide6.QtGui import QFont, QColor
 
 from ui.theme import Theme
 from ui.icons import set_btn_icon

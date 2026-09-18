@@ -2,12 +2,12 @@
 ui/setup_screen.py — First-run password setup.
 """
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QLineEdit, QCheckBox, QMessageBox, QFrame
 )
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QFont
 
 from core.auth import setup_master_password
 from config import APP_NAME
@@ -192,7 +192,7 @@ class SetupScreen(QWidget):
         self.close()
 
     def _center_on_screen(self):
-        from PyQt6.QtGui import QGuiApplication
+        from PySide6.QtGui import QGuiApplication
         screen = QGuiApplication.primaryScreen().geometry()
         geo = self.frameGeometry()
         geo.moveCenter(screen.center())

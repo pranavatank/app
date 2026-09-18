@@ -2,11 +2,11 @@
 ui/dialogs/transaction_dialog.py — Add/edit dialog for transactions.
 """
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QFormLayout, QComboBox, QLineEdit,
     QDateEdit, QDoubleSpinBox, QTextEdit, QDialogButtonBox
 )
-from PyQt6.QtCore import Qt, QDate
+from PySide6.QtCore import Qt, QDate
 
 from ui.widgets.toast_utils import show_warning
 from config import INCOME_CATEGORIES, EXPENSE_CATEGORIES, TRANSACTION_MODES

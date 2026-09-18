@@ -1,5 +1,5 @@
-from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QHBoxLayout
-from PyQt6.QtCore import Qt
+from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QHBoxLayout
+from PySide6.QtCore import Qt
 from ui.theme.theme import Theme
 
 

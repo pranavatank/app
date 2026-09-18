@@ -2,14 +2,14 @@
 ui/widgets/excel_table.py — Excel-like table with copy/paste, selection, stats.
 """
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QCheckBox, QWidget,
     QHBoxLayout, QLabel, QHeaderView, QApplication, QMessageBox,
     QStyledItemDelegate, QStyle, QStyleOptionViewItem, QLineEdit,
     QAbstractItemView
 )  # QHeaderView is imported for column sizing in _apply_column_sizing()
-from PyQt6.QtCore import Qt, pyqtSignal, QModelIndex
-from PyQt6.QtGui import QKeySequence, QKeyEvent
+from PySide6.QtCore import Qt, Signal, QModelIndex
+from PySide6.QtGui import QKeySequence, QKeyEvent
 from ui.theme import Theme
 
 
@@ -53,9 +53,9 @@ class NoFocusRectDelegate(QStyledItemDelegate):
 class ExcelTable(QTableWidget):
     """Table with Excel-like features: cell/row selection, copy/paste, checkboxes, stats."""
 
-    selectionStatsChanged = pyqtSignal(str)  # Emits stats text
-    cellDataChanged = pyqtSignal()  # Emits when data is pasted/changed
-    deleteRequested = pyqtSignal()  # Emits when Delete key pressed
+    selectionStatsChanged = Signal(str)  # Emits stats text
+    cellDataChanged = Signal()  # Emits when data is pasted/changed
+    deleteRequested = Signal()  # Emits when Delete key pressed
 
     def __init__(self, parent=None, show_checkboxes=True, editable=False, read_only=False):
         super().__init__(parent)
@@ -585,7 +585,7 @@ class ExcelTableWithStats(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         
-        from PyQt6.QtWidgets import QVBoxLayout
+        from PySide6.QtWidgets import QVBoxLayout
         v_layout = QVBoxLayout()
         v_layout.setContentsMargins(0, 0, 0, 0)
         v_layout.setSpacing(4)

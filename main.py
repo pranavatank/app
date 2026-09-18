@@ -6,16 +6,20 @@ import sys
 import os
 import importlib.util
 
+# matplotlib and qtawesome both pick their Qt binding at import time. Pin it
+# before any Qt-touching import so neither can bind a stale PyQt6 install.
+os.environ["QT_API"] = "pyside6"
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-# Dependency check must run before PyQt6 imports, so failures produce readable
+# Dependency check must run before PySide6 imports, so failures produce readable
 # dialogs instead of tracebacks. Defined here so it can be called before imports.
 def check_dependencies():
     """Verify all required dependencies are installed, with readable error reporting."""
 
     # Mapping of module names to their pip package names
     required_modules = {
-        'PyQt6.QtWidgets': 'PyQt6',
+        'PySide6.QtWidgets': 'PySide6',
         'qtawesome': 'qtawesome',
         'pdfplumber': 'pdfplumber',
         'pypdf': 'pypdf',
@@ -30,23 +34,6 @@ def check_dependencies():
     for module_name, pip_name in required_modules.items():
         if importlib.util.find_spec(module_name) is None:
             missing.append((module_name, pip_name))
-
-    # Special case: if PyQt6.QtWidgets is missing, check if it's the namespace package issue
-    if any(m == 'PyQt6.QtWidgets' for m, _ in missing):
-        try:
-            import PyQt6
-            if PyQt6.__file__ is None:
-                error_msg = (
-                    "PyQt6 installation is incomplete (namespace package with no bindings).\n\n"
-                    "This usually happens on Microsoft Store Python or after a failed install.\n\n"
-                    "Fix: Run this command:\n"
-                    "  python -m pip install --force-reinstall --no-cache-dir PyQt6 qtawesome\n\n"
-                    "If that fails, install Python from python.org and use a virtual environment."
-                )
-                _show_error_dialog(error_msg)
-                sys.exit(1)
-        except ImportError:
-            pass
 
     # Report any missing dependencies
     if missing:
@@ -68,9 +55,9 @@ def _show_error_dialog(message):
     # Always print to stderr first
     print(message, file=sys.stderr)
 
-    # Try PyQt6 dialog
+    # Try a Qt dialog
     try:
-        from PyQt6.QtWidgets import QApplication, QMessageBox
+        from PySide6.QtWidgets import QApplication, QMessageBox
         app = QApplication.instance() or QApplication(sys.argv)
         QMessageBox.critical(None, "Dependency Error", message)
         return
@@ -93,9 +80,9 @@ def _show_error_dialog(message):
 if __name__ == "__main__":
     check_dependencies()
 
-from PyQt6.QtWidgets import QApplication
-from PyQt6.QtGui import QFont
-from PyQt6.QtCore import qInstallMessageHandler
+from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QFont
+from PySide6.QtCore import qInstallMessageHandler
 
 from core.database import initialise_database
 from core.auth import is_first_run

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Callable
 
-from PyQt6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtWidgets import QApplication, QMessageBox
 
 
 _ORIGINAL_CRITICAL: Callable | None = None

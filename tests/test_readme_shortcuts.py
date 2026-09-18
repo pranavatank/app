@@ -13,9 +13,9 @@ Shortcuts tested:
 
 import pytest
 from unittest.mock import patch, MagicMock
-from PyQt6.QtWidgets import QApplication
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QKeySequence, QKeyEvent
+from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QKeySequence, QKeyEvent
 
 from ui.widgets.excel_table import ExcelTable, ExcelTableWithStats
 
@@ -351,7 +351,7 @@ class TestDeleteShortcut:
         excel_table_editable.setCurrentCell(0, 0)
 
         # Simulate Delete key
-        with patch('PyQt6.QtWidgets.QMessageBox.question', return_value=1):
+        with patch('PySide6.QtWidgets.QMessageBox.question', return_value=1):
             key_event = QKeyEvent(QKeyEvent.Type.KeyPress, Qt.Key.Key_Delete, Qt.KeyboardModifier.NoModifier)
             excel_table_editable.keyPressEvent(key_event)
 

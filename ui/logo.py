@@ -5,8 +5,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QIcon, QPixmap
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QIcon, QPixmap
 
 from config import BASE_DIR
 

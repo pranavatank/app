@@ -12,9 +12,9 @@ Verifies:
 
 import pytest
 from unittest.mock import patch, MagicMock
-from PyQt6.QtWidgets import QApplication
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QKeySequence
+from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QKeySequence
 
 from ui.widgets.excel_table import ExcelTable, ExcelTableWithStats
 
@@ -97,7 +97,7 @@ class TestCtrlASelection:
 
     def test_ctrl_a_via_keypress_editable(self, qapp, excel_table_editable):
         """Verify Ctrl+A keypress triggers selection in editable table."""
-        from PyQt6.QtGui import QKeyEvent
+        from PySide6.QtGui import QKeyEvent
         key_event = QKeyEvent(QKeyEvent.Type.KeyPress, Qt.Key.Key_A, Qt.KeyboardModifier.ControlModifier)
         excel_table_editable.keyPressEvent(key_event)
         selected = excel_table_editable.selectedItems()
@@ -146,7 +146,7 @@ class TestF2KeyHandling:
 
     def test_f2_not_in_edit_triggers_readonly(self, qapp, excel_table_readonly):
         """Verify F2 does nothing in read-only mode."""
-        from PyQt6.QtGui import QKeyEvent
+        from PySide6.QtGui import QKeyEvent
         key_event = QKeyEvent(QKeyEvent.Type.KeyPress, Qt.Key.Key_F2, Qt.KeyboardModifier.NoModifier)
         # Should accept the event without entering edit mode
         excel_table_readonly.keyPressEvent(key_event)
@@ -164,7 +164,7 @@ class TestF2KeyHandling:
 
     def test_f2_key_accepted_readonly(self, qapp, excel_table_readonly):
         """Verify F2 is accepted (not rejected) in read-only mode."""
-        from PyQt6.QtGui import QKeyEvent
+        from PySide6.QtGui import QKeyEvent
         key_event = QKeyEvent(QKeyEvent.Type.KeyPress, Qt.Key.Key_F2, Qt.KeyboardModifier.NoModifier)
         excel_table_readonly.keyPressEvent(key_event)
         # Event should be accepted (not propagated to parent)

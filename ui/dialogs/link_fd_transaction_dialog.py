@@ -2,7 +2,7 @@
 ui/dialogs/link_fd_transaction_dialog.py — Dialog for linking FD to a transaction.
 """
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox
 )

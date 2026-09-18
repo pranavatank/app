@@ -7,13 +7,13 @@ FIX: Brand header uses Theme.gradient() so all themes look correct.
 import os
 import traceback
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QLabel, QPushButton, QComboBox, QStackedWidget,
     QFrame, QGridLayout, QSizePolicy, QMessageBox, QScrollArea, QToolButton
 )
-from PyQt6.QtCore import Qt, QSize, QEvent, QObject
-from PyQt6.QtGui import QFont, QColor, QIcon, QFontMetrics
+from PySide6.QtCore import Qt, QSize, QEvent, QObject
+from PySide6.QtGui import QFont, QColor, QIcon, QFontMetrics
 
 from core.session import session
 from config import (
@@ -1065,7 +1065,7 @@ class DashboardScreen(QMainWindow):
                 except Exception:
                     pass
         # Re-apply theme stylesheet
-        from PyQt6.QtWidgets import QApplication
+        from PySide6.QtWidgets import QApplication
         from ui.theme import Theme, ThemeManager
         ThemeManager.load_and_apply()
         QApplication.instance().setStyleSheet(Theme.get_stylesheet())

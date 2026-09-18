@@ -2,14 +2,14 @@
 ui/dialogs/fd_dialog.py — Add/edit dialog for fixed deposits.
 """
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QComboBox, QDateEdit, QFormLayout, QFrame, QScrollArea,
     QWidget, QSpinBox, QDialogButtonBox, QTableWidget, QTableWidgetItem,
     QHeaderView, QMessageBox, QPlainTextEdit
 )
-from PyQt6.QtCore import Qt, QDate
-from PyQt6.QtGui import QFont, QDoubleValidator
+from PySide6.QtCore import Qt, QDate
+from PySide6.QtGui import QFont, QDoubleValidator
 
 from datetime import date
 

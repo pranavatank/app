@@ -10,11 +10,11 @@ All three are theme-aware via QSS (no inline setStyleSheet calls).
 Icons resolve by semantic role from the registry (ui/icons.py).
 """
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame
 )
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QFont
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QFont
 
 from ui.theme import Theme
 from ui.icons import icon_label, set_btn_icon, pixmap as icon_pixmap, is_available as icons_available, fallback as icon_fallback
@@ -28,7 +28,7 @@ class EmptyState(QFrame):
     Signals:
         action_clicked: Emitted when the action button is clicked
     """
-    action_clicked = pyqtSignal()
+    action_clicked = Signal()
 
     def __init__(
         self,
@@ -177,7 +177,7 @@ class ErrorState(QFrame):
     Signals:
         retry_clicked: Emitted when the retry button is clicked
     """
-    retry_clicked = pyqtSignal()
+    retry_clicked = Signal()
 
     def __init__(
         self,

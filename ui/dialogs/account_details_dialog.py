@@ -3,12 +3,12 @@ ui/dialogs/account_details_dialog.py — Account detail panel with tabs.
 This can be used as either a dialog or an in-screen panel.
 """
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QWidget, QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QScrollArea, QFrame, QFormLayout, QTabWidget
 )
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QFont
 
 from ui.theme import Theme
 from ui.icons import set_btn_icon, tab_icon
@@ -226,7 +226,7 @@ class AccountDetailsPanel(QWidget):
                 self.on_updated(self.account["account_id"])
 
     def _on_delete(self):
-        from PyQt6.QtWidgets import QMessageBox
+        from PySide6.QtWidgets import QMessageBox
         reply = QMessageBox.question(
             self, "Confirm Delete",
             f"Delete account '{self.account.get('bank_display_name', self.account['bank_name'])}'?\n\n"

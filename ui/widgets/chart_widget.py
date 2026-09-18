@@ -15,10 +15,11 @@ Key fixes vs old version:
 
 from __future__ import annotations
 import functools
+import os
 import traceback
 
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel
-from PyQt6.QtCore import Qt
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel
+from PySide6.QtCore import Qt
 
 from ui.theme import Theme
 
@@ -27,8 +28,11 @@ _MPL_AVAILABLE = False
 FigureCanvas = None
 
 try:
+    # matplotlib picks its Qt binding at import time; main.py hard-sets QT_API,
+    # but this module is also imported by entry points that bypass main.py.
+    os.environ.setdefault("QT_API", "pyside6")
     import matplotlib
-    # Try QtAgg (PyQt6 native)
+    # Try QtAgg (PySide6 native)
     try:
         matplotlib.use("QtAgg")
         from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as _FC

@@ -4,8 +4,8 @@ ui/widgets/toast_utils.py — Global toast management utilities.
 Provides a simple interface for showing toasts from anywhere in the app.
 """
 
-from PyQt6.QtWidgets import QApplication, QMainWindow
-from PyQt6.QtCore import Qt
+from PySide6.QtWidgets import QApplication, QMainWindow
+from PySide6.QtCore import Qt
 
 from .toast import ToastContainer
 

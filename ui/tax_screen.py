@@ -5,13 +5,13 @@ The owner has irrevocably opted into the New Regime (Form 10-IEA).
 This screen shows only New Regime inputs and calculations.
 """
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QGroupBox, QFormLayout, QFrame, QScrollArea,
     QDoubleSpinBox, QComboBox, QSplitter, QSizePolicy, QMessageBox
 )
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont, QColor
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QFont, QColor
 
 from ui.theme import Theme
 from ui.icons import set_btn_icon

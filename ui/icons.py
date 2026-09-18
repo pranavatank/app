@@ -25,9 +25,9 @@ import os
 import tempfile
 import functools
 
-from PyQt6.QtGui     import QIcon, QPixmap, QColor
-from PyQt6.QtWidgets import QLabel, QPushButton
-from PyQt6.QtCore    import QSize
+from PySide6.QtGui     import QIcon, QPixmap, QColor
+from PySide6.QtWidgets import QLabel, QPushButton
+from PySide6.QtCore    import QSize
 
 # -- Library availability ------------------------------------------------------
 try:

@@ -4,13 +4,13 @@ ui/dialogs/person_dialog.py — Person management dialog with clean theme stylin
 
 import re
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView, QLineEdit,
     QFormLayout, QMessageBox, QDateEdit, QFrame
 )
-from PyQt6.QtCore import Qt, QDate
-from PyQt6.QtGui import QFont
+from PySide6.QtCore import Qt, QDate
+from PySide6.QtGui import QFont
 
 from ui.theme import Theme
 from ui.icons import set_btn_icon, icon_label

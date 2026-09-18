@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 def test_transactions_charts():
     """Verify Monthly and Categories charts exist on TransactionsScreen."""
-    from PyQt6.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication
     os.environ["QT_QPA_PLATFORM"] = "offscreen"
     app = QApplication.instance() or QApplication([])
 
@@ -25,7 +25,7 @@ def test_transactions_charts():
 
 def test_accounts_bank_chart():
     """Verify bank_chart was intentionally removed from AccountsScreen (F322)."""
-    from PyQt6.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication
     os.environ["QT_QPA_PLATFORM"] = "offscreen"
     app = QApplication.instance() or QApplication([])
 
@@ -39,7 +39,7 @@ def test_accounts_bank_chart():
 
 def test_fixed_deposits_interest_chart():
     """Verify Interest Trend chart exists on FixedDepositsScreen."""
-    from PyQt6.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication
     os.environ["QT_QPA_PLATFORM"] = "offscreen"
     app = QApplication.instance() or QApplication([])
 

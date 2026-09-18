@@ -60,7 +60,7 @@ A fully offline desktop application for managing personal and family financial d
 ## 🛠️ Technology Stack
 
 - **Language**: Python 3.10+
-- **UI Framework**: PyQt6
+- **UI Framework**: PySide6
 - **Database**: SQLite (plaintext, recommended on encrypted volume)
 - **PDF Parsing**: pdfplumber
 - **Excel Parsing**: pandas / openpyxl

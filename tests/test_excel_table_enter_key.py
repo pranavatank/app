@@ -10,9 +10,9 @@ Verifies:
 
 import pytest
 from unittest.mock import MagicMock, patch
-from PyQt6.QtWidgets import QApplication
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QKeyEvent
+from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QKeyEvent
 
 from ui.widgets.excel_table import ExcelTable, ExcelTableWithStats
 

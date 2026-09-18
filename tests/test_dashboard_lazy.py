@@ -13,7 +13,7 @@ os.environ['QT_QPA_PLATFORM'] = 'offscreen'
 
 sys.path.insert(0, str(__import__('pathlib').Path(__file__).parent.parent))
 
-from PyQt6.QtWidgets import QApplication, QWidget, QLabel
+from PySide6.QtWidgets import QApplication, QWidget, QLabel
 from ui.dashboard_screen import DashboardScreen, _NAV_ITEMS
 import core.database as db
 
@@ -155,7 +155,7 @@ def test_nav_labels_not_clipped_when_expanded():
     narrow), and nav icons were clipped when set to 6px for a 22px icon.
     """
     from core.session import session
-    from PyQt6.QtWidgets import QToolButton
+    from PySide6.QtWidgets import QToolButton
 
     # Ensure sidebar is expanded
     session.set_sidebar_open(True)
@@ -211,7 +211,7 @@ def test_nav_labels_hidden_when_collapsed():
     remain hidden (not clipped) in the 76px rail mode.
     """
     from core.session import session
-    from PyQt6.QtWidgets import QToolButton
+    from PySide6.QtWidgets import QToolButton
 
     # Start expanded, then collapse
     session.set_sidebar_open(True)

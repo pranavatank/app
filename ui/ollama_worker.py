@@ -5,7 +5,7 @@ import os
 from urllib import error as url_error
 from urllib import request as url_request
 
-from PyQt6.QtCore import QObject, pyqtSignal
+from PySide6.QtCore import QObject, Signal
 
 from engines.statement_parser import (
     DEFAULT_OLLAMA_ENDPOINT,
@@ -17,8 +17,8 @@ from engines.statement_parser import (
 
 
 class OllamaModelStartWorker(QObject):
-    finished = pyqtSignal(str)
-    failed = pyqtSignal(str)
+    finished = Signal(str)
+    failed = Signal(str)
 
     def __init__(self):
         super().__init__()

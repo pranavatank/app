@@ -17,8 +17,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
 from pathlib import Path
-from PyQt6.QtWidgets import QApplication, QMessageBox
-from PyQt6.QtTest import QTest
+from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtTest import QTest
 
 from ui.dashboard_screen import DashboardScreen, _NAV_ITEMS
 from ui.statement_import_screen_modern import StatementImportScreen

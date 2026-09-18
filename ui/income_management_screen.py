@@ -2,14 +2,14 @@
 ui/income_management_screen.py — Income expectations, FD interest, and income composition analysis
 """
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QComboBox,
     QFrame, QTableWidget, QTableWidgetItem, QHeaderView, QDialog, QFormLayout,
     QDateEdit, QDoubleSpinBox, QTextEdit, QMessageBox, QLineEdit, QSpinBox,
     QSizePolicy, QScrollArea
 )
-from PyQt6.QtCore import Qt, QDate, pyqtSignal
-from PyQt6.QtGui import QFont, QColor
+from PySide6.QtCore import Qt, QDate, Signal
+from PySide6.QtGui import QFont, QColor
 
 from datetime import date, datetime
 from dateutil.relativedelta import relativedelta

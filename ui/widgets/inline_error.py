@@ -4,9 +4,9 @@ ui/widgets/inline_error.py — Helper for inline field-level error messages.
 Displays and clears error messages next to a form field.
 """
 
-from PyQt6.QtWidgets import QLabel, QWidget, QHBoxLayout, QVBoxLayout
-from PyQt6.QtGui import QFont
-from PyQt6.QtCore import Qt
+from PySide6.QtWidgets import QLabel, QWidget, QHBoxLayout, QVBoxLayout
+from PySide6.QtGui import QFont
+from PySide6.QtCore import Qt
 
 from ui.theme.theme import Theme
 

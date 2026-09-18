@@ -4,13 +4,13 @@ ui/dialogs/bank_dialog.py — Bank management dialog with person-like operations
 
 import re
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView, QLineEdit,
     QFormLayout, QMessageBox, QFrame
 )
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QFont
 
 from ui.theme import Theme
 from ui.icons import icon_label, set_btn_icon

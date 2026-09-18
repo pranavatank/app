@@ -4,13 +4,13 @@ Consolidates PersonManagementDialog, BankManagementDialog, and AccountManagement
 into a single tabbed interface.
 """
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView, QTabWidget,
     QMessageBox, QDialog, QFrame
 )
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QFont
 
 from ui.theme import Theme
 from ui.icons import set_btn_icon, icon_label

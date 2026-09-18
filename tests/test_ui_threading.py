@@ -11,8 +11,8 @@ import pytest
 import time
 from unittest.mock import patch, MagicMock
 from threading import Thread, current_thread
-from PyQt6.QtWidgets import QApplication, QWidget
-from PyQt6.QtCore import QThread, QTimer, Qt
+from PySide6.QtWidgets import QApplication, QWidget
+from PySide6.QtCore import QThread, QTimer, Qt
 import threading
 
 
@@ -192,7 +192,7 @@ class TestAISTISThreading:
     def test_ais_tis_parse_worker_uses_worker_thread(self, qapp, main_thread_id):
         """Verify AIS parsing runs on a worker thread, not the GUI thread."""
         from ui.widgets.loader import Loader
-        from PyQt6.QtWidgets import QWidget
+        from PySide6.QtWidgets import QWidget
         from core.database import initialise_database
 
         parse_thread_id = None
@@ -250,7 +250,7 @@ class TestForm26ASThreading:
     def test_form26as_parse_worker_uses_worker_thread(self, qapp, main_thread_id):
         """Verify Form 26AS parse runs on a worker thread, not the GUI thread."""
         from ui.widgets.loader import Loader
-        from PyQt6.QtWidgets import QWidget
+        from PySide6.QtWidgets import QWidget
         from core.database import initialise_database
 
         parse_thread_id = None

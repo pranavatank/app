@@ -18,7 +18,7 @@ os.environ["QT_QPA_PLATFORM"] = "offscreen"
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
-from PyQt6.QtWidgets import QApplication, QPushButton
+from PySide6.QtWidgets import QApplication, QPushButton
 from ui.dashboard_screen import DashboardScreen, _NAV_ITEMS
 from ui.theme.theme_manager import ThemeManager
 from ui.theme import Theme
