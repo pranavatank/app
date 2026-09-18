@@ -820,3 +820,46 @@ documents parsed. Re-run this test once the password path is wired.
   `zone.pdf_data`, which never arrives on failure. The parse itself fails fast.
   The wait now also accepts an "Error:" status on the zone, so a failed parse
   reports in seconds instead of 90s.
+
+### 2026-09-18 — Unit 6: button size audit on a real render (36 buttons, 9 screens)
+
+New test: `tools/real_ui_tests/test_button_size_audit.py`. Builds each of the
+nine nav screens in a real maximized window and measures every visible
+QPushButton/QToolButton's **rendered** height and width against
+`design_direction.scales_to_enforce` (heights 28/36/44 +/-2px, 280px width cap).
+This closes the §4 gap "never measured on a real render, only asserted in code".
+Reports only — changes nothing.
+
+**Result: 36 visible buttons measured, 14 off-scale.** Clean screens: Overview,
+Accounts, Fixed Deposits, Statement Import.
+
+#### FINDING 6.1 — eight primary action buttons are 40px, between md and lg [MINOR]
+40px is not on the {28, 36, 44} scale — it sits between `md` and `lg`. Affected:
+Transactions (Add Transaction, Edit, Delete, Link Transfers, Import Statement),
+Income & Expectations (Add Expected Income), Tax Documents (Add), Tax
+(Estimate Tax).
+
+Source is an explicit `height=40` argument to `Theme.btn(...)`. Grep shows the
+same literal in `ui/transactions_screen.py` (x4), `ui/tax_screen.py`,
+`ui/dialogs/account_details_dialog.py` (x3) and
+`ui/dialogs/account_metadata_dialog.py` (x2) — so dialogs carry it too, they were
+just not measured here. Fix is mechanical: `height=40` -> `height=Theme.HEIGHT_MD`
+(36) or `Theme.HEIGHT_LG` (44), whichever the design intends for a screen's
+primary action. Not applied — it is a visual change across several screens and
+should be one deliberate pass, not a silent edit during a test run.
+
+#### FINDING 6.2 — six Settings buttons exceed the 280px width cap [MINOR]
+Change Password (320px), Manage People (322px), Manage Bank (322px), Manage Banks
+(322px), Create Backup (320px), Restore Backup (320px). These are built in
+`ui/settings_screen.py` with `min_width=155` inside a stretching layout, so the
+layout — not the min-width — is what pushes them past the cap. A `setMaximumWidth`
+of 280 on that row, or a trailing stretch, would hold the scale.
+
+Neither finding is a functional bug; both are design-scale drift that only a real
+render could reveal.
+
+#### Harness note — a PySide6 API difference worth knowing
+`QObject.findChildren()` accepts a **single** type in PySide6; passing a tuple
+like `findChildren((QPushButton, QToolButton))` raises `TypeError`. PyQt6 allowed
+the tuple form. Call it once per type and concatenate. This is the kind of
+difference that only surfaces when the code actually runs, not at import.

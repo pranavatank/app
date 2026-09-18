@@ -53,7 +53,9 @@ def audit_screen(screen, screen_name):
     """Return (violations, measured_count) for one built screen."""
     violations = []
     measured = 0
-    for btn in screen.findChildren((QPushButton, QToolButton)):
+    # PySide6's findChildren takes a single type, not a tuple (PyQt6 allowed one).
+    buttons = list(screen.findChildren(QPushButton)) + list(screen.findChildren(QToolButton))
+    for btn in buttons:
         if not btn.isVisible():
             continue
         if btn.objectName() in EXEMPT_OBJECT_NAMES:
