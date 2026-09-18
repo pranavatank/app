@@ -431,3 +431,54 @@ Follow `tools/real_ui_tests/test_add_person_flow.py` as the template:
    real data — this project's database is not a disposable test fixture.
 5. Cross-check both a screenshot AND direct widget/DB state per §3.5 — never
    trust a screenshot alone.
+
+### 2026-09-18 — post-PySide6-migration triage: harness OK, one real bug found
+
+Context: the app was migrated PyQt6 -> PySide6 and given a UI pass (motion
+tokens, `ui/widgets/motion.py`, animated sidebar, toast fades) immediately
+before this session.
+
+**Harness status: WORKING, no repair needed.** `tools/real_ui_tests/test_add_person_flow.py`
+was run unchanged under PySide6 and passed every check end to end (real visible
+window, real QTest-driven clicks, screenshots, DB verification, self-cleanup).
+`PySide6.QtTest.QTest` is a drop-in for the PyQt6 one for everything this
+harness uses. Accessible-name lookup, the `QTimer.singleShot` modal pattern and
+the DB cross-checks all carry over unchanged.
+
+**BUG FOUND AND FIXED (app bug, introduced by the UI pass, now reverted):
+navigation left the incoming page at opacity 0.**
+`DashboardScreen._navigate()` had been given a `fade_in(screen)` call.
+`motion.fade_in()` installs a `QGraphicsOpacityEffect` and sets it to 0.0
+before animating to 1.0. Under a real continuous `app.exec()` loop the fade
+completed correctly (measured: 0.0 immediately after the call, 1.0 after 1.5s).
+Under a script-driven loop it did **not** — `processEvents()` returns instantly,
+so almost no wall-clock time passes, the 180ms animation barely advances, and
+the page stayed at **opacity 0.0**: laid out, `isVisible()` True, `page_title_lbl`
+already reading "Settings", and painting nothing. The screenshot showed the
+*previous* screen's pixels.
+
+This is the §3.5 repaint-lag trap with a genuine app bug underneath it — worth
+noting because §3.5 would have led you to dismiss the screenshot as a test
+artifact. It was not. `_on_refresh_all()` runs on the line right after the fade
+and can block on DB work, so a real user could hit the same blank screen.
+
+Disambiguation method (reusable): after navigating, read
+`stack.currentIndex()`, `type(stack.currentWidget()).__name__`,
+`currentWidget().isVisible()`, **and** `currentWidget().graphicsEffect().opacity()`
+alongside the screenshot. The opacity read is what separates "compositor lag"
+from "actually transparent". Setting `ui.widgets.motion.ENABLED = False` removes
+the effect entirely and is a clean bisect switch.
+
+Fix applied (commit 369e5e2): the page fade is removed from `_navigate()` —
+a transition that can leave a screen blank is not worth it. `motion.fade_in()`
+now also snaps to 1.0 on `finished`, and `motion._start()` snaps an interrupted
+animation to its end value before stopping it, so rapid re-triggering cannot
+strand a widget at a partial value. The sidebar width animation is unaffected.
+
+**Confirmed NOT a bug:** the collapsed icons-only sidebar seen in screenshots is
+persisted session state (`ui/dashboard_screen.py:149` reads
+`session.is_sidebar_open()`), not a rendering regression.
+
+**Still open** — everything in §4 and §5 other than Add Person remains untested
+with real clicks. The campaign roadmap for that work is
+`docs/UI_TEST_CAMPAIGN_PLAN.md`.
