@@ -10,6 +10,7 @@ from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QFont
 
 from ui.theme.theme import Theme
+from ui.widgets.motion import fade_in, fade_out
 
 
 class Toast(QWidget):
@@ -68,7 +69,7 @@ class Toast(QWidget):
 
     def show_toast(self):
         """Show the toast and start auto-dismiss timer if applicable."""
-        self.show()
+        fade_in(self)
         if self.duration_ms > 0:
             self.dismiss_timer.start(self.duration_ms)
 
@@ -78,7 +79,7 @@ class Toast(QWidget):
     def _on_close(self):
         """Close and emit closed signal."""
         self.dismiss_timer.stop()
-        self.hide()
+        fade_out(self)
         self.closed.emit()
 
     def closeEvent(self, event):

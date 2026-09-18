@@ -14,6 +14,7 @@ from PySide6.QtGui import QFont
 
 from ui.theme import Theme
 from ui.icons import icon as app_icon, pixmap as app_pixmap, is_available as icons_available
+from ui.widgets.motion import animate_height
 
 
 class CollapsibleSection(QWidget):
@@ -135,12 +136,27 @@ class CollapsibleSection(QWidget):
         # Fallback to text
         self._chevron_label.setText("▼" if self._expanded else "▶")
 
-    def _set_expanded(self, expanded: bool):
-        """Set the expanded state."""
+    def _set_expanded(self, expanded: bool, animate: bool = False):
+        """Set the expanded state, optionally animating the content height."""
         self._expanded = expanded
-        self._content_widget.setVisible(expanded)
         self._summary_label.setVisible(not expanded and self.summary_value_text != "")
         self._update_chevron()
+
+        if not animate:
+            self._content_widget.setMaximumHeight(16777215)
+            self._content_widget.setVisible(expanded)
+            return
+
+        if expanded:
+            self._content_widget.setMaximumHeight(0)
+            self._content_widget.show()
+            animate_height(self._content_widget, self._content_widget.sizeHint().height())
+        else:
+            anim = animate_height(self._content_widget, 0)
+            if anim is None:
+                self._content_widget.hide()
+            else:
+                anim.finished.connect(self._content_widget.hide)
 
     def _on_header_click(self, event):
         """Handle header click to toggle expand/collapse."""
@@ -155,8 +171,8 @@ class CollapsibleSection(QWidget):
             super().keyPressEvent(event)
 
     def toggle(self):
-        """Toggle the expanded state."""
-        self._set_expanded(not self._expanded)
+        """Toggle the expanded state (animated - this is user-initiated)."""
+        self._set_expanded(not self._expanded, animate=True)
 
     def set_expanded(self, expanded: bool):
         """Set the expanded state explicitly."""

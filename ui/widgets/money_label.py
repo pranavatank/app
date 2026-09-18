@@ -102,7 +102,12 @@ class MoneyLabel(QLabel):
     def _setup_font(self):
         """Configure font with tabular figures for aligned digits."""
         font = QFont()
-        font.setFamily("Courier New")  # Monospace fallback for tabular alignment
+        if hasattr(font, "setFeature"):
+            # Qt 6.7+: real tabular figures in the app font beat a monospace fallback.
+            font.setFamily("Segoe UI")
+            font.setFeature(QFont.Tag("tnum"), 1)
+        else:
+            font.setFamily("Courier New")
         font.setPointSize(11)
         self.setFont(font)
         self.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)

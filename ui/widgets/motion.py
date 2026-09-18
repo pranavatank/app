@@ -10,6 +10,7 @@ Set ENABLED = False to turn every animation into an instant final-value set
 
 from __future__ import annotations
 
+import shiboken6
 from PySide6.QtCore import QAbstractAnimation, QEasingCurve, QPropertyAnimation
 from PySide6.QtWidgets import QGraphicsDropShadowEffect, QGraphicsOpacityEffect, QWidget
 
@@ -27,7 +28,9 @@ def _curve() -> QEasingCurve:
 def _start(widget: QWidget, anim: QPropertyAnimation) -> QPropertyAnimation:
     """Keep the animation alive for its lifetime, replacing any running one."""
     previous = getattr(widget, "_motion_anim", None)
-    if previous is not None:
+    # DeleteWhenStopped frees the C++ object while this Python reference lives on,
+    # so the stale wrapper has to be checked before it is touched.
+    if previous is not None and shiboken6.isValid(previous):
         previous.stop()
     widget._motion_anim = anim
     anim.setEasingCurve(_curve())
