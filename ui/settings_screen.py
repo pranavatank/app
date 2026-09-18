@@ -217,7 +217,7 @@ class ThemeCard(QAbstractButton):
             r = 13; bx = W - r - 6; by = 6
             p.setBrush(QColor(Theme.PRIMARY)); p.setPen(Qt.PenStyle.NoPen)
             p.drawEllipse(bx, by, r, r)
-            cp = QPen(QColor("#FFFFFF")); cp.setWidth(2); p.setPen(cp)
+            cp = QPen(QColor(Theme.TEXT_ON_PRIMARY)); cp.setWidth(2); p.setPen(cp)
             f = p.font(); f.setPixelSize(9); f.setBold(True); p.setFont(f)
             p.drawText(bx, by, r, r, Qt.AlignmentFlag.AlignCenter, "✓")
         p.end()
@@ -329,7 +329,7 @@ class SettingsScreen(QWidget):
         icon_lbl = QLabel()
         icon_lbl.setFixedSize(32, 32)
         if icons_available():
-            pm = app_icon("settings", color="#FFFFFF", size=24).pixmap(24, 24)
+            pm = app_icon("settings", color="on_primary", size=24).pixmap(24, 24)
             icon_lbl.setPixmap(pm)
         else:
             icon_lbl.setText("⚙️")
@@ -360,7 +360,7 @@ class SettingsScreen(QWidget):
         btn_backup = Theme.btn("  Backup", "success", height=34, min_width=106)
         btn_backup.setAccessibleName("Quick backup")
         btn_backup.setAccessibleDescription("Create a quick backup of your database.")
-        btn_backup.setIcon(app_icon("backup", color="#FFFFFF", size=16))
+        btn_backup.setIcon(app_icon("backup", color="on_primary", size=16))
         btn_backup.clicked.connect(self._on_create_backup)
         layout.addWidget(btn_backup)
 
@@ -587,7 +587,7 @@ class SettingsScreen(QWidget):
         b1 = Theme.btn("  Create Backup", "success", height=36, min_width=155)
         b1.setAccessibleName("Create database backup")
         b1.setAccessibleDescription("Create a backup copy of your database to the backups folder.")
-        b1.setIcon(app_icon("backup", color="#FFFFFF", size=16))
+        b1.setIcon(app_icon("backup", color="on_primary", size=16))
         b1.clicked.connect(self._on_create_backup)
         l1.addWidget(b1)
         gl.addWidget(c1)
@@ -601,7 +601,7 @@ class SettingsScreen(QWidget):
         b2 = Theme.btn("  Restore Backup", "danger", height=36, min_width=155)
         b2.setAccessibleName("Restore database from backup")
         b2.setAccessibleDescription("Restore your database from a backup. Warning: this will replace your current database and all data will be lost.")
-        b2.setIcon(app_icon("restore", color="#FFFFFF", size=16))
+        b2.setIcon(app_icon("restore", color="on_primary", size=16))
         b2.clicked.connect(self._on_restore_backup)
         l2.addWidget(b2)
         gl.addWidget(c2)

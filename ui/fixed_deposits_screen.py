@@ -79,7 +79,7 @@ class FixedDepositsScreen(QWidget):
         header.addStretch()
 
         btn_add = Theme.btn("  Add FD", "primary", height=38, min_width=110)
-        btn_add.setIcon(app_icon("add", color="#FFFFFF", size=16))
+        btn_add.setIcon(app_icon("add", color="on_primary", size=16))
         btn_add.setAccessibleName("Add fixed deposit")
         btn_add.clicked.connect(self._on_add_fd)
         header.addWidget(btn_add)

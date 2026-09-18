@@ -167,19 +167,19 @@ class TransactionsScreen(QWidget):
         layout.setSpacing(10)
 
         self.btn_add = Theme.btn("  Add Transaction", "primary", height=40, min_width=140)
-        self.btn_add.setIcon(app_icon("add", color="#FFFFFF", size=16))
+        self.btn_add.setIcon(app_icon("add", color="on_primary", size=16))
         self.btn_add.clicked.connect(self._add_transaction)
         layout.addWidget(self.btn_add)
 
         self.btn_edit = Theme.btn("  Edit", "edit", height=40, min_width=96)
-        self.btn_edit.setIcon(app_icon("edit", color="#FFFFFF", size=16))
+        self.btn_edit.setIcon(app_icon("edit", color="on_primary", size=16))
         self.btn_edit.setEnabled(False)
         self.btn_edit.setToolTip("Select a transaction from the table to edit")
         self.btn_edit.clicked.connect(self._edit_transaction)
         layout.addWidget(self.btn_edit)
 
         self.btn_delete = Theme.btn("  Delete", "danger", height=40, min_width=105)
-        self.btn_delete.setIcon(app_icon("delete", color="#FFFFFF", size=16))
+        self.btn_delete.setIcon(app_icon("delete", color="on_primary", size=16))
         self.btn_delete.setEnabled(False)
         self.btn_delete.setToolTip("Select a transaction from the table to delete")
         self.btn_delete.clicked.connect(self._delete_transaction)

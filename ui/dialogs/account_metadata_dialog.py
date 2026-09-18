@@ -41,7 +41,7 @@ class AccountMetadataDialog(QDialog):
 
         title_row = QHBoxLayout()
         title_row.setSpacing(10)
-        title_row.addWidget(icon_label("account_found", size=22, color="#FFFFFF"))
+        title_row.addWidget(icon_label("account_found", size=22, color="on_primary"))
         title = QLabel("Account Details Found")
         title.setFont(QFont("Segoe UI", 18, QFont.Weight.Bold))
         title.setObjectName("MetadataTitle")

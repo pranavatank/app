@@ -624,7 +624,7 @@ class StatementImportScreen(QWidget):
         for i, dot in enumerate(self._step_dots, start=1):
             active = i <= step
             bg = Theme.PRIMARY if active else Theme.SURFACE_ALT
-            fg = "#FFFFFF" if active else Theme.TEXT_MUTED
+            fg = Theme.TEXT_ON_PRIMARY if active else Theme.TEXT_MUTED
             dot.setStyleSheet(f"background-color: {bg}; color: {fg}; border-radius: 13px;")
         if self._step_line is not None:
             self._step_line.setStyleSheet(

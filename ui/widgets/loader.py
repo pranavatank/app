@@ -145,7 +145,7 @@ class _LogoRingSpinner(QWidget):
             painter.setBrush(QBrush(QColor(Theme.PRIMARY)))
             painter.setPen(Qt.PenStyle.NoPen)
             painter.drawEllipse(cx - r, cy - r, r * 2, r * 2)
-            painter.setPen(QColor("#FFFFFF"))
+            painter.setPen(QColor(Theme.TEXT_ON_PRIMARY))
             painter.setFont(QFont("Segoe UI", max(10, r // 2), QFont.Weight.Bold))
             painter.drawText(QRect(cx - r, cy - r, r * 2, r * 2),
                               Qt.AlignmentFlag.AlignCenter, "FA")

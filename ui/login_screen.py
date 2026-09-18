@@ -143,7 +143,7 @@ class LoginScreen(QWidget):
 
         # ── Unlock button ─────────────────────────────────────────────────────
         self.btn_login = Theme.btn(" Unlock", "hero", height=52, min_width=280)
-        set_btn_icon(self.btn_login, "unlock", color="#FFFFFF", size=18)
+        set_btn_icon(self.btn_login, "unlock", color="on_primary", size=18)
         self.btn_login.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.btn_login.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_login.setAccessibleName("Unlock account")
