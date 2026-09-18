@@ -32,6 +32,7 @@ from ui.icons import icon as app_icon, fallback as icon_fallback, is_available a
 from ui.widgets.summary_panel import SummaryPanel
 from ui.widgets.chart_widget import ChartWidget
 from ui.widgets.kpi_tile import KpiTile
+from ui.widgets.motion import animate_width, fade_in
 
 _NAV_ITEMS = [
     ("Overview",              "overview"),
@@ -998,6 +999,8 @@ class DashboardScreen(QMainWindow):
 
         self._set_nav_active(index)
         self.stack.setCurrentIndex(index)
+        if index not in self._screen_errors:
+            fade_in(screen)
         self.page_title_lbl.setText(_NAV_ITEMS[index][0])
         self.page_title_lbl.updateGeometry()
         self._on_refresh_all()
@@ -1131,7 +1134,7 @@ class DashboardScreen(QMainWindow):
         self.sidebar_expanded = True
         sidebar = self.findChild(QWidget, "sidebar")
         if sidebar:
-            sidebar.setFixedWidth(248)
+            animate_width(sidebar, 248)
 
         # Show text elements
         if hasattr(self, 'brand_text'):
@@ -1160,7 +1163,7 @@ class DashboardScreen(QMainWindow):
         self.sidebar_expanded = False
         sidebar = self.findChild(QWidget, "sidebar")
         if sidebar:
-            sidebar.setFixedWidth(76)
+            animate_width(sidebar, 76)
 
         # Hide text elements
         if hasattr(self, 'brand_text'):

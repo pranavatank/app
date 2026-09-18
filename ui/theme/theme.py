@@ -816,6 +816,7 @@ QToolButton[nav_item="true"]:hover {{
 QToolButton[nav_item="true"]:checked {{
     background-color: {t.SIDEBAR_ACTIVE};
     border: none;
+    border-left: 3px solid {t.SIDEBAR_ACTIVE_TEXT};
     border-radius: {t.RADIUS_CONTROL}px;
     margin: 2px 10px;
 }}
