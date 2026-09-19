@@ -199,11 +199,18 @@ def assemble_transactions(
                 if desc_text:
                     transactions[-1]["description"] += " " + desc_text
                     transactions[-1]["description_raw"] += " " + desc_text
-                if ref_text:
-                    # Try to extract reference from fragment ref column
-                    extracted_ref = _extract_reference_no(ref_text)
-                    if extracted_ref and not transactions[-1]["reference_no"]:
-                        transactions[-1]["reference_no"] = extracted_ref
+                # Continuation lines in these statements carry the reference
+                # split across one or two bare tokens under the transaction
+                # (e.g. "7edc583b33" then "8ff4dd7330d64783be651"), and they
+                # land in the description column, not the ref column.
+                if not transactions[-1]["reference_no"]:
+                    for candidate in (ref_text, desc_text):
+                        if not candidate:
+                            continue
+                        extracted_ref = _extract_reference_no(candidate)
+                        if extracted_ref:
+                            transactions[-1]["reference_no"] = extracted_ref
+                            break
             i += 1
             continue
 

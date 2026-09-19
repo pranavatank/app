@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-tools/extraction_audit.py — Extraction quality audit for modern vs legacy parsers.
+tools/extraction_audit.py - Extraction quality audit for modern vs legacy parsers.
 
 Compares both parsers on three real statements and prints a table with:
 - Row count
@@ -14,6 +14,11 @@ Usage:
 """
 
 import sys
+for _s in (sys.stdout, sys.stderr):
+    try:
+        _s.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
 import os
 from pathlib import Path
 
@@ -110,7 +115,7 @@ def audit_legacy(file_path):
 def main():
     """Run audit and print comparison table."""
     print("\n" + "=" * 100)
-    print("STATEMENT EXTRACTION AUDIT — Modern vs Legacy Parser")
+    print("STATEMENT EXTRACTION AUDIT - Modern vs Legacy Parser")
     print("=" * 100 + "\n")
 
     for filename, label in STATEMENTS:
@@ -134,44 +139,44 @@ def main():
             continue
 
         # Print side-by-side comparison
-        print(f"{'Metric':<25} {'Modern':<20} {'Legacy':<20} {'Δ':<10}")
+        print(f"{'Metric':<25} {'Modern':<20} {'Legacy':<20} {'D':<10}")
         print("-" * 75)
 
         # Rows
         delta = modern["rows"] - legacy["rows"]
-        delta_str = f"{delta:+d}" if delta != 0 else "—"
+        delta_str = f"{delta:+d}" if delta != 0 else "-"
         print(f"{'Row count':<25} {modern['rows']:<20} {legacy['rows']:<20} {delta_str:<10}")
 
         # Confidence
         delta = modern["confidence"] - legacy["confidence"]
-        delta_str = f"{delta:+.1%}" if delta != 0 else "—"
+        delta_str = f"{delta:+.1%}" if delta != 0 else "-"
         print(f"{'Confidence':<25} {modern['confidence']:.1%}{'':<14} {legacy['confidence']:.1%}{'':<14} {delta_str:<10}")
 
         # Failures
         delta = modern["failures"] - legacy["failures"]
-        delta_str = f"{delta:+d}" if delta != 0 else "—"
+        delta_str = f"{delta:+d}" if delta != 0 else "-"
         print(f"{'Balance failures':<25} {modern['failures']:<20} {legacy['failures']:<20} {delta_str:<10}")
 
         # Reference_no non-null count
         delta = modern["refs"] - legacy["refs"]
-        delta_str = f"{delta:+d}" if delta != 0 else "—"
+        delta_str = f"{delta:+d}" if delta != 0 else "-"
         ref_pct_modern = f"{modern['refs']}/{modern['rows']}" if modern['rows'] > 0 else "0"
         ref_pct_legacy = f"{legacy['refs']}/{legacy['rows']}" if legacy['rows'] > 0 else "0"
         print(f"{'Reference_no (non-null)':<25} {ref_pct_modern:<20} {ref_pct_legacy:<20} {delta_str:<10}")
 
         # Mode non-null count
         delta = modern["modes"] - legacy["modes"]
-        delta_str = f"{delta:+d}" if delta != 0 else "—"
+        delta_str = f"{delta:+d}" if delta != 0 else "-"
         print(f"{'Mode (non-null)':<25} {modern['modes']:<20} {legacy['modes']:<20} {delta_str:<10}")
 
         # Category non-null count
         delta = modern["categories"] - legacy["categories"]
-        delta_str = f"{delta:+d}" if delta != 0 else "—"
+        delta_str = f"{delta:+d}" if delta != 0 else "-"
         print(f"{'Category (non-null)':<25} {modern['categories']:<20} {legacy['categories']:<20} {delta_str:<10}")
 
         # Balance_after non-null count
         delta = modern["balances"] - legacy["balances"]
-        delta_str = f"{delta:+d}" if delta != 0 else "—"
+        delta_str = f"{delta:+d}" if delta != 0 else "-"
         print(f"{'Balance_after (non-null)':<25} {modern['balances']:<20} {legacy['balances']:<20} {delta_str:<10}")
 
         # Transaction type split
