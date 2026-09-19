@@ -863,3 +863,62 @@ render could reveal.
 like `findChildren((QPushButton, QToolButton))` raises `TypeError`. PyQt6 allowed
 the tuple form. Call it once per type and concatenate. This is the kind of
 difference that only surfaces when the code actually runs, not at import.
+
+### 2026-09-19 — Full pipeline on REAL data: extraction fixed, reconciliation gap quantified
+
+Real DB, real documents. 506 transactions imported across four real accounts
+(Jana 65, IDFC 376, Ujjivan 27, Equitas 38 via password), 20 FDs, principal
+2,700,000. Income 6,495,691.21 / Expense 6,388,400.18.
+
+**Extraction — fixed.** The UI was calling the LEGACY statement parser while a
+modern one existed. After switching and porting the missing bits:
+  Jana    confidence 64% -> 100%, balance failures 39 -> 0, income rows 12 -> 32
+  IDFC    73% -> 100%, 5 -> 0, income rows 14 -> 115
+  Ujjivan 41% -> 100%, 4 -> 0, income rows 0 -> 16
+Ujjivan detecting ZERO income rows before is the headline: every interest credit
+was typed as an expense, which made tax reconciliation impossible.
+reference_no recovered from continuation lines (bare tokens below the row, which
+land in the description column, not the ref column): Jana 34 -> 46/65, IDFC 343
+-> 358/376 (matching legacy exactly).
+
+**26AS — fixed.** Was 49 records with tax_deducted None on every one, extracting
+0.00. Now 86 Part-I + 72 Part-II records with deductor/TAN/section populated and
+per-record TDS summing to exactly 13,367.00, matching the document's own total,
+with 27 reversal rows correctly netted.
+
+**FD auto-creation is UI-only.** `add_fd_from_statement` is called from
+`ui/statement_import_screen_modern.py`, not from the model layer, so a headless
+import creates no FDs. That is a TEST-METHOD gap, not an app bug — running the
+same `_is_fd_opening_transaction` detector over the imported rows found 19
+FD-opening transactions totalling 2,200,000 and created them without error.
+
+#### FINDING — interest reconciliation gap (NOT yet explained, needs the owner)
+Comparing 26AS section 194A (Part-I + Part-II 15G/15H) against DB interest income:
+
+| bank    | 26AS 194A incl Part-II | DB interest income |
+|---------|------------------------|--------------------|
+| Equitas | 54,816.00              | 92,257.00          |
+| Jana    | 34,469.00              | 4,001.00           |
+| Ujjivan | 79,077.00              | 0.00               |
+| IDFC    | (none in 26AS)         | 244.00             |
+| TOTAL   | 168,362.00             | 96,502.00          |
+
+AIS and TIS agree with each other and report total interest 302,825.00
+(savings 46,183 + FD 256,642) — far above both. The likely explanation is that
+most FD interest is credited inside the FD, not as a savings-account transaction,
+so it will never appear in statement rows. UJJIVAN showing 79,077 in 26AS and
+0.00 in the DB is the clearest case to investigate first.
+
+**TDS is entirely absent from transactions.** 26AS shows 13,367.00 TDS
+(Enlightvision 10,508 under 194JB/194JA, Jana 2,859 under 194A). No transaction
+description contains "TDS" or "TAX DEDUCT". TDS is deducted before credit, so it
+is not a bank-statement line — it has to come from the tax documents, which is
+exactly what the reconciliation view is for.
+
+**Dark mode:** the owner's "white background" report was real but not on Statement
+Import. A ChartWidget takes its facecolor at construction, and
+IncomeManagementScreen never defined `refresh_theme()` while dashboard_screen
+called it inside `except Exception: pass` — so the AttributeError was swallowed
+and its three charts stayed white after a theme switch. Measured 69.6% bright ->
+0.0% after the fix. Every other screen already rendered correctly in both dark
+themes (0.1-0.8% bright).
