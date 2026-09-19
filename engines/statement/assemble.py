@@ -167,6 +167,9 @@ def assemble_transactions(
     """
     Turn rows into transaction dicts.
 
+    Handles multi-line transactions by merging fragment rows (desc/ref only)
+    with the previous anchor row (date + amount).
+
     Args:
         rows: List of clustered rows
         columns: Column geometry from build_columns
@@ -178,12 +181,30 @@ def assemble_transactions(
     transactions = []
     current_balance = prev_balance
 
-    for row in rows:
+    i = 0
+    while i < len(rows):
+        row = rows[i]
         cell_values = _extract_cell_values(row, columns)
 
         # Validate: date must be present and parseable
         date_text = cell_values.get("date", "").strip()
         if not date_text:
+            # This row might be a fragment - check if we have a previous transaction
+            # to merge it into
+            desc_text = cell_values.get("desc", "").strip()
+            ref_text = cell_values.get("ref", "").strip()
+
+            if (desc_text or ref_text) and transactions:
+                # Merge fragment into last transaction
+                if desc_text:
+                    transactions[-1]["description"] += " " + desc_text
+                    transactions[-1]["description_raw"] += " " + desc_text
+                if ref_text:
+                    # Try to extract reference from fragment ref column
+                    extracted_ref = _extract_reference_no(ref_text)
+                    if extracted_ref and not transactions[-1]["reference_no"]:
+                        transactions[-1]["reference_no"] = extracted_ref
+            i += 1
             continue
 
         # Fix date-column bleed: Keep only the FIRST date token, discard further dates,
@@ -204,6 +225,7 @@ def assemble_transactions(
             cell_values["desc"] = " ".join(non_date_tokens) + " " + cell_values.get("desc", "")
 
         if not txn_date:
+            i += 1
             continue
 
         # Validate: must have value in either debit or credit
@@ -218,6 +240,7 @@ def assemble_transactions(
         has_credit = credit_amount is not None
 
         if not has_debit and not has_credit:
+            i += 1
             continue
 
         if has_debit and has_credit:
@@ -226,6 +249,7 @@ def assemble_transactions(
             credit_zero = credit_amount == 0 if credit_amount is not None else True
 
             if debit_zero and credit_zero:
+                i += 1
                 continue
 
             if not debit_zero and credit_zero:
@@ -235,14 +259,17 @@ def assemble_transactions(
                 amount = abs(credit_amount)
                 txn_type = "Income"
             else:
+                i += 1
                 continue
         elif has_debit:
             if debit_amount == 0:
+                i += 1
                 continue
             amount = abs(debit_amount)
             txn_type = "Expense"
         else:
             if credit_amount == 0:
+                i += 1
                 continue
             amount = abs(credit_amount)
             txn_type = "Income"
@@ -256,8 +283,19 @@ def assemble_transactions(
         balance_text = cell_values.get("balance", "").strip()
         balance_after = parse_amount(balance_text) if balance_text else None
 
-        # Extract reference from description
-        reference_no = _extract_reference_no(description)
+        # Extract reference: try multiple sources in order
+        # 1. Ref column (dedicated ref column in the statement)
+        ref_text = cell_values.get("ref", "").strip()
+        reference_no = _extract_reference_no(ref_text) if ref_text else None
+
+        # 2. Description text (including merged fragments)
+        if not reference_no:
+            reference_no = _extract_reference_no(description)
+
+        # 3. Try all text fields combined (as fallback, in case ref is mixed with other columns)
+        if not reference_no:
+            all_text = " ".join(str(v).strip() for v in cell_values.values())
+            reference_no = _extract_reference_no(all_text)
 
         # Extract and normalize account number
         deposit_account_no = normalize_account_no(description)
@@ -284,6 +322,8 @@ def assemble_transactions(
 
         if balance_after is not None:
             current_balance = balance_after
+
+        i += 1
 
     return transactions
 

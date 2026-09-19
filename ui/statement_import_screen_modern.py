@@ -44,7 +44,8 @@ from engines.statement_parser import (
     StatementPasswordError, StatementPasswordInvalidError, StatementPasswordRequiredError,
 
 )
-from engines.statement.validate import confidence, balance_walk, extract_control_totals, reconcile_totals, LowConfidenceParse
+from engines.statement import parse_statement_pdf
+from engines.statement.validate import confidence, balance_walk, extract_control_totals, reconcile_totals, LowConfidenceParse, normalise_order
 from engines.statement_metadata_extractor import extract_account_metadata
 from engines.interest_engine import allocate_savings_interest_to_fy
 from engines.balance_engine import recalculate_account_balance
@@ -85,13 +86,40 @@ class _StatementParseWorker(QObject):
     def run(self):
         """Parse statement in background thread and return result."""
         self.progress.emit("Parsing statement...")
-        txns, debug_info = parse_statement_with_debug(
-            self.file_path,
-            self.file_type,
-            self.bank_name,
-            password=self.password,
-            column_mapping=self.column_mapping,
-        )
+        debug_info = {
+            "mode_used": "modern_coordinate_based",
+            "confidence": None,
+            "failing_row_count": 0,
+        }
+
+        # Use modern parser for PDF, fall back to legacy for Excel
+        if self.file_type and self.file_type.lower().startswith("pdf"):
+            try:
+                txns = parse_statement_pdf(
+                    self.file_path,
+                    password=self.password,
+                    debug=debug_info,
+                    min_confidence=0.0,  # Allow import even with low confidence (UI will check threshold)
+                )
+            except Exception:
+                # Fall back to legacy parser on modern failure
+                txns, debug_info = parse_statement_with_debug(
+                    self.file_path,
+                    self.file_type,
+                    self.bank_name,
+                    password=self.password,
+                    column_mapping=self.column_mapping,
+                )
+        else:
+            # Use legacy for Excel
+            txns, debug_info = parse_statement_with_debug(
+                self.file_path,
+                self.file_type,
+                self.bank_name,
+                password=self.password,
+                column_mapping=self.column_mapping,
+            )
+
         return (txns, debug_info)
 
 
@@ -1147,6 +1175,10 @@ class StatementImportScreen(QWidget):
             self.validation_errors = errors
             if errors:
                 show_warning(f"{len(errors)} rows were skipped. Check debug panel for details.")
+
+            # Normalize transaction order BEFORE confidence/balance checking
+            # (modern parser does this internally, but we re-check here)
+            valid = normalise_order(valid)
 
             # Calculate confidence score and check for low confidence
             self.parse_confidence = confidence(valid)
