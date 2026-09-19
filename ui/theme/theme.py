@@ -133,6 +133,7 @@ class Theme:
         "statement_import": 5,   # cyan
         "ais_tis": 6,            # pink (tax documents)
         "tax": 7,                # orange
+        "income_prediction": 5,  # cyan
         "settings": 0,           # indigo (reuse)
     }
 

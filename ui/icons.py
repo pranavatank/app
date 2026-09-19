@@ -54,6 +54,7 @@ _R: dict[str, tuple] = {
     "statement_import": ("mdi6.file-import",            "default", "\U0001F4C4"),
     "ais_tis":          ("mdi6.file-document-multiple", "default", "\U0001F4D1"),
     "tax":              ("mdi6.calculator-variant",     "default", "\U0001F4CB"),
+    "income_prediction": ("mdi6.chart-timeline-variant", "default", "🔮"),
     "reconciliation":   ("mdi6.scale-balance",          "default", "⚖"),
     "reports":          ("mdi6.chart-areaspline",       "default", "\U0001F4CA"),
     "settings":         ("mdi6.cog-outline",            "default", "⚙"),

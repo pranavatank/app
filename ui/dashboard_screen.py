@@ -43,6 +43,7 @@ _NAV_ITEMS = [
     ("Statement Import",      "statement_import"),
     ("Tax Documents",         "ais_tis"),
     ("Tax",                   "tax"),
+    ("Income Prediction",     "income_prediction"),
     ("Settings",              "settings"),
 ]
 
@@ -311,6 +312,7 @@ class DashboardScreen(QMainWindow):
             "Statement Import": "statement_import",
             "Tax Documents": "ais_tis",
             "Tax": "tax",
+            "Income Prediction": "income_prediction",
             "Settings": "settings",
         }
         screen_key = screen_key_map.get(screen_key, "overview")
@@ -400,7 +402,8 @@ class DashboardScreen(QMainWindow):
         # QColor table-row foregrounds, etc.) and won't update via the
         # global QSS unpolish/polish pass alone.
         for page_name in ('accounts_page', 'transactions_page', 'fd_page',
-                          'income_page', 'import_page', 'tax_documents_page', 'tax_page'):
+                          'income_page', 'import_page', 'tax_documents_page', 'tax_page',
+                          'prediction_page'):
             page = getattr(self, page_name, None)
             if page is not None and hasattr(page, 'refresh_theme'):
                 try:
@@ -585,7 +588,11 @@ class DashboardScreen(QMainWindow):
             from ui.tax_screen import TaxScreen
             self.tax_page = TaxScreen(self)
             return self.tax_page
-        elif index == 8:  # Settings
+        elif index == 8:  # Income Prediction
+            from ui.income_prediction_screen import IncomePredictionScreen
+            self.prediction_page = IncomePredictionScreen(self)
+            return self.prediction_page
+        elif index == 9:  # Settings
             from ui.settings_screen import SettingsScreen
             self.settings_page = SettingsScreen(self)
             return self.settings_page
