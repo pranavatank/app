@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal, QObject
 from PySide6.QtGui import QFont, QColor
 
+from PySide6.QtWidgets import QDialog, QMessageBox
 from ui.theme import Theme
 from ui.icons import set_btn_icon
 from ui.widgets.loader import Loader
@@ -24,12 +25,15 @@ from ui.widgets.states import EmptyState
 from ui.widgets.toast_utils import show_success, show_warning, show_danger
 from ui.widgets.excel_table import ExcelTableWithStats, ExcelTable
 from ui.widgets.drop_zone import DropZone
+from ui.dialogs.password_dialog import PasswordDialog
 from core.session import session
 from engines.taxdocs.form26as import parse_form26as_pdf
 from engines.taxdocs.ais import parse_ais_pdf
 from engines.taxdocs.tis import parse_tis_pdf
 from engines.taxdocs.merge import merge_tax_documents
+from engines.statement_parser import is_pdf_encrypted
 from models.fixed_deposit import get_all_fds
+from models.person import get_ais_tis_password, set_ais_tis_password
 
 
 def _format_inr(amount: float) -> str:
@@ -315,10 +319,46 @@ class TaxDocumentsScreen(QWidget):
         """Handle AIS file selection."""
         self.zone_ais.set_status("Parsing...", error=False)
 
+        # Check if encrypted and prompt for password on GUI thread BEFORE starting background parse
+        password = None
+        if is_pdf_encrypted(path):
+            # Try saved password first
+            person_id = 1  # Currently assuming single person
+            saved_password = get_ais_tis_password(person_id, session.aes_key)
+
+            # Prompt for password
+            dlg = PasswordDialog(
+                self, title="Enter AIS Password",
+                info_text="This AIS file is password-protected. Enter the password to continue.",
+                hint_text="Check your AIS document or email for the password.",
+                placeholder_text="AIS password",
+                prefill_password=saved_password,
+                save_label="Save password for AIS/TIS documents",
+                save_checked=False,
+                accept_label="Continue"
+            )
+            if dlg.exec() != QDialog.DialogCode.Accepted:
+                self.zone_ais.set_status("Cancelled", error=False)
+                return
+            password = dlg.get_password()
+            if not password:
+                show_warning("Password is required to open the encrypted file.")
+                self.zone_ais.set_status("Password required", error=True)
+                return
+
+            # Remember if user wants to save password
+            should_save = dlg.should_save()
+        else:
+            should_save = False
+
         def parse_ais():
-            return parse_ais_pdf(path, password=None)
+            return parse_ais_pdf(path, password=password)
 
         def on_done(result):
+            # Save password if requested
+            if should_save and password:
+                set_ais_tis_password(1, password, session.aes_key)
+
             self.zone_ais.pdf_data = result
             self.zone_ais.pdf_path = path
             fy = _extract_financial_year(result)
@@ -337,10 +377,46 @@ class TaxDocumentsScreen(QWidget):
         """Handle TIS file selection."""
         self.zone_tis.set_status("Parsing...", error=False)
 
+        # Check if encrypted and prompt for password on GUI thread BEFORE starting background parse
+        password = None
+        if is_pdf_encrypted(path):
+            # Try saved password first
+            person_id = 1  # Currently assuming single person
+            saved_password = get_ais_tis_password(person_id, session.aes_key)
+
+            # Prompt for password
+            dlg = PasswordDialog(
+                self, title="Enter TIS Password",
+                info_text="This TIS file is password-protected. Enter the password to continue.",
+                hint_text="Check your TIS document or email for the password.",
+                placeholder_text="TIS password",
+                prefill_password=saved_password,
+                save_label="Save password for AIS/TIS documents",
+                save_checked=False,
+                accept_label="Continue"
+            )
+            if dlg.exec() != QDialog.DialogCode.Accepted:
+                self.zone_tis.set_status("Cancelled", error=False)
+                return
+            password = dlg.get_password()
+            if not password:
+                show_warning("Password is required to open the encrypted file.")
+                self.zone_tis.set_status("Password required", error=True)
+                return
+
+            # Remember if user wants to save password
+            should_save = dlg.should_save()
+        else:
+            should_save = False
+
         def parse_tis():
-            return parse_tis_pdf(path, password=None)
+            return parse_tis_pdf(path, password=password)
 
         def on_done(result):
+            # Save password if requested
+            if should_save and password:
+                set_ais_tis_password(1, password, session.aes_key)
+
             self.zone_tis.pdf_data = result
             self.zone_tis.pdf_path = path
             fy = _extract_financial_year(result)
