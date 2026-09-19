@@ -899,6 +899,23 @@ class IncomeManagementScreen(QWidget):
         else:
             show_info("No matching transactions found.")
 
+    def refresh_theme(self):
+        """Re-tint widgets that bake colours in at build time.
+
+        The dashboard calls this on a live theme switch. Charts hold their
+        facecolor from construction, so without this the three charts here keep
+        a light background after switching to a dark theme.
+        """
+        for name in ("chart_vs_actual", "chart_composition", "chart_fd_runway",
+                     "table_expectations_widget", "table_tds_widget",
+                     "table_ledger_widget"):
+            widget = getattr(self, name, None)
+            if widget is not None and hasattr(widget, "refresh_theme"):
+                try:
+                    widget.refresh_theme()
+                except Exception:
+                    pass
+
     def _add_fy_years(self, fy_str, years):
         """Add years to a FY string like '2024-25'."""
         start_year = int(fy_str.split("-")[0])
