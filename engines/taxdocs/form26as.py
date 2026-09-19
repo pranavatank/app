@@ -127,15 +127,16 @@ def _extract_section_code_from_row(cell: str) -> Optional[str]:
     if not s:
         return None
 
-    # Look for section code pattern: 19[0-9][A-Z]?
+    # Look for section code pattern: 19[0-9][A-Z]+
+    # Match 19 followed by digit(s) and one or more letters
     # But only if it looks like the entire cell or a small cell
-    # (to avoid matching 194BA from free text descriptions)
-    m = re.match(r"^(19[0-9][A-Z]?)$", s)
+    # (to avoid matching section codes from free text descriptions)
+    m = re.match(r"^(19[0-9][A-Z]+)$", s)
     if m:
         return m.group(1)
 
     # Also accept codes with some whitespace around them
-    m = re.search(r"\b(19[0-9][A-Z]?)\b", s)
+    m = re.search(r"\b(19[0-9][A-Z]+)\b", s)
     if m and len(s) < 30:  # Only if cell is short (not a description)
         return m.group(1)
 
@@ -336,6 +337,7 @@ def parse_form26as_pdf(pdf_path: str, password: str = None, debug: Dict = None) 
         # Second pass: parse detail tables (PART-I through PART-X and PART-II)
         # Assign parts based on vertical position
         current_part = None  # Part carried from previous page
+        current_deductor = None  # Deductor carried across tables for continuation rows
 
         for table_info in all_pages_tables:
             page_num = table_info['page']
@@ -380,6 +382,15 @@ def parse_form26as_pdf(pdf_path: str, password: str = None, debug: Dict = None) 
             mode = None
             deductor_total_rows = []  # Accumulate deductor rows for this table
             detail_rows = []  # Accumulate detail rows for this table
+            # Column indices persist across tables in continuation mode
+            section_idx = None
+            date_idx = None
+            amount_paid_idx = None
+            tds_idx = None
+            booking_idx = None
+            remarks_idx = None
+            deductor_idx = None
+            tan_idx = None
 
             row_idx = 0
             while row_idx < len(table):
@@ -416,6 +427,25 @@ def parse_form26as_pdf(pdf_path: str, password: str = None, debug: Dict = None) 
                     row_idx += 1
                     continue
 
+                # If we have no mode but we see a row that looks like a detail row (has section code),
+                # auto-detect as detail mode (for continuation tables without headers)
+                if mode is None and len(row) >= 9:
+                    try:
+                        first_col = (row[0] or "").strip()
+                        if first_col.isdigit() or (len(first_col) < 5 and first_col.replace('.', '').isdigit()):
+                            section_candidate = _extract_section_code_from_row(row[1] if len(row) > 1 else '')
+                            if section_candidate:
+                                # Auto-set column indices for standard Part-I layout
+                                mode = 'detail'
+                                section_idx = 1
+                                date_idx = 2
+                                booking_idx = 3
+                                amount_paid_idx = 6
+                                tds_idx = 7
+                                remarks_idx = 5
+                    except (IndexError, ValueError, AttributeError):
+                        pass
+
                 # Parse data row based on current mode
                 if mode == 'deductor':
                     # Deductor total row: has name and TDS amount
@@ -441,12 +471,14 @@ def parse_form26as_pdf(pdf_path: str, password: str = None, debug: Dict = None) 
 
                     # Skip empty deductor rows
                     if deductor_name or deductor_tan:
-                        deductor_total_rows.append({
+                        deductor_info = {
                             'deductor_name': deductor_name,
                             'deductor_tan': deductor_tan,
                             'amount_paid': amount_paid,
                             'tds_deducted': tds_deducted
-                        })
+                        }
+                        deductor_total_rows.append(deductor_info)
+                        current_deductor = deductor_info  # Track for associating detail rows
 
                 elif mode == 'detail':
                     # Detail row: has section code and transaction date
@@ -484,37 +516,42 @@ def parse_form26as_pdf(pdf_path: str, password: str = None, debug: Dict = None) 
                             'tds_deducted': tds_deducted,
                             'transaction_date': transaction_date,
                             'booking_status': booking_status,
-                            'remarks': remarks
+                            'booking_date': '',
+                            'remarks': remarks,
+                            'deductor_name': current_deductor['deductor_name'] if current_deductor else '',
+                            'deductor_tan': current_deductor['deductor_tan'] if current_deductor else ''
                         })
 
                 row_idx += 1
 
             # Store parsed rows
-            # For PART-II: use deductor total rows (nil TDS, real income from 15G/15H)
+            # For PART-II: capture detail rows (15G/15H declarations: nil TDS but real income)
             if assigned_part == 'II':
-                for deductor in deductor_total_rows:
+                for detail in detail_rows:
                     result['part_ii'].append({
-                        'deductor_name': deductor['deductor_name'],
-                        'deductor_tan': deductor['deductor_tan'],
-                        'amount_paid': deductor['amount_paid'],
-                        'remarks': ''
+                        'deductor_name': detail['deductor_name'],
+                        'deductor_tan': detail['deductor_tan'],
+                        'section': detail['section'],
+                        'transaction_date': detail['transaction_date'],
+                        'booking_date': detail['booking_date'],
+                        'amount_paid': detail['amount_paid'],
+                        'tds_deducted': detail['tds_deducted'],
+                        'remarks': detail['remarks']
                     })
-                debug['rows_per_part']['II'] = debug['rows_per_part'].get('II', 0) + len(deductor_total_rows)
+                debug['rows_per_part']['II'] = debug['rows_per_part'].get('II', 0) + len(detail_rows)
             else:
-                # For PART-I and others: add detail rows to records
-                # Note: if deductor_name is in deductor rows but not in detail rows,
-                # we need to associate detail rows with their deductor.
-                # For now, store detail rows as-is; caller can associate with deductor if needed.
+                # For PART-I and others: add detail rows to records with deductor context
                 for detail in detail_rows:
                     result['records'].append({
                         'part': assigned_part or 'I',
                         'section': detail['section'],
-                        'deductor_name': detail.get('deductor_name', ''),
-                        'deductor_tan': detail.get('deductor_tan', ''),
+                        'deductor_name': detail['deductor_name'],
+                        'deductor_tan': detail['deductor_tan'],
                         'amount_paid': detail['amount_paid'],
                         'tds_deducted': detail['tds_deducted'],
                         'transaction_date': detail['transaction_date'],
                         'booking_status': detail['booking_status'],
+                        'booking_date': detail['booking_date'],
                         'remarks': detail['remarks']
                     })
 
