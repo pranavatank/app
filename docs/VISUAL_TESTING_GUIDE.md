@@ -488,8 +488,10 @@ password file). **The old passwords remain in git history and in earlier docs
 `tests/test_form26as_parser.py`, `tests/test_taxdocs_merge.py`); consider treating them
 as exposed and rotating them if they matter.**
 
-**Tax Documents real-UI test:** stalls at the encrypted AIS file because
+**Tax Documents real-UI test:** used to stall at the encrypted AIS file because
 `_on_ais_selected` opens a modal password dialog on `is_pdf_encrypted` alone (the saved
-password only prefills it) and the test never answers it (gotcha G). Pre-existing, not a
-regression from persistence. The test is being changed to pre-arm the dialog; see git
-log for whether that landed.
+password only prefills it) and the test never answered it (gotcha G). Pre-existing, not a
+regression from persistence. Fixed: the test now pre-arms a `QTimer.singleShot` that fills
+and accepts the `PasswordDialog` (password read at runtime, never hardcoded), backs up the
+DB first, and checks afterwards that a re-import replaced rows (158 26AS records, 1 AIS +
+1 TIS import). Ran once end to end on 2026-09-21: all checks passed.

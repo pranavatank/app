@@ -15,6 +15,11 @@ A native QFileDialog cannot be driven by QTest, so the file is handed to the zon
 via its own fileSelected(str) signal — the same mechanism the browse button uses
 once a path is chosen. The literal browse-button click is therefore NOT covered.
 
+AIS/TIS PDFs are encrypted, so a PasswordDialog opens on the GUI thread. Following
+guide §5.3 gotcha G, we pre-arm QTimer.singleShot(0, callback) before emitting
+fileSelected, where callback finds and fills the password dialog with the real
+password from data/PersonalData/Pranav/password.txt.
+
 Read-only: parses PDFs into memory and does not write transactions, so there is
 nothing to clean up. Any rows the merge step would create are reported, not kept.
 
@@ -37,19 +42,37 @@ for _stream in (sys.stdout, sys.stderr):
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 from PySide6.QtWidgets import QApplication, QDialog
+from PySide6.QtCore import QTimer
 
 from tools.real_ui_test_harness import RealUIHarness
+from tools.taxdoc_import import read_ais_tis_password
 from ui.dashboard_screen import DashboardScreen
+from ui.dialogs.password_dialog import PasswordDialog
 from ui.theme.theme_manager import ThemeManager
+from core.backup_manager import create_backup
 
 SHOT_DIR = os.path.join(os.path.dirname(__file__), "screenshots")
 os.makedirs(SHOT_DIR, exist_ok=True)
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data", "PersonalData", "Pranav")
+PASSWORD_FILE = os.path.join(DATA_DIR, "password.txt")
 TAX_DOCS_NAV_INDEX = 6
 PARSE_TIMEOUT = 90.0
 
 checks = []
+
+
+def get_ais_tis_password() -> str | None:
+    """Get AIS/TIS password from file, env var, or return None."""
+    # Try env var first
+    pwd = os.environ.get("AIS_TIS_PASSWORD")
+    if pwd:
+        return pwd
+    # Try password file
+    pwd = read_ais_tis_password(PASSWORD_FILE)
+    if pwd:
+        return pwd
+    return None
 
 
 def check(label, ok):
@@ -74,11 +97,17 @@ def wait_for(predicate, timeout=PARSE_TIMEOUT, interval=0.5):
 
 
 def dismiss_blocking_dialogs():
-    """Reject any modal that appeared, so one cannot strand the run."""
+    """Reject any unexpected modal that appeared, so one cannot strand the run.
+
+    PasswordDialog is expected (it is pre-handled by drop_file), so it is not
+    counted as a failure. All other dialogs are unexpected."""
     app = QApplication.instance()
     found = []
     for w in list(app.topLevelWidgets()):
         if isinstance(w, QDialog) and w.isVisible():
+            # Skip PasswordDialog — it's expected and should be handled by drop_file
+            if isinstance(w, PasswordDialog):
+                continue
             found.append((type(w).__name__, w.windowTitle()))
             try:
                 w.reject()
@@ -90,10 +119,37 @@ def dismiss_blocking_dialogs():
 
 
 def drop_file(harness, zone, path, label):
-    """Hand a real path to a DropZone and wait for its parse to finish."""
+    """Hand a real path to a DropZone and wait for its parse to finish.
+
+    For AIS/TIS (encrypted PDFs), pre-arms a QTimer.singleShot callback to handle
+    the password dialog that will appear on the GUI thread."""
     if not os.path.exists(path):
         check(f"{label}: source file exists", False)
         return None
+
+    # For AIS/TIS files, pre-arm a callback to handle the password dialog
+    # (guide §5.3 gotcha G: modal .exec() blocks the caller).
+    if label in ("AIS", "TIS"):
+        password = get_ais_tis_password()
+        if not password:
+            check(f"{label}: password available from file or env var", False)
+            return None
+
+        def handle_password_dialog():
+            """Find the password dialog and fill it with the real password."""
+            try:
+                dlg = harness.find_dialog(PasswordDialog, timeout=2.0)
+                if dlg and dlg.isVisible():
+                    # Fill password field
+                    dlg.password_input.setText(password)
+                    # Accept the dialog
+                    dlg.accept()
+                    print(f"[{label}] password dialog handled", flush=True)
+            except Exception as e:
+                print(f"[{label}] failed to handle password dialog: {e}", flush=True)
+
+        # Pre-arm the callback to run ASAP (0ms delay)
+        QTimer.singleShot(0, handle_password_dialog)
 
     zone.fileSelected.emit(path)
     harness.settle(1.0)
@@ -121,6 +177,17 @@ def drop_file(harness, zone, path, label):
 
 
 def main():
+    # Back up the database before testing
+    print("[backup] creating database backup...", flush=True)
+    try:
+        backup_path = create_backup()
+        if backup_path:
+            print(f"[backup] saved to: {backup_path}", flush=True)
+        else:
+            print("[backup] FAILED — database may be modified if test fails", flush=True)
+    except Exception as e:
+        print(f"[backup] error: {e}", flush=True)
+
     ThemeManager.apply("Aurora", save=False, notify=False)
     harness = RealUIHarness(screenshot_dir=SHOT_DIR)
     dashboard = harness.launch(lambda: DashboardScreen(), maximized=True)
@@ -182,7 +249,54 @@ def main():
     else:
         print("[reconciliation] skipped - not all three documents parsed", flush=True)
 
+    # --- verify database state ------------------------------------------------
+    print("\n[verify] checking database state...", flush=True)
+    verify_database_state()
+
     return report(harness)
+
+
+def verify_database_state():
+    """Verify Form26ASRecord and AISTISImport counts after parsing.
+
+    Expected: Person 1, FY 2025-26 should have:
+    - Form26ASRecord: 158 rows
+    - AISTISImport: 2 rows (one for AIS, one for TIS)
+    """
+    try:
+        from models.form26as import get_form26as_import, get_form26as_records
+        from models.ais_tis_import import get_all_ais_tis_imports
+        from engines.taxdocs.persist import SOURCE_TYPE_AIS, SOURCE_TYPE_TIS
+
+        person_id = 1
+        fy = "2025-26"
+
+        # Check Form 26AS
+        import_26as = get_form26as_import(person_id, fy)
+        if import_26as:
+            records = get_form26as_records(import_26as.get("import_id"))
+            record_count = len(records)
+            ok_26as = record_count == 158
+            check(f"Form26ASRecord: {record_count} == 158", ok_26as)
+            print(f"[verify] Form26ASRecord count: {record_count}", flush=True)
+        else:
+            check("Form26ASRecord: 158 == (none)", False)
+            print("[verify] Form26ASRecord import not found", flush=True)
+
+        # Check AIS/TIS imports
+        all_imports = get_all_ais_tis_imports(person_id)
+        ais_tis_list = [x for x in all_imports if x.get("financial_year") == fy]
+        ais_count = sum(1 for x in ais_tis_list if x.get("source_type") == SOURCE_TYPE_AIS)
+        tis_count = sum(1 for x in ais_tis_list if x.get("source_type") == SOURCE_TYPE_TIS)
+        total_ais_tis = len(ais_tis_list)
+        ok_ais_tis = total_ais_tis == 2 and ais_count == 1 and tis_count == 1
+        check(f"AISTISImport: {total_ais_tis} rows (AIS: {ais_count}, TIS: {tis_count})", ok_ais_tis)
+        print(f"[verify] AISTISImport count: {total_ais_tis} (AIS: {ais_count}, TIS: {tis_count})", flush=True)
+
+    except Exception as e:
+        print(f"[verify] error during database check: {e}", flush=True)
+        import traceback
+        traceback.print_exc(file=sys.stdout)
 
 
 def report(harness):
