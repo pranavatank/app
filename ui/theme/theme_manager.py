@@ -175,13 +175,20 @@ class ThemeManager:
             if app:
                 app.setStyleSheet(Theme.get_stylesheet())
         except Exception:
-            pass
+            import traceback
+            traceback.print_exc()
 
     @staticmethod
     def _fire_listeners(name: str) -> None:
         for cb in list(_on_change_listeners):
             try:
                 cb(name)
+            except RuntimeError:
+                # Underlying Qt widget was deleted (e.g. page rebuilt on
+                # refresh) without unregistering — drop the dead listener
+                # instead of leaking it and re-raising on every future switch.
+                if cb in _on_change_listeners:
+                    _on_change_listeners.remove(cb)
             except Exception:
                 import traceback
                 traceback.print_exc()

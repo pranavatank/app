@@ -317,15 +317,19 @@ class Loader(QWidget):
 
         def _done(result):
             loader.hide()
-            if on_done:
-                on_done(result)
-            worker.thread().quit()
+            try:
+                if on_done:
+                    on_done(result)
+            finally:
+                worker.thread().quit()
 
         def _error(exc):
             loader.hide()
-            if on_error:
-                on_error(exc)
-            worker.thread().quit()
+            try:
+                if on_error:
+                    on_error(exc)
+            finally:
+                worker.thread().quit()
 
         thread = QThread(parent)
         worker.moveToThread(thread)

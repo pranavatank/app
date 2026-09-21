@@ -179,6 +179,7 @@ class IncomePredictionScreen(QWidget):
                 explanation="No FD or savings accounts to analyze.",
                 action_text="Add Accounts"
             )
+            Theme.style_button(empty.btn_action, "secondary")
             layout.addWidget(empty)
             return section
 
@@ -275,6 +276,7 @@ class IncomePredictionScreen(QWidget):
                 explanation="Monthly projection data unavailable.",
                 action_text="Retry"
             )
+            Theme.style_button(empty.btn_action, "secondary")
             layout.addWidget(empty)
             return section
 

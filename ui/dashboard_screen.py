@@ -511,6 +511,15 @@ class DashboardScreen(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
+        # Old page instances (e.g. SettingsScreen) may have registered their
+        # own theme-change listeners; unregister before dropping references
+        # so a hard refresh doesn't leak listeners onto deleted widgets.
+        for old_page in self._screen_pages.values():
+            unregister = getattr(old_page, "_on_theme_changed", None)
+            if unregister is not None:
+                ThemeManager.unregister_on_change(unregister)
+        self._screen_pages = {}
+
         self.stack = QStackedWidget()
 
         # Overview page (index 0) is built immediately since __init__ expects it

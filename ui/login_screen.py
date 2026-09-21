@@ -230,9 +230,17 @@ class LoginScreen(QWidget):
         self._reset_login_form()
 
     def _finish_login(self):
-        from ui.dashboard_screen import DashboardScreen
-        self.dashboard = DashboardScreen()
-        self.dashboard.showMaximized()
+        try:
+            from ui.dashboard_screen import DashboardScreen
+            self.dashboard = DashboardScreen()
+            self.dashboard.showMaximized()
+        except Exception as exc:
+            if hasattr(self, "_dashboard_loader"):
+                self._dashboard_loader.hide()
+            self._show_error(f"Failed to load dashboard: {exc}")
+            self._reset_login_form()
+            return
+
         # Start periodic backups (best-effort) after successful login
         try:
             from core.backup_manager import schedule_periodic_backups

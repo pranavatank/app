@@ -219,6 +219,8 @@ class IncomeManagementScreen(QWidget):
             action_text="Add Expected Income"
         )
         self.empty_state_expectations.action_clicked.connect(self._add_expectation)
+        # Toolbar's "Add Expected Income" button above is already primary
+        Theme.style_button(self.empty_state_expectations.btn_action, "secondary")
         self.empty_state_expectations.setVisible(False)
         layout.addWidget(self.empty_state_expectations)
 
