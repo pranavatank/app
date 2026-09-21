@@ -69,6 +69,9 @@ class IncomePredictionScreen(QWidget):
         # Comparison section
         content_layout.addWidget(self._build_comparison_section())
 
+        # Strategies section
+        content_layout.addWidget(self._build_strategy_section())
+
         # Advisory section
         content_layout.addWidget(self._build_advisory_section())
 
@@ -339,7 +342,7 @@ class IncomePredictionScreen(QWidget):
         layout = section.content_layout()
         layout.setSpacing(12)
 
-        # Two-column layout
+        # Two-column layout: our data and ITR actuals cards
         comp_row = QHBoxLayout()
         comp_row.setSpacing(12)
 
@@ -352,6 +355,56 @@ class IncomePredictionScreen(QWidget):
         comp_row.addWidget(itr_card)
 
         layout.addLayout(comp_row)
+
+        # Comparison table: item-by-item comparison
+        comparison = self._prediction_data.get("comparison", {})
+        rows = comparison.get("rows", [])
+
+        if rows:
+            self.comparison_table = QTableWidget()
+            self.comparison_table.setAccessibleName("Income Comparison Table")
+            self.comparison_table.setColumnCount(4)
+            self.comparison_table.setHorizontalHeaderLabels(["Item", "Our Data", "ITR-Side", "Coverage"])
+            self.comparison_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+            self.comparison_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+            self.comparison_table.setAlternatingRowColors(True)
+
+            for row_data in rows:
+                row = self.comparison_table.rowCount()
+                self.comparison_table.insertRow(row)
+
+                label = row_data.get("label", "—")
+                our_value = row_data.get("our_value", 0)
+                itr_value = row_data.get("itr_value", 0)
+                our_under_reports = row_data.get("our_under_reports", False)
+
+                # Item label
+                item_label = QTableWidgetItem(label)
+                self.comparison_table.setItem(row, 0, item_label)
+
+                # Our Data value
+                item_our = QTableWidgetItem(format_inr(our_value))
+                self.comparison_table.setItem(row, 1, item_our)
+
+                # ITR-Side value
+                item_itr = QTableWidgetItem(format_inr(itr_value))
+                self.comparison_table.setItem(row, 2, item_itr)
+
+                # Coverage text (Our data under-reports vs covers this figure)
+                if our_under_reports:
+                    coverage_text = "Our data under-reports this figure"
+                    coverage_color = Theme.INFO_TEXT
+                else:
+                    coverage_text = "Our data covers this figure"
+                    coverage_color = Theme.INFO_TEXT
+
+                item_coverage = QTableWidgetItem(coverage_text)
+                item_coverage.setForeground(QColor(coverage_color))
+                self.comparison_table.setItem(row, 3, item_coverage)
+
+                self.comparison_table.setRowHeight(row, 32)
+
+            layout.addWidget(self.comparison_table)
 
         return section
 
@@ -426,7 +479,7 @@ class IncomePredictionScreen(QWidget):
         return card
 
     def _build_itr_actuals_card(self) -> QFrame:
-        """Build 'ITR-Side Actuals' card showing empty state (DB tables are empty)."""
+        """Build 'ITR-Side Actuals' card from 26AS/AIS/TIS imports."""
         card = QFrame()
         card.setStyleSheet(f"""
             QFrame {{
@@ -441,26 +494,188 @@ class IncomePredictionScreen(QWidget):
         layout.setContentsMargins(16, 12, 16, 12)
         layout.setSpacing(8)
 
-        # Title
-        title = QLabel("ITR-Side Actuals (26AS / AIS / TIS)")
+        # Read ITR actuals from prediction data
+        itr = self._prediction_data.get("itr_actuals", {})
+
+        # If no data, show empty state
+        if not itr.get("has_data"):
+            empty = EmptyState(
+                icon_name="import_pdf",
+                headline="Tax documents not imported",
+                explanation="Import your 26AS, AIS or TIS from the Tax Documents screen to compare.",
+                action_text="Open Tax Documents"
+            )
+            Theme.style_button(empty.btn_action, "secondary")
+            layout.addWidget(empty)
+            return card
+
+        # Title: prefer AIS, fallback to TIS
+        ais_data = itr.get("ais")
+        tis_data = itr.get("tis")
+        if ais_data:
+            title_text = "ITR-Side Actuals (26AS / AIS)"
+        else:
+            title_text = "ITR-Side Actuals (26AS / TIS)"
+
+        title = QLabel(title_text)
         title.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
         title.setProperty("textrole", "emphasis-md")
         layout.addWidget(title)
 
-        # Empty state message
-        msg = QLabel(
-            "Tax documents not imported yet.\n\n"
-            "Import your 26AS, AIS, or TIS from the Tax Documents screen to compare."
-        )
-        msg.setFont(QFont("Segoe UI", 11))
-        msg.setProperty("textrole", "secondary")
-        msg.setWordWrap(True)
-        msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(msg)
+        # Select which source to use for interest/dividend/TDS
+        source = ais_data if ais_data else tis_data
+        prefix = "AIS" if ais_data else "TIS"
+
+        # Data rows to display
+        form26as = itr.get("form26as")
+        rows = []
+
+        if form26as:
+            rows.append(("26AS TDS Deducted", form26as.get("total_tds", 0)))
+
+        if source:
+            rows.append((f"{prefix} FD Interest", source.get("fd_interest", 0)))
+            rows.append((f"{prefix} Savings Interest", source.get("savings_interest", 0)))
+            rows.append((f"{prefix} Total Interest", source.get("total_interest", 0)))
+            rows.append((f"{prefix} Dividend", source.get("dividend_income", 0)))
+            rows.append((f"{prefix} TDS", source.get("tds_deducted", 0)))
+
+        # Build table of components using QHBoxLayout + addStretch() pattern
+        for label, value in rows:
+            row_layout = QHBoxLayout()
+            row_layout.setSpacing(8)
+
+            lbl = QLabel(label)
+            lbl.setFont(QFont("Segoe UI", 11))
+            lbl.setProperty("textrole", "secondary")
+            row_layout.addWidget(lbl)
+
+            row_layout.addStretch()
+
+            val_lbl = MoneyLabel(value)
+            row_layout.addWidget(val_lbl)
+
+            layout.addLayout(row_layout)
 
         layout.addStretch()
 
         return card
+
+    def _build_strategy_section(self) -> QWidget:
+        """Concrete actions for staying under the limit and keeping TDS off."""
+        section = CollapsibleSection("Strategies", expanded=True)
+
+        layout = section.content_layout()
+        layout.setSpacing(12)
+
+        # Get strategies and context from advisory data
+        advisory = self._prediction_data.get("advisory", {})
+        strategies = advisory.get("strategies", [])
+        context = advisory.get("context", {})
+
+        # Show empty state if no strategies
+        if not strategies:
+            empty = EmptyState(
+                icon_name="no_data",
+                headline="No actions needed",
+                explanation="Projected income is within the limit and no bank is near the threshold.",
+                action_text="Refresh"
+            )
+            Theme.style_button(empty.btn_action, "secondary")
+            layout.addWidget(empty)
+            return section
+
+        # Context line: Limit · Headroom · TDS threshold · Form name
+        if context:
+            context_text = f"Limit {format_inr(context.get('limit', 0))} · Headroom {format_inr(context.get('headroom', 0))} · TDS threshold {format_inr(context.get('tds_threshold', 0))} · {context.get('form_name', '—')}"
+            context_lbl = QLabel(context_text)
+            context_lbl.setFont(QFont("Segoe UI", 11))
+            context_lbl.setProperty("textrole", "muted-sm")
+            layout.addWidget(context_lbl)
+
+        # Build one card per strategy
+        for strategy in strategies:
+            card = QFrame()
+            card.setStyleSheet(f"""
+                QFrame {{
+                    background: {Theme.SURFACE};
+                    border: 1px solid {Theme.BORDER};
+                    border-radius: {Theme.RADIUS_CARD}px;
+                }}
+            """)
+            card.setGraphicsEffect(Theme.shadow_card())
+
+            card_layout = QVBoxLayout(card)
+            card_layout.setContentsMargins(16, 12, 16, 12)
+            card_layout.setSpacing(8)
+
+            # Priority pill + title row
+            header_layout = QHBoxLayout()
+            header_layout.setSpacing(8)
+
+            # Priority pill
+            priority = strategy.get("priority", 0)
+            if priority == 1:
+                priority_text = "Act first"
+                priority_color = Theme.WARNING_TEXT
+            elif priority in (2, 3):
+                priority_text = "Plan"
+                priority_color = Theme.INFO_TEXT
+            else:
+                priority_text = "Consider"
+                priority_color = Theme.TEXT_MUTED
+
+            priority_lbl = QLabel(priority_text)
+            priority_lbl.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+            priority_lbl.setStyleSheet(f"color: {priority_color};")
+            header_layout.addWidget(priority_lbl)
+
+            # Title
+            title_lbl = QLabel(strategy.get("title", "—"))
+            title_lbl.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
+            title_lbl.setProperty("textrole", "emphasis-md")
+            header_layout.addWidget(title_lbl)
+
+            header_layout.addStretch()
+
+            card_layout.addLayout(header_layout)
+
+            # Action text
+            action_text = strategy.get("action", "")
+            if action_text:
+                action_lbl = QLabel(action_text)
+                action_lbl.setFont(QFont("Segoe UI", 11))
+                action_lbl.setProperty("textrole", "secondary")
+                action_lbl.setWordWrap(True)
+                card_layout.addWidget(action_lbl)
+
+            # Amount row (if amount > 0)
+            amount = strategy.get("amount", 0)
+            if amount > 0:
+                amount_layout = QHBoxLayout()
+                amount_layout.setSpacing(8)
+
+                # Label for amount with (Est.) marker
+                is_estimated = strategy.get("is_estimated", False)
+                amount_label_text = "Amount"
+                if is_estimated:
+                    amount_label_text += " (Est.)"
+
+                amount_lbl = QLabel(amount_label_text)
+                amount_lbl.setFont(QFont("Segoe UI", 11))
+                amount_lbl.setProperty("textrole", "secondary")
+                amount_layout.addWidget(amount_lbl)
+
+                amount_layout.addStretch()
+
+                amount_value = MoneyLabel(amount)
+                amount_layout.addWidget(amount_value)
+
+                card_layout.addLayout(amount_layout)
+
+            layout.addWidget(card)
+
+        return section
 
     def _build_advisory_section(self) -> QWidget:
         """Build Advisory: warnings + disclaimer."""

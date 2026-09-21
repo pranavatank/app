@@ -21,7 +21,11 @@ sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'strict')
 # Ensure we can import from the project root
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from engines.prediction_engine import get_prediction_summary
+from engines.prediction_engine import (
+    get_prediction_summary, build_strategies,
+    STRATEGY_DECLARATION, STRATEGY_REDISTRIBUTION, STRATEGY_NEW_BANK,
+    STRATEGY_DEFER_MATURITY, STRATEGY_HEADROOM_INVESTMENT, STRATEGY_DATA_QUALITY,
+)
 from config import DB_PATH
 
 
@@ -48,6 +52,9 @@ def get_db_snapshot(label: str) -> dict:
         "FixedDeposit": count_table_rows("FixedDeposit"),
         "IncomeExpectation": count_table_rows("IncomeExpectation"),
         "BankAccount": count_table_rows("BankAccount"),
+        "Form26ASImport": count_table_rows("Form26ASImport"),
+        "Form26ASRecord": count_table_rows("Form26ASRecord"),
+        "AISTISImport": count_table_rows("AISTISImport"),
     }
 
 
@@ -219,6 +226,28 @@ def run_tests():
     passed += test
     failed += not test
 
+    # INVARIANT 1: estimated_fd_count + known_fd_count == total FD count from DB
+    total_fds_in_db = count_table_rows("FixedDeposit")
+    fd_sum = result["projected_fd_interest"]["estimated_fd_count"] + result["projected_fd_interest"]["known_fd_count"]
+    test = assert_equal(
+        fd_sum,
+        total_fds_in_db,
+        label="estimated_fd_count + known_fd_count == total FD count"
+    )
+    passed += test
+    failed += not test
+
+    # INVARIANT 2: is_estimated == (estimated_fd_count > 0)
+    expected_is_estimated = result["projected_fd_interest"]["estimated_fd_count"] > 0
+    actual_is_estimated = result["projected_fd_interest"]["is_estimated"]
+    test = assert_equal(
+        actual_is_estimated,
+        expected_is_estimated,
+        label="is_estimated == (estimated_fd_count > 0)"
+    )
+    passed += test
+    failed += not test
+
     # Test 6: FY Income - projected_total
     test = assert_equal(
         result["fy_income"]["projected_total"],
@@ -355,6 +384,264 @@ def run_tests():
     passed += test
     failed += not test
 
+    # ========== E2: New assertions for ITR, comparison, and strategies ==========
+
+    # BLOCK 1: ITR actuals stored (6 assertions)
+    print("\n--- ITR actuals ---")
+    test = (
+        result["itr_actuals"]["has_data"] is True
+    )
+    if test:
+        print(f"PASS: itr_actuals['has_data'] is True")
+        passed += 1
+    else:
+        print(f"FAIL: itr_actuals['has_data'] expected True, got {result['itr_actuals']['has_data']}")
+        failed += 1
+
+    if result["itr_actuals"]["form26as"]:
+        test = assert_equal(
+            result["itr_actuals"]["form26as"]["total_tds"],
+            13367.00,
+            tolerance=0.01,
+            label="itr_actuals['form26as']['total_tds']"
+        )
+        passed += test
+        failed += not test
+    else:
+        print(f"FAIL: itr_actuals['form26as'] is None")
+        failed += 1
+
+    if result["itr_actuals"]["ais"]:
+        test = assert_equal(
+            result["itr_actuals"]["ais"]["fd_interest"],
+            256642.00,
+            tolerance=0.01,
+            label="itr_actuals['ais']['fd_interest']"
+        )
+        passed += test
+        failed += not test
+
+        test = assert_equal(
+            result["itr_actuals"]["ais"]["savings_interest"],
+            46183.00,
+            tolerance=0.01,
+            label="itr_actuals['ais']['savings_interest']"
+        )
+        passed += test
+        failed += not test
+
+        test = assert_equal(
+            result["itr_actuals"]["ais"]["total_interest"],
+            302825.00,
+            tolerance=0.01,
+            label="itr_actuals['ais']['total_interest']"
+        )
+        passed += test
+        failed += not test
+
+        test = assert_equal(
+            result["itr_actuals"]["ais"]["tds_deducted"],
+            12073.00,
+            tolerance=0.01,
+            label="itr_actuals['ais']['tds_deducted']"
+        )
+        passed += test
+        failed += not test
+    else:
+        print(f"FAIL: itr_actuals['ais'] is None")
+        failed += 4
+
+    # BLOCK 2: Comparison shape and framing (4 assertions)
+    print("\n--- Comparison shape ---")
+    test = assert_len_equal(
+        result["comparison"]["rows"],
+        4,
+        label="len(comparison['rows'])"
+    )
+    passed += test
+    failed += not test
+
+    # Check FD Interest row has our_under_reports == True
+    fd_interest_row = next((r for r in result["comparison"]["rows"] if r.get("label") == "FD Interest"), None)
+    if fd_interest_row:
+        test = fd_interest_row.get("our_under_reports") is True
+        if test:
+            print(f"PASS: FD Interest row our_under_reports is True")
+            passed += 1
+        else:
+            print(f"FAIL: FD Interest row our_under_reports expected True, got {fd_interest_row.get('our_under_reports')}")
+            failed += 1
+    else:
+        print(f"FAIL: FD Interest row not found in comparison")
+        failed += 1
+
+    # Check TDS row has our_value == 0.0
+    tds_row = next((r for r in result["comparison"]["rows"] if r.get("label") == "TDS Deducted"), None)
+    if tds_row:
+        test = assert_equal(
+            tds_row.get("our_value"),
+            0.0,
+            tolerance=0.01,
+            label="TDS Deducted row our_value"
+        )
+        passed += test
+        failed += not test
+    else:
+        print(f"FAIL: TDS Deducted row not found in comparison")
+        failed += 1
+
+    # Text guard: no "gap", "mismatch", "error" in comparison rows and strategies
+    forbidden_words = ["gap", "mismatch", "error"]
+    forbidden_found = []
+    for row in result["comparison"]["rows"]:
+        text = (row.get("label", "") + " " +
+                (row.get("our_under_reports") and "Our data under-reports this figure" or "Our data covers this figure")).lower()
+        for word in forbidden_words:
+            if word in text:
+                forbidden_found.append(word)
+
+    strategies = result.get("advisory", {}).get("strategies", [])
+    for strat in strategies:
+        text = (strat.get("title", "") + " " + strat.get("detail", "") + " " + strat.get("action", "")).lower()
+        for word in forbidden_words:
+            if word in text:
+                forbidden_found.append(word)
+
+    if not forbidden_found:
+        print(f"PASS: No forbidden words (gap/mismatch/error) in comparison or strategies")
+        passed += 1
+    else:
+        print(f"FAIL: Found forbidden words: {set(forbidden_found)}")
+        failed += 1
+
+    # BLOCK 3: Strategies (6 assertions)
+    print("\n--- Strategies ---")
+    test = assert_is_list(
+        result["advisory"]["strategies"],
+        label="advisory['strategies']"
+    )
+    passed += test
+    failed += not test
+
+    test = assert_equal(
+        result["advisory"]["context"]["limit"],
+        result["fy_income"]["limit"],
+        tolerance=0.01,
+        label="context['limit'] == fy_income['limit']"
+    )
+    passed += test
+    failed += not test
+
+    test = assert_equal(
+        result["advisory"]["context"]["tds_threshold"],
+        result["tds_risk"]["threshold"],
+        tolerance=0.01,
+        label="context['tds_threshold'] == tds_risk['threshold']"
+    )
+    passed += test
+    failed += not test
+
+    # Every strategy has all 9 documented keys
+    strategy_keys = {"id", "category", "priority", "title", "detail", "action", "amount", "bank_name", "is_estimated"}
+    all_keys_present = True
+    for strat in strategies:
+        if not strategy_keys.issubset(set(strat.keys())):
+            all_keys_present = False
+            print(f"FAIL: Strategy missing keys: expected {strategy_keys}, got {set(strat.keys())}")
+            break
+    if all_keys_present:
+        print(f"PASS: Every strategy has all 9 documented keys")
+        passed += 1
+    else:
+        failed += 1
+
+    # Every priority is int >= 1 and strategies sorted by priority
+    all_priorities_valid = True
+    priorities_sorted = True
+    if strategies:
+        prev_priority = 0
+        for strat in strategies:
+            pri = strat.get("priority")
+            if not isinstance(pri, int) or pri < 1:
+                all_priorities_valid = False
+                print(f"FAIL: Strategy priority invalid: {pri}")
+                break
+            if pri < prev_priority:
+                priorities_sorted = False
+            prev_priority = pri
+    else:
+        # No strategies is OK
+        all_priorities_valid = True
+        priorities_sorted = True
+
+    if all_priorities_valid:
+        print(f"PASS: All strategy priorities are int >= 1")
+        passed += 1
+    else:
+        failed += 1
+
+    if priorities_sorted or not strategies:
+        print(f"PASS: Strategies sorted by priority")
+        passed += 1
+    else:
+        print(f"FAIL: Strategies not sorted by priority")
+        failed += 1
+
+    # BLOCK 4: Strategy coverage of crossing banks (1 assertion)
+    print("\n--- Crossing banks coverage ---")
+    crossing_banks_need_declaration = []
+    if not result["fy_income"]["is_over_limit"]:
+        for bank in result["tds_risk"]["by_bank"]:
+            if bank.get("will_cross"):
+                crossing_banks_need_declaration.append(bank.get("bank_name"))
+
+    all_crossing_covered = True
+    if crossing_banks_need_declaration:
+        strategy_declarations = [s for s in strategies if s.get("category") == STRATEGY_DECLARATION]
+        declared_banks = [s.get("bank_name") for s in strategy_declarations]
+        for bank_name in crossing_banks_need_declaration:
+            if bank_name not in declared_banks:
+                all_crossing_covered = False
+                print(f"FAIL: Crossing bank {bank_name} not covered by STRATEGY_DECLARATION")
+                break
+
+    if all_crossing_covered:
+        print(f"PASS: All crossing banks have STRATEGY_DECLARATION (when under limit)")
+        passed += 1
+    else:
+        failed += 1
+
+    # BLOCK 5: build_strategies purity (2 assertions)
+    print("\n--- build_strategies purity ---")
+    strategies1 = build_strategies(person_id, financial_year, as_of)
+    strategies2 = build_strategies(person_id, financial_year, as_of)
+
+    test = strategies1["strategies"] == strategies2["strategies"]
+    if test:
+        print(f"PASS: build_strategies returns same strategies on two calls")
+        passed += 1
+    else:
+        print(f"FAIL: build_strategies returned different results on two calls")
+        print(f"  Call 1: {len(strategies1.get('strategies', []))} strategies")
+        print(f"  Call 2: {len(strategies2.get('strategies', []))} strategies")
+        failed += 1
+
+    # Verify no row count changes across pure function calls
+    snapshot_mid = get_db_snapshot("MID (after build_strategies)")
+    test = True
+    for table in ["Transactions", "FixedDeposit", "IncomeExpectation", "BankAccount", "Form26ASImport", "Form26ASRecord", "AISTISImport"]:
+        if before[table] != snapshot_mid[table]:
+            test = False
+            print(f"FAIL: {table} changed during build_strategies ({before[table]} -> {snapshot_mid[table]})")
+            break
+    if test:
+        print(f"PASS: All table counts unchanged during build_strategies calls")
+        passed += 1
+    else:
+        failed += 1
+
+    # ========== End E2 assertions ==========
+
     # EDGE CASE 1: FY with no data
     print("\n--- Edge case: FY with no data (2019-20) ---")
     try:
@@ -412,9 +699,15 @@ def run_tests():
         if k != "label":
             print(f"  {k}: {v}")
 
+    # Also show BEFORE snapshot with ITR tables
+    print(f"\nDB snapshot BEFORE (full):")
+    for k, v in before.items():
+        if k != "label":
+            print(f"  {k}: {v}")
+
     # Zero side-effect proof
     print("\n--- Zero-side-effect proof ---")
-    snapshot_ok = True
+    # Check original 4 tables as formal assertions
     for table in ["Transactions", "FixedDeposit", "IncomeExpectation", "BankAccount"]:
         before_count = before[table]
         after_count = after[table]
@@ -424,7 +717,18 @@ def run_tests():
         else:
             print(f"FAIL: {table} count changed ({before_count} -> {after_count})")
             failed += 1
-            snapshot_ok = False
+
+    # Check new ITR tables as formal assertions
+    for table in ["Form26ASImport", "Form26ASRecord", "AISTISImport"]:
+        before_count = before.get(table, 0)
+        after_count = after.get(table, 0)
+        test = assert_equal(
+            after_count,
+            before_count,
+            label=f"{table} count unchanged"
+        )
+        passed += test
+        failed += not test
 
     # Summary
     print("\n" + "="*80)

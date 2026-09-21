@@ -661,3 +661,105 @@ def find_fd_by_account_no(account_no: str, person_id: int = None) -> dict | None
             return dict(row) if not isinstance(row, dict) else row
 
     return None
+
+
+def apply_fd_details(fd_id: int, interest_rate: float,
+                     tenure_years: int = 0, tenure_months: int = 0,
+                     tenure_days: int = 0,
+                     compounding_type: str | None = None) -> dict:
+    """
+    Fill in the real rate and tenure for an FD whose details were never
+    captured, derive maturity_date and maturity_amount from them, and flip the
+    record off 'Pending Details'.
+
+    Both interest_rate and maturity_date must end up non-NULL or the prediction
+    engine keeps treating the FD as an estimate.
+
+    Returns {"fd_id", "maturity_date", "maturity_amount", "status"}.
+    Raises ValueError on an out-of-range rate, a zero tenure, or a missing
+    start_date.
+    """
+    from datetime import date
+    from config import COMPOUNDING_TYPES
+    from engines.interest_engine import (
+        calculate_fd_maturity_date,
+        calculate_fd_maturity_flexible,
+    )
+
+    # 1. Get the FD
+    fd = get_fd(fd_id)
+    if fd is None:
+        raise ValueError(f"FD with id {fd_id} not found")
+
+    # 2. Validate interest_rate (0 < rate <= 100)
+    if not (0 < interest_rate <= 100):
+        raise ValueError("Interest rate must be between 0 and 100")
+
+    # 3. Check tenure is not (0, 0, 0)
+    if (tenure_years, tenure_months, tenure_days) == (0, 0, 0):
+        raise ValueError("Tenure must be greater than zero")
+
+    # 4. Check FD has start_date
+    if not fd.get("start_date"):
+        raise ValueError("FD has no start date")
+
+    # 5. Determine compounding type
+    compounding = compounding_type or fd.get("compounding_type") or "Quarterly"
+    if compounding not in COMPOUNDING_TYPES:
+        raise ValueError(f"Invalid compounding type: {compounding}")
+
+    # 6. Calculate maturity_date
+    start_date = date.fromisoformat(fd["start_date"])
+    maturity_date = calculate_fd_maturity_date(
+        start_date=start_date,
+        tenure_years=tenure_years,
+        tenure_months=tenure_months,
+        tenure_days=tenure_days,
+    )
+
+    # 7. Calculate maturity_amount
+    maturity_amount = calculate_fd_maturity_flexible(
+        principal=fd["principal_amount"],
+        rate=interest_rate,
+        start_date=start_date,
+        maturity_date=maturity_date,
+        compounding=compounding,
+        tenure_years=tenure_years,
+        tenure_months=tenure_months,
+        tenure_days=tenure_days,
+    )
+
+    # 8. Determine status
+    status = "Active" if fd["status"] == "Pending Details" else fd["status"]
+
+    # 9. Call update_fd with all fields
+    update_fd(
+        fd_id=fd_id,
+        principal_amount=fd["principal_amount"],
+        start_date=fd["start_date"],
+        tenure_months=tenure_months,
+        interest_rate=interest_rate,
+        compounding_type=compounding,
+        maturity_date=maturity_date.isoformat(),
+        maturity_amount=maturity_amount,
+        status=status,
+        maturity_amount_formula=fd.get("maturity_amount_formula"),
+        maturity_amount_bank=fd.get("maturity_amount_bank"),
+        maturity_calc_method=fd.get("maturity_calc_method") or "Formula",
+        tenure_years=tenure_years,
+        tenure_days=tenure_days,
+        fd_reference_no=fd.get("fd_reference_no"),
+        expected_interest_amount=fd.get("expected_interest_amount"),
+        actual_interest_amount=fd.get("actual_interest_amount"),
+        linked_transaction_id=fd.get("linked_transaction_id"),
+        source_statement_file=fd.get("source_statement_file"),
+        source_transaction_id=fd.get("source_transaction_id"),
+    )
+
+    # 10. Return the result dict
+    return {
+        "fd_id": fd_id,
+        "maturity_date": maturity_date.isoformat(),
+        "maturity_amount": maturity_amount,
+        "status": status,
+    }

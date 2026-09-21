@@ -12,11 +12,13 @@ No speculative optimisation; all figures carry an is_estimated flag.
 
 from datetime import date
 from dateutil.relativedelta import relativedelta
-from config import fy_date_range, get_current_financial_year
+from config import fy_date_range, get_current_financial_year, FD_TDS_FORM_NAME, FD_TDS_FORM_NAME_SENIOR
 from models.transaction import get_transactions
 from models.fixed_deposit import get_all_fds
 from models.bank_account import get_accounts_for_person
-from engines.interest_engine import fd_interest_accrued_to
+from models.form26as import get_form26as_import
+from models.ais_tis_import import get_ais_tis_data
+from engines.interest_engine import fd_interest_accrued_to, _is_senior_citizen_in_fy
 from engines.tax_engine import _get_tax_params
 from core.database import get_connection
 
@@ -26,6 +28,17 @@ DEFAULT_FD_RATE = 7.5
 DEFAULT_FD_TENURE_MONTHS = 12
 TAXABLE_INCOME_CATEGORIES = {"FD Interest", "Savings Interest"}
 NON_TAXABLE_INCOME_CATEGORIES = {"FD Maturity", "Other Income"}
+
+ITR_SOURCE_26AS = "26AS"
+ITR_SOURCE_AIS  = "AIS"
+ITR_SOURCE_TIS  = "TIS"
+
+STRATEGY_DECLARATION         = "declaration"
+STRATEGY_REDISTRIBUTION      = "redistribution"
+STRATEGY_NEW_BANK            = "new_bank"
+STRATEGY_DEFER_MATURITY      = "defer_maturity"
+STRATEGY_HEADROOM_INVESTMENT = "headroom_investment"
+STRATEGY_DATA_QUALITY        = "data_quality"
 
 
 def _current_fy_or_default(financial_year: str | None) -> str:
@@ -451,6 +464,396 @@ def income_timeline(
     }
 
 
+def itr_actuals(person_id: int, financial_year: str) -> dict:
+    """
+    ITR-side stored figures (26AS / AIS / TIS). READ-ONLY — this engine never
+    changes them; they are the Income Tax department's record, not ours.
+
+    Returns:
+      {
+        "has_data": bool,
+        "form26as": {"total_tds": float, "source_file": str, "import_date": str} | None,
+        "ais":      {"fd_interest","savings_interest","other_interest",
+                     "dividend_income","other_income","tds_deducted",
+                     "total_interest"} | None,
+        "tis":      {same keys as "ais"} | None,
+      }
+    """
+    form26as = get_form26as_import(person_id, financial_year)
+    form26as_dict = None
+    if form26as:
+        form26as_dict = {
+            "total_tds": round(float(form26as.get("total_tds") or 0.0), 2),
+            "source_file": str(form26as.get("source_file") or ""),
+            "import_date": str(form26as.get("import_date") or ""),
+        }
+
+    ais = get_ais_tis_data(person_id, financial_year, ITR_SOURCE_AIS)
+    ais_dict = None
+    if ais:
+        fd_interest = float(ais.get("fd_interest") or 0.0)
+        savings_interest = float(ais.get("savings_interest") or 0.0)
+        other_interest = float(ais.get("other_interest") or 0.0)
+        total_interest = fd_interest + savings_interest + other_interest
+        ais_dict = {
+            "fd_interest": round(fd_interest, 2),
+            "savings_interest": round(savings_interest, 2),
+            "other_interest": round(other_interest, 2),
+            "dividend_income": round(float(ais.get("dividend_income") or 0.0), 2),
+            "other_income": round(float(ais.get("other_income") or 0.0), 2),
+            "tds_deducted": round(float(ais.get("tds_deducted") or 0.0), 2),
+            "total_interest": round(total_interest, 2),
+        }
+
+    tis = get_ais_tis_data(person_id, financial_year, ITR_SOURCE_TIS)
+    tis_dict = None
+    if tis:
+        fd_interest = float(tis.get("fd_interest") or 0.0)
+        savings_interest = float(tis.get("savings_interest") or 0.0)
+        other_interest = float(tis.get("other_interest") or 0.0)
+        total_interest = fd_interest + savings_interest + other_interest
+        tis_dict = {
+            "fd_interest": round(fd_interest, 2),
+            "savings_interest": round(savings_interest, 2),
+            "other_interest": round(other_interest, 2),
+            "dividend_income": round(float(tis.get("dividend_income") or 0.0), 2),
+            "other_income": round(float(tis.get("other_income") or 0.0), 2),
+            "tds_deducted": round(float(tis.get("tds_deducted") or 0.0), 2),
+            "total_interest": round(total_interest, 2),
+        }
+
+    has_data = form26as_dict is not None or ais_dict is not None or tis_dict is not None
+
+    return {
+        "has_data": has_data,
+        "form26as": form26as_dict,
+        "ais": ais_dict,
+        "tis": tis_dict,
+    }
+
+
+def compare_our_data_to_itr(person_id: int, financial_year: str,
+                            as_of: date | None = None) -> dict:
+    """
+    Side-by-side of OUR prediction against the ITR-side record.
+
+    Neutral framing only. The words "gap", "mismatch" and "error" must not
+    appear in any string this function produces: our figure being lower is the
+    expected shape, because most FD interest is credited inside the FD and
+    never lands in a savings-account row.
+
+    Returns:
+      {
+        "has_itr_data": bool,
+        "itr_source": "AIS" | "TIS" | None,     # AIS preferred, TIS fallback
+        "rows": [ {"label": str, "our_value": float, "itr_value": float,
+                   "our_under_reports": bool, "is_estimated": bool} ],
+      }
+    """
+    as_of = _as_of_date(as_of)
+
+    itr = itr_actuals(person_id, financial_year)
+    fd_proj = project_fd_interest(person_id, financial_year, as_of)
+    savings_proj = realised_income_to_date(person_id, financial_year, as_of)
+    form26as = itr.get("form26as")
+
+    # Prefer AIS, fall back to TIS
+    itr_source = None
+    itr_data = itr.get("ais")
+    if itr_data:
+        itr_source = ITR_SOURCE_AIS
+    else:
+        itr_data = itr.get("tis")
+        if itr_data:
+            itr_source = ITR_SOURCE_TIS
+
+    has_itr_data = itr_source is not None or form26as is not None
+
+    rows = []
+
+    # FD Interest row
+    our_fd_interest = fd_proj.get("total", 0.0)
+    itr_fd_interest = itr_data.get("fd_interest", 0.0) if itr_data else 0.0
+    rows.append({
+        "label": "FD Interest",
+        "our_value": round(our_fd_interest, 2),
+        "itr_value": round(itr_fd_interest, 2),
+        "our_under_reports": our_fd_interest < itr_fd_interest,
+        "is_estimated": fd_proj.get("is_estimated", False),
+    })
+
+    # Savings Interest row
+    our_savings_interest = savings_proj.get("by_category", {}).get("Savings Interest", 0.0)
+    itr_savings_interest = itr_data.get("savings_interest", 0.0) if itr_data else 0.0
+    rows.append({
+        "label": "Savings Interest",
+        "our_value": round(our_savings_interest, 2),
+        "itr_value": round(itr_savings_interest, 2),
+        "our_under_reports": our_savings_interest < itr_savings_interest,
+        "is_estimated": False,
+    })
+
+    # Total Interest row
+    our_total_interest = our_fd_interest + our_savings_interest
+    itr_total_interest = itr_data.get("total_interest", 0.0) if itr_data else 0.0
+    rows.append({
+        "label": "Total Interest",
+        "our_value": round(our_total_interest, 2),
+        "itr_value": round(itr_total_interest, 2),
+        "our_under_reports": our_total_interest < itr_total_interest,
+        "is_estimated": fd_proj.get("is_estimated", False),
+    })
+
+    # TDS Deducted row
+    # TDS is deducted before credit so it never appears in a transaction
+    form26as_tds = form26as.get("total_tds", 0.0) if form26as else 0.0
+    rows.append({
+        "label": "TDS Deducted",
+        "our_value": 0.0,
+        "itr_value": round(form26as_tds, 2),
+        "our_under_reports": True,
+        "is_estimated": False,
+    })
+
+    return {
+        "has_itr_data": has_itr_data,
+        "itr_source": itr_source,
+        "rows": rows,
+    }
+
+
+def build_strategies(
+    person_id: int,
+    financial_year: str | None = None,
+    as_of: date | None = None,
+) -> dict:
+    """
+    Concrete actions for staying under the rebate limit and keeping TDS off.
+
+    Pure: no Qt, no DB writes. Every threshold is read from TaxParams via
+    _get_tax_params(); nothing here hardcodes a rupee limit.
+
+    Returns:
+      {
+        "limit": float, "headroom": float, "tds_threshold": float,
+        "form_name": str,                      # Form 15G or Form 15H
+        "is_senior": bool,
+        "strategies": [ {
+            "id": str,            # e.g. "declaration:Jana Small Finance Bank"
+            "category": str,      # one of the STRATEGY_* constants
+            "priority": int,      # 1 = act first
+            "title": str,
+            "detail": str,
+            "action": str,        # one imperative sentence
+            "amount": float,      # rupees this action moves or protects
+            "bank_name": str | None,
+            "is_estimated": bool,
+        } ],
+      }
+    """
+    financial_year = _current_fy_or_default(financial_year)
+    as_of = _as_of_date(as_of)
+
+    # Gather data
+    fy_income = project_fy_income(person_id, financial_year, as_of)
+    tds_risk = project_bank_tds_risk(person_id, financial_year, as_of)
+    fd_interest = project_fd_interest(person_id, financial_year, as_of)
+    is_senior = _is_senior_citizen_in_fy(person_id, financial_year)
+    form_name = FD_TDS_FORM_NAME_SENIOR if is_senior else FD_TDS_FORM_NAME
+
+    limit = fy_income["limit"]
+    headroom = fy_income["headroom"]
+    threshold = tds_risk["threshold"]
+    by_bank = tds_risk["by_bank"]
+
+    strategies = []
+
+    # Rule 1: STRATEGY_DECLARATION (priority 1)
+    if not fy_income["is_over_limit"]:
+        for bank in by_bank:
+            if bank["will_cross"]:
+                strategy_id = f"{STRATEGY_DECLARATION}:{bank['bank_name']}"
+                strategies.append({
+                    "id": strategy_id,
+                    "category": STRATEGY_DECLARATION,
+                    "priority": 1,
+                    "title": f"{bank['bank_name']}: file {form_name}",
+                    "detail": f"Lawful only when total projected income stays under the rebate limit.",
+                    "action": f"Submit {form_name} to {bank['bank_name']} before the next interest credit.",
+                    "amount": bank["projected_interest"],
+                    "bank_name": bank["bank_name"],
+                    "is_estimated": bank["is_estimated"],
+                })
+
+    # Rule 2: STRATEGY_REDISTRIBUTION (priority 2)
+    for src_bank in by_bank:
+        if src_bank["will_cross"]:
+            excess = src_bank["projected_interest"] - threshold
+
+            # Find receivers
+            receivers = [b for b in by_bank if b["bank_name"] != src_bank["bank_name"] and (threshold - b["projected_interest"]) > 0]
+            receivers.sort(key=lambda x: threshold - x["projected_interest"], reverse=True)
+
+            if receivers:
+                dst_bank = receivers[0]
+                room = threshold - dst_bank["projected_interest"]
+                movable_interest = min(excess, room)
+
+                # Compute weighted known rate for source bank's FDs
+                fds = get_all_fds(person_id=person_id)
+                src_fds = [fd for fd in fds if fd.get("bank_name") == src_bank["bank_name"]]
+                known_rate = DEFAULT_FD_RATE
+                known_principals = 0.0
+                known_total_rate = 0.0
+                for fd in src_fds:
+                    if fd.get("interest_rate"):
+                        known_principals += fd.get("principal_amount", 0.0)
+                        known_total_rate += fd.get("interest_rate", 0.0) * fd.get("principal_amount", 0.0)
+
+                if known_principals > 0:
+                    known_rate = known_total_rate / known_principals
+                elif known_rate <= 0:
+                    known_rate = DEFAULT_FD_RATE
+
+                movable_principal = movable_interest / (known_rate / 100.0) if known_rate > 0 else 0.0
+
+                strategy_id = f"{STRATEGY_REDISTRIBUTION}:{src_bank['bank_name']}-{dst_bank['bank_name']}"
+                strategies.append({
+                    "id": strategy_id,
+                    "category": STRATEGY_REDISTRIBUTION,
+                    "priority": 2,
+                    "title": f"Move deposits from {src_bank['bank_name']} to {dst_bank['bank_name']}",
+                    "detail": f"Rebalance FD principal to spread TDS risk across banks.",
+                    "action": f"Shift about {movable_principal:,.0f} of principal from {src_bank['bank_name']} to {dst_bank['bank_name']} at renewal.",
+                    "amount": movable_principal,
+                    "bank_name": src_bank["bank_name"],
+                    "is_estimated": src_bank["is_estimated"] or dst_bank["is_estimated"],
+                })
+
+    # Rule 3: STRATEGY_NEW_BANK (priority 3)
+    crossing_banks = [b for b in by_bank if b["will_cross"]]
+    if crossing_banks:
+        # Check if any bank has room to receive
+        receivers = [b for b in by_bank if (threshold - b["projected_interest"]) > 0]
+        if not receivers:
+            total_excess = sum(max(0.0, b["projected_interest"] - threshold) for b in crossing_banks)
+            if total_excess > 0:
+                deployable_principal = total_excess / (DEFAULT_FD_RATE / 100.0) if DEFAULT_FD_RATE > 0 else 0.0
+                strategy_id = f"{STRATEGY_NEW_BANK}"
+                strategies.append({
+                    "id": strategy_id,
+                    "category": STRATEGY_NEW_BANK,
+                    "priority": 3,
+                    "title": "Open a deposit at an additional bank",
+                    "detail": f"Diversify to stay within TDS threshold of {threshold:,.0f} per bank.",
+                    "action": f"Open a deposit at an additional bank for about {deployable_principal:,.0f} of principal so no single bank crosses {threshold:,.0f}.",
+                    "amount": deployable_principal,
+                    "bank_name": None,
+                    "is_estimated": True,
+                })
+
+    # Rule 4: STRATEGY_DEFER_MATURITY (priority 1)
+    if fy_income["is_over_limit"]:
+        fy_start, fy_end = fy_date_range(financial_year)
+        last_quarter_start = fy_end - relativedelta(months=3)
+
+        fds = get_all_fds(person_id=person_id)
+        maturity_candidates = []
+
+        for fd in fds:
+            try:
+                synth_fd = _synthesise_fd(fd)
+                maturity_date_str = synth_fd.get("maturity_date")
+                if maturity_date_str:
+                    maturity_date = date.fromisoformat(maturity_date_str)
+                    if last_quarter_start <= maturity_date <= fy_end:
+                        interest = fd_interest_accrued_to(synth_fd, fy_end)
+                        maturity_candidates.append({
+                            "fd": synth_fd,
+                            "interest": interest,
+                            "maturity_date": maturity_date,
+                        })
+            except Exception:
+                pass
+
+        maturity_candidates.sort(key=lambda x: x["interest"], reverse=True)
+        for candidate in maturity_candidates[:5]:
+            strategy_id = f"{STRATEGY_DEFER_MATURITY}:{candidate['fd'].get('fd_id')}"
+            strategies.append({
+                "id": strategy_id,
+                "category": STRATEGY_DEFER_MATURITY,
+                "priority": 1,
+                "title": f"Renew FD maturing {candidate['maturity_date'].isoformat()}",
+                "detail": f"Income will exceed the rebate limit this FY. Defer interest to next year.",
+                "action": f"Renew this deposit with a maturity after {fy_end.isoformat()} so the interest falls in the next financial year.",
+                "amount": candidate["interest"],
+                "bank_name": candidate["fd"].get("bank_name"),
+                "is_estimated": candidate["fd"].get("is_estimated", False),
+            })
+
+    # Rule 5: STRATEGY_HEADROOM_INVESTMENT (priority 4)
+    if headroom > 0:
+        # Compute principal-weighted average of known FD rates
+        known_rate = DEFAULT_FD_RATE
+        known_principals = 0.0
+        known_total_rate = 0.0
+        fds = get_all_fds(person_id=person_id)
+        for fd in fds:
+            if fd.get("interest_rate"):
+                known_principals += fd.get("principal_amount", 0.0)
+                known_total_rate += fd.get("interest_rate", 0.0) * fd.get("principal_amount", 0.0)
+
+        if known_principals > 0:
+            known_rate = known_total_rate / known_principals
+        elif known_rate <= 0:
+            known_rate = DEFAULT_FD_RATE
+
+        rate_to_use = known_rate if known_rate > 0 else DEFAULT_FD_RATE
+        is_estimated_rate = known_principals == 0.0
+
+        deployable = headroom / (rate_to_use / 100.0) if rate_to_use > 0 else 0.0
+
+        strategy_id = f"{STRATEGY_HEADROOM_INVESTMENT}"
+        strategies.append({
+            "id": strategy_id,
+            "category": STRATEGY_HEADROOM_INVESTMENT,
+            "priority": 4,
+            "title": "Headroom available",
+            "detail": f"Remaining space under the {limit:,.0f} rebate limit.",
+            "action": f"Up to about {deployable:,.0f} of fresh principal can be deployed this year while staying under {limit:,.0f}.",
+            "amount": deployable,
+            "bank_name": None,
+            "is_estimated": is_estimated_rate,
+        })
+
+    # Rule 6: STRATEGY_DATA_QUALITY (priority 5)
+    if fd_interest["estimated_fd_count"] > 0:
+        strategy_id = f"{STRATEGY_DATA_QUALITY}"
+        strategies.append({
+            "id": strategy_id,
+            "category": STRATEGY_DATA_QUALITY,
+            "priority": 5,
+            "title": f"{fd_interest['estimated_fd_count']} deposit(s) use estimated rates",
+            "detail": f"Rates are guessed at {DEFAULT_FD_RATE}% until you enter the real ones.",
+            "action": f"Enter the real rate for {fd_interest['estimated_fd_count']} deposit(s) from the Fixed Deposits screen to firm these figures up.",
+            "amount": fd_interest["estimated_total"],
+            "bank_name": None,
+            "is_estimated": True,
+        })
+
+    # Sort by (priority, -amount)
+    strategies.sort(key=lambda x: (x["priority"], -x["amount"]))
+
+    return {
+        "limit": round(limit, 2),
+        "headroom": round(headroom, 2),
+        "tds_threshold": round(threshold, 2),
+        "form_name": form_name,
+        "is_senior": is_senior,
+        "strategies": strategies,
+    }
+
+
 def build_advisory(
     person_id: int,
     financial_year: str | None = None,
@@ -550,8 +953,12 @@ def build_advisory(
         "They are NOT tax advice. Consult a qualified tax professional before making decisions."
     )
 
+    strategies = build_strategies(person_id, financial_year, as_of)
+
     return {
         "warnings": warnings,
+        "strategies": strategies["strategies"],
+        "context": {k: strategies[k] for k in ("limit", "headroom", "tds_threshold", "form_name", "is_senior")},
         "disclaimer": disclaimer,
     }
 
@@ -575,7 +982,9 @@ def get_prediction_summary(
           "fy_income": {projected_total, limit, headroom, is_over_limit, is_estimated},
           "tds_risk": {threshold, by_bank},
           "timeline": {months},
-          "advisory": {warnings, disclaimer}
+          "advisory": {warnings, disclaimer},
+          "itr_actuals": {has_data, form26as, ais, tis},
+          "comparison": {has_itr_data, itr_source, rows}
         }
     """
     financial_year = _current_fy_or_default(financial_year)
@@ -592,4 +1001,6 @@ def get_prediction_summary(
         "tds_risk": project_bank_tds_risk(person_id, financial_year, as_of),
         "timeline": income_timeline(person_id, financial_year, as_of),
         "advisory": build_advisory(person_id, financial_year, as_of),
+        "itr_actuals": itr_actuals(person_id, financial_year),
+        "comparison": compare_our_data_to_itr(person_id, financial_year, as_of),
     }

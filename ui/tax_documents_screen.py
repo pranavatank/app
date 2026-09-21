@@ -31,9 +31,15 @@ from engines.taxdocs.form26as import parse_form26as_pdf
 from engines.taxdocs.ais import parse_ais_pdf
 from engines.taxdocs.tis import parse_tis_pdf
 from engines.taxdocs.merge import merge_tax_documents
+from engines.taxdocs.persist import (
+    persist_form26as, persist_ais_tis,
+    SOURCE_TYPE_AIS, SOURCE_TYPE_TIS,
+)
 from engines.statement_parser import is_pdf_encrypted
 from models.fixed_deposit import get_all_fds
 from models.person import get_ais_tis_password, set_ais_tis_password
+from config import get_current_financial_year
+import os
 
 
 def _format_inr(amount: float) -> str:
@@ -111,6 +117,7 @@ class TaxDocumentsScreen(QWidget):
         super().__init__(parent)
         self.parent_window = parent
         self.merge_result = None
+        self._itr_financial_year: str | None = None
         self._build_ui()
 
     def _build_ui(self):
@@ -298,14 +305,19 @@ class TaxDocumentsScreen(QWidget):
         self.zone_26as.set_status("Parsing...", error=False)
 
         def parse_26as():
-            return parse_form26as_pdf(path, password=None, debug={})
+            parsed = parse_form26as_pdf(path, password=None, debug={})
+            info = persist_form26as(session.selected_person_id or 1, parsed,
+                                    source_file=os.path.basename(path))
+            return parsed, info
 
         def on_done(result):
-            self.zone_26as.pdf_data = result
+            parsed, info = result
+            self._itr_financial_year = info["financial_year"]
+            self.zone_26as.pdf_data = parsed
             self.zone_26as.pdf_path = path
-            fy = _extract_financial_year(result)
+            fy = _extract_financial_year(parsed)
             self.zone_26as.set_status("✓ Loaded", fy=fy)
-            show_success("Form 26AS loaded successfully")
+            show_success(f"Form 26AS imported — {info['record_count']} records, FY {info['financial_year']}")
             self._try_merge()
 
         def on_error(exc):
@@ -352,18 +364,23 @@ class TaxDocumentsScreen(QWidget):
             should_save = False
 
         def parse_ais():
-            return parse_ais_pdf(path, password=password)
+            parsed = parse_ais_pdf(path, password=password)
+            fy = self._itr_financial_year or get_current_financial_year()
+            info = persist_ais_tis(session.selected_person_id or 1, parsed, SOURCE_TYPE_AIS, fy,
+                                   source_file=os.path.basename(path))
+            return parsed, info
 
         def on_done(result):
+            parsed, info = result
             # Save password if requested
             if should_save and password:
                 set_ais_tis_password(1, password, session.aes_key)
 
-            self.zone_ais.pdf_data = result
+            self.zone_ais.pdf_data = parsed
             self.zone_ais.pdf_path = path
-            fy = _extract_financial_year(result)
+            fy = _extract_financial_year(parsed)
             self.zone_ais.set_status("✓ Loaded", fy=fy)
-            show_success("AIS loaded successfully")
+            show_success(f"AIS imported — {info['record_count']} records, FY {info['financial_year']}")
             self._try_merge()
 
         def on_error(exc):
@@ -410,18 +427,23 @@ class TaxDocumentsScreen(QWidget):
             should_save = False
 
         def parse_tis():
-            return parse_tis_pdf(path, password=password)
+            parsed = parse_tis_pdf(path, password=password)
+            fy = self._itr_financial_year or get_current_financial_year()
+            info = persist_ais_tis(session.selected_person_id or 1, parsed, SOURCE_TYPE_TIS, fy,
+                                   source_file=os.path.basename(path))
+            return parsed, info
 
         def on_done(result):
+            parsed, info = result
             # Save password if requested
             if should_save and password:
                 set_ais_tis_password(1, password, session.aes_key)
 
-            self.zone_tis.pdf_data = result
+            self.zone_tis.pdf_data = parsed
             self.zone_tis.pdf_path = path
-            fy = _extract_financial_year(result)
+            fy = _extract_financial_year(parsed)
             self.zone_tis.set_status("✓ Loaded", fy=fy)
-            show_success("TIS loaded successfully")
+            show_success(f"TIS imported — {info['record_count']} records, FY {info['financial_year']}")
             self._try_merge()
 
         def on_error(exc):

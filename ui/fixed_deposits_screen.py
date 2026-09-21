@@ -108,6 +108,12 @@ class FixedDepositsScreen(QWidget):
         btn_recalc.clicked.connect(self._on_recalculate_selected)
         header.addWidget(btn_recalc)
 
+        btn_rates = Theme.btn("  Enter Real Rates", "secondary", height=38, min_width=155)
+        btn_rates.setAccessibleName("Enter real fixed deposit rates")
+        btn_rates.setAccessibleDescription("Bulk-enter the real interest rate and tenure for deposits still on default projections.")
+        btn_rates.clicked.connect(self._on_enter_real_rates)
+        header.addWidget(btn_rates)
+
         btn_save = Theme.btn("  Save Changes", "secondary", height=38, min_width=125)
         btn_save.setIcon(app_icon("save", color=Theme.TEXT_PRIMARY, size=16))
         btn_save.setAccessibleName("Save fixed deposit changes")
@@ -774,5 +780,14 @@ class FixedDepositsScreen(QWidget):
         self.refresh()
         if self.parent_window:
             self.parent_window.refresh_overview()
+
+    def _on_enter_real_rates(self):
+        """Open the bulk rate-entry dialog and refresh once it closes."""
+        from ui.dialogs.fd_bulk_rate_dialog import FDBulkRateDialog
+        dlg = FDBulkRateDialog(self, person_id=session.selected_person_id)
+        if dlg.exec() == QDialog.DialogCode.Accepted and dlg.saved_count() > 0:
+            self.refresh()
+            if self.parent_window:
+                self.parent_window.refresh_overview()
 
 
