@@ -925,7 +925,7 @@ class DashboardScreen(QMainWindow):
                     # Account for FY starting in April
                     display_month = f"{month_num-3} Apr" if month_num >= 4 else f"{month_num+9} {tx_date.strftime('%B')}"
 
-                    if tx["transaction_type"] == "credit":
+                    if tx["transaction_type"] == "Income":
                         monthly_income[month_key] = monthly_income.get(month_key, 0) + tx["amount"]
                     else:
                         monthly_expense[month_key] = monthly_expense.get(month_key, 0) + tx["amount"]

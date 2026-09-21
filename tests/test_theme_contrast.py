@@ -89,6 +89,7 @@ REQUIRED_PAIRS = [
     ("TEXT_PRIMARY",   "SURFACE",       4.5),
     ("TEXT_SECONDARY", "SURFACE",       4.5),
     ("TEXT_MUTED",     "SURFACE",       4.5),
+    ("TEXT_MUTED",     "BG",            4.5),
     ("TEXT_ON_PRIMARY","PRIMARY",       4.5),
     ("PRIMARY_DARK",   "PRIMARY_LIGHT", 4.5),
     ("TOOLTIP_FG",     "TOOLTIP_BG",    4.5),

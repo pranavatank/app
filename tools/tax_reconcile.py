@@ -17,11 +17,28 @@ from engines.taxdocs.form26as import parse_form26as_pdf
 from engines.taxdocs.ais import parse_ais_pdf
 from engines.taxdocs.tis import parse_tis_pdf
 from config import DB_PATH, DATA_DIR
+from tools.taxdoc_import import read_ais_tis_password
 
 
 def get_db_connection():
     """Open read-only connection to the database."""
     return sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
+
+
+def get_ais_tis_password():
+    """Resolve AIS/TIS password from env var or password file.
+
+    Checks env var AIS_TIS_PASSWORD first, then the password file.
+    Returns None if neither is available.
+    """
+    # Check environment variable first
+    password = os.environ.get("AIS_TIS_PASSWORD")
+    if password:
+        return password
+
+    # Check password file
+    password_file = Path(DATA_DIR) / "PersonalData" / "Pranav" / "password.txt"
+    return read_ais_tis_password(str(password_file))
 
 
 def fetch_26as_data():
@@ -45,8 +62,12 @@ def fetch_ais_data():
     if not pdf_path.exists():
         return None, "File not found"
 
+    password = get_ais_tis_password()
+    if not password:
+        return None, "AIS/TIS password not found"
+
     try:
-        result = parse_ais_pdf(str(pdf_path), password="azipt9702h08032004")
+        result = parse_ais_pdf(str(pdf_path), password=password)
         return result, None
     except Exception as e:
         return None, str(e)
@@ -58,8 +79,12 @@ def fetch_tis_data():
     if not pdf_path.exists():
         return None, "File not found"
 
+    password = get_ais_tis_password()
+    if not password:
+        return None, "AIS/TIS password not found"
+
     try:
-        result = parse_tis_pdf(str(pdf_path), password="azipt9702h08032004")
+        result = parse_tis_pdf(str(pdf_path), password=password)
         return result, None
     except Exception as e:
         return None, str(e)

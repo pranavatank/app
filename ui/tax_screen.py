@@ -246,7 +246,7 @@ class TaxScreen(QWidget):
         self.source_combo.currentIndexChanged.connect(self._on_source_changed)
         header_layout.addWidget(self.source_combo)
 
-        self.btn_calc = Theme.btn("  Estimate Tax", "primary", height=40, min_width=158)
+        self.btn_calc = Theme.btn("  Estimate Tax", "primary", height=Theme.HEIGHT_MD, min_width=158)
         set_btn_icon(self.btn_calc, "calculate")
         self.btn_calc.setAccessibleName("Estimate tax")
         self.btn_calc.setAccessibleDescription("Calculate tax from the selected data source.")

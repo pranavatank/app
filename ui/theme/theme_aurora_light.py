@@ -89,7 +89,7 @@ TOPBAR_BORDER             = "#E7E5F5"
 # ── Text ──────────────────────────────────────────────────────────────────────
 TEXT_PRIMARY              = "#1E1B2E"
 TEXT_SECONDARY            = "#57536E"
-TEXT_MUTED                = "#75718F"
+TEXT_MUTED                = "#6F6B89"
 TEXT_ON_PRIMARY           = "#FFFFFF"
 TEXT_HEADING              = "#120F22"
 

@@ -531,7 +531,7 @@ class SettingsScreen(QWidget):
         b.setAccessibleName("Change password")
         b.setAccessibleDescription("Change your master password to a new one.")
         b.clicked.connect(self._on_change_password)
-        l1.addWidget(b)
+        l1.addWidget(self._left_aligned(b))
         gl.addWidget(c1)
 
         c2 = self._card(); l2 = QVBoxLayout(c2); l2.setSpacing(8)
@@ -560,7 +560,7 @@ class SettingsScreen(QWidget):
             b.setAccessibleName(f"Manage {title.lower()}")
             b.setAccessibleDescription(desc)
             b.clicked.connect(handler)
-            lc.addWidget(b)
+            lc.addWidget(self._left_aligned(b))
             gl.addWidget(c)
         return g
 
@@ -589,7 +589,7 @@ class SettingsScreen(QWidget):
         b1.setAccessibleDescription("Create a backup copy of your database to the backups folder.")
         b1.setIcon(app_icon("backup", color="on_primary", size=16))
         b1.clicked.connect(self._on_create_backup)
-        l1.addWidget(b1)
+        l1.addWidget(self._left_aligned(b1))
         gl.addWidget(c1)
 
         c2 = self._card(); l2 = QVBoxLayout(c2)
@@ -603,7 +603,7 @@ class SettingsScreen(QWidget):
         b2.setAccessibleDescription("Restore your database from a backup. Warning: this will replace your current database and all data will be lost.")
         b2.setIcon(app_icon("restore", color="on_primary", size=16))
         b2.clicked.connect(self._on_restore_backup)
-        l2.addWidget(b2)
+        l2.addWidget(self._left_aligned(b2))
         gl.addWidget(c2)
         return g
 
@@ -676,6 +676,16 @@ class SettingsScreen(QWidget):
         f.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self._all_cards.append(f)
         return f
+
+    def _left_aligned(self, widget) -> QWidget:
+        """Keep a control at its natural width instead of stretching to the card."""
+        w = QWidget()
+        row = QHBoxLayout(w)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(0)
+        row.addWidget(widget)
+        row.addStretch()
+        return w
 
     def _card_title(self, text: str) -> QLabel:
         l = QLabel(text); l.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))

@@ -23,11 +23,35 @@ STATEMENTS = {
     38: ("Jana - Pranav.pdf", None),
     39: ("IDFC.pdf", None),
     40: ("Ujjivan - Pranav.pdf", None),
-    41: ("Equitas.pdf", "0803PRA"),
+    41: ("Equitas.pdf", None),  # Password resolved at runtime
 }
 
 STATEMENT_DIR = app_root / "data" / "PersonalData" / "Pranav" / "Statement"
 PERSON_ID = 1
+PASSWORD_FILE = app_root / "data" / "PersonalData" / "Pranav" / "password.txt"
+
+
+def read_equitas_password() -> str | None:
+    """Read Equitas statement password from password file.
+
+    Scans lines for one whose lowercased text contains "equitas"
+    and a ":", returns the text after the last ":", stripped.
+    Returns None if file is absent or no line matches.
+    """
+    if not PASSWORD_FILE.exists():
+        return None
+
+    try:
+        with open(PASSWORD_FILE, "r", encoding="utf-8") as f:
+            for line in f:
+                line_lower = line.lower()
+                if "equitas" in line_lower and ":" in line:
+                    # Return text after last colon
+                    return line.split(":")[-1].strip()
+    except Exception:
+        pass
+
+    return None
 
 
 def get_fd_count():
@@ -192,9 +216,18 @@ def main():
             print(f"  WARNING: File not found: {filepath}")
             continue
 
+        # Resolve password at runtime for documents that need it
+        resolved_password = password
+        if filename == "Equitas.pdf":
+            resolved_password = read_equitas_password()
+            if not resolved_password:
+                print(f"  ERROR: Equitas password not found in {PASSWORD_FILE}")
+                print(f"  SKIPPING: {filename}")
+                continue
+
         try:
             # Parse the statement
-            transactions = parse_statement_pdf(str(filepath), password=password)
+            transactions = parse_statement_pdf(str(filepath), password=resolved_password)
             print(f"  Parsed {len(transactions)} transactions")
 
             if transactions:

@@ -679,11 +679,11 @@ QHeaderView::section {{
 
 /* ═══════════════════════════ SCROLLBAR ══════════════════════ */
 QScrollBar:vertical {{ background: transparent; width: 10px; margin: 0; padding: 0 1px; }}
-QScrollBar::handle:vertical {{ background: {t.BORDER}; border-radius: 4px; min-height: 28px; min-width: 8px; }}
+QScrollBar::handle:vertical {{ background: {t.BORDER}; border-radius: {t.RADIUS_CONTROL}px; min-height: 28px; min-width: 8px; }}
 QScrollBar::handle:vertical:hover {{ background: {t.PRIMARY}; }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
 QScrollBar:horizontal {{ background: transparent; height: 10px; margin: 0; padding: 1px 0; }}
-QScrollBar::handle:horizontal {{ background: {t.BORDER}; border-radius: 4px; min-width: 28px; min-height: 8px; }}
+QScrollBar::handle:horizontal {{ background: {t.BORDER}; border-radius: {t.RADIUS_CONTROL}px; min-width: 28px; min-height: 8px; }}
 QScrollBar::handle:horizontal:hover {{ background: {t.PRIMARY}; }}
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width: 0; }}
 

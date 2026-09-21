@@ -100,17 +100,17 @@ class AccountDetailsPanel(QWidget):
         fl.setContentsMargins(28, 14, 28, 14)
         fl.addStretch()
 
-        btn_edit = Theme.btn(" Edit", "edit", height=40, min_width=110)
+        btn_edit = Theme.btn(" Edit", "edit", height=Theme.HEIGHT_MD, min_width=110)
         set_btn_icon(btn_edit, "edit")
         btn_edit.clicked.connect(self._on_edit)
         fl.addWidget(btn_edit)
 
-        btn_del = Theme.btn(" Delete", "danger", height=40, min_width=110)
+        btn_del = Theme.btn(" Delete", "danger", height=Theme.HEIGHT_MD, min_width=110)
         set_btn_icon(btn_del, "delete")
         btn_del.clicked.connect(self._on_delete)
         fl.addWidget(btn_del)
 
-        btn_close = Theme.btn("Close", "secondary", height=40, min_width=110)
+        btn_close = Theme.btn("Close", "secondary", height=Theme.HEIGHT_MD, min_width=110)
         btn_close.clicked.connect(self._on_close)
         fl.addWidget(btn_close)
         return f
