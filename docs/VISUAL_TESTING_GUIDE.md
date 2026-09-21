@@ -4,7 +4,7 @@
 you should not need to read source files to understand what this project is, what
 state it is in, what has been verified, what is broken, or how to test it.
 
-**Last updated:** 2026-09-19.
+**Last updated:** 2026-09-21.
 **Audience:** an AI agent (or human) picking this project up with zero prior context.
 
 ---
@@ -78,7 +78,8 @@ The `Transactions` table books **₹64,95,691** as Income for FY 2025-26.
 | Transactions | 506 | imported from the 4 real statements |
 | FixedDeposit | 20 | **19 are `Pending Details`** — no rate, no maturity |
 | IncomeExpectation | 0 | never populated |
-| Form26ASImport / AISTISImport | 0 | **ITR docs have never been imported into the DB** |
+| Form26ASImport / Form26ASRecord | 1 / 158 | 26AS imported 2026-09-21 (FY 2025-26, total TDS ₹13,367) |
+| AISTISImport | 2 | AIS + TIS imported 2026-09-21 (`tools/taxdoc_import.py` or the Tax Documents screen) |
 | Bank | 0 | |
 
 Accounts: `1` Test Bank (leftover junk), `38` Jana Small Finance Bank,
@@ -107,9 +108,10 @@ commit them, never print the PAN or a full account number into a committed file.
 | `AIS.pdf`, `TIS.pdf` | **encrypted** | see below |
 
 **Passwords are already on disk** at `data/PersonalData/Pranav/password.txt`
-(gitignored): AIS/TIS `azipt9702h08032004`, Equitas `0803PRA`.
-PAN `AZIPT9702H` (also inside 26AS). **Do not ask the user for these. Do not
-hardcode them into committed source.**
+(gitignored): one line for AIS/TIS, one for Equitas. The PAN is also inside the
+26AS. Read them at runtime (`read_ais_tis_password` in `tools/taxdoc_import.py`, or
+`$AIS_TIS_PASSWORD`). **Do not ask the user for these. Do not hardcode or write them
+into any committed file, including this guide.**
 
 ### Verified ground truth — 26AS
 Measured from the raw PDF, independently of the parser:
@@ -213,8 +215,16 @@ are bright. See §7's chart bug for the exact failure mode.
 ### 5.5 What to run
 
 ```
-# engine assertions (28, read-only, ~15s)
+# engine assertions (52, read-only, ~15s) - never run while something else
+# writes the real DB; a throwaway FD row makes the FD-count checks fail
 .venv\Scripts\python.exe tools/test_prediction_engine.py
+
+# charts vs direct DB aggregates (reads data/financial.db read-only)
+.venv\Scripts\python.exe -m pytest tests/test_chart_db_agreement.py -q
+
+# import 26AS/AIS/TIS into the DB (backs up first; --dry-run writes nothing;
+# password comes from $AIS_TIS_PASSWORD or the gitignored password file)
+.venv\Scripts\python.exe tools/taxdoc_import.py --dry-run
 
 # statement extraction quality, modern vs legacy parser
 .venv\Scripts\python.exe tools/extraction_audit.py
@@ -272,6 +282,19 @@ projected_savings_interest, expected_income, fy_income, tds_risk, timeline,
 advisory`. Designed so the owner's future **advisory/strategy layer** ("where
 should I invest to stay under the limit") can build on it without rework.
 
+Added 2026-09-21: `itr_actuals()` and `compare_our_data_to_itr()` (ITR-side stored
+figures and the neutral side-by-side; both new keys `itr_actuals` and `comparison`
+are in the summary), and `build_strategies()` (declaration 15G/15H, redistribution,
+new bank, defer maturity, headroom, data quality; surfaced in `build_advisory()` as
+`strategies` + `context`). `engines/taxdocs/persist.py` maps parsed 26AS/AIS/TIS
+onto `models/form26as.py` / `models/ais_tis_import.py`.
+
+**Test hazard:** `tests/conftest.py` repoints `config.DB_PATH` to an empty temp DB
+for every test. A test that must see real data has to point it back at
+`data/financial.db` (see `tests/test_chart_db_agreement.py`), and a screen that
+starts its own async `load_data()` must have it patched out or it overwrites the
+data under test.
+
 Engine hazards it works around — **do not undo these**:
 - `interest_engine.fd_interest_for_fy()` **raises TypeError on a NULL
   maturity_date**, i.e. on 19 of 20 FDs. Use `fd_interest_accrued_to()` on a
@@ -296,8 +319,9 @@ worker thread. Never revert this.**
 ### Theme
 All colour via `Theme` tokens (`ui/theme/theme.py`). **No raw hex outside
 `ui/theme/`.** Four themes: Aurora, Slate (light), Nova, Midnight Pro (dark).
-Contrast measured — all pass WCAG AA 4.5:1 **except Aurora `TEXT_MUTED` on `BG` at
-4.36:1** (open, unfixed, low priority).
+Contrast measured — all pass WCAG AA 4.5:1 (Aurora `TEXT_MUTED` was 4.36:1 on
+`BG`; fixed 2026-09-21 to `#6F6B89` = 4.75:1, and `("TEXT_MUTED","BG",4.5)` is now
+in `tests/test_theme_contrast.py`).
 
 **Any screen holding charts MUST define `refresh_theme()`** covering every chart
 and table it owns. See §7.
@@ -330,32 +354,53 @@ time.
 
 ## 8. What is PENDING — start here
 
-### High value
-1. **Enter real FD interest rates.** 19 of 20 FDs are `Pending Details`. Everything
-   in the prediction is an estimate until this is done. Consider a bulk-entry UI.
-2. **Import 26AS/AIS/TIS into the DB.** The parsers work, but
-   `Form26ASImport`/`AISTISImport` are still empty, so the Income Prediction
-   screen's ITR-side panel correctly shows an EmptyState. Until this is done there
-   is no stored actuals side to compare against.
-3. **The advisory/strategy layer the owner wants:** *"screens and strategies which
-   tell me how to invest and where to invest to keep my income below limit."*
-   `build_advisory()` in the prediction engine is the seam — currently simple
-   rules only.
+### Done 2026-09-21 (see §10 for detail)
+- 26AS/AIS/TIS stored in the DB, persisted from the Tax Documents screen and via
+  `tools/taxdoc_import.py`; the prediction screen shows the ITR-side panel and a
+  neutral comparison table.
+- Strategy layer (`build_strategies`) and a Strategies section on the screen.
+- Bulk FD rate-entry dialog (Fixed Deposits screen, "Enter Real Rates").
+- Charts-vs-DB test, engine suite extended to 52 assertions.
+- Fixed: Overview income/expense chart (`"credit"` vs `Income`), Settings button
+  widths, Aurora `TEXT_MUTED` contrast, scrollbar radius token, 8 buttons at 40px,
+  hardcoded passwords removed from `tools/tax_reconcile.py` and
+  `tools/pipeline_import.py`.
+
+### High value (still pending)
+1. **Enter the real FD rates.** The dialog exists but has not been used on real
+   data: 19 of 20 FDs are still `Pending Details` and every projection is still
+   an estimate at the 7.5% default. **Needs the user's real rates and tenures.**
+   After entering them, the two engine-suite expectations for FD counts and the
+   FD interest total (`estimated_fd_count == 19`, `known_fd_count == 1`,
+   `total == 121507.00`) must be re-baselined from measured output, not loosened.
+2. **`Test Bank` (account_id 1) generates a phantom Form 15G strategy card.**
+   Decide whether to delete the account (see item 11).
+3. **Savings-interest projection is a hardcoded 0.0** (`project_savings_interest`)
+   and `IncomeExpectation` is empty, so the projected total is structurally low on
+   the savings side (ours ₹4,001 vs ITR ₹46,183). Needs a real projection.
+4. **Strategy quality.** Redistribution never fires today because no bank has
+   spare room; `build_strategies` uses the 7.5% default for principal maths until
+   real rates exist.
 
 ### Testing never completed
-4. **Charts vs DB aggregates.** Never verified that a plotted series equals a
-   direct DB aggregate. A rendered chart is not evidence (§E).
 5. **ExcelTable interactions** — cell click, checkbox toggle + row-highlight sync,
    Enter-to-edit, double-click-to-edit (§F), delete-selected with a DB check.
 6. **Screen-by-screen sweep** across all 10 screens in a dark theme.
 7. **Transactions screen at scale** — 506 real rows, paging and filtering.
 
 ### Known open defects (recorded, unfixed)
-8. **8 buttons render 40px**, off the {28,36,44} scale — `height=40` passed to
-   `Theme.btn` in `transactions_screen`, `tax_screen` and two dialogs.
-9. **6 Settings buttons render 320-322px** against a 280px cap — `min_width=155`
-   inside a stretching layout.
-10. **Aurora `TEXT_MUTED` fails contrast** at 4.36:1 (needs 4.5:1).
+8. **5 buttons still off the size scale** (`test_button_size_audit.py`): the
+   `EmptyState` action button (`ui/widgets/states.py:94`, `height=40`, used by
+   Income & Expectations "Add Expected Income" and Income Prediction "Add Accounts" /
+   "Retry" / "Refresh"), and the Tax Documents "Add" button. Shared widget, so
+   changing it moves every EmptyState button; re-run the audit after.
+9. **`Theme.btn` sizing is structurally off.** Its QSS `min-height`/`max-width`
+   (content-box) override `setFixedHeight`/`setMaximumWidth`, so the `height=`
+   argument is inert on a free-standing button and no button can be narrower than
+   320px when its layout stretches it. Settings was fixed per call site with a
+   left-align wrapper; a proper fix is a design-system change needing a full
+   visual re-sweep.
+10. **`tests/test_screen_render.py` takes ~160s**; not run in the final pass.
 11. **`Test Bank` (account_id 1) is leftover junk** polluting real output — it owns
     the only complete FD and all 6 `FDInterestRecord` rows. Decide whether to delete it.
 12. **`is_internal_transfer` is unused** (0 on all rows). Populating it properly
@@ -406,3 +451,45 @@ signal for 15G/15H or redistribution. All figures marked `(Est.)` because of the
 Income Prediction screen shipped at nav index 8 with headroom / TDS-risk /
 timeline views, a rules-based advisory, and the two-sided OUR-DATA vs ITR-SIDE
 comparison. 28/28 engine assertions pass with zero DB writes.
+
+### 2026-09-21 — pending §8 work built via plan-then-build (Opus plan/verify, Haiku build)
+**Built:** ITR document persistence (`engines/taxdocs/persist.py`, `tools/taxdoc_import.py`,
+Tax Documents screen); `itr_actuals` / `compare_our_data_to_itr` / `build_strategies`
+in the prediction engine; ITR panel, comparison table and Strategies section on the
+Income Prediction screen; `apply_fd_details` + `FDBulkRateDialog` + "Enter Real Rates"
+button; `tests/test_chart_db_agreement.py`; engine suite 28 -> 52 assertions.
+Real DB after import: 26AS 158 records, total TDS ₹13,367.00; AIS FD interest
+₹2,56,642 / savings ₹46,183 / TDS ₹12,073; TIS interest figures identical.
+Our-side vs ITR (FY 2025-26): FD interest ₹1,21,507 vs ₹2,56,642; savings ₹4,001 vs
+₹46,183; TDS ₹0 vs ₹13,367. Our side is lower everywhere - the expected shape.
+
+**Bugs the independent verification caught (all passed the implementer's own checks):**
+- `FDBulkRateDialog` used column indexes 4-8 but `ExcelTableWithStats(show_checkboxes=True)`
+  adds a checkbox at column 0, so real columns are 5-9. Manual entry parsed the *Start
+  Date* as the rate and saved nothing; "Apply to Checked" overwrote the start date.
+- Compounding default `fd.get("k", "Quarterly")` returns `None` when the key exists as
+  `None`; use `fd.get("k") or "Quarterly"`.
+- `apply_fd_details` passed the FD's *old* tenure to `update_fd`, saving 0/0/0.
+- `tests/test_chart_db_agreement.py` first ran against conftest's empty temp DB and
+  passed vacuously (guards nested behind `if x > 0`). Then it raced the screen's own
+  async `load_data()` (values changed run to run). Both fixed; three consecutive
+  stable runs.
+- E2's invariants were first written as prints, not counted assertions.
+- A throwaway `RUIH_` FD in the real DB makes `test_prediction_engine.py` report FD-count
+  failures while it exists; never run the suite concurrently with a DB-writing test.
+
+**Also fixed:** Overview "Income vs Expense" chart compared `transaction_type == "credit"`
+(column only holds `Income`/`Expense`), booking all 506 rows as expense; scrollbar
+`border-radius: 4px` literals now use `RADIUS_CONTROL` (fixes `test_theme_radius`); real
+AIS/TIS and Equitas passwords removed from `tools/tax_reconcile.py` and
+`tools/pipeline_import.py` (read at runtime from `$AIS_TIS_PASSWORD` / the gitignored
+password file). **The old passwords remain in git history and in earlier docs
+(`docs/AUDIT_AND_REBUILD_PLAN.md`, `docs/PIPELINE_AUDIT_PLAN.md`, `docs/REBUILD_PLAN.json`,
+`tests/test_form26as_parser.py`, `tests/test_taxdocs_merge.py`); consider treating them
+as exposed and rotating them if they matter.**
+
+**Tax Documents real-UI test:** stalls at the encrypted AIS file because
+`_on_ais_selected` opens a modal password dialog on `is_pdf_encrypted` alone (the saved
+password only prefills it) and the test never answers it (gotcha G). Pre-existing, not a
+regression from persistence. The test is being changed to pre-arm the dialog; see git
+log for whether that landed.
