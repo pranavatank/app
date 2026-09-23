@@ -195,17 +195,7 @@ class ExcelTable(QTableWidget):
         col_offset = 1 if self.show_checkboxes else 0
 
         if self.show_checkboxes:
-            cb = QCheckBox()
-            cb.setChecked(checked)
-            cb_widget = QWidget()
-            cb_layout = QHBoxLayout(cb_widget)
-            cb_layout.addWidget(cb)
-            cb_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            cb_layout.setContentsMargins(0, 0, 0, 0)
-            self.setCellWidget(r, 0, cb_widget)
-            # Sync checkbox state to row selection if initially checked
-            if checked:
-                self._sync_row_selection_to_checkbox(r, checked)
+            self.setCheckboxCell(r, checked)
 
         for col, value in enumerate(row_data):
             text = str(value) if value is not None else "—"
@@ -284,7 +274,31 @@ class ExcelTable(QTableWidget):
             if cb:
                 cb.setChecked(checked)
                 self._sync_row_selection_to_checkbox(row, checked)
-                
+
+    def setCheckboxCell(self, row: int, checked=False):
+        """Build and set up a checkbox cell with toggle signal connection."""
+        if not self.show_checkboxes or row >= self.rowCount():
+            return
+        cb = QCheckBox()
+        cb.setChecked(checked)
+        cb_widget = QWidget()
+        cb_layout = QHBoxLayout(cb_widget)
+        cb_layout.addWidget(cb)
+        cb_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        cb_layout.setContentsMargins(0, 0, 0, 0)
+        cb.toggled.connect(lambda state, w=cb_widget: self._on_checkbox_toggled(w, state))
+        self.setCellWidget(row, 0, cb_widget)
+        # Sync checkbox state to row selection if initially checked
+        if checked:
+            self._sync_row_selection_to_checkbox(row, checked)
+
+    def _on_checkbox_toggled(self, widget, state):
+        """Handle checkbox toggled signal. Find row and sync selection."""
+        for r in range(self.rowCount()):
+            if self.cellWidget(r, 0) is widget:
+                self._sync_row_selection_to_checkbox(r, state)
+                break
+
     def selectAllRows(self):
         """Select all rows."""
         self.selectAll()

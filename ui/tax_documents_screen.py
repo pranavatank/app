@@ -190,8 +190,10 @@ class TaxDocumentsScreen(QWidget):
         self.empty_state = EmptyState(
             icon_name="document",
             headline="No tax documents yet",
-            explanation="Upload Form 26AS, AIS, and TIS PDFs to view reconciliation."
+            explanation="Upload Form 26AS, AIS, and TIS PDFs to view reconciliation.",
+            action_text="Browse Form 26AS"
         )
+        self.empty_state.action_clicked.connect(self.zone_26as._on_browse_click)
         inner_layout.addWidget(self.empty_state)
 
         # Position table (hidden until data loaded)

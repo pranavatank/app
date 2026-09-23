@@ -147,18 +147,36 @@ def _set_balance(account_id: int, new_balance: float) -> None:
 
 def delete_account(account_id: int) -> None:
     """Delete account and all associated data."""
+    from models.transaction import _detach_transaction_refs
+
     conn = get_connection()
-    conn.execute("DELETE FROM Transactions WHERE account_id = ?", (account_id,))
-    conn.execute("""
-        DELETE FROM FDInterestRecord
-        WHERE fd_id IN (SELECT fd_id FROM FixedDeposit WHERE account_id = ?)
-    """, (account_id,))
-    conn.execute("DELETE FROM FixedDeposit WHERE account_id = ?", (account_id,))
-    conn.execute("DELETE FROM SavingsInterestRecord WHERE account_id = ?", (account_id,))
-    conn.execute("DELETE FROM StatementImportLog WHERE account_id = ?", (account_id,))
-    conn.execute("DELETE FROM BankAccount WHERE account_id = ?", (account_id,))
-    conn.commit()
-    conn.close()
+    try:
+        conn.execute("DELETE FROM AccountHolder WHERE account_id = ?", (account_id,))
+        conn.execute("DELETE FROM IncomeExpectation WHERE account_id = ?", (account_id,))
+        conn.execute("DELETE FROM StatementImportLog WHERE account_id = ?", (account_id,))
+        conn.execute("""
+            DELETE FROM FDInterestRecord
+            WHERE fd_id IN (SELECT fd_id FROM FixedDeposit WHERE account_id = ?)
+        """, (account_id,))
+        conn.execute("DELETE FROM FixedDeposit WHERE account_id = ?", (account_id,))
+        conn.execute("DELETE FROM SavingsInterestRecord WHERE account_id = ?", (account_id,))
+
+        transaction_ids = conn.execute(
+            "SELECT transaction_id FROM Transactions WHERE account_id = ?",
+            (account_id,)
+        ).fetchall()
+        txn_ids = [row[0] for row in transaction_ids]
+        if txn_ids:
+            _detach_transaction_refs(conn, txn_ids)
+
+        conn.execute("DELETE FROM Transactions WHERE account_id = ?", (account_id,))
+        conn.execute("DELETE FROM BankAccount WHERE account_id = ?", (account_id,))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def get_total_balance(person_id: int = None) -> float:

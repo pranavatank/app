@@ -26,7 +26,7 @@ from core.database import get_connection
 # Module Constants
 DEFAULT_FD_RATE = 7.5
 DEFAULT_FD_TENURE_MONTHS = 12
-TAXABLE_INCOME_CATEGORIES = {"FD Interest", "Savings Interest"}
+TAXABLE_INCOME_CATEGORIES = {"FD Interest", "Savings Interest", "Professional Fees", "Commission Income", "Salary"}
 NON_TAXABLE_INCOME_CATEGORIES = {"FD Maturity", "Other Income"}
 
 ITR_SOURCE_26AS = "26AS"
@@ -162,22 +162,146 @@ def project_fd_interest(
 
 def project_savings_interest(
     person_id: int,
-    financial_year: str
+    financial_year: str,
+    as_of: date | None = None
 ) -> dict:
     """
-    Project savings interest for the FY.
-    Currently returns 0 (no savings interest calculation engine exists).
-    Marked as estimated.
+    Project NOT-YET-REALISED savings interest from statement-coverage end to FY end.
+    Realised interest is already counted elsewhere and must not be double-counted.
+
+    Per-bank basis: current FY realised (if positive), else prior FY, else none.
 
     Returns:
         {
           "total": float,
+          "realised": float,
+          "full_year": float,
+          "per_bank": {bank_name: {realised, projected, basis, is_estimated}},
           "is_estimated": bool
         }
     """
+    as_of = _as_of_date(as_of)
+    fy_start, fy_end = fy_date_range(financial_year)
+    cutoff = min(as_of, fy_end)
+
+    start_year = int(financial_year.split("-")[0])
+    prev_fy = f"{start_year - 1}-{str(start_year)[2:]}"
+    p_start, p_end = fy_date_range(prev_fy)
+    prev_days = (p_end - p_start).days + 1
+
+    rows = get_transactions(person_id=person_id)
+
+    if not rows:
+        return {
+            "total": 0.0,
+            "realised": 0.0,
+            "full_year": 0.0,
+            "per_bank": {},
+            "is_estimated": False,
+        }
+
+    accounts = {}
+    for row in rows:
+        account_id = row.get("account_id")
+        if not account_id:
+            continue
+
+        if account_id not in accounts:
+            accounts[account_id] = {
+                "bank_name": row.get("bank_name") or "Unknown",
+                "rows": [],
+            }
+        accounts[account_id]["rows"].append(row)
+
+    total_projected = 0.0
+    total_realised = 0.0
+    per_bank = {}
+
+    for account_id, account_data in accounts.items():
+        bank_name = account_data["bank_name"]
+        account_rows = account_data["rows"]
+
+        max_date = None
+        for row in account_rows:
+            row_date = row.get("transaction_date")
+            if row_date:
+                try:
+                    d = date.fromisoformat(row_date)
+                    if max_date is None or d > max_date:
+                        max_date = d
+                except (ValueError, TypeError):
+                    pass
+
+        realised = 0.0
+        for row in account_rows:
+            category = row.get("category")
+            txn_type = row.get("transaction_type")
+            row_date = row.get("transaction_date")
+
+            if category == "Savings Interest" and txn_type == "Income":
+                try:
+                    d = date.fromisoformat(row_date)
+                    if fy_start <= d <= cutoff:
+                        realised += float(row.get("amount") or 0)
+                except (ValueError, TypeError):
+                    pass
+
+        prior = 0.0
+        for row in account_rows:
+            category = row.get("category")
+            txn_type = row.get("transaction_type")
+            row_date = row.get("transaction_date")
+
+            if category == "Savings Interest" and txn_type == "Income":
+                try:
+                    d = date.fromisoformat(row_date)
+                    if p_start <= d <= p_end:
+                        prior += float(row.get("amount") or 0)
+                except (ValueError, TypeError):
+                    pass
+
+        covered_to = max(min(cutoff, max_date) if max_date else fy_start - relativedelta(days=1),
+                         fy_start - relativedelta(days=1))
+        covered_days = max(0, (covered_to - fy_start).days + 1)
+        remaining_days = max(0, (fy_end - covered_to).days)
+
+        if realised > 0 and covered_days > 0:
+            daily = realised / covered_days
+            basis = "current_fy"
+        elif prior > 0:
+            daily = prior / prev_days
+            basis = "prior_fy"
+        else:
+            daily = 0.0
+            basis = "none"
+
+        projected = daily * remaining_days
+        total_projected += projected
+        total_realised += realised
+
+        if bank_name not in per_bank:
+            per_bank[bank_name] = {
+                "realised": 0.0,
+                "projected": 0.0,
+                "basis": basis,
+                "is_estimated": False,
+            }
+
+        per_bank[bank_name]["realised"] += realised
+        per_bank[bank_name]["projected"] += projected
+        per_bank[bank_name]["basis"] = basis
+        per_bank[bank_name]["is_estimated"] = projected > 0
+
+    for bank_name in per_bank:
+        per_bank[bank_name]["realised"] = round(per_bank[bank_name]["realised"], 2)
+        per_bank[bank_name]["projected"] = round(per_bank[bank_name]["projected"], 2)
+
     return {
-        "total": 0.0,
-        "is_estimated": True,
+        "total": round(total_projected, 2),
+        "realised": round(total_realised, 2),
+        "full_year": round(total_realised + total_projected, 2),
+        "per_bank": per_bank,
+        "is_estimated": total_projected > 0,
     }
 
 
@@ -189,8 +313,10 @@ def realised_income_to_date(
     """
     Realised (already-received) income to the as_of date from transactions.
 
-    CRITICAL: classify by category column. Only categories in TAXABLE_INCOME_CATEGORIES
-    or NON_TAXABLE_INCOME_CATEGORIES are counted. All others are marked unclassified.
+    Classification logic:
+    1. Taxable category match takes precedence (TAXABLE_INCOME_CATEGORIES).
+    2. Then check internal_transfer flag OR non-taxable category (NON_TAXABLE_INCOME_CATEGORIES).
+    3. All others are marked unclassified.
 
     Returns:
         {
@@ -221,7 +347,7 @@ def realised_income_to_date(
 
         if category in TAXABLE_INCOME_CATEGORIES:
             taxable += amount
-        elif category in NON_TAXABLE_INCOME_CATEGORIES:
+        elif txn.get("is_internal_transfer") or category in NON_TAXABLE_INCOME_CATEGORIES:
             non_taxable += amount
         else:
             unclassified += amount
@@ -295,7 +421,7 @@ def project_fy_income(
 
     realised = realised_income_to_date(person_id, financial_year, as_of)
     fd_interest = project_fd_interest(person_id, financial_year, as_of)
-    savings_interest = project_savings_interest(person_id, financial_year)
+    savings_interest = project_savings_interest(person_id, financial_year, as_of)
 
     # Tax parameters: use private helper with a brief comment
     params = _get_tax_params(financial_year)  # Private helper used to load tax config from DB
@@ -408,7 +534,7 @@ def income_timeline(
     total_projected = 0.0
     realised = realised_income_to_date(person_id, financial_year, as_of)
     fd_interest = project_fd_interest(person_id, financial_year, as_of)
-    savings_interest = project_savings_interest(person_id, financial_year)
+    savings_interest = project_savings_interest(person_id, financial_year, as_of)
 
     total_projected = (
         realised["taxable"]
@@ -977,7 +1103,7 @@ def get_prediction_summary(
           "as_of": str (ISO date),
           "realised_income": {taxable, non_taxable, unclassified, by_category},
           "projected_fd_interest": {total, known_total, estimated_total, ...},
-          "projected_savings_interest": {total, is_estimated},
+          "projected_savings_interest": {total, realised, full_year, per_bank, is_estimated},
           "expected_income": {total, count, is_empty},
           "fy_income": {projected_total, limit, headroom, is_over_limit, is_estimated},
           "tds_risk": {threshold, by_bank},
@@ -995,7 +1121,7 @@ def get_prediction_summary(
         "as_of": as_of.isoformat(),
         "realised_income": realised_income_to_date(person_id, financial_year, as_of),
         "projected_fd_interest": project_fd_interest(person_id, financial_year, as_of),
-        "projected_savings_interest": project_savings_interest(person_id, financial_year),
+        "projected_savings_interest": project_savings_interest(person_id, financial_year, as_of),
         "expected_income": expected_income(person_id, financial_year),
         "fy_income": project_fy_income(person_id, financial_year, as_of),
         "tds_risk": project_bank_tds_risk(person_id, financial_year, as_of),

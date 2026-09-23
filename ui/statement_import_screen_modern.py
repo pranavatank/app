@@ -35,7 +35,7 @@ from models.bank_account import (
 )
 from models.bank import get_or_create_bank, update_bank_tan_code_if_exists
 from models.transaction import add_transaction, check_duplicate, display_transaction_type
-from models.transaction import add_transactions_batch, delete_transactions_by_ids
+from models.transaction import add_transactions_batch, delete_transactions_by_ids, reprocess_internal_transfers
 from models.fixed_deposit import add_fd_from_statement, apply_statement_redemption_event
 from models.statement_import_log import log_import
 from engines.statement_parser import (
@@ -218,6 +218,11 @@ class _TransactionImportWorker(QObject):
             raise
 
         self.progress.emit("Finalizing import log...")
+        try:
+            reprocess_internal_transfers(person_id=self.selected_person_id)
+        except Exception as exc:
+            self.progress.emit(f"Transfer detection skipped: {exc}")
+
         log_import(
             account_id=self.selected_account_id,
             person_id=self.selected_person_id,

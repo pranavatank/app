@@ -16,6 +16,8 @@ data/PersonalData/
 
 # Backup files
 backups/*.db
+backups/*.db-shm
+backups/*.db-wal
 
 # Python cache
 __pycache__/

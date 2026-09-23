@@ -101,6 +101,18 @@ class _DateSortItem(QTableWidgetItem):
         return super().__lt__(other)
 
 
+class _AmountSortItem(QTableWidgetItem):
+    def __lt__(self, other):
+        if not isinstance(other, QTableWidgetItem):
+            return super().__lt__(other)
+        try:
+            left_val = float(self.text().replace(",", "").replace("—", "0"))
+            right_val = float(other.text().replace(",", "").replace("—", "0"))
+            return left_val < right_val
+        except (ValueError, AttributeError):
+            return super().__lt__(other)
+
+
 class TransactionsScreen(QWidget):
     def __init__(self, parent_window=None):
         super().__init__()
@@ -299,7 +311,7 @@ class TransactionsScreen(QWidget):
         # Amount and Balance are the only free-numeric editable columns
         # (Category/Mode/Reference/Description are editable but free text).
         self.table.setNumericColumns({_COL_AMOUNT+1, _COL_BAL+1})
-        self.table.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked | QAbstractItemView.EditTrigger.EditKeyPressed)
+        self.table.setEditTriggers(QAbstractItemView.EditTrigger.EditKeyPressed)
         self.table.setSortingEnabled(True)
         self.table.cellDataChanged.connect(self._on_table_data_changed)
         self.table.itemChanged.connect(lambda _: self._mark_dirty())
@@ -382,10 +394,15 @@ class TransactionsScreen(QWidget):
         aid  = session.selected_account_id
         fy   = session.selected_fy
         typ_text = self.f_type.currentText()
-        typ = None if typ_text == "All Types" else normalize_transaction_type(typ_text)
+        # "Transfer" is not a transaction_type value in the schema - it's the
+        # is_internal_transfer flag, so filter in Python instead of by SQL type.
+        is_transfer_filter = typ_text == "Transfer"
+        typ = None if typ_text in ("All Types", "Transfer") else normalize_transaction_type(typ_text)
         term = self.f_search.text().strip().lower()
 
         rows = get_transactions(account_id=aid, person_id=pid, financial_year=fy, transaction_type=typ)
+        if is_transfer_filter:
+            rows = [r for r in rows if r.get("is_internal_transfer")]
         if term:
             rows = [r for r in rows if term in (r.get("description") or "").lower()
                     or term in (r.get("category") or "").lower()
@@ -436,16 +453,9 @@ class TransactionsScreen(QWidget):
         for row in rows:
             r = self.table.rowCount()
             self.table.insertRow(r)
-            
+
             # Add checkbox widget in column 0
-            cb = QCheckBox()
-            cb.setChecked(False)
-            cb_widget = QWidget()
-            cb_layout = QHBoxLayout(cb_widget)
-            cb_layout.addWidget(cb)
-            cb_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            cb_layout.setContentsMargins(0, 0, 0, 0)
-            self.table.setCellWidget(r, 0, cb_widget)
+            self.table.setCheckboxCell(r, checked=False)
             
             txn_type = row.get("transaction_type", "")
             display_type = display_transaction_type(txn_type)
@@ -458,7 +468,7 @@ class TransactionsScreen(QWidget):
                 return it
 
             def amt_item(val):
-                it = QTableWidgetItem(f"{val:,.2f}" if val is not None else "—")
+                it = _AmountSortItem(f"{val:,.2f}" if val is not None else "—")
                 it.setForeground(color)
                 it.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 return it

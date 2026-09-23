@@ -91,7 +91,7 @@ class EmptyState(QFrame):
         layout.addWidget(explanation_lbl, alignment=Qt.AlignmentFlag.AlignCenter)
 
         # Action button
-        self.btn_action = Theme.btn(action_text, "primary", height=40, min_width=140)
+        self.btn_action = Theme.btn(action_text, "primary", height=Theme.HEIGHT_LG, min_width=140)
         self.btn_action.setObjectName("EmptyStateActionButton")
         self.btn_action.clicked.connect(self.action_clicked.emit)
         layout.addSpacing(12)
@@ -242,7 +242,7 @@ class ErrorState(QFrame):
 
         # Retry button
         if show_retry:
-            self.btn_retry = Theme.btn(retry_text, "primary", height=40, min_width=140)
+            self.btn_retry = Theme.btn(retry_text, "primary", height=Theme.HEIGHT_LG, min_width=140)
             self.btn_retry.setObjectName("ErrorStateRetryButton")
             self.btn_retry.clicked.connect(self.retry_clicked.emit)
             layout.addSpacing(12)

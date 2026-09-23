@@ -83,6 +83,8 @@ _FD_CATEGORY_PATTERNS = {
         ("CREDIT INTEREST CAPITALISED", "Savings Interest"),
         ("CREDIT INTEREST CAPITALIZED", "Savings Interest"),
         ("CASA CREDIT INTEREST", "Savings Interest"),
+        ("MONTHLY SAVINGS INTEREST", "Savings Interest"),
+        ("CREDIT INT FROM", "Savings Interest"),
         ("INT AUTO REDEEM", "FD Interest"),
         ("CLOSURE PROCEEDS", "FD Maturity"),
         ("INTEREST ON DEPOSIT", "FD Interest"),

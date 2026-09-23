@@ -72,6 +72,9 @@ def audit_screen(screen, screen_name):
             violations.append((screen_name, label, f"height {h}px off scale {HEIGHT_SCALE}"))
         if w > MAX_WIDTH:
             violations.append((screen_name, label, f"width {w}px exceeds {MAX_WIDTH}px cap"))
+        hint_w = btn.sizeHint().width()
+        if hint_w > w + 2:
+            violations.append((screen_name, label, f"label clipped (hint {hint_w}px > width {w}px)"))
     return violations, measured
 
 

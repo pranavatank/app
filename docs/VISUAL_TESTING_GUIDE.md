@@ -4,7 +4,7 @@
 you should not need to read source files to understand what this project is, what
 state it is in, what has been verified, what is broken, or how to test it.
 
-**Last updated:** 2026-09-21.
+**Last updated:** 2026-09-23.
 **Audience:** an AI agent (or human) picking this project up with zero prior context.
 
 ---
@@ -74,16 +74,57 @@ The `Transactions` table books **₹64,95,691** as Income for FY 2025-26.
 | table | rows | note |
 |---|---|---|
 | Person | 1 | person_id 1, PAN and DOB set |
-| BankAccount | 5 | see below |
-| Transactions | 506 | imported from the 4 real statements |
-| FixedDeposit | 20 | **19 are `Pending Details`** — no rate, no maturity |
+| BankAccount | 4 | `Test Bank` deleted 2026-09-23 — see below |
+| Transactions | 506 | imported from the 4 real statements; categories backfilled 2026-09-23 |
+| FixedDeposit | 19 | **all 19 are `Pending Details`** — no rate, no maturity (the one known FD lived on the deleted Test Bank) |
 | IncomeExpectation | 0 | never populated |
 | Form26ASImport / Form26ASRecord | 1 / 158 | 26AS imported 2026-09-21 (FY 2025-26, total TDS ₹13,367) |
 | AISTISImport | 2 | AIS + TIS imported 2026-09-21 (`tools/taxdoc_import.py` or the Tax Documents screen) |
 | Bank | 0 | |
 
-Accounts: `1` Test Bank (leftover junk), `38` Jana Small Finance Bank,
-`39` IDFC FIRST Bank, `40` Ujjivan Small Finance Bank, `41` Equitas Small Finance Bank.
+Accounts: `38` Jana Small Finance Bank, `39` IDFC FIRST Bank,
+`40` Ujjivan Small Finance Bank, `41` Equitas Small Finance Bank.
+`1` Test Bank (leftover junk, owned the only "known"-rate FD and all 6
+`FDInterestRecord` rows) was deleted 2026-09-23 via `tools/delete_account.py`
+after `models/bank_account.py::delete_account` was fixed to detach/cascade
+`AccountHolder`, `IncomeExpectation`, `StatementImportLog` and transaction FK
+references first (it previously raised `IntegrityError` on any account with an
+`AccountHolder` row, since `PRAGMA foreign_keys=ON`).
+
+### Income reclassification (2026-09-23)
+`tools/backfill_transactions.py` recategorised 39 "Other Income" rows using
+`_guess_fd_category` plus explicit rules for known counterparties, and flagged
+3 rows `is_internal_transfer=1` via a new `find_internal_transfers()` in
+`models/transaction.py`. Real, taxable income sources that were sitting under
+the non-taxable "Other Income" bucket are now correctly categorised as
+**Commission Income** (Kevision Systems, Lotus Investment — note the source
+description has a stray mid-word space, `"LOTUSINVESTM ENT"`), **Professional
+Fees** (Enlightvision, matches the 26AS 194JB deductor) and **Salary** (Prasad
+M). `TAXABLE_INCOME_CATEGORIES` in `engines/prediction_engine.py` was extended
+with these three category names.
+
+**Taxable income moved from ₹95,591 to ₹2,54,784** (FY 2025-26, as of
+2026-03-31). This is a genuine change to the user's real tax figures, not a
+bug — reviewed and approved by the owner before running. The `tools/test_prediction_engine.py`
+CRITICAL GUARD threshold was correspondingly raised from `< 200_000` to
+`< 500_000` (still far below the ~₹64.9L naive-full-sum bug signature it
+exists to catch).
+
+**`is_internal_transfer` pairing is deliberately conservative.** A candidate
+debit/credit pair is only accepted if it is the *unique* match for that
+amount within a ±2-day window, across every account — not just cross-account
+candidates. An early version of this check excluded same-account candidates
+before counting, which caused a real false pair: a 2025-05-03 ₹2,00,000 cheque
+paid to a third party ("SATELLI") got linked to a ₹2,00,000 NEFT credit *from
+the user's mother* (a gift, not a transfer) — see §9. Caught before it reached
+the real DB by independently querying the DB rather than trusting the
+implementer's report. Fixed by counting all debits/credits of that amount+date
+regardless of account when checking for ambiguity.
+
+The Transactions screen's "Transfer" type filter now actually works — it maps
+to `is_internal_transfer=1` in `_fetch_and_display()` rather than a literal
+`transaction_type='Transfer'` (which never matched anything, since the schema
+only has `Income`/`Expense`).
 
 **FD rates are the biggest data gap.** 19 of 20 FDs came from statements carrying
 only principal + start date. They are projected at a **7.5% default**
@@ -242,10 +283,30 @@ are bright. See §7's chart bug for the exact failure mode.
 .venv\Scripts\python.exe tools/real_ui_tests/test_statement_import_flow.py
 .venv\Scripts\python.exe tools/real_ui_tests/test_tax_documents_flow.py
 .venv\Scripts\python.exe tools/real_ui_tests/test_button_size_audit.py
+.venv\Scripts\python.exe tools/real_ui_tests/test_excel_table_interactions.py   # writes RUIH_ rows, always cleans up
+.venv\Scripts\python.exe tools/real_ui_tests/test_dark_theme_sweep.py          # read-only
+.venv\Scripts\python.exe tools/real_ui_tests/test_transactions_scale.py        # read-only
 
 # pytest (statement package)
 .venv\Scripts\python.exe -m pytest tests/test_statement_package.py -q
+
+# account deletion (fixes cascade, requires --expect-name match; --dry-run first)
+.venv\Scripts\python.exe tools/delete_account.py --account-id <id> --expect-name "<bank_name>" --dry-run
+
+# income recategorisation + internal-transfer detection (--dry-run first)
+.venv\Scripts\python.exe tools/backfill_transactions.py --dry-run --person-id 1
 ```
+
+**§J Full-suite pytest is fragile on this Windows/Qt/matplotlib stack.**
+Running all of `tests/` in one process segfaults partway through (access
+violation during garbage collection of matplotlib/Qt objects, or occasionally
+a `unittest.mock` teardown) — this is pre-existing and not caused by any
+particular test. `tests/test_dashboard_lazy.py`, `tests/test_chart_relocation.py`
+and `tests/test_money_label.py` are the most likely to trigger it. Each passes
+cleanly when run alone (`pytest tests/test_X.py -q`); a segfault at the very
+end of a file (after `[100%]`) is teardown/GC, not a real test failure. If you
+need a full-suite signal, run each file as its own process rather than one
+combined `pytest tests -q` invocation.
 
 **Two real-UI tests can never run concurrently** — they fight over screen focus.
 
@@ -350,9 +411,35 @@ pinned in `main.py`, `tests/conftest.py`, `tools/real_ui_test_harness.py` and
 guarded in `chart_widget.py`, because matplotlib and qtawesome both bind at import
 time.
 
+## 7a. Fixed 2026-09-23 (plan-then-build session) — do not regress these
+
+| # | Bug | Root cause |
+|---|---|---|
+| 12 | Button heights/widths ignored `height=`/`min_width=` args | `Theme.btn`'s QSS `min-height`/`max-width` (content-box) overrode `setFixedHeight`/`setMaximumWidth`. Rewrote sizing to snap to `HEIGHT_SM/MD/LG` (28/36/44) and bake exact geometry into the QSS itself |
+| 13 | Tax Documents "Add" button did nothing | `EmptyState` default `action_text="Add"`, never connected to a handler. Now "Browse Form 26AS", wired to the 26AS zone |
+| 14 | 6 Fixed Deposits buttons clipped their labels after fix #12 | Their `min_width=` args were sized for the *old* forced-320px-minimum behaviour; once real sizing applied, labels like "Recalculate Selected" no longer fit. Bumped `min_width` per button to fit the measured `sizeHint()` |
+| 15 | Savings-interest projection was hardcoded `0.0` | `project_savings_interest` now projects unrealised interest per-account from statement-coverage-end to FY-end, basis current-FY or prior-FY daily rate |
+| 16 | `is_internal_transfer` was 0 on all rows, unused | New `find_internal_transfers()` in `models/transaction.py`; `reprocess_internal_transfers` no longer overwrites `category` (previously it did, corrupting classification); used in `realised_income_to_date` alongside category |
+| 17 | `Test Bank` (account_id 1) — phantom 15G strategy, deletion raised `IntegrityError` | `delete_account` didn't detach `AccountHolder`/`IncomeExpectation`/transaction FK refs before deleting, and FK enforcement is on. Fixed and deleted via `tools/delete_account.py` |
+| 18 | ~₹1.59L of real taxable income booked as non-taxable "Other Income" | Commission/professional-fee/salary credits (Kevision, Lotus Investment, Enlightvision, Prasad M) were never classified. Backfilled via `tools/backfill_transactions.py`, reviewed and approved by the owner (see §3) |
+| 19 | ExcelTable checkbox indicator click didn't reliably select the row | Checkbox cell only synced on `cellClicked`, which the `QCheckBox` widget itself consumes. Added `setCheckboxCell()` connecting the checkbox's own `toggled` signal |
+| 20 | Double-click / Enter on a transaction row opened both an inline editor and the modal edit dialog | `setEditTriggers` included `DoubleClicked`, which raced against the `doubleClicked → _edit_transaction` modal handler. Narrowed triggers to `EditKeyPressed` only |
+| 21 | Amount/Balance columns sorted lexicographically ("1,234" < "500") | Plain `QTableWidgetItem`. Added `_AmountSortItem` (mirrors the existing `_DateSortItem` pattern) |
+| 22 | Transactions screen "Transfer" type filter always showed 0 (or stale) rows | Filtered by literal `transaction_type='Transfer'`, which never exists in the schema. Now filters by `is_internal_transfer=1` in Python after fetch |
+
 ---
 
 ## 8. What is PENDING — start here
+
+### Done 2026-09-23 (see §10 for detail; §7a for the bug list)
+- Items 2, 3, 5, 6, 7, 8, 9, 11, 12 below (from the 2026-09-21 pending list) are
+  done — button sizing, savings projection, ExcelTable/dark-theme/transactions-scale
+  testing, Test Bank deletion, `is_internal_transfer` population and use.
+- Plus: real taxable-income recategorisation (₹1.59L, owner-approved), 3 new
+  real-UI test files, checkbox/double-click/numeric-sort fixes on the
+  Transactions screen, and the "Transfer" filter now works.
+- Item 10 (`test_screen_render.py` slow) is superseded by §J — full-suite pytest
+  is fragile on this stack for reasons unrelated to that one file's runtime.
 
 ### Done 2026-09-21 (see §10 for detail)
 - 26AS/AIS/TIS stored in the DB, persisted from the Tax Documents screen and via
@@ -368,43 +455,48 @@ time.
 
 ### High value (still pending)
 1. **Enter the real FD rates.** The dialog exists but has not been used on real
-   data: 19 of 20 FDs are still `Pending Details` and every projection is still
+   data: all 19 remaining FDs are `Pending Details` and every projection is still
    an estimate at the 7.5% default. **Needs the user's real rates and tenures.**
-   After entering them, the two engine-suite expectations for FD counts and the
-   FD interest total (`estimated_fd_count == 19`, `known_fd_count == 1`,
-   `total == 121507.00`) must be re-baselined from measured output, not loosened.
-2. **`Test Bank` (account_id 1) generates a phantom Form 15G strategy card.**
-   Decide whether to delete the account (see item 11).
-3. **Savings-interest projection is a hardcoded 0.0** (`project_savings_interest`)
-   and `IncomeExpectation` is empty, so the projected total is structurally low on
-   the savings side (ours ₹4,001 vs ITR ₹46,183). Needs a real projection.
+   After entering them, the engine-suite FD expectations (`estimated_fd_count`,
+   `known_fd_count`, FD interest `total` — currently 19 / 0 / ₹80,291.00) must be
+   re-baselined from measured output, not loosened.
 4. **Strategy quality.** Redistribution never fires today because no bank has
    spare room; `build_strategies` uses the 7.5% default for principal maths until
    real rates exist.
-
-### Testing never completed
-5. **ExcelTable interactions** — cell click, checkbox toggle + row-highlight sync,
-   Enter-to-edit, double-click-to-edit (§F), delete-selected with a DB check.
-6. **Screen-by-screen sweep** across all 10 screens in a dark theme.
-7. **Transactions screen at scale** — 506 real rows, paging and filtering.
+13. **~₹22.2L of "Other Income" (27 Jana rows described only as `"Transaction"`)
+    and ~₹17.4L of family NEFT/UPI credits are still unclassified/non-taxable.**
+    Not touched this session — the owner only approved the specific Kevision /
+    Lotus Investment / Enlightvision / Prasad M rows (§3). Worth a manual review
+    pass if more of it turns out to be taxable.
+14. **Live theme switching is broadly incomplete.** Applying a theme to an
+    *already-built* window (`test_dark_theme_sweep.py` Pass B) leaves most
+    screens with bright, unthemed elements — `import_page`, `tax_documents_page`,
+    `tax_page` and `settings_page` have no `refresh_theme()` at all, and even
+    pages that do (`transactions_page`, `income_page`, `fd_page`,
+    `prediction_page`) still show bright filter bars, buttons, charts and
+    `CollapsibleSection` headers after a switch. Building a window fresh in the
+    target theme (Pass A) is fully clean — 0 offenders across all 10 screens.
+    This is a large, pre-existing gap (consistent with the already-known
+    `Theme.btn` baked-QSS and `ChartWidget` baked-facecolor issues); fixing it
+    properly is a design-system-level pass across every screen, out of scope for
+    a single session. Screenshots: `tools/real_ui_tests/screenshots/*_darkB_*.png`.
+15. **The Transactions screen has no pagination** — it loads the entire FY
+    (505+ rows) into the table at once. Works today; flagged for if/when FY
+    row counts grow much larger.
 
 ### Known open defects (recorded, unfixed)
-8. **5 buttons still off the size scale** (`test_button_size_audit.py`): the
-   `EmptyState` action button (`ui/widgets/states.py:94`, `height=40`, used by
-   Income & Expectations "Add Expected Income" and Income Prediction "Add Accounts" /
-   "Retry" / "Refresh"), and the Tax Documents "Add" button. Shared widget, so
-   changing it moves every EmptyState button; re-run the audit after.
-9. **`Theme.btn` sizing is structurally off.** Its QSS `min-height`/`max-width`
-   (content-box) override `setFixedHeight`/`setMaximumWidth`, so the `height=`
-   argument is inert on a free-standing button and no button can be narrower than
-   320px when its layout stretches it. Settings was fixed per call site with a
-   left-align wrapper; a proper fix is a design-system change needing a full
-   visual re-sweep.
-10. **`tests/test_screen_render.py` takes ~160s**; not run in the final pass.
-11. **`Test Bank` (account_id 1) is leftover junk** polluting real output — it owns
-    the only complete FD and all 6 `FDInterestRecord` rows. Decide whether to delete it.
-12. **`is_internal_transfer` is unused** (0 on all rows). Populating it properly
-    would make income classification far more robust than category matching.
+9. **`Theme.btn` sizing bug (fixed 2026-09-23, see §7a #12)** — kept here as a
+   pointer since item 9 numbering is referenced elsewhere; no longer open.
+10. **Full-suite `pytest tests -q` is fragile**, see §5.5 §J. Not specific to
+    `test_screen_render.py`'s runtime — several files individually pass but
+    segfault when run back-to-back with hundreds of other Qt/matplotlib tests
+    in one process (GC-time access violations). Confirmed pre-existing (not
+    caused by 2026-09-23 changes) by checking `git diff` showed no changes to
+    the affected files, and that each one passes 100% of its own assertions
+    when run alone. Two pre-existing test failures also found this way, both
+    unrelated to this session's changes: `test_dashboard_lazy.py`'s nav-button
+    count (expects 9, dashboard now has 10 screens) and sidebar-collapse-width
+    assertions are stale/failing independent of any 2026-09-23 edit.
 
 ---
 
@@ -495,3 +587,54 @@ regression from persistence. Fixed: the test now pre-arms a `QTimer.singleShot` 
 and accepts the `PasswordDialog` (password read at runtime, never hardcoded), backs up the
 DB first, and checks afterwards that a re-import replaced rows (158 26AS records, 1 AIS +
 1 TIS import). Ran once end to end on 2026-09-21: all checks passed.
+
+### 2026-09-23 — §8 pending items built via plan-then-build (Opus plan/verify, Haiku build)
+
+**Built:** button-sizing fix across the design system; real `project_savings_interest`;
+`find_internal_transfers`/`reprocess_internal_transfers` rewrite; `delete_account` cascade
+fix + `tools/delete_account.py`; `tools/backfill_transactions.py`; 3 new real-UI tests
+(`test_excel_table_interactions.py`, `test_dark_theme_sweep.py`,
+`test_transactions_scale.py`); checkbox-sync, double-click/Enter dialog conflict, and
+numeric-sort fixes on the Transactions screen; "Transfer" filter now works. Full bug list
+in §7a.
+
+**Real DB changes (all backed up first, all reviewed before running for real):**
+`Test Bank` (account_id 1) deleted; 39 "Other Income" transactions recategorised
+(₹1.59L moved to taxable categories, owner-approved — see §3); 3 transactions flagged
+`is_internal_transfer=1`. Engine suite re-baselined from measured output: taxable
+₹95,591 → ₹2,54,784, non-taxable ₹64,00,091.21 → ₹62,40,898.21, FD total
+₹1,21,507 → ₹80,291.00 (known FD lost with Test Bank), `fy_income.projected_total`
+₹2,17,098 → ₹3,35,075, headroom ₹9,82,902 → ₹8,64,925. 52/52 engine assertions and
+`test_chart_db_agreement.py` pass.
+
+**A data-loss incident happened and was caught and fixed — read this before trusting
+any real-UI test's self-reported pass/fail.** While testing
+`test_excel_table_interactions.py`'s delete-selected step, an earlier (buggy) version
+of the test deleted 2 real transactions (ids 571, 598 — both legitimate, just
+recategorised to Savings Interest that same session) instead of only its own `RUIH_`
+rows. The test's own final report claimed a clean run (`total_before = 504`, cleanup
+"successful") — **504 was itself wrong (should have been 506)**, and the report never
+flagged the discrepancy. It was caught only by independently diffing the live DB's
+`transaction_id` set against a `backups/*.db` snapshot taken minutes earlier — the
+mismatch (`missing: [571, 598]`) was the tell. Restored from
+`backups/pre_ruih_test_20260923_213106.db` (the last backup where both rows were still
+intact) with the user's explicit approval, using their exact original field values.
+Root cause of the deletion itself was never fully isolated (the test file was rewritten
+under time pressure rather than bisected) — if `test_excel_table_interactions.py`'s
+delete-selected step is touched again, verify against a fresh backup diff afterwards, not
+just the test's own printed counts. **This is exactly the failure mode §9 already warns
+about ("trust `git diff` and re-running the command, not a report") — it just took a
+transaction-id diff instead of a `git diff` to catch it.**
+
+**Also found and fixed on the way:** `backup_database()` in `core/database.py` has no
+return statement (always returns `None`), so any caller checking `if backup_path:` gets a
+false "FAILED" even on a successful backup — check `os.path.exists()`/`getsize()` instead.
+The Transactions screen filters by `session.selected_fy`; any test/tool that inserts rows
+into a specific FY must also set `dashboard.fy_combo` to that FY before checking table
+state, or rows are invisible regardless of search/filter text.
+`test_dark_theme_sweep.py`'s brightness measurement used the old PyQt-era
+`img.constBits(); ptr.setsize(...)` pattern, which doesn't exist on PySide6's memoryview —
+rewritten with `np.frombuffer` + `bytesPerLine()`. `ThemeCard` intentionally paints a
+fixed preview of its *own* theme's colours regardless of the active theme (so an Aurora
+preview card is supposed to look bright even under Midnight Pro) — excluded from the
+brightness-offender check, not a bug.

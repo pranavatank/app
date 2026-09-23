@@ -286,9 +286,13 @@ class RealUIHarness:
         return widget
 
     def double_click(self, target, accessible_name: str | None = None, wait=0.8):
+        """QTest.mouseDClick does not fire doubleClicked on any platform — this uses pyautogui instead."""
         widget = self._resolve(target, accessible_name)
         self.scroll_into_view(widget)
-        QTest.mouseDClick(widget, Qt.MouseButton.LeftButton)
+        center = widget.mapToGlobal(widget.rect().center())
+        px, py = self.to_physical(center)
+        pyautogui.moveTo(px, py, duration=0.15)
+        pyautogui.doubleClick()
         self.settle(wait)
         return widget
 
@@ -353,6 +357,18 @@ class RealUIHarness:
         px, py = self.to_physical(center)
         pyautogui.moveTo(px, py, duration=0.15)
         pyautogui.doubleClick()
+        self.settle(wait)
+
+    def click_at_via_os(self, widget, local_point, double=False, wait=0.8):
+        """Click at a specific point within a widget's local coordinates, via the OS (real click, not QTest)."""
+        self.scroll_into_view(widget)
+        pt = widget.mapToGlobal(local_point)
+        px, py = self.to_physical(pt)
+        pyautogui.moveTo(px, py, duration=0.15)
+        if double:
+            pyautogui.doubleClick()
+        else:
+            pyautogui.click()
         self.settle(wait)
 
     def type_text_via_os(self, text, wait=0.3):

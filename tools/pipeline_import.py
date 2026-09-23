@@ -109,6 +109,8 @@ def import_transactions(account_id, transactions_list):
         account_id, PERSON_ID, prepared, source="Statement Import"
     )
 
+    transaction_model.reprocess_internal_transfers(person_id=PERSON_ID)
+
     return inserted_ids
 
 

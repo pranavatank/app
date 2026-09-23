@@ -98,3 +98,13 @@ class TestFDCategorisation:
         """FD CR should be FD Maturity."""
         result = _guess_fd_category("FD CR", "Income")
         assert result == "FD Maturity", f"Expected 'FD Maturity', got {result}"
+
+    def test_monthly_savings_interest(self):
+        """MONTHLY SAVINGS INTEREST should be Savings Interest."""
+        result = _guess_fd_category("MONTHLY SAVINGS INTEREST", "Income")
+        assert result == "Savings Interest", f"Expected 'Savings Interest', got {result}"
+
+    def test_credit_int_from(self):
+        """CREDIT INT FROM should be Savings Interest."""
+        result = _guess_fd_category("CREDIT INT FROM 01-07-2025 TO 30-09-2025", "Income")
+        assert result == "Savings Interest", f"Expected 'Savings Interest', got {result}"

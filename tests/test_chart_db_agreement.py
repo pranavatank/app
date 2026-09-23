@@ -252,9 +252,10 @@ def test_taxable_income_aggregate_matches_category_sum():
         SELECT COALESCE(SUM(amount), 0) FROM Transactions
         WHERE person_id = ? AND transaction_type = 'Income'
             AND transaction_date BETWEEN ? AND ?
-            AND category IN ({non_taxable_placeholders})
+            AND COALESCE(category,'') NOT IN ({taxable_placeholders})
+            AND (category IN ({non_taxable_placeholders}) OR COALESCE(is_internal_transfer,0)=1)
     """
-    cursor.execute(sql_non_taxable, (PERSON_ID, start_date, end_date) + non_taxable_categories)
+    cursor.execute(sql_non_taxable, (PERSON_ID, start_date, end_date) + taxable_categories + non_taxable_categories)
     sql_non_taxable_sum = cursor.fetchone()[0]
 
     conn.close()
@@ -271,16 +272,17 @@ def test_taxable_income_aggregate_matches_category_sum():
 
     # Assert specific expected values from FY 2025-26 person 1
     # These guards verify we're working with the real database
-    assert sql_taxable_sum < 200000, \
-        f"Taxable SQL sum {sql_taxable_sum} unexpectedly large (should be < 200000)"
+    # After recategorization, legitimate taxable is ~254.7K; guard threshold is 500K to catch bugs while allowing this
+    assert sql_taxable_sum < 500000, \
+        f"Taxable SQL sum {sql_taxable_sum} unexpectedly large (should be < 500000)"
     assert sql_non_taxable_sum > 5000000, \
         f"Non-taxable SQL sum {sql_non_taxable_sum} unexpectedly small (should be > 5000000)"
 
     # Assert the expected values match the real data
-    assert abs(sql_taxable_sum - 95591.00) <= 0.01, \
-        f"Taxable income mismatch: got {sql_taxable_sum}, expected ~95591.00"
-    assert abs(sql_non_taxable_sum - 6400091.21) <= 0.01, \
-        f"Non-taxable income mismatch: got {sql_non_taxable_sum}, expected ~6400091.21"
+    assert abs(sql_taxable_sum - 254784.00) <= 0.01, \
+        f"Taxable income mismatch: got {sql_taxable_sum}, expected ~254784.00"
+    assert abs(sql_non_taxable_sum - 6240898.21) <= 0.01, \
+        f"Non-taxable income mismatch: got {sql_non_taxable_sum}, expected ~6240898.21"
 
     # Assert SQL aggregates match engine calculations (the critical check)
     assert sql_taxable_sum == pytest.approx(engine_taxable, abs=0.01), \

@@ -447,7 +447,7 @@ class IncomePredictionScreen(QWidget):
         rows = [
             ("Realised Income (Taxable)", taxable_realised),
             ("Projected FD Interest", fd_total),
-            ("Projected Savings Interest", savings_total),
+            ("Savings Interest (rest of FY, est.)", savings_total),
             ("Expected Income", expected_total),
         ]
 

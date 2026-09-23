@@ -218,12 +218,20 @@ class Theme:
 
     # ── Button factory ────────────────────────────────────────────────────────
     @staticmethod
+    def _snap_btn_height(h: int) -> int:
+        scale = (Theme.HEIGHT_SM, Theme.HEIGHT_MD, Theme.HEIGHT_LG)
+        return min(scale, key=lambda s: (abs(s - h), -s))
+
+    @staticmethod
     def btn(text: str, variant: str = "primary",
-            height: int = 40, min_width: int = 116, accent_color: str | None = None) -> QPushButton:
+            height: int = 44, min_width: int = 116, accent_color: str | None = None) -> QPushButton:
         b = QPushButton(text)
-        b.setFixedHeight(max(height, 38))
+        h = Theme._snap_btn_height(height)
+        bw = 2 if variant == "destructive" else 1
+        geo = f"min-height: {h - 2*bw}px; max-height: {h - 2*bw}px;"
+        b.setFixedHeight(h)
         b.setMinimumWidth(max(min_width, 100))
-        b.setMaximumWidth(280)  # Prevent buttons from stretching beyond 280px
+        b.setMaximumWidth(max(280, min_width))
         b.setFont(QFont("Segoe UI", 13, QFont.Weight.DemiBold))
         t = Theme
 
@@ -234,8 +242,8 @@ class Theme:
             accent_style = f"""
                 QPushButton {{
                     background: {accent_color};
-                    color: {t.TEXT_ON_PRIMARY}; border: none; border-radius: {t.RADIUS_CONTROL}px;
-                    padding: 4px 20px; font-size: 13px; font-weight: 700; max-width: 280px;
+                    color: {t.TEXT_ON_PRIMARY}; border: 1px solid transparent; border-radius: {t.RADIUS_CONTROL}px;
+                    padding: 0px 20px; font-size: 13px; font-weight: 700; {geo}
                 }}
                 QPushButton:hover  {{ background: {accent_dark}; }}
                 QPushButton:focus  {{ outline: 2px solid {t.FOCUS_RING}; outline-offset: 2px; }}
@@ -244,13 +252,15 @@ class Theme:
             """
             b.setStyleSheet(accent_style)
             b.setProperty("variant", variant)
+            b.setProperty("btn_height", h)
+            b.setProperty("btn_min_width", min_width)
             return b
         styles = {
             "primary": f"""
                 QPushButton {{
                     background: {t.gradient(t.PRIMARY_GRADIENT_START, t.PRIMARY_GRADIENT_END)};
-                    color: {t.TEXT_ON_PRIMARY}; border: none; border-radius: {t.RADIUS_CONTROL}px;
-                    padding: 4px 20px; font-size: 13px; font-weight: 700; max-width: 280px;
+                    color: {t.TEXT_ON_PRIMARY}; border: 1px solid transparent; border-radius: {t.RADIUS_CONTROL}px;
+                    padding: 0px 20px; font-size: 13px; font-weight: 700; {geo}
                 }}
                 QPushButton:hover  {{ background: {t.gradient(t.PRIMARY_GRADIENT_HOVER_START, t.PRIMARY_GRADIENT_HOVER_END)}; }}
                 QPushButton:focus  {{ outline: 2px solid {t.FOCUS_RING}; outline-offset: 2px; }}
@@ -261,7 +271,7 @@ class Theme:
                 QPushButton {{
                     background: {t.SURFACE}; color: {t.TEXT_PRIMARY};
                     border: 1px solid {t.BORDER}; border-radius: {t.RADIUS_CONTROL}px;
-                    padding: 4px 20px; font-size: 13px; font-weight: 600; max-width: 280px;
+                    padding: 0px 20px; font-size: 13px; font-weight: 600; {geo}
                 }}
                 QPushButton:hover  {{ background: {t.PRIMARY_LIGHT}; border-color: {t.PRIMARY}; color: {t.PRIMARY_DARK}; }}
                 QPushButton:pressed{{ background: {t.PRIMARY_LIGHT}; }}
@@ -270,8 +280,8 @@ class Theme:
             "success": f"""
                 QPushButton {{
                     background: {t.gradient(t.SUCCESS_GRADIENT_START, t.SUCCESS_GRADIENT_END)};
-                    color: {t.TEXT_ON_SUCCESS}; border: none; border-radius: {t.RADIUS_CONTROL}px;
-                    padding: 4px 20px; font-size: 13px; font-weight: 700; max-width: 280px;
+                    color: {t.TEXT_ON_SUCCESS}; border: 1px solid transparent; border-radius: {t.RADIUS_CONTROL}px;
+                    padding: 0px 20px; font-size: 13px; font-weight: 700; {geo}
                 }}
                 QPushButton:hover  {{ background: {t.SUCCESS_DARK}; }}
                 QPushButton:focus  {{ outline: 2px solid {t.FOCUS_RING}; outline-offset: 2px; }}
@@ -281,8 +291,8 @@ class Theme:
             "danger": f"""
                 QPushButton {{
                     background: {t.gradient(t.DANGER_GRADIENT_START, t.DANGER_GRADIENT_END)};
-                    color: {t.TEXT_ON_DANGER}; border: none; border-radius: {t.RADIUS_CONTROL}px;
-                    padding: 4px 20px; font-size: 13px; font-weight: 700; max-width: 280px;
+                    color: {t.TEXT_ON_DANGER}; border: 1px solid transparent; border-radius: {t.RADIUS_CONTROL}px;
+                    padding: 0px 20px; font-size: 13px; font-weight: 700; {geo}
                 }}
                 QPushButton:hover  {{ background: {t.DANGER_DARK}; }}
                 QPushButton:focus  {{ outline: 2px solid {t.FOCUS_RING}; outline-offset: 2px; }}
@@ -292,8 +302,8 @@ class Theme:
             "warning": f"""
                 QPushButton {{
                     background: {t.gradient(t.WARNING_GRADIENT_START, t.WARNING_GRADIENT_END)};
-                    color: {t.TEXT_ON_WARNING}; border: none; border-radius: {t.RADIUS_CONTROL}px;
-                    padding: 4px 20px; font-size: 13px; font-weight: 700; max-width: 280px;
+                    color: {t.TEXT_ON_WARNING}; border: 1px solid transparent; border-radius: {t.RADIUS_CONTROL}px;
+                    padding: 0px 20px; font-size: 13px; font-weight: 700; {geo}
                 }}
                 QPushButton:hover  {{ background: {t.WARNING_DARK}; }}
                 QPushButton:disabled{{ background: {t.SURFACE_ALT}; color: {t.TEXT_MUTED}; }}
@@ -301,8 +311,8 @@ class Theme:
             "info": f"""
                 QPushButton {{
                     background: {t.gradient(t.INFO_GRADIENT_START, t.INFO_GRADIENT_END)};
-                    color: {t.TEXT_ON_INFO}; border: none; border-radius: {t.RADIUS_CONTROL}px;
-                    padding: 4px 20px; font-size: 13px; font-weight: 700; max-width: 280px;
+                    color: {t.TEXT_ON_INFO}; border: 1px solid transparent; border-radius: {t.RADIUS_CONTROL}px;
+                    padding: 0px 20px; font-size: 13px; font-weight: 700; {geo}
                 }}
                 QPushButton:hover  {{ background: {t.INFO_DARK}; }}
                 QPushButton:disabled{{ background: {t.SURFACE_ALT}; color: {t.TEXT_MUTED}; }}
@@ -310,8 +320,8 @@ class Theme:
             "edit": f"""
                 QPushButton {{
                     background: {t.gradient(t.EDIT_GRADIENT_START, t.EDIT_GRADIENT_END)};
-                    color: {t.TEXT_ON_EDIT}; border: none; border-radius: {t.RADIUS_CONTROL}px;
-                    padding: 4px 20px; font-size: 13px; font-weight: 700; max-width: 280px;
+                    color: {t.TEXT_ON_EDIT}; border: 1px solid transparent; border-radius: {t.RADIUS_CONTROL}px;
+                    padding: 0px 20px; font-size: 13px; font-weight: 700; {geo}
                 }}
                 QPushButton:hover  {{ background: {t.EDIT_DARK}; }}
                 QPushButton:disabled{{ background: {t.SURFACE_ALT}; color: {t.TEXT_MUTED}; }}
@@ -319,8 +329,8 @@ class Theme:
             "hero": f"""
                 QPushButton {{
                     background: {t.gradient(t.HERO_GRADIENT_START, t.HERO_GRADIENT_END)};
-                    color: {t.TEXT_ON_HERO}; border: none; border-radius: {t.RADIUS_CARD}px;
-                    padding: 4px 26px; font-size: 14px; font-weight: 700; max-width: 280px;
+                    color: {t.TEXT_ON_HERO}; border: 1px solid transparent; border-radius: {t.RADIUS_CARD}px;
+                    padding: 0px 26px; font-size: 14px; font-weight: 700; {geo}
                 }}
                 QPushButton:hover  {{ background: {t.gradient(t.HERO_GRADIENT_HOVER_START, t.HERO_GRADIENT_HOVER_END)}; }}
                 QPushButton:focus  {{ outline: 2px solid {t.FOCUS_RING}; outline-offset: 2px; }}
@@ -330,8 +340,8 @@ class Theme:
             "ghost": f"""
                 QPushButton {{
                     background: transparent; color: {t.PRIMARY};
-                    border: none; border-radius: {t.RADIUS_CONTROL}px;
-                    padding: 4px 18px; font-size: 13px; font-weight: 600; max-width: 280px;
+                    border: 1px solid transparent; border-radius: {t.RADIUS_CONTROL}px;
+                    padding: 0px 18px; font-size: 13px; font-weight: 600; {geo}
                 }}
                 QPushButton:hover  {{ background: {t.PRIMARY_LIGHT}; }}
                 QPushButton:pressed{{ background: {t.PRIMARY_LIGHT}; }}
@@ -341,7 +351,7 @@ class Theme:
                 QPushButton {{
                     background: {t.SURFACE}; color: {t.DANGER_TEXT};
                     border: 2px solid {t.DANGER_TEXT}; border-radius: {t.RADIUS_CONTROL}px;
-                    padding: 4px 20px; font-size: 13px; font-weight: 600; max-width: 280px;
+                    padding: 0px 20px; font-size: 13px; font-weight: 600; {geo}
                 }}
                 QPushButton:hover  {{ background: {t.DANGER_LIGHT}; border-color: {t.DANGER_TEXT}; color: {t.DANGER_DARK}; }}
                 QPushButton:pressed{{ background: {t.DANGER_LIGHT}; }}
@@ -349,8 +359,9 @@ class Theme:
             """,
         }
         b.setStyleSheet(styles.get(variant, styles["primary"]))
-        # Tag the variant on the button for introspection
         b.setProperty("variant", variant)
+        b.setProperty("btn_height", h)
+        b.setProperty("btn_min_width", min_width)
         return b
 
     @staticmethod
@@ -358,14 +369,17 @@ class Theme:
                      height: int | None = None, min_width: int | None = None,
                      accent_color: str | None = None) -> QPushButton:
         themed = Theme.btn(button.text(), variant,
-                           height=height or button.height() or 38,
-                           min_width=min_width or button.minimumWidth() or 110,
+                           height=height or button.property("btn_height") or Theme.HEIGHT_MD,
+                           min_width=min_width or button.property("btn_min_width") or 110,
                            accent_color=accent_color)
         button.setFont(themed.font())
         button.setStyleSheet(themed.styleSheet())
-        button.setProperty("variant", variant)
-        if height is not None:    button.setFixedHeight(height)
-        if min_width is not None: button.setMinimumWidth(min_width)
+        button.setFixedHeight(themed.maximumHeight())
+        button.setMinimumWidth(themed.minimumWidth())
+        button.setMaximumWidth(themed.maximumWidth())
+        button.setProperty("variant", themed.property("variant"))
+        button.setProperty("btn_height", themed.property("btn_height"))
+        button.setProperty("btn_min_width", themed.property("btn_min_width"))
         return button
 
     # ── Style string factories ─────────────────────────────────────────────────

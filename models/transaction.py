@@ -10,6 +10,10 @@ from config import fy_date_range
 
 
 INTERNAL_TRANSFER_CATEGORY = "Internal Transfer"
+TRANSFER_CREDIT_CATEGORIES = {"Other Income", INTERNAL_TRANSFER_CATEGORY, None, ""}
+TRANSFER_DEBIT_CATEGORIES = {"Other Expense", INTERNAL_TRANSFER_CATEGORY, None, ""}
+TRANSFER_MAX_DAY_GAP = 2
+_FD_NARRATION = re.compile(r"REDEEM|\bFD\b|/FD/|PAYIN")
 
 _TYPE_ALIAS_TO_CANON = {
     "income": "Income",
@@ -36,12 +40,6 @@ def display_transaction_type(value: str | None) -> str:
     return canon
 
 
-def _norm_text(value: str | None) -> str:
-    return (value or "").strip().lower()
-
-
-def _digits(value: str | None) -> str:
-    return "".join(ch for ch in (value or "") if ch.isdigit())
 
 
 def _date_diff_days(d1: str, d2: str) -> int:
@@ -53,184 +51,142 @@ def _date_diff_days(d1: str, d2: str) -> int:
         return 999
 
 
-def _transfer_like(txn: dict) -> bool:
-    blob = " ".join([
-        _norm_text(txn.get("mode")),
-        _norm_text(txn.get("category")),
-        _norm_text(txn.get("description")),
-        _norm_text(txn.get("reference_no")),
-    ])
-    keys = ["transfer", "trf", "neft", "rtgs", "imps", "upi", "utr", "ib", "fund", "a/c", "account"]
-    return any(k in blob for k in keys)
+def _load_transfer_rows(conn, person_id=None, financial_year=None) -> tuple[list[dict], dict[int, str]]:
+    """Load transaction rows for transfer detection with owner name mapping.
 
-
-def _person_tokens(txn: dict) -> set[str]:
-    raw = " ".join([
-        _norm_text(txn.get("person_name")),
-        _norm_text(txn.get("first_name")),
-        _norm_text(txn.get("middle_name")),
-        _norm_text(txn.get("last_name")),
-    ])
-    return {t for t in re.split(r"\W+", raw) if len(t) >= 3}
-
-
-def _account_digits_tokens(txn: dict) -> set[str]:
-    tokens = set()
-    full_no = _digits(txn.get("account_number_full"))
-    masked = _digits(txn.get("account_number_masked"))
-    if len(full_no) >= 4:
-        tokens.add(full_no[-4:])
-    if len(masked) >= 4:
-        tokens.add(masked[-4:])
-    return tokens
-
-
-def _counterparty_signal(a: dict, b: dict) -> tuple[int, bool]:
-    score = 0
-    clue = False
-
-    a_ref = _norm_text(a.get("reference_no"))
-    b_ref = _norm_text(b.get("reference_no"))
-    a_blob = " ".join([_norm_text(a.get("description")), a_ref])
-    b_blob = " ".join([_norm_text(b.get("description")), b_ref])
-
-    if a_ref and b_ref and a_ref == b_ref:
-        score += 8
-        clue = True
-    elif (a_ref and a_ref in b_blob) or (b_ref and b_ref in a_blob):
-        score += 4
-        clue = True
-
-    for token in _person_tokens(a):
-        if token in b_blob:
-            score += 1
-            clue = True
-    for token in _person_tokens(b):
-        if token in a_blob:
-            score += 1
-            clue = True
-
-    for code in [_norm_text(a.get("ifsc_code")), _norm_text(b.get("ifsc_code"))]:
-        if code and (code in a_blob or code in b_blob):
-            score += 3
-            clue = True
-
-    for bank in [_norm_text(a.get("bank_name")), _norm_text(b.get("bank_name"))]:
-        if bank and (bank in a_blob or bank in b_blob):
-            score += 2
-            clue = True
-
-    for d in _account_digits_tokens(a):
-        if d and d in b_blob:
-            score += 2
-            clue = True
-    for d in _account_digits_tokens(b):
-        if d and d in a_blob:
-            score += 2
-            clue = True
-
-    return score, clue
-
-
-def reprocess_internal_transfers(account_id: int = None, person_id: int = None,
-                                 financial_year: str = None) -> tuple[int, int]:
-    """Auto-link likely internal transfer pairs and mark them as Internal Transfer.
-
-    Returns: (pairs_linked, transactions_marked)
+    Returns: (list of transaction dicts, dict mapping person_id to full_name)
     """
-    conn = get_connection()
-
     filters = []
-    filters_for_update = []
     params = []
-    if account_id is not None:
-        filters.append("t.account_id = ?")
-        filters_for_update.append("account_id = ?")
-        params.append(account_id)
+
     if person_id is not None:
         filters.append("t.person_id = ?")
-        filters_for_update.append("person_id = ?")
         params.append(person_id)
+
     if financial_year:
         start, end = fy_date_range(financial_year)
         filters.append("t.transaction_date BETWEEN ? AND ?")
-        filters_for_update.append("transaction_date BETWEEN ? AND ?")
         params.extend([start.isoformat(), end.isoformat()])
 
     where = f"WHERE {' AND '.join(filters)}" if filters else ""
-    where_update = f"WHERE {' AND '.join(filters_for_update)}" if filters_for_update else ""
-
-    # Reset previously auto-marked links in the selected scope.
-    conn.execute(f"""
-        UPDATE Transactions
-        SET linked_transaction_id = NULL,
-            internal_transfer_group_id = NULL,
-            is_internal_transfer = 0,
-            category = CASE WHEN category = ? THEN NULL ELSE category END
-        {where_update}
-    """, (INTERNAL_TRANSFER_CATEGORY, *params))
 
     rows = conn.execute(f"""
         SELECT
             t.transaction_id, t.account_id, t.person_id, t.transaction_date,
-            t.transaction_type, t.amount, t.mode, t.category, t.reference_no,
-            t.description,
-            p.full_name AS person_name, p.first_name, p.middle_name, p.last_name,
-            ba.bank_name, ba.ifsc_code, ba.account_holder_name,
-            ba.account_number_masked, ba.account_number_full
+            t.transaction_type, t.amount, t.category, t.description,
+            p.full_name
         FROM Transactions t
         JOIN Person p ON p.person_id = t.person_id
-        JOIN BankAccount ba ON ba.account_id = t.account_id
         {where}
         ORDER BY t.transaction_date, t.transaction_id
     """, params).fetchall()
 
     txns = [dict(r) for r in rows]
+    owner_names = {}
+    for r in rows:
+        owner_names[r["person_id"]] = r["full_name"]
+
+    return txns, owner_names
+
+
+def find_internal_transfers(txns: list[dict], owner_names: dict[int, str]) -> tuple[list[tuple[int, int]], list[int]]:
+    """Find internal transfer pairs and self-transfers.
+
+    Returns: (list of (debit_txn_id, credit_txn_id) pairs, list of self-credit transaction ids)
+    """
     debits = [
         t for t in txns
-        if t.get("transaction_type") == "Expense" and _transfer_like(t)
+        if t.get("transaction_type") == "Expense" and t.get("category") in TRANSFER_DEBIT_CATEGORIES
     ]
     credits = [
         t for t in txns
-        if t.get("transaction_type") == "Income"
+        if t.get("transaction_type") == "Income" and t.get("category") in TRANSFER_CREDIT_CATEGORIES
     ]
 
-    used = set()
     pairs = []
+    used_credits = set()
+
     for d in debits:
-        best = None
-        best_score = -1
-        candidate_count = 0
-        best_has_clue = False
+        candidates = []
         for c in credits:
-            if c["transaction_id"] in used:
+            if c["transaction_id"] in used_credits:
                 continue
             if d["account_id"] == c["account_id"]:
                 continue
             if abs(float(d["amount"]) - float(c["amount"])) > 0.01:
                 continue
             day_gap = _date_diff_days(d["transaction_date"], c["transaction_date"])
-            if day_gap > 2:
+            if day_gap > TRANSFER_MAX_DAY_GAP:
                 continue
-            candidate_count += 1
+            candidates.append(c)
 
-            score = 3 if day_gap == 0 else 2 if day_gap == 1 else 1
-            clue_score, has_clue = _counterparty_signal(d, c)
-            score += clue_score
-            if score > best_score:
-                best_score = score
-                best = c
-                best_has_clue = has_clue
+        if len(candidates) == 1:
+            c = candidates[0]
+            cluster_debits = [
+                t for t in debits
+                if abs(float(t["amount"]) - float(c["amount"])) <= 0.01
+                and _date_diff_days(t["transaction_date"], c["transaction_date"]) <= TRANSFER_MAX_DAY_GAP
+            ]
+            cluster_credits = [
+                t for t in credits
+                if t["transaction_id"] not in used_credits
+                and abs(float(t["amount"]) - float(d["amount"])) <= 0.01
+                and _date_diff_days(t["transaction_date"], d["transaction_date"]) <= TRANSFER_MAX_DAY_GAP
+            ]
 
-        # Accept either a high-confidence clue-based match, or a unique exact-day amount match.
-        if best is not None and (
-            (best_has_clue and best_score >= 5)
-            or (not best_has_clue and candidate_count == 1 and best_score >= 3)
-        ):
-            used.add(best["transaction_id"])
-            pairs.append((d, best))
+            if len(cluster_debits) == 1 and len(cluster_credits) == 1:
+                pairs.append((d["transaction_id"], c["transaction_id"]))
+                used_credits.add(c["transaction_id"])
 
-    if not pairs:
+    self_credit_ids = []
+    for c in credits:
+        if c["transaction_id"] not in used_credits:
+            person_id = c["person_id"]
+            if person_id in owner_names:
+                full_name = owner_names[person_id]
+                tokens = [t for t in re.split(r"\W+", full_name.upper()) if t]
+                if len(tokens) >= 2:
+                    key = tokens[0] + tokens[1][:4]
+                    if len(key) >= 8:
+                        desc_upper = (c.get("description") or "").upper()
+                        desc_clean = re.sub(r"[^A-Z0-9]", "", desc_upper)
+                        if key in desc_clean and not _FD_NARRATION.search(desc_upper):
+                            self_credit_ids.append(c["transaction_id"])
+
+    return pairs, self_credit_ids
+
+
+def reprocess_internal_transfers(person_id: int = None, financial_year: str = None) -> tuple[int, int]:
+    """Auto-link internal transfer pairs and mark self-transfers.
+
+    Returns: (pairs_linked, transactions_marked)
+    """
+    conn = get_connection()
+
+    filters_for_update = []
+    params = []
+    if person_id is not None:
+        filters_for_update.append("person_id = ?")
+        params.append(person_id)
+    if financial_year:
+        start, end = fy_date_range(financial_year)
+        filters_for_update.append("transaction_date BETWEEN ? AND ?")
+        params.extend([start.isoformat(), end.isoformat()])
+
+    where_update = f"WHERE {' AND '.join(filters_for_update)}" if filters_for_update else ""
+
+    conn.execute(f"""
+        UPDATE Transactions
+        SET linked_transaction_id = NULL,
+            internal_transfer_group_id = NULL,
+            is_internal_transfer = 0
+        {where_update}
+    """, params)
+
+    txns, owner_names = _load_transfer_rows(conn, person_id=person_id, financial_year=financial_year)
+    pairs, self_credit_ids = find_internal_transfers(txns, owner_names)
+
+    if not pairs and not self_credit_ids:
         conn.commit()
         conn.close()
         return 0, 0
@@ -240,29 +196,34 @@ def reprocess_internal_transfers(account_id: int = None, person_id: int = None,
     ).fetchone()
     next_group = int(group_row["g"] or 0) + 1
 
-    for d, c in pairs:
+    for debit_id, credit_id in pairs:
         gid = next_group
         next_group += 1
         conn.execute("""
             UPDATE Transactions
             SET linked_transaction_id = ?,
                 internal_transfer_group_id = ?,
-                is_internal_transfer = 1,
-                category = ?
+                is_internal_transfer = 1
             WHERE transaction_id = ?
-        """, (c["transaction_id"], gid, INTERNAL_TRANSFER_CATEGORY, d["transaction_id"]))
+        """, (credit_id, gid, debit_id))
         conn.execute("""
             UPDATE Transactions
             SET linked_transaction_id = ?,
                 internal_transfer_group_id = ?,
-                is_internal_transfer = 1,
-                category = ?
+                is_internal_transfer = 1
             WHERE transaction_id = ?
-        """, (d["transaction_id"], gid, INTERNAL_TRANSFER_CATEGORY, c["transaction_id"]))
+        """, (debit_id, gid, credit_id))
+
+    for txn_id in self_credit_ids:
+        conn.execute("""
+            UPDATE Transactions
+            SET is_internal_transfer = 1
+            WHERE transaction_id = ?
+        """, (txn_id,))
 
     conn.commit()
     conn.close()
-    return len(pairs), len(pairs) * 2
+    return len(pairs), len(pairs) * 2 + len(self_credit_ids)
 
 
 def add_transaction(account_id: int, person_id: int, transaction_date: str,
@@ -322,11 +283,44 @@ def add_transactions_batch(account_id: int, person_id: int, transactions: list[d
     return ids
 
 
+def _detach_transaction_refs(conn, ids: list[int]) -> None:
+    """Detach transaction references from related tables before deletion."""
+    if not ids:
+        return
+
+    placeholders = ",".join(["?"] * len(ids))
+
+    conn.execute(f"""
+        UPDATE Transactions
+        SET linked_transaction_id=NULL, internal_transfer_group_id=NULL, is_internal_transfer=0
+        WHERE linked_transaction_id IN ({placeholders})
+    """, ids)
+
+    conn.execute(f"""
+        UPDATE FixedDeposit
+        SET linked_transaction_id=NULL
+        WHERE linked_transaction_id IN ({placeholders})
+    """, ids)
+
+    conn.execute(f"""
+        UPDATE FixedDeposit
+        SET source_transaction_id=NULL
+        WHERE source_transaction_id IN ({placeholders})
+    """, ids)
+
+    conn.execute(f"""
+        UPDATE IncomeExpectation
+        SET actual_transaction_id=NULL
+        WHERE actual_transaction_id IN ({placeholders})
+    """, ids)
+
+
 def delete_transactions_by_ids(ids: list[int]) -> None:
     if not ids:
         return
     conn = get_connection()
     try:
+        _detach_transaction_refs(conn, ids)
         q = f"DELETE FROM Transactions WHERE transaction_id IN ({','.join(['?']*len(ids))})"
         conn.execute(q, ids)
         conn.commit()
@@ -410,6 +404,7 @@ def update_transaction(transaction_id: int, transaction_date: str,
 
 def delete_transaction(transaction_id: int) -> None:
     conn = get_connection()
+    _detach_transaction_refs(conn, [transaction_id])
     conn.execute(
         "DELETE FROM Transactions WHERE transaction_id = ?", (transaction_id,)
     )
