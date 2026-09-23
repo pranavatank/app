@@ -149,7 +149,7 @@ class TransactionsScreen(QWidget):
         self.charts_tabs.addTab(self.category_chart, "Categories")
         self.charts_tabs.setMinimumHeight(120)
 
-        self.charts_section = CollapsibleSection("Transaction Charts", expanded=False)
+        self.charts_section = CollapsibleSection("Transaction Charts", expanded=False, accent="transactions")
         self.charts_section.content_layout().addWidget(self.charts_tabs)
         layout.addWidget(self.charts_section)
 
@@ -382,8 +382,6 @@ class TransactionsScreen(QWidget):
             self.monthly_chart.refresh_theme()
         if hasattr(self, 'category_chart') and self.category_chart:
             self.category_chart.refresh_theme()
-        if hasattr(self, 'charts_section') and self.charts_section:
-            pass  # CollapsibleSection uses theme colors from CSS, refreshed automatically
         # Re-populate the table so row text colours (baked QColor) refresh too
         if hasattr(self, '_current_rows') and self._current_rows is not None:
             self._populate_table(self._current_rows)
@@ -423,6 +421,7 @@ class TransactionsScreen(QWidget):
                     headline="No transactions",
                     explanation="Import a bank statement to see your transactions here.",
                     action_text="Import Statement",
+                    accent="transactions",
                     parent=self.table_container
                 )
                 self._empty_state.action_clicked.connect(self._trigger_import)

@@ -36,7 +36,9 @@ class KpiTile(QFrame):
         delta=None,
         sparkline_data=None,
         is_currency=True,
-        parent=None
+        parent=None,
+        accent: str = "primary",
+        icon: str = ""
     ):
         super().__init__(parent)
         self.label_text = label
@@ -44,8 +46,11 @@ class KpiTile(QFrame):
         self.delta = delta
         self.sparkline_data = sparkline_data
         self.is_currency = is_currency
+        self._accent = accent
+        self._icon_key = icon
 
         self.setObjectName("kpiTile")
+        self.setProperty("accent", accent)
         self.setFixedHeight(105)  # Fixed height: 100-110px
         self.setFrameShape(QFrame.Shape.StyledPanel)
         self.setFrameShadow(QFrame.Shadow.Plain)
@@ -58,6 +63,18 @@ class KpiTile(QFrame):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 12, 16, 12)
         layout.setSpacing(6)
+
+        # Icon label (if icon is provided)
+        if self._icon_key:
+            self._icon_lbl = QLabel()
+            self._icon_lbl.setObjectName("kpiIcon")
+            self._icon_lbl.setProperty("accent", self._accent)
+            self._icon_lbl.setFixedSize(24, 24)
+            self._icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            layout.addWidget(self._icon_lbl)
+            self._render_icon()
+        else:
+            self._icon_lbl = None
 
         # Header: label on the left, optional delta chip on the right
         header = QHBoxLayout()
@@ -88,12 +105,15 @@ class KpiTile(QFrame):
         # Value (large, bold, colored by sign if currency)
         self._value_lbl = QLabel(self._format_value())
         self._value_lbl.setObjectName("kpiValue")
-        self._value_lbl.setFont(QFont("Courier New", 14, QFont.Weight.Bold))
+        self._value_lbl.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
         self._apply_value_color()
         layout.addWidget(self._value_lbl)
 
         # Sparkline widget (ALWAYS create, visibility controlled by set_value)
-        self._sparkline_widget = SparklineWidget(self.sparkline_data if self.sparkline_data else [])
+        self._sparkline_widget = SparklineWidget(
+            self.sparkline_data if self.sparkline_data else [],
+            accent=self._accent
+        )
         self._sparkline_widget.setFixedHeight(30)
         self._sparkline_widget.setVisible(self.sparkline_data is not None and len(self.sparkline_data) >= 2)
         layout.addWidget(self._sparkline_widget)
@@ -117,6 +137,17 @@ class KpiTile(QFrame):
             # Clear stylesheet for non-currency values
             self._value_lbl.setStyleSheet("")
 
+    def _render_icon(self):
+        """Render the icon onto the icon label, or fallback to emoji text."""
+        if not self._icon_lbl or not self._icon_key:
+            return
+        from ui.icons import pixmap as icon_pixmap, fallback
+        pm = icon_pixmap(self._icon_key, size=14, color=Theme.accent(self._accent))
+        if pm and not pm.isNull():
+            self._icon_lbl.setPixmap(pm)
+        else:
+            self._icon_lbl.setText(fallback(self._icon_key))
+
     def _format_value(self) -> str:
         """Format the value: currency with INR grouping or raw string."""
         if self.is_currency and isinstance(self.value, (int, float)):
@@ -132,6 +163,13 @@ class KpiTile(QFrame):
         else:
             return f"{delta:.0f}%"
 
+    def _delta_css(self, delta: float | None) -> str:
+        """Generate CSS for delta chip styling."""
+        if delta is None:
+            return ""
+        color = Theme.SUCCESS_TEXT if delta >= 0 else Theme.DANGER_TEXT
+        return f"color: {color}; padding: 2px 6px; border-radius: 3px;"
+
     def set_value(self, value, delta=None, is_currency=None):
         """Update the displayed value and optional delta. Does NOT rebuild layout."""
         self.value = value
@@ -146,11 +184,31 @@ class KpiTile(QFrame):
         # Update delta chip text, color, and visibility
         if self.delta is not None:
             self._delta_lbl.setText(self._format_delta(self.delta))
-            color = Theme.SUCCESS_TEXT if self.delta >= 0 else Theme.DANGER_TEXT
-            self._delta_lbl.setStyleSheet(f"color: {color}; padding: 2px 6px; border-radius: 3px;")
+            self._delta_lbl.setStyleSheet(self._delta_css(self.delta))
             self._delta_lbl.setVisible(True)
         else:
             self._delta_lbl.setVisible(False)
+
+    def refresh_theme(self):
+        """Refresh theme-dependent styling (called when theme changes)."""
+        self.setGraphicsEffect(Theme.shadow_card())
+        if self._icon_lbl:
+            self._render_icon()
+        self._apply_value_color()
+        if self.delta is not None:
+            self._delta_lbl.setStyleSheet(self._delta_css(self.delta))
+        if hasattr(self, "_sparkline_widget") and self._sparkline_widget:
+            self._sparkline_widget.update()
+
+    def enterEvent(self, event):
+        """Apply accent shadow on hover."""
+        self.setGraphicsEffect(Theme.shadow_accent(self._accent))
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        """Restore default shadow on hover leave."""
+        self.setGraphicsEffect(Theme.shadow_card())
+        super().leaveEvent(event)
 
 
 class SparklineWidget(QWidget):
@@ -160,9 +218,10 @@ class SparklineWidget(QWidget):
     Displays a minimal polyline chart: no axes, no labels, just the line.
     """
 
-    def __init__(self, data: list[float], parent=None):
+    def __init__(self, data: list[float], parent=None, accent: str = "primary"):
         super().__init__(parent)
         self.data = data
+        self.accent = accent
         self.setMinimumHeight(30)
         self.setStyleSheet("background: transparent;")
 
@@ -194,7 +253,8 @@ class SparklineWidget(QWidget):
             points.append((x, y))
 
         # Draw the line
-        pen = QPen(Theme.PRIMARY)
+        accent_color = Theme.accent(self.accent)
+        pen = QPen(accent_color)
         pen.setWidth(2)
         painter.setPen(pen)
 
@@ -204,7 +264,7 @@ class SparklineWidget(QWidget):
             painter.drawLine(int(x1), int(y1), int(x2), int(y2))
 
         # Draw small dots at each point
-        dot_color = QColor(Theme.PRIMARY)
+        dot_color = QColor(accent_color)
         dot_color.setAlpha(180)
         painter.setBrush(dot_color)
         painter.setPen(Qt.PenStyle.NoPen)

@@ -111,7 +111,7 @@ class IncomePredictionScreen(QWidget):
 
     def _build_headroom_section(self) -> QWidget:
         """Build the headroom view: projected income vs limit."""
-        section = CollapsibleSection("Income Headroom", expanded=True)
+        section = CollapsibleSection("Income Headroom", expanded=True, accent="income_prediction")
 
         layout = section.content_layout()
         layout.setSpacing(12)
@@ -135,7 +135,9 @@ class IncomePredictionScreen(QWidget):
         kpi1 = KpiTile(
             label=f"Projected Total{est_marker}",
             value=projected_total,
-            is_currency=True
+            is_currency=True,
+            accent="primary",
+            icon="income_prediction"
         )
         kpi1.setAccessibleName("Projected Income Total")
         kpi_row.addWidget(kpi1)
@@ -143,7 +145,9 @@ class IncomePredictionScreen(QWidget):
         kpi2 = KpiTile(
             label="Annual Limit",
             value=limit,
-            is_currency=True
+            is_currency=True,
+            accent="warning",
+            icon="lock"
         )
         kpi2.setAccessibleName("Annual Income Limit")
         kpi_row.addWidget(kpi2)
@@ -151,7 +155,9 @@ class IncomePredictionScreen(QWidget):
         kpi3 = KpiTile(
             label="Headroom",
             value=headroom,
-            is_currency=True
+            is_currency=True,
+            accent="success",
+            icon="trend"
         )
         kpi3.setAccessibleName("Income Headroom")
         kpi_row.addWidget(kpi3)
@@ -168,7 +174,7 @@ class IncomePredictionScreen(QWidget):
 
     def _build_tds_risk_section(self) -> QWidget:
         """Build TDS Risk view: table + bar chart."""
-        section = CollapsibleSection("TDS Risk Analysis", expanded=True)
+        section = CollapsibleSection("TDS Risk Analysis", expanded=True, accent="income_prediction")
 
         layout = section.content_layout()
         layout.setSpacing(12)
@@ -180,7 +186,8 @@ class IncomePredictionScreen(QWidget):
                 icon_name="no_data",
                 headline="No TDS data",
                 explanation="No FD or savings accounts to analyze.",
-                action_text="Add Accounts"
+                action_text="Add Accounts",
+                accent="income_prediction"
             )
             Theme.style_button(empty.btn_action, "secondary")
             layout.addWidget(empty)
@@ -264,7 +271,7 @@ class IncomePredictionScreen(QWidget):
 
     def _build_timeline_section(self) -> QWidget:
         """Build Timeline view: line chart + table of monthly projections."""
-        section = CollapsibleSection("Monthly Timeline", expanded=True)
+        section = CollapsibleSection("Monthly Timeline", expanded=True, accent="income_prediction")
 
         layout = section.content_layout()
         layout.setSpacing(12)
@@ -277,7 +284,8 @@ class IncomePredictionScreen(QWidget):
                 icon_name="no_data",
                 headline="No timeline data",
                 explanation="Monthly projection data unavailable.",
-                action_text="Retry"
+                action_text="Retry",
+                accent="income_prediction"
             )
             Theme.style_button(empty.btn_action, "secondary")
             layout.addWidget(empty)
@@ -337,7 +345,7 @@ class IncomePredictionScreen(QWidget):
 
     def _build_comparison_section(self) -> QWidget:
         """Build Comparison: Our Data vs ITR-Side (26AS/AIS/TIS)."""
-        section = CollapsibleSection("Income Comparison", expanded=False)
+        section = CollapsibleSection("Income Comparison", expanded=False, accent="income_prediction")
 
         layout = section.content_layout()
         layout.setSpacing(12)
@@ -503,7 +511,8 @@ class IncomePredictionScreen(QWidget):
                 icon_name="import_pdf",
                 headline="Tax documents not imported",
                 explanation="Import your 26AS, AIS or TIS from the Tax Documents screen to compare.",
-                action_text="Open Tax Documents"
+                action_text="Open Tax Documents",
+                accent="income_prediction"
             )
             Theme.style_button(empty.btn_action, "secondary")
             layout.addWidget(empty)
@@ -563,7 +572,7 @@ class IncomePredictionScreen(QWidget):
 
     def _build_strategy_section(self) -> QWidget:
         """Concrete actions for staying under the limit and keeping TDS off."""
-        section = CollapsibleSection("Strategies", expanded=True)
+        section = CollapsibleSection("Strategies", expanded=True, accent="income_prediction")
 
         layout = section.content_layout()
         layout.setSpacing(12)
@@ -579,7 +588,8 @@ class IncomePredictionScreen(QWidget):
                 icon_name="no_data",
                 headline="No actions needed",
                 explanation="Projected income is within the limit and no bank is near the threshold.",
-                action_text="Refresh"
+                action_text="Refresh",
+                accent="income_prediction"
             )
             Theme.style_button(empty.btn_action, "secondary")
             layout.addWidget(empty)
@@ -679,7 +689,7 @@ class IncomePredictionScreen(QWidget):
 
     def _build_advisory_section(self) -> QWidget:
         """Build Advisory: warnings + disclaimer."""
-        section = CollapsibleSection("Advisories", expanded=True)
+        section = CollapsibleSection("Advisories", expanded=True, accent="income_prediction")
 
         layout = section.content_layout()
         layout.setSpacing(8)

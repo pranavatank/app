@@ -46,6 +46,16 @@ def setup_test_database():
     # Initialize the test database with all tables and seed data
     core.database.initialise_database()
 
+    # Patch session and theme manager config paths to use temp directory
+    # This prevents tests from writing to the real data/theme_prefs.json
+    import core.session
+    import ui.theme.theme_manager as tm
+
+    core.session._CONFIG_DIR = temp_dir
+    core.session._CONFIG_FILE = os.path.join(temp_dir, "theme_prefs.json")
+    tm._CONFIG_DIR = temp_dir
+    tm._CONFIG_FILE = os.path.join(temp_dir, "theme_prefs.json")
+
     yield  # Run all tests
 
     # Cleanup: remove temp directory

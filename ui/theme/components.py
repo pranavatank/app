@@ -35,6 +35,26 @@ def darken_hex(hex_color: str, factor: float = 0.8) -> str:
     return f"#{r:02x}{g:02x}{b:02x}"
 
 
+def rgba(hex_color: str, alpha: float) -> str:
+    """Convert a #RRGGBB hex color + alpha (0-1) into a QSS rgba() string."""
+    h = hex_color.lstrip("#")
+    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    return f"rgba({r}, {g}, {b}, {round(alpha * 255)})"
+
+
+ACCENT_TOKENS = {
+    "primary": "PRIMARY",
+    "success": "SUCCESS_TEXT",
+    "danger": "DANGER_TEXT",
+    "warning": "WARNING_TEXT",
+    "info": "INFO_TEXT",
+    "teal": "TEAL",
+    "purple": "PURPLE",
+    "pink": "PINK",
+}
+ACCENT_CHIP_ALPHA = 0.12
+
+
 # ── Shadow ────────────────────────────────────────────────────────────────────
 def make_shadow(blur=18, offset_x=0, offset_y=4, color_rgba=(15, 23, 42, 18)):
     from PySide6.QtWidgets import QGraphicsDropShadowEffect
@@ -50,13 +70,15 @@ def make_shadow(blur=18, offset_x=0, offset_y=4, color_rgba=(15, 23, 42, 18)):
 def card_shadow(theme=None):
     rgba = getattr(theme, "SHADOW_RGBA_CARD", (15, 23, 42, 16)) if theme else (15, 23, 42, 16)
     blur = getattr(theme, "SHADOW_BLUR_CARD", 16) if theme else 16
-    return make_shadow(blur=blur, offset_y=3, color_rgba=rgba)
+    offset_y = getattr(theme, "SHADOW_OFFSET_Y", 3) if theme else 3
+    return make_shadow(blur=blur, offset_y=offset_y, color_rgba=rgba)
 
 
 def elevated_shadow(theme=None):
     rgba = getattr(theme, "SHADOW_RGBA_ELEVATED", (15, 23, 42, 26)) if theme else (15, 23, 42, 26)
     blur = getattr(theme, "SHADOW_BLUR_ELEVATED", 28) if theme else 28
-    return make_shadow(blur=blur, offset_y=7, color_rgba=rgba)
+    offset_y = getattr(theme, "SHADOW_OFFSET_Y_ELEVATED", 7) if theme else 7
+    return make_shadow(blur=blur, offset_y=offset_y, color_rgba=rgba)
 
 
 def primary_shadow(theme=None):
@@ -64,12 +86,32 @@ def primary_shadow(theme=None):
     return make_shadow(blur=20, offset_y=5, color_rgba=rgba)
 
 
-def success_shadow():
-    return make_shadow(blur=20, offset_y=5, color_rgba=(22, 163, 74, 32))
+def accent_shadow(theme, hex_color: str):
+    """A themed drop-shadow effect tinted with the given accent color."""
+    h = hex_color.lstrip("#")
+    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    return make_shadow(
+        blur=getattr(theme, "SHADOW_BLUR_ELEVATED", 28),
+        offset_y=getattr(theme, "SHADOW_OFFSET_Y", 4),
+        color_rgba=(r, g, b, getattr(theme, "SHADOW_ALPHA_ACCENT", 48)),
+    )
 
 
-def danger_shadow():
-    return make_shadow(blur=20, offset_y=5, color_rgba=(220, 38, 38, 30))
+def accent_variant_qss(name: str, color: str) -> str:
+    """QSS rules that recolor accent-aware shared widgets for one named accent."""
+    chip = rgba(color, ACCENT_CHIP_ALPHA)
+    gradient_rule = gradient_v(color, rgba(color, 0))
+    return f"""
+QFrame#kpiTile[accent="{name}"] {{ border-left-color: {color}; }}
+QFrame#kpiTile[accent="{name}"]:hover {{ border-color: {color}; }}
+QLabel#kpiIcon[accent="{name}"] {{ background: {chip}; }}
+QFrame#SummaryPanel[accent="{name}"] {{ border-left-color: {color}; }}
+QLabel#SummaryPanelIcon[accent="{name}"] {{ background: {chip}; }}
+QFrame#SummaryPanelAccentBar[accent="{name}"] {{ background: {gradient_rule}; }}
+QWidget#CollapsibleSectionHeader[accent="{name}"] {{ border-left-color: {color}; }}
+QWidget#CollapsibleSectionHeader[accent="{name}"]:hover {{ border-color: {color}; }}
+QLabel#EmptyStateIcon[accent="{name}"] {{ background: {chip}; }}
+"""
 
 
 # ── Text helpers ──────────────────────────────────────────────────────────────
@@ -125,7 +167,7 @@ def metric_card_style(theme, accent, bg, radius=16):
     return f"""
         QFrame {{
             background: {gradient_v(theme.SURFACE, bg)};
-            border: 1px solid {accent}2E;
+            border: 1px solid {rgba(accent, 0.18)};
             border-top: 3px solid {accent};
             border-radius: {radius}px;
         }}
@@ -184,7 +226,7 @@ def info_banner_style(theme, accent=None, radius=12):
     return f"""
         QFrame {{
             background: {gradient_v(theme.PRIMARY_LIGHT, theme.SURFACE)};
-            border: 1px solid {a}50;
+            border: 1px solid {rgba(a, 0.31)};
             border-left: 4px solid {a};
             border-radius: {radius}px;
         }}
@@ -213,7 +255,7 @@ def banner_style(theme, level="info", radius=12):
     return f"""
         QFrame {{
             background: {gradient_v(bg, theme.SURFACE)};
-            border: 1px solid {border}50;
+            border: 1px solid {rgba(border, 0.31)};
             border-left: 4px solid {border};
             border-radius: {radius}px;
         }}
@@ -244,8 +286,8 @@ def page_header_style(theme, radius=14, selector="QFrame#pageHeader"):
 def stat_tile_style(theme, accent, radius=16, selector="QFrame"):
     return f"""
         {selector} {{
-            background: {gradient_v(theme.SURFACE, accent + "0D")};
-            border: 1px solid {accent}2E;
+            background: {gradient_v(theme.SURFACE, rgba(accent, 0.05))};
+            border: 1px solid {rgba(accent, 0.18)};
             border-top: 3px solid {accent};
             border-radius: {radius}px;
         }}
@@ -263,7 +305,7 @@ def empty_state_style(theme, radius=14):
 
 
 def icon_chip_style(theme, accent, radius=10):
-    return f"background-color: {accent}1A; border: 1px solid {accent}30; border-radius: {radius}px;"
+    return f"background-color: {rgba(accent, 0.10)}; border: 1px solid {rgba(accent, 0.19)}; border-radius: {radius}px;"
 
 
 def action_bar_style(theme, radius=14, selector="QFrame#actionBar"):

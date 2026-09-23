@@ -363,7 +363,7 @@ class TaxScreen(QWidget):
 
     def _section_group(self, title: str, collapsible: bool = True) -> QWidget:
         if collapsible:
-            section = CollapsibleSection(title, expanded=False)
+            section = CollapsibleSection(title, expanded=False, accent="tax")
             self._section_groups.append(section)
             return section
         else:

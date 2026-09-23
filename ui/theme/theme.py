@@ -120,22 +120,14 @@ class Theme:
     SHADOW_RGBA_ELEVATED      = c.SHADOW_RGBA_ELEVATED
     SHADOW_RGBA_PRIMARY       = c.SHADOW_RGBA_PRIMARY
 
+    CARD_GRADIENT_START       = c.CARD_GRADIENT_START
+    CARD_GRADIENT_END         = c.CARD_GRADIENT_END
+    SCREEN_ACCENT_FILL        = c.SCREEN_ACCENT_FILL
+    SCREEN_ACCENT_TINT        = c.SCREEN_ACCENT_TINT
+    SHADOW_ALPHA_ACCENT       = c.SHADOW_ALPHA_ACCENT
+
     CHART_COLORS              = c.CHART_COLORS
     CHART_COLORS_LIGHT        = c.CHART_COLORS_LIGHT
-
-    # ── Screen accent colors (indices into CHART_COLORS) ──────────────────────
-    SCREEN_ACCENTS = {
-        "overview": 0,           # indigo
-        "accounts": 1,           # emerald
-        "transactions": 2,       # amber
-        "income": 3,             # rose
-        "fixed_deposits": 4,     # fuchsia
-        "statement_import": 5,   # cyan
-        "ais_tis": 6,            # pink (tax documents)
-        "tax": 7,                # orange
-        "income_prediction": 5,  # cyan
-        "settings": 0,           # indigo (reuse)
-    }
 
     # ── Radius scale (4-step system) ──────────────────────────────────────────
     RADIUS_CONTROL            = c.RADIUS_CONTROL
@@ -192,29 +184,36 @@ class Theme:
 
     @staticmethod
     def shadow_success() -> QGraphicsDropShadowEffect:
-        return tc.success_shadow()
+        return tc.accent_shadow(Theme, Theme.SUCCESS)
 
     @staticmethod
     def shadow_danger() -> QGraphicsDropShadowEffect:
-        return tc.danger_shadow()
+        return tc.accent_shadow(Theme, Theme.DANGER)
 
     @staticmethod
-    def screen_accent(screen_key: str) -> str:
-        """Get the themed accent color for a screen by key.
+    def screen_accent(key: str) -> str:
+        return Theme.SCREEN_ACCENT_TINT.get(key, Theme.PRIMARY)
 
-        Args:
-            screen_key: One of "overview", "accounts", "transactions", "income",
-                       "fixed_deposits", "statement_import", "ais_tis", "tax", "settings"
+    @staticmethod
+    def screen_accent_fill(key: str) -> str:
+        return Theme.SCREEN_ACCENT_FILL.get(key, Theme.PRIMARY)
 
-        Returns:
-            The hex color from CHART_COLORS for this screen's accent.
-        """
-        if screen_key not in Theme.SCREEN_ACCENTS:
-            return Theme.PRIMARY  # Fallback to primary if key not found
-        idx = Theme.SCREEN_ACCENTS[screen_key]
-        if 0 <= idx < len(Theme.CHART_COLORS):
-            return Theme.CHART_COLORS[idx]
+    @staticmethod
+    def accent(name: str) -> str:
+        if name in Theme.SCREEN_ACCENT_TINT:
+            return Theme.SCREEN_ACCENT_TINT[name]
+        token = tc.ACCENT_TOKENS.get(name)
+        if token:
+            return getattr(Theme, token, Theme.PRIMARY)
         return Theme.PRIMARY
+
+    @staticmethod
+    def accent_names() -> list:
+        return list(tc.ACCENT_TOKENS.keys()) + list(Theme.SCREEN_ACCENT_TINT.keys())
+
+    @staticmethod
+    def shadow_accent(name: str):
+        return tc.accent_shadow(Theme, Theme.accent(name))
 
     # ── Button factory ────────────────────────────────────────────────────────
     @staticmethod
@@ -566,6 +565,16 @@ class Theme:
         _spin_up_hover_rule   = f"image: url({_spin_up_arrow_hover_url});" if _spin_up_arrow_hover_url else ""
         _spin_down_hover_rule = f"image: url({_spin_down_arrow_hover_url});" if _spin_down_arrow_hover_url else ""
         _date_arrow_rule  = f"image: url({_date_arrow_url}); width: 16px; height: 16px;" if _date_arrow_url else ""
+        gv = t.gradient_v(t.CARD_GRADIENT_START, t.CARD_GRADIENT_END)
+        chip = tc.rgba(t.PRIMARY, tc.ACCENT_CHIP_ALPHA)
+        nav_accent_qss = ""
+        for k, fill in t.SCREEN_ACCENT_FILL.items():
+            darker = tc.darken_hex(fill, 0.85)
+            nav_accent_qss += f'QToolButton[nav_item="true"][screen="{k}"]:checked, QToolButton[nav_item="true"][screen="{k}"]:checked:hover {{ background: {t.gradient(fill, darker)}; }}\n'
+        page_bar_qss = f'QFrame#pageAccentBar {{ background: {t.PRIMARY}; border: none; }}\n'
+        for k, tint in t.SCREEN_ACCENT_TINT.items():
+            fill = t.SCREEN_ACCENT_FILL.get(k, t.PRIMARY)
+            page_bar_qss += f'QFrame#pageAccentBar[screen="{k}"] {{ background: {t.gradient_v(tint, fill)}; }}\n'
         return f"""
 /* ═══════════════════════════ BASE ══════════════════════════ */
 QMainWindow, QWidget {{
@@ -836,7 +845,7 @@ QToolButton[nav_item="true"]:checked {{
     margin: 2px 10px;
 }}
 QWidget[nav_item="true"]:focus {{ outline: 2px solid {t.FOCUS_RING}; outline-offset: 2px; }}
-
+{nav_accent_qss}{page_bar_qss}
 /* ═══════════════════════════ TRANSPARENT CONTAINERS ══════════════ */
 QWidget#transparentBg {{ background: transparent; border: none; }}
 QFrame#transparentBg {{ background: transparent; border: none; }}
@@ -1101,34 +1110,20 @@ QWidget#Toast[variant="danger"] QPushButton:hover {{
 }}
 
 /* ═══════════════════════════ KPI TILES ════════════════════ */
-QFrame#kpiTile {{
-    background-color: {t.SURFACE}; border: 1px solid {t.BORDER};
-    border-left: 4px solid {t.PRIMARY}; border-radius: {t.RADIUS_CARD}px;
-}}
-QFrame#kpiTile[accent="success"] {{
-    border-left-color: {t.SUCCESS};
-}}
-QFrame#kpiTile[accent="danger"] {{
-    border-left-color: {t.DANGER};
-}}
-QFrame#kpiTile[accent="info"] {{
-    border-left-color: {t.INFO};
-}}
-QFrame#kpiTile[accent="teal"] {{
-    border-left-color: {t.TEAL};
-}}
-QLabel#kpiValue {{
-    color: {t.TEXT_PRIMARY};
-}}
+QFrame#kpiTile {{ background: {gv}; border: 1px solid {t.BORDER}; border-left: 4px solid {t.PRIMARY}; border-radius: {t.RADIUS_CARD}px; }}
+QLabel#kpiValue {{ color: {t.TEXT_PRIMARY}; }}
+QLabel#kpiIcon {{ background: {chip}; border: none; border-radius: {t.RADIUS_CONTROL}px; }}
+QFrame#SummaryPanel {{ background: {gv}; border: 1px solid {t.BORDER}; border-left: 4px solid {t.PRIMARY}; border-radius: {t.RADIUS_CARD}px; }}
+QLabel#SummaryPanelIcon {{ background: {chip}; border: none; border-radius: {t.RADIUS_CONTROL}px; }}
+QFrame#SummaryPanelAccentBar {{ background: {t.gradient(t.PRIMARY, tc.rgba(t.PRIMARY, 0))}; border: none; }}
+QWidget#CollapsibleSectionHeader {{ background: {gv}; border: 1px solid {t.BORDER}; border-left: 4px solid {t.PRIMARY}; border-radius: {t.RADIUS_CARD}px; margin: 0px; padding: 0px; }}
+QWidget#CollapsibleSectionHeader:hover {{ background: {t.SURFACE_ALT}; }}
+QWidget#CollapsibleSectionHeader:focus {{ outline: 2px solid {t.FOCUS_RING}; outline-offset: 2px; border-color: {t.PRIMARY}; }}
+{"".join(tc.accent_variant_qss(n, t.accent(n)) for n in t.accent_names())}
 
 /* ═══════════════════════════ STATE WIDGETS ════════════════════ */
-QFrame#EmptyState {{
-    background-color: {t.SURFACE};
-    border: none;
-}}
-QLabel#EmptyStateIcon {{
-    background: transparent;
-}}
+QFrame#EmptyState {{ background: {gv}; border: 1px dashed {t.BORDER}; border-radius: {t.RADIUS_CARD}px; }}
+QLabel#EmptyStateIcon {{ background: {chip}; border: none; border-radius: 16px; }}
 QPushButton#EmptyStateActionButton {{
     min-width: 140px;
 }}
@@ -1173,7 +1168,7 @@ QFrame#LoginFormCard {{
 QLabel#LoginErrorLabel {{
     background: {t.DANGER_LIGHT};
     color: {t.DANGER_DARK};
-    border: 1px solid {t.DANGER}40;
+    border: 1px solid {tc.rgba(t.DANGER, 0.25)};
     border-radius: {t.RADIUS_CONTROL}px;
     padding: 12px 16px;
     font-size: 13px;

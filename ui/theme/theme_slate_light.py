@@ -105,6 +105,24 @@ SHADOW_RGBA_CARD          = (15, 23, 42, 12)
 SHADOW_RGBA_ELEVATED      = (15, 23, 42, 22)
 SHADOW_RGBA_PRIMARY       = (37, 99, 235, 32)
 
+# ── Card gradients and screen accents ──────────────────────────────────────
+CARD_GRADIENT_START       = "#FFFFFF"
+CARD_GRADIENT_END         = "#FBFCFE"
+SHADOW_ALPHA_ACCENT       = 40
+SCREEN_ACCENT_FILL        = {
+    "overview": "#2563EB",
+    "accounts": "#047857",
+    "transactions": "#B45309",
+    "income": "#B91C1C",
+    "fixed_deposits": "#A21CAF",
+    "statement_import": "#0E7490",
+    "ais_tis": "#BE185D",
+    "tax": "#C2410C",
+    "income_prediction": "#6D28D9",
+    "settings": "#475569",
+}
+SCREEN_ACCENT_TINT        = dict(SCREEN_ACCENT_FILL)
+
 # ── Chart palette ─────────────────────────────────────────────────────────────
 CHART_COLORS = [
     "#2563EB",  # blue

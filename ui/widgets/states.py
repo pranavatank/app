@@ -36,7 +36,8 @@ class EmptyState(QFrame):
         headline: str = "No data",
         explanation: str = "Add content to get started.",
         action_text: str = "Add",
-        parent=None
+        parent=None,
+        accent: str = "primary"
     ):
         """
         Args:
@@ -45,33 +46,29 @@ class EmptyState(QFrame):
             explanation: Subheading / explanation text
             action_text: Button label
             parent: Parent widget
+            accent: Accent color key for icon (e.g. "primary", "success", "danger")
         """
         super().__init__(parent)
         self.setObjectName("EmptyState")
+        self._accent = accent
+        self.setProperty("accent", accent)
         self._build_ui(icon_name, headline, explanation, action_text)
 
     def _build_ui(self, icon_name: str, headline: str, explanation: str, action_text: str):
+        self._icon_name = icon_name
         layout = QVBoxLayout(self)
         layout.setContentsMargins(40, 60, 40, 60)
         layout.setSpacing(16)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        # Icon (large, muted)
-        icon_w = QLabel()
-        icon_w.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        icon_w.setObjectName("EmptyStateIcon")
-        icon_w.setMinimumHeight(48)
-        if icons_available():
-            pm = icon_pixmap(icon_name, size=48, color="muted")
-            if not pm.isNull():
-                icon_w.setPixmap(pm)
-            else:
-                icon_w.setText(icon_fallback(icon_name) or "📭")
-                icon_w.setFont(QFont("Segoe UI Emoji", 48))
-        else:
-            icon_w.setText(icon_fallback(icon_name) or "📭")
-            icon_w.setFont(QFont("Segoe UI Emoji", 48))
-        layout.addWidget(icon_w, alignment=Qt.AlignmentFlag.AlignCenter)
+        # Icon (large, accent-tinted)
+        self._icon_w = QLabel()
+        self._icon_w.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._icon_w.setObjectName("EmptyStateIcon")
+        self._icon_w.setFixedSize(64, 64)
+        self._icon_w.setProperty("accent", self._accent)
+        self._render_icon()
+        layout.addWidget(self._icon_w, alignment=Qt.AlignmentFlag.AlignCenter)
 
         # Headline
         headline_lbl = QLabel(headline)
@@ -98,6 +95,24 @@ class EmptyState(QFrame):
         layout.addWidget(self.btn_action, alignment=Qt.AlignmentFlag.AlignCenter)
 
         layout.addStretch()
+
+    def _render_icon(self):
+        """Render the icon pixmap with the current accent color."""
+        if icons_available():
+            color = Theme.accent(self._accent)
+            pm = icon_pixmap(self._icon_name, size=32, color=color)
+            if not pm.isNull():
+                self._icon_w.setPixmap(pm)
+            else:
+                self._icon_w.setText(icon_fallback(self._icon_name) or "📭")
+                self._icon_w.setFont(QFont("Segoe UI Emoji", 48))
+        else:
+            self._icon_w.setText(icon_fallback(self._icon_name) or "📭")
+            self._icon_w.setFont(QFont("Segoe UI Emoji", 48))
+
+    def refresh_theme(self):
+        """Re-render the icon with the current theme."""
+        self._render_icon()
 
     def set_action_callback(self, callback):
         """Connect the action button to a callback (for convenience)."""

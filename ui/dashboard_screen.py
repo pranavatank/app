@@ -33,6 +33,8 @@ from ui.widgets.summary_panel import SummaryPanel
 from ui.widgets.chart_widget import ChartWidget
 from ui.widgets.kpi_tile import KpiTile
 from ui.widgets.motion import animate_width
+from ui.widgets.section import CollapsibleSection
+from ui.widgets.states import EmptyState
 
 _NAV_ITEMS = [
     ("Overview",              "overview"),
@@ -297,26 +299,15 @@ class DashboardScreen(QMainWindow):
         container._icon_name = icon_name
         container._icon_label = icon_label
         container._text_label = text_label
+        # Tag with screen key for QSS targeting (same value as icon_name in this codebase)
+        container.setProperty("screen", icon_name)
 
         return container
 
     def _set_nav_active(self, index: int):
-        """Set active state for navigation item using dynamic properties and style updates"""
-        screen_key, _ = _NAV_ITEMS[index]  # Get label first, we'll map to key
-        screen_key_map = {
-            "Overview": "overview",
-            "Accounts": "accounts",
-            "Transactions": "transactions",
-            "Income & Expectations": "income",
-            "Fixed Deposits": "fixed_deposits",
-            "Statement Import": "statement_import",
-            "Tax Documents": "ais_tis",
-            "Tax": "tax",
-            "Income Prediction": "income_prediction",
-            "Settings": "settings",
-        }
-        screen_key = screen_key_map.get(screen_key, "overview")
-        accent_color = Theme.screen_accent(screen_key)
+        """Set active state for navigation item using dynamic properties and QSS styling"""
+        # Get the screen key for the active item (it's at index 1 in _NAV_ITEMS tuple)
+        active_key = _NAV_ITEMS[index][1]
 
         for i, btn in enumerate(self._nav_buttons):
             is_active = (i == index)
@@ -328,8 +319,9 @@ class DashboardScreen(QMainWindow):
 
             icon_label = btn._icon_label
             text_label = btn._text_label
-            # Active items get a crisp icon in the active-text token colour
-            icon_color = Theme.SIDEBAR_ACTIVE_TEXT if is_active else "auto"
+            # Active items get a crisp icon in the active-text token colour;
+            # inactive items use the screen accent color
+            icon_color = Theme.SIDEBAR_ACTIVE_TEXT if is_active else Theme.screen_accent(btn._icon_name)
 
             if icons_available():
                 icon_name = btn._icon_name
@@ -342,23 +334,24 @@ class DashboardScreen(QMainWindow):
             text_label.style().unpolish(text_label)
             text_label.style().polish(text_label)
 
-            # Apply screen accent to active nav button background
-            if is_active:
-                btn.setStyleSheet(f"""
-                    QToolButton {{
-                        background-color: {accent_color};
-                        border: none;
-                        border-radius: {Theme.RADIUS_CONTROL}px;
-                        margin: 2px 10px;
-                        padding: 0px;
-                    }}
-                    QToolButton:hover {{
-                        background-color: {accent_color};
-                        border-radius: {Theme.RADIUS_CONTROL}px;
-                        margin: 2px 10px;
-                    }}
-                """)
+        # Update page accent bar to reflect the active screen
+        if hasattr(self, "page_accent_bar"):
+            self.page_accent_bar.setProperty("screen", active_key)
+            self.page_accent_bar.style().unpolish(self.page_accent_bar)
+            self.page_accent_bar.style().polish(self.page_accent_bar)
 
+
+    def _refresh_shared_widgets(self):
+        """Refresh theme on all shared widgets (KpiTile, SummaryPanel, etc.) across all pages."""
+        for page in self._screen_pages.values():
+            if page is None:
+                continue
+            for cls in (KpiTile, SummaryPanel, CollapsibleSection, EmptyState):
+                for w in page.findChildren(cls):
+                    try:
+                        w.refresh_theme()
+                    except Exception:
+                        traceback.print_exc()
 
     def _on_theme_changed(self, name: str) -> None:
         """
@@ -375,19 +368,8 @@ class DashboardScreen(QMainWindow):
         if hasattr(self, '_sidebar_toggle_btn') and self._sidebar_toggle_btn:
             self._update_sidebar_toggle_btn()
 
-        # Refresh all SummaryPanel cards (left-accent + card border are inline)
-        for panel_name in ('panel_interest', 'panel_tax'):
-            panel = getattr(self, panel_name, None)
-            if panel is not None:
-                panel.refresh_theme()
-
-        # Refresh KPI tiles (re-apply theme via unpolish/polish)
-        for tile_name in ('kpi_balance', 'kpi_income', 'kpi_expense', 'kpi_savings', 'kpi_interest'):
-            tile = getattr(self, tile_name, None)
-            if tile is not None:
-                tile.style().unpolish(tile)
-                tile.style().polish(tile)
-                tile.setGraphicsEffect(Theme.shadow_card())
+        # Refresh all shared widgets (KpiTile, SummaryPanel, CollapsibleSection, EmptyState) across all pages
+        self._refresh_shared_widgets()
 
         # Refresh charts (re-plot with new theme colors)
         for chart_name in ('chart_income_expense', 'chart_distribution'):
@@ -431,6 +413,13 @@ class DashboardScreen(QMainWindow):
         else:
             logo_chip.setText("PF")
         layout.addWidget(logo_chip)
+
+        # Page accent bar (colored indicator below the logo)
+        self.page_accent_bar = QFrame()
+        self.page_accent_bar.setObjectName("pageAccentBar")
+        self.page_accent_bar.setFixedSize(4, 24)
+        self.page_accent_bar.setProperty("screen", _NAV_ITEMS[0][1])
+        layout.addWidget(self.page_accent_bar)
 
         self.page_title_lbl = QLabel("Overview")
         self.page_title_lbl.setObjectName("pageTitle")
@@ -685,11 +674,11 @@ class DashboardScreen(QMainWindow):
         kpi_tiles_layout.setSpacing(12)
 
         # Create KPI tiles using the reusable KpiTile component
-        self.kpi_balance = KpiTile("Total Balance", 0.0, is_currency=True)
-        self.kpi_income = KpiTile("Income (FY)", 0.0, is_currency=True)
-        self.kpi_expense = KpiTile("Expense (FY)", 0.0, is_currency=True)
-        self.kpi_savings = KpiTile("Net Savings", 0.0, is_currency=True)
-        self.kpi_interest = KpiTile("Interest Income", 0.0, is_currency=True)
+        self.kpi_balance = KpiTile("Total Balance", 0.0, is_currency=True, accent="primary", icon="bank")
+        self.kpi_income = KpiTile("Income (FY)", 0.0, is_currency=True, accent="success", icon="trend")
+        self.kpi_expense = KpiTile("Expense (FY)", 0.0, is_currency=True, accent="danger", icon="debit_card")
+        self.kpi_savings = KpiTile("Net Savings", 0.0, is_currency=True, accent="info", icon="fixed_deposits")
+        self.kpi_interest = KpiTile("Interest Income", 0.0, is_currency=True, accent="purple", icon="interest")
 
         kpi_tiles_layout.addWidget(self.kpi_balance, stretch=1)
         kpi_tiles_layout.addWidget(self.kpi_income, stretch=1)
@@ -746,7 +735,7 @@ class DashboardScreen(QMainWindow):
         panels_grid = QGridLayout()
         panels_grid.setSpacing(16)
 
-        self.panel_interest = SummaryPanel("Interest Summary", "trend", accent=Theme.SUCCESS)
+        self.panel_interest = SummaryPanel("Interest Summary", "trend", accent="success")
         self.panel_interest.add_stat("fd_curr", "FD Interest (Current FY)", "₹ —")
         self.panel_interest.add_stat("fd_next", "FD Interest (Next FY est.)", "₹ —")
         self.panel_interest.add_divider()
@@ -755,7 +744,7 @@ class DashboardScreen(QMainWindow):
         self.panel_interest.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         panels_grid.addWidget(self.panel_interest, 0, 0)
 
-        self.panel_tax = SummaryPanel("Tax Summary", "tax", accent=Theme.WARNING)
+        self.panel_tax = SummaryPanel("Tax Summary", "tax", accent="warning")
         self.panel_tax.add_stat("gross", "Gross Total Income", "₹ —")
         self.panel_tax.add_stat("deductions", "Total Deductions", "₹ —")
         self.panel_tax.add_divider()

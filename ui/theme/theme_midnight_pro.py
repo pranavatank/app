@@ -105,6 +105,35 @@ SHADOW_RGBA_CARD          = (0, 0, 0, 60)
 SHADOW_RGBA_ELEVATED      = (0, 0, 0, 100)
 SHADOW_RGBA_PRIMARY       = (129, 140, 248, 55)
 
+# ── Card gradients and screen accents ──────────────────────────────────────
+CARD_GRADIENT_START       = "#151823"
+CARD_GRADIENT_END         = "#13161F"
+SHADOW_ALPHA_ACCENT       = 90
+SCREEN_ACCENT_FILL        = {
+    "overview": "#5563F6",
+    "accounts": "#047857",
+    "transactions": "#B45309",
+    "income": "#DC2626",
+    "fixed_deposits": "#C026D3",
+    "statement_import": "#0369A1",
+    "ais_tis": "#DB2777",
+    "tax": "#C2410C",
+    "income_prediction": "#9333EA",
+    "settings": "#64748B",
+}
+SCREEN_ACCENT_TINT        = {
+    "overview": "#818CF8",
+    "accounts": "#34D399",
+    "transactions": "#FCD34D",
+    "income": "#F87171",
+    "fixed_deposits": "#E879F9",
+    "statement_import": "#38BDF8",
+    "ais_tis": "#F472B6",
+    "tax": "#FB923C",
+    "income_prediction": "#C084FC",
+    "settings": "#94A3B8",
+}
+
 # ── Charts — vivid on dark bg ─────────────────────────────────────────────────
 CHART_COLORS = [
     "#818CF8",  # indigo

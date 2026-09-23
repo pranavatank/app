@@ -4,7 +4,7 @@
 you should not need to read source files to understand what this project is, what
 state it is in, what is pending, or how to test it.
 
-**Last updated:** 2026-09-23.
+**Last updated:** 2026-09-23 (second pass).
 **Audience:** an AI agent (or human) picking this project up with zero prior context.
 This guide keeps only what is pending and what you need to know to avoid repeating
 past mistakes — not a changelog. Full history is in git log / commit messages.
@@ -316,22 +316,26 @@ Exclude `type(w).__name__ == "ThemeCard"` from any brightness-offender scan.
 ```
 
 **Full-suite `pytest tests -q` is fragile on this Windows/Qt/matplotlib
-stack.** Running all of `tests/` in one process segfaults partway through
-(access violation during garbage collection of matplotlib/Qt objects, or
-occasionally a `unittest.mock` teardown) — pre-existing, unrelated to any
-particular change. `tests/test_dashboard_lazy.py`, `tests/test_chart_relocation.py`
-and `tests/test_money_label.py` are the most likely to trigger it. Each passes
-cleanly when run alone (`pytest tests/test_X.py -q`); a segfault right after
-`[100%]` is teardown/GC, not a real test failure. For a full-suite signal, run
-each file as its own process instead of one combined invocation. No
-`pytest-xdist`/`pytest-forked` is installed currently — installing one would
-fix this properly if it becomes a recurring problem.
+stack — use `tools/run_full_tests.py` instead.** Running all of `tests/` in
+one process segfaults partway through (access violation during garbage
+collection of matplotlib/Qt objects). `tools/run_full_tests.py` runs each
+`tests/test_*.py` file in its own subprocess for real isolation:
+```
+.venv\Scripts\python.exe tools/run_full_tests.py
+# specific files, and pass extra pytest flags after --:
+.venv\Scripts\python.exe tools/run_full_tests.py tests/test_kpi_tile.py -- -v
+```
+Current baseline: **35 PASS, 2 CRASH** (`test_chart_relocation.py`,
+`test_money_label.py`) — both pre-existing, both an interpreter-teardown
+segfault that happens *before* pytest's own summary line is written (all
+their own assertions pass — the log shows `...` / `[100%]` then nothing). The
+tool's classifier reports these as `CRASH` rather than `PASS (crashed after
+summary)` because it can't find a summary line at all in this specific crash
+timing; read the log in `%TEMP%\finmgr_test_logs\` to confirm it's this
+known-benign case before treating a CRASH as a regression.
 
-`test_dashboard_lazy.py::test_nav_labels_not_clipped_when_expanded` (expects
-9 nav buttons, there are 10 now) and `::test_nav_labels_hidden_when_collapsed`
-(expects a 76px collapsed sidebar, gets 248px) currently fail — pre-existing,
-not caused by any recent change (confirmed `dashboard_screen.py` untouched via
-`git diff`), not yet root-caused.
+`test_dashboard_lazy.py`'s two previously-stale-failing tests (nav-button
+count, sidebar-collapse-width) are now fixed and pass.
 
 **Two real-UI tests can never run concurrently** — they fight over screen focus.
 
@@ -344,10 +348,14 @@ not caused by any recent change (confirmed `dashboard_screen.py` untouched via
 `4` Fixed Deposits · `5` Statement Import · `6` Tax Documents · `7` Tax ·
 `8` **Income Prediction** · `9` Settings
 
-Adding a screen means **five** edits, and missing any one fails silently:
-`_NAV_ITEMS`, the `screen_key_map`, the lazy page builder, `ui/icons.py` `_R`
-registry, and `Theme.SCREEN_ACCENTS` — **plus** the page-name tuple in the
-theme-refresh loop (~line 403 of `dashboard_screen.py`).
+Adding a screen means edits in several places, and missing any one fails
+silently: `_NAV_ITEMS` (its second element is the screen key, used both for
+nav routing and as the key into `Theme.SCREEN_ACCENT_FILL`/`SCREEN_ACCENT_TINT`
+— add a matching entry to those dicts in **all 4** theme files, not just one),
+the lazy page builder, `ui/icons.py`'s icon registry, and
+`self._screen_pages` (consumed by `_refresh_shared_widgets`). There is no
+`screen_key_map` anymore — nav buttons carry their screen key directly via
+`setProperty("screen", ...)`.
 
 ### Two statement parsers exist
 - **Modern** — `from engines.statement import parse_statement_pdf`. Confidence
@@ -410,9 +418,33 @@ the button's own QSS (`min-height`/`max-height`), not left to
 `setFixedHeight`/`setMaximumWidth` on repolish, so geometry must live in the
 QSS string itself.
 
+**Accent system (added 2026-09-23).** Every screen has a colour identity via
+`Theme.SCREEN_ACCENT_FILL`/`SCREEN_ACCENT_TINT` dicts (keyed by screen name,
+defined per-theme in all 4 `ui/theme/theme_*.py` files — same 10 keys in
+every file). `Theme.accent(name)` resolves either a screen key or a semantic
+name (`"primary"`, `"success"`, `"danger"`, `"warning"`, `"info"`, `"teal"`,
+`"purple"`, `"pink"` — see `ui.theme.components.ACCENT_TOKENS`) to a hex
+colour; `Theme.screen_accent(key)`/`screen_accent_fill(key)` resolve just the
+tint/fill pair. `KpiTile`, `SummaryPanel`, `CollapsibleSection`, `EmptyState`
+all take an `accent=` kwarg and style themselves via QSS
+`[accent="name"]`/`[screen="name"]` dynamic-property selectors (not inline
+`setStyleSheet` calls) — so a live theme switch just needs the property
+re-evaluated, not the widget rebuilt. Each also has a `refresh_theme()`
+method; `DashboardScreen._refresh_shared_widgets()` walks every built page
+and calls it on every instance of those 4 classes. **Two gotchas that will
+bite you if you add new colour code:** (1) Qt reads an 8-digit hex string as
+`#AARRGGBB` (alpha first), not `#RRGGBBAA` — a `f"{color}2E"` pattern
+intending "add alpha" silently produces a wrong colour instead of erroring;
+use `ui.theme.components.rgba(hex, alpha)` instead. (2) `border-radius: 999px`
+does NOT clip a non-square/non-circular widget into a circle in Qt's QSS —
+verified by direct offscreen render; use one of the real radius tokens
+(`RADIUS_CONTROL`/`RADIUS_CARD`/`RADIUS_MODAL`/`RADIUS_PILL`) or a literal
+that's actually been checked to look right at that widget's size.
+
 **Any screen holding charts MUST define `refresh_theme()`** covering every
 chart and table it owns, or a live theme switch leaves it visually stale.
-**This is currently incomplete** — see §7 pending item.
+**Charts and 4 full pages (`import_page`, `tax_documents_page`, `tax_page`,
+`settings_page`) still don't** — see §7 pending item.
 
 ---
 
@@ -433,31 +465,32 @@ chart and table it owns, or a live theme switch leaves it visually stale.
    unreviewed** — see §3 "Income classification is not fully clean". Confirm
    with the owner before recategorising any of it, the way the earlier
    reclassification was confirmed.
-4. **Live theme switching is broadly incomplete.** Applying a theme to an
-   *already-built* window leaves most screens with bright, unthemed elements
-   — `import_page`, `tax_documents_page`, `tax_page` and `settings_page` have
-   no `refresh_theme()` at all, and even pages that do
-   (`transactions_page`, `income_page`, `fd_page`, `prediction_page`) still
-   show bright filter bars, buttons, charts and `CollapsibleSection` headers
-   after a switch. Building a window fresh in the target theme is fully
-   clean — 0 offenders across all 10 screens (verify with
-   `tools/real_ui_tests/test_dark_theme_sweep.py` Pass A vs Pass B). This is a
-   design-system-level pass across every screen (consistent with the known
-   `Theme.btn` baked-QSS and `ChartWidget` baked-facecolor patterns) — plan it
-   as its own focused session, not a quick patch.
-5. **Full-suite pytest fragility** (§5.5) — installing `pytest-forked` or
-   `pytest-xdist` and running with process isolation per test file would fix
-   this properly; currently worked around by running files individually.
-6. **Two pre-existing `test_dashboard_lazy.py` failures** (§5.5) not yet
-   root-caused: stale nav-button count assertion (9 vs actual 10), and
-   sidebar-collapse-width assertion (expects 76px, gets 248px — collapse may
-   not actually be working, or the test doesn't wait for it).
+4. **Live theme switching is still incomplete, though better than before.**
+   `KpiTile`/`SummaryPanel`/`CollapsibleSection` headers/`EmptyState` now
+   re-theme correctly on a live switch (via `_refresh_shared_widgets()`) —
+   Overview screen went from 3 brightness offenders to 0. What's still
+   unthemed on a live switch: **charts** (`ChartWidget` bakes its facecolor
+   at construction — matplotlib figure, not QSS-drivable the same way) and
+   **4 full pages that have no `refresh_theme()` at all**:
+   `import_page`, `tax_documents_page`, `tax_page`, `settings_page` (check
+   with `has_refresh_theme=False` lines printed by
+   `tools/real_ui_tests/test_dark_theme_sweep.py`). Building a window fresh
+   in the target theme is fully clean — 0 offenders across all 10 screens
+   (Pass A of that same test). Fixing charts + the 4 missing pages is a
+   further design-system pass, not a quick patch.
+5. **`tools/run_full_tests.py`'s crash classifier has a gap** (§5.5): a
+   process that crashes *before* pytest's own summary line prints (rather
+   than after) is reported as `CRASH` with "(no summary found)" instead of
+   the more accurate "PASS (crashed after summary)" — currently affects
+   `test_chart_relocation.py`/`test_money_label.py`. Not urgent (the log
+   still shows the truth if you read it), but worth tightening if this
+   pattern recurs on other files.
 
 ### Known, accepted limitations (not bugs to fix blindly)
-7. **The Transactions screen has no pagination** — loads the entire FY
+6. **The Transactions screen has no pagination** — loads the entire FY
    (505+ rows) at once. Fine today; revisit if per-FY row counts grow much
    larger.
-8. **`Test Bank` (account_id 1) is gone.** If you see references to it in old
+7. **`Test Bank` (account_id 1) is gone.** If you see references to it in old
    documents/plans, they're stale — don't try to "fix" an account that no
    longer exists.
 

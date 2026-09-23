@@ -115,11 +115,11 @@ class IncomeManagementScreen(QWidget):
         panel_layout.addWidget(self._build_panel_manage_expectations())
 
         # Chart panels wrapped in collapsible sections (collapsed by default)
-        section_1 = CollapsibleSection("Expected vs Actual by Month", expanded=False)
+        section_1 = CollapsibleSection("Expected vs Actual by Month", expanded=False, accent="income")
         section_1.content_layout().addWidget(self._build_panel_1_vs_actual())
         panel_layout.addWidget(section_1)
 
-        section_2 = CollapsibleSection("Income Composition by Source", expanded=False)
+        section_2 = CollapsibleSection("Income Composition by Source", expanded=False, accent="income")
         section_2.content_layout().addWidget(self._build_panel_2_composition())
         panel_layout.addWidget(section_2)
 
@@ -150,10 +150,10 @@ class IncomeManagementScreen(QWidget):
         kpi_layout = QHBoxLayout()
         kpi_layout.setSpacing(14)
 
-        self.kpi_expected = KpiTile("Expected Income", 0.0, is_currency=True)
-        self.kpi_received = KpiTile("Received to Date", 0.0, is_currency=True)
-        self.kpi_pending = KpiTile("Still Expected", 0.0, is_currency=True)
-        self.kpi_tax = KpiTile("Projected Tax", 0.0, is_currency=True)
+        self.kpi_expected = KpiTile("Expected Income", 0.0, is_currency=True, accent="primary", icon="income_src")
+        self.kpi_received = KpiTile("Received to Date", 0.0, is_currency=True, accent="success", icon="check")
+        self.kpi_pending = KpiTile("Still Expected", 0.0, is_currency=True, accent="warning", icon="calendar")
+        self.kpi_tax = KpiTile("Projected Tax", 0.0, is_currency=True, accent="danger", icon="tax")
 
         kpi_layout.addWidget(self.kpi_expected, stretch=1)
         kpi_layout.addWidget(self.kpi_received, stretch=1)
@@ -216,7 +216,8 @@ class IncomeManagementScreen(QWidget):
             icon_name="income_src",
             headline="No Income Expectations",
             explanation="Add income expectations to track expected income and match with actual transactions.",
-            action_text="Add Expected Income"
+            action_text="Add Expected Income",
+            accent="income"
         )
         self.empty_state_expectations.action_clicked.connect(self._add_expectation)
         # Toolbar's "Add Expected Income" button above is already primary

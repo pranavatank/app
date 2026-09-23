@@ -625,6 +625,10 @@ class ExcelTableWithStats(QWidget):
             border-top: 1px solid {Theme.BORDER};
         """
 
+    def refresh_theme(self):
+        """Refresh the stats label styling when theme changes."""
+        self.stats_label.setStyleSheet(self._stats_label_css())
+
     def _on_stats_changed(self, stats: str):
         self.stats_label.setText(stats if stats else "No selection")
 

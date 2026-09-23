@@ -20,7 +20,7 @@ from ui.widgets.motion import animate_height
 class CollapsibleSection(QWidget):
     """A collapsible section widget with a clickable header and content area."""
 
-    def __init__(self, title: str, summary_value: str | None = None, expanded: bool = True, parent=None):
+    def __init__(self, title: str, summary_value: str | None = None, expanded: bool = True, parent=None, accent: str = "primary"):
         """
         Initialize a CollapsibleSection.
 
@@ -29,13 +29,14 @@ class CollapsibleSection(QWidget):
             summary_value: Optional summary to show when collapsed (e.g., total/subtotal)
             expanded: Initial expand state (default True)
             parent: Parent widget
+            accent: Accent color name for the chevron (default "primary")
         """
         super().__init__(parent)
         self.title_text = title
         self.summary_value_text = summary_value or ""
         self._expanded = expanded
+        self._accent = accent
         self._build_ui()
-        self._update_header_style()
 
     def _build_ui(self):
         """Build the section UI with header and content area."""
@@ -46,6 +47,7 @@ class CollapsibleSection(QWidget):
         # Header row
         self._header = QWidget()
         self._header.setObjectName("CollapsibleSectionHeader")
+        self._header.setProperty("accent", self._accent)
         self._header.setCursor(Qt.CursorShape.PointingHandCursor)
         self._header.mousePressEvent = self._on_header_click
         self._header.keyPressEvent = self._on_header_key_press
@@ -94,34 +96,12 @@ class CollapsibleSection(QWidget):
         # Set initial state
         self._set_expanded(self._expanded)
 
-    def _update_header_style(self):
-        """Update the header styling based on theme and focus state."""
-        t = Theme
-        self._header.setStyleSheet(f"""
-            #CollapsibleSectionHeader {{
-                background-color: {t.SURFACE};
-                border: 1px solid {t.BORDER};
-                border-radius: {t.RADIUS_CARD}px;
-                margin: 0px;
-                padding: 0px;
-            }}
-            #CollapsibleSectionHeader:hover {{
-                background-color: {t.SURFACE_ALT};
-                border-color: {t.BORDER_FOCUS};
-            }}
-            #CollapsibleSectionHeader:focus {{
-                outline: 2px solid {t.FOCUS_RING};
-                outline-offset: 2px;
-                border-color: {t.PRIMARY};
-            }}
-        """)
-
     def _update_chevron(self):
         """Update the chevron icon based on expanded state."""
         if self._expanded:
             # Expanded: chevron-down
             icon_name = "show"
-            color = Theme.PRIMARY
+            color = Theme.accent(self._accent)
         else:
             # Collapsed: chevron-right
             icon_name = "sidebar_expand"
@@ -181,6 +161,10 @@ class CollapsibleSection(QWidget):
     def is_expanded(self) -> bool:
         """Return whether the section is expanded."""
         return self._expanded
+
+    def refresh_theme(self):
+        """Refresh theme-dependent elements."""
+        self._update_chevron()
 
     def content_layout(self) -> QVBoxLayout:
         """Return the content layout for adding widgets."""

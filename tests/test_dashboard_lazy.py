@@ -170,7 +170,7 @@ def test_nav_labels_not_clipped_when_expanded():
 
     # Get all nav buttons and verify they expand with the sidebar
     nav_buttons = [b for b in dash.findChildren(QToolButton) if b.property('nav_item')]
-    assert len(nav_buttons) == 9, f"Should have 9 nav buttons, got {len(nav_buttons)}"
+    assert len(nav_buttons) == len(_NAV_ITEMS), f"Should have {len(_NAV_ITEMS)} nav buttons, got {len(nav_buttons)}"
 
     # Verify each nav button fills the sidebar width
     for btn in nav_buttons:
@@ -204,7 +204,7 @@ def test_nav_labels_not_clipped_when_expanded():
     assert clipped_icons == 0, f"{clipped_icons} nav icons are clipped"
 
 
-def test_nav_labels_hidden_when_collapsed():
+def test_nav_labels_hidden_when_collapsed(monkeypatch):
     """Regression test: nav labels should be hidden when sidebar is collapsed.
 
     This ensures the collapse path properly hides labels and the labels
@@ -212,12 +212,16 @@ def test_nav_labels_hidden_when_collapsed():
     """
     from core.session import session
     from PySide6.QtWidgets import QToolButton
+    import ui.widgets.motion as motion
 
     # Start expanded, then collapse
     session.set_sidebar_open(True)
     dash = DashboardScreen()
     dash.resize(1280, 720)
     dash.show()
+
+    # Disable animation to measure the final width synchronously (collapse animates maximumWidth over 120ms)
+    monkeypatch.setattr(motion, "ENABLED", False)
 
     # Collapse the sidebar
     dash._toggle_sidebar()

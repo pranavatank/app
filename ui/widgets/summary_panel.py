@@ -26,7 +26,7 @@ class SummaryPanel(QFrame):
     """
 
     def __init__(self, title: str, icon: str = "",
-                 accent: str = None,
+                 accent: str = "primary",
                  scrollable: bool = False,
                  parent=None):
         """
@@ -34,13 +34,14 @@ class SummaryPanel(QFrame):
         rendered as a tinted icon via the shared icon registry. If the key
         isn't found in the registry, it's treated as a literal emoji string
         (kept for backward compatibility with any external callers).
+        `accent` is an accent name (e.g. "primary", "success", "warning").
         """
         super().__init__(parent)
         self._rows:      dict[str, QLabel] = {}
         self._row_meta:  dict[str, dict] = {}   # key -> {label_widget, value_color, bold, value_size}
         self._dividers:  list[QFrame] = []       # every divider (header + add_divider()), for refresh_theme
         self._scrollable = scrollable
-        self._accent     = accent or Theme.PRIMARY
+        self._accent     = accent if accent in Theme.accent_names() else "primary"
 
         # Keep refs to re-style on theme change
         self._title_lbl:  QLabel | None = None
@@ -48,8 +49,8 @@ class SummaryPanel(QFrame):
         self._icon_bg:    QLabel | None = None
 
         self.setObjectName("SummaryPanel")
+        self.setProperty("accent", self._accent)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self._apply_card_style()
         self.setGraphicsEffect(Theme.shadow_card())
 
         outer = QVBoxLayout(self)
@@ -63,10 +64,11 @@ class SummaryPanel(QFrame):
         self._icon_key = icon
         if icon:
             self._icon_bg = QLabel()
+            self._icon_bg.setObjectName("SummaryPanelIcon")
             self._icon_bg.setFixedSize(38, 38)
             self._icon_bg.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self._icon_bg.setProperty("accent", self._accent)
             self._render_icon()
-            self._icon_bg.setStyleSheet(self._icon_css())
             header_row.addWidget(self._icon_bg)
 
         self._title_lbl = QLabel(title)
@@ -79,8 +81,9 @@ class SummaryPanel(QFrame):
 
         # ── Accent divider ────────────────────────────────────────────────────
         self._div = QFrame()
-        self._div.setObjectName("SummaryPanelDivider")
-        self._div.setFixedHeight(1)
+        self._div.setObjectName("SummaryPanelAccentBar")
+        self._div.setFixedHeight(2)
+        self._div.setProperty("accent", self._accent)
         outer.addWidget(self._div)
         outer.addSpacing(12)
 
@@ -107,19 +110,20 @@ class SummaryPanel(QFrame):
 
     # ── Style helpers ─────────────────────────────────────────────────────────
 
-    def _apply_card_style(self):
-        self.setStyleSheet(
-            Theme.card_style(
-                border_color=Theme.BORDER,
-                left_accent=self._accent,
-                radius=14,
-                padding=0,
-                selector="QFrame#SummaryPanel",
-            )
-        )
+    def _value_css(self, meta: dict) -> str:
+        """Generate stylesheet for a value label based on its metadata."""
+        value_color_role = meta.get("value_color_role")
+        value_color = meta.get("value_color")
+        bold = meta.get("bold", False)
+        value_size = meta.get("value_size", 13)
 
-    def _icon_css(self) -> str:
-        return Theme.icon_chip_style(self._accent, radius=10)
+        color = (getattr(Theme, value_color_role, None) if value_color_role else None) \
+                or value_color or Theme.TEXT_PRIMARY
+        weight = "700" if bold else "500"
+        return (
+            f"font-size: {value_size}px; font-weight: {weight};"
+            f" color: {color}; background: transparent; border: none;"
+        )
 
     def _render_icon(self):
         """Render the header icon via the shared registry, tinted with this
@@ -128,7 +132,8 @@ class SummaryPanel(QFrame):
         if not self._icon_bg or not self._icon_key:
             return
         if icons_available():
-            pm = icon_pixmap(self._icon_key, size=20, color=self._accent)
+            accent_color = Theme.accent(self._accent)
+            pm = icon_pixmap(self._icon_key, size=20, color=accent_color)
             if not pm.isNull():
                 self._icon_bg.setPixmap(pm)
                 return
@@ -164,28 +169,24 @@ class SummaryPanel(QFrame):
         lbl.setProperty("textrole", "secondary-sm")
         lbl.setWordWrap(False)
 
-        color = (getattr(Theme, value_color_role, None) if value_color_role else None) \
-                or value_color or Theme.TEXT_PRIMARY
-        weight = "700" if bold else "500"
         val = QLabel(value)
         val.setObjectName("SummaryPanelValue")
-        val.setStyleSheet(
-            f"font-size: {value_size}px; font-weight: {weight};"
-            f" color: {color}; background: transparent; border: none;"
-        )
-        val.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
-        row.addWidget(lbl, stretch=1)
-        row.addWidget(val, stretch=0)
-        self._insert_widget(row_w)
-        self._rows[key] = val
-        self._row_meta[key] = {
+        meta = {
             "label_widget": lbl,
             "value_color": value_color,
             "value_color_role": value_color_role,
             "bold": bold,
             "value_size": value_size,
         }
+        val.setStyleSheet(self._value_css(meta))
+        val.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+
+        row.addWidget(lbl, stretch=1)
+        row.addWidget(val, stretch=0)
+        self._insert_widget(row_w)
+        self._rows[key] = val
+        self._row_meta[key] = meta
 
     def add_divider(self) -> None:
         line = QFrame()
@@ -219,3 +220,11 @@ class SummaryPanel(QFrame):
                 w.deleteLater()
         if not self._scrollable:
             self._stats_layout.addStretch()
+
+    def refresh_theme(self) -> None:
+        """Refresh all stylesheets and graphics effects after a theme change."""
+        self.setGraphicsEffect(Theme.shadow_card())
+        if self._icon_bg:
+            self._render_icon()
+        for key, meta in self._row_meta.items():
+            self._rows[key].setStyleSheet(self._value_css(meta))

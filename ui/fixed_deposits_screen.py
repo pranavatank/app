@@ -142,7 +142,7 @@ class FixedDepositsScreen(QWidget):
         # Interest trend chart (collapsible, initially collapsed)
         self.interest_chart = ChartWidget()
         self.interest_chart.setMinimumHeight(120)
-        self.interest_chart_section = CollapsibleSection("Interest Trend", expanded=False)
+        self.interest_chart_section = CollapsibleSection("Interest Trend", expanded=False, accent="fixed_deposits")
         self.interest_chart_section.content_layout().addWidget(self.interest_chart)
         layout.addWidget(self.interest_chart_section)
 
@@ -239,6 +239,7 @@ class FixedDepositsScreen(QWidget):
                     headline="No fixed deposits",
                     explanation="Add a fixed deposit to track principal, interest, and maturity.",
                     action_text="Add FD",
+                    accent="fixed_deposits",
                     parent=self.table_container
                 )
                 self._empty_state.action_clicked.connect(self._on_add_fd)
@@ -422,8 +423,6 @@ class FixedDepositsScreen(QWidget):
             self.table_widget.refresh_theme()
         if hasattr(self, "interest_chart") and self.interest_chart:
             self.interest_chart.refresh_theme()
-        if hasattr(self, "interest_chart_section") and self.interest_chart_section:
-            pass  # CollapsibleSection uses theme colors from CSS, refreshed automatically
         self.refresh()
 
     def _format_tenure(self, fd: dict) -> str:
