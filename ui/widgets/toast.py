@@ -109,8 +109,11 @@ class ToastContainer(QWidget):
         self.layout.addStretch()  # Push toasts to bottom
 
         self.setObjectName("toastContainer")
-        # Don't paint a background; just contain the toasts
-        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
+        # Don't paint a background; just contain the toasts. Transparent to
+        # mouse events so it never blocks clicks on the content underneath it
+        # (it is raised to the top of the z-order and sized to the full
+        # content area in toast_utils.init_toast_container).
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
 
     def show_toast(self, message: str, variant: str = "info", duration_ms: int = 4000):
         """Show a new toast and manage its lifecycle."""

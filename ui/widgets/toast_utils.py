@@ -29,7 +29,7 @@ def init_toast_container(content_area):
     _toast_container.setGeometry(content_area.rect())
     _toast_container.raise_()
     # Allow mouse events to pass through to the content area for interactive elements
-    _toast_container.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
+    _toast_container.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
 
 
 def show_toast(message: str, variant: str = "info", duration_ms: int = 4000):
