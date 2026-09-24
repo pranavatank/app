@@ -10,7 +10,7 @@ by category, and FDs with missing details are synthesised with defaults.
 No speculative optimisation; all figures carry an is_estimated flag.
 """
 
-from datetime import date
+from datetime import date, timedelta
 from dateutil.relativedelta import relativedelta
 from config import fy_date_range, get_current_financial_year, FD_TDS_FORM_NAME, FD_TDS_FORM_NAME_SENIOR
 from models.transaction import get_transactions
@@ -104,6 +104,7 @@ def project_fd_interest(
         }
     """
     as_of = _as_of_date(as_of)
+    fy_start, fy_end = fy_date_range(financial_year)
     fds = get_all_fds(person_id=person_id)
 
     total_interest = 0.0
@@ -117,7 +118,15 @@ def project_fd_interest(
     for fd in fds:
         try:
             synth_fd = _synthesise_fd(fd)
-            interest = fd_interest_accrued_to(synth_fd, as_of)
+            fd_start = date.fromisoformat(synth_fd["start_date"])
+            fd_end = date.fromisoformat(synth_fd["maturity_date"])
+            window_start = max(fd_start, fy_start)
+            window_end = min(fd_end, fy_end)
+            if window_start > window_end:
+                continue
+            interest = fd_interest_accrued_to(synth_fd, window_end)
+            if window_start > fd_start:
+                interest -= fd_interest_accrued_to(synth_fd, window_start - timedelta(days=1))
 
             if interest <= 0:
                 continue
@@ -460,6 +469,7 @@ def project_bank_tds_risk(
     Returns:
         {
           "threshold": float (from TaxParams.fd_tds_threshold),
+          "form_name": str (Form 15G or Form 15H),
           "by_bank": [
             {
               "bank_name": str,
@@ -475,7 +485,9 @@ def project_bank_tds_risk(
     """
     as_of = _as_of_date(as_of)
     params = _get_tax_params(financial_year)  # Private helper used to load tax config from DB
-    threshold = float(params.get("fd_tds_threshold") or 50000.0)
+    is_senior = _is_senior_citizen_in_fy(person_id, financial_year)
+    threshold = float(params.get("fd_tds_threshold_senior" if is_senior else "fd_tds_threshold") or 50000.0)
+    form_name = FD_TDS_FORM_NAME_SENIOR if is_senior else FD_TDS_FORM_NAME
 
     fd_result = project_fd_interest(person_id, financial_year, as_of)
     per_bank = fd_result.get("per_bank") or {}
@@ -499,6 +511,7 @@ def project_bank_tds_risk(
 
     return {
         "threshold": round(threshold, 2),
+        "form_name": form_name,
         "by_bank": by_bank,
     }
 
@@ -893,7 +906,7 @@ def build_strategies(
                 if maturity_date_str:
                     maturity_date = date.fromisoformat(maturity_date_str)
                     if last_quarter_start <= maturity_date <= fy_end:
-                        interest = fd_interest_accrued_to(synth_fd, fy_end)
+                        interest = fd_interest_accrued_to(synth_fd, min(maturity_date, fy_end))
                         maturity_candidates.append({
                             "fd": synth_fd,
                             "interest": interest,
@@ -1044,7 +1057,7 @@ def build_advisory(
             warnings.append({
                 "severity": "warning",
                 "title": f"{bank['bank_name']}: TDS threshold at risk",
-                "detail": f"Projected FD interest ₹{bank['projected_interest']:,.0f} exceeds ₹{bank['threshold']:,.0f} threshold by ₹{bank['amount_over']:,.0f}. File Form 15G to avoid TDS.",
+                "detail": f"Projected FD interest ₹{bank['projected_interest']:,.0f} exceeds ₹{bank['threshold']:,.0f} threshold by ₹{bank['amount_over']:,.0f}. File {tds_risk['form_name']} to avoid TDS.",
                 "category": "tds_threshold",
                 "amount": bank["amount_over"],
                 "is_estimated": bank["is_estimated"],

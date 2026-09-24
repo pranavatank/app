@@ -294,7 +294,22 @@ def link_fd_transaction(fd_id: int, transaction_id: int) -> None:
         (transaction_id,),
     ).fetchone()
     if txn:
-        actual_interest = txn["amount"] if txn["transaction_type"] == "Income" else None
+        actual_interest = None
+        if txn["transaction_type"] == "Income":
+            # Check if this is an FD Maturity transaction
+            if txn["category"] == "FD Maturity":
+                # For maturity redemptions, subtract principal from the total amount
+                fd = conn.execute(
+                    "SELECT principal_amount FROM FixedDeposit WHERE fd_id = ?",
+                    (fd_id,),
+                ).fetchone()
+                if fd:
+                    fd_principal = fd["principal_amount"] or 0
+                    actual_interest = max(0, txn["amount"] - fd_principal)
+            else:
+                # For other income transactions, use the full amount as interest
+                actual_interest = txn["amount"]
+
         conn.execute(
             """
             UPDATE FixedDeposit
@@ -656,9 +671,12 @@ def find_fd_by_account_no(account_no: str, person_id: int = None) -> dict | None
 
     # Iterate through FDs and check if account numbers match using deposit_account_matches
     for row in rows:
-        fd_ref = row.get('fd_reference_no') if isinstance(row, dict) else getattr(row, 'fd_reference_no', None)
-        if fd_ref and deposit_account_matches(account_no, fd_ref):
-            return dict(row) if not isinstance(row, dict) else row
+        fd_ref = row["fd_reference_no"]
+        deposit_acct = row["deposit_account_no"]
+        # Check if either fd_reference_no OR deposit_account_no matches
+        if (fd_ref and deposit_account_matches(account_no, fd_ref)) or \
+           (deposit_acct and deposit_account_matches(account_no, deposit_acct)):
+            return dict(row)
 
     return None
 

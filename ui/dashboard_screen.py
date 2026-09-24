@@ -58,8 +58,10 @@ def _format_indian_number(value: float) -> str:
     else:
         sign = ""
 
+    # Round to 2 decimals before splitting
+    value = round(value, 2)
     val_int = int(value)
-    val_decimal = value - val_int
+    dec_str = f"{value:.2f}".split(".")[1]
 
     # Format the integer part with Indian grouping
     s = str(val_int)
@@ -75,8 +77,8 @@ def _format_indian_number(value: float) -> str:
         result = result[::-1]
 
     # Add decimal part if present
-    if val_decimal > 0:
-        result += f"{val_decimal:.2f}"[1:]  # Keep .XX from the float
+    if dec_str != "00":
+        result += f".{dec_str}"
 
     return f"{sign}₹{result}"
 

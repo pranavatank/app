@@ -799,6 +799,7 @@ class TaxScreen(QWidget):
         self._update_advance_tax_banner()
 
     def _load_ais_data(self, pid, fy):
+        self._clear_inputs()
         ais = get_ais_tis_data(pid, fy, source_type="AIS")
         if not ais:
             ais = get_ais_tis_data(pid, fy, source_type="TIS")
@@ -815,6 +816,7 @@ class TaxScreen(QWidget):
             self._clear_income_fields()
 
     def _load_app_data(self, pid, fy):
+        self._clear_inputs()
         self.fd_interest_input.setValue(get_total_fd_interest(fy, pid))
         self.savings_interest_input.setValue(get_total_savings_interest(fy, pid))
         profile = get_tax_profile(pid, fy)
@@ -877,9 +879,8 @@ class TaxScreen(QWidget):
         business_income = max(0, self.manufacturing_income.value()) + max(0, self.other_business_income.value())
         presumptive_income = max(0, self.presumptive_income.value())
 
-        # Other income: interest, dividend, rental, lottery, games, misc
-        other_income = (max(0, self.other_interest.value()) + max(0, self.dividend_income.value()) +
-                        max(0, self.rental_income.value()) + max(0, self.lottery_winnings.value()) +
+        # Other income: rental, lottery, games, misc (interest and dividend passed separately)
+        other_income = (max(0, self.rental_income.value()) + max(0, self.lottery_winnings.value()) +
                         max(0, self.online_game_winnings.value()) + max(0, self.other_income_input.value()))
 
         result = calculate_and_save_tax(

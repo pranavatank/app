@@ -28,9 +28,8 @@ def _get_tax_slabs(financial_year: str) -> list:
     if not rows:
         rows = cur.execute("""
             SELECT upper_limit, rate FROM TaxSlabConfig
-            WHERE regime = 'new'
-            ORDER BY financial_year DESC, sort_order
-            LIMIT 7
+            WHERE regime='new' AND financial_year=(SELECT MAX(financial_year) FROM TaxSlabConfig WHERE regime='new')
+            ORDER BY sort_order
         """).fetchall()
 
     conn.close()
@@ -222,17 +221,20 @@ def calculate_new_regime_tax(
     # 2. Calculate tax on special-rate income at its own rate
     special_rate_tax = round(special_rate_taxable_income * special_rate_pct / 100, 2)
 
+    # Calculate total taxable income (normal + special-rate) for rebate and surcharge thresholds
+    total_taxable_income = normal_taxable_income + special_rate_taxable_income
+
     # 3. Calculate 87A rebate: applies ONLY to normal income tax
-    #    Available only if normal taxable income (after standard deduction) <= 12,00,000
+    #    Available only if total taxable income (normal + special-rate) <= 12,00,000
     rebate_87a = 0.0
-    if normal_taxable_income <= params["rebate_87a_limit"]:
+    if total_taxable_income <= params["rebate_87a_limit"]:
         rebate_87a = min(slab_tax, params["rebate_87a_max"])
 
     # Tax after rebate (rebate applies only to normal tax, not special-rate tax)
     tax_after_rebate = slab_tax - rebate_87a + special_rate_tax
 
-    # Total income (used for rebate threshold and surcharge calculations)
-    total_income = gross_income
+    # Total taxable income (used for rebate threshold and surcharge calculations)
+    total_income = total_taxable_income
 
     # 4. Marginal relief on rebate threshold: above 12,00,000 total income,
     #    tax must not exceed the income earned above the threshold
@@ -254,7 +256,7 @@ def calculate_new_regime_tax(
         if total_income > 50000000:
             surcharge_rate = 25
         elif total_income > 20000000:
-            surcharge_rate = 15
+            surcharge_rate = 25
         elif total_income > 10000000:
             surcharge_rate = 15
         elif total_income > 5000000:
@@ -264,13 +266,13 @@ def calculate_new_regime_tax(
 
     surcharge = round(tax_before_surcharge * surcharge_rate / 100, 2)
 
-    # Marginal relief on surcharge: increase in surcharge must not exceed increase in income
-    if total_income > 0 and surcharge_rate > 0:
-        prev_income_threshold = {10000000: 5000000, 20000000: 10000000, 50000000: 20000000}.get(total_income if total_income in [10000000, 20000000, 50000000] else None)
-        if prev_income_threshold:
-            surcharge_base_income = max(0, total_income - prev_income_threshold)
-            surcharge_capped = min(surcharge, surcharge_base_income * surcharge_rate / 100)
-            surcharge = surcharge_capped
+    # Marginal relief on surcharge: apply relief when income crosses a bracket threshold
+    # to prevent surcharge from causing post-tax income to drop below threshold amount
+    for thr, lower_rate in ((50000000, 25), (20000000, 15), (10000000, 10), (5000000, 0)):
+        if total_income > thr and surcharge_rate > lower_rate:
+            tax_thr = calculate_tax_by_slabs(thr, slabs) * (1 + lower_rate / 100)
+            surcharge = min(surcharge, max(0.0, tax_thr + (total_income - thr) - tax_before_surcharge))
+            break
 
     # 6. Cess: 4% on (tax - rebate + surcharge)
     cess_base = tax_before_surcharge + surcharge
@@ -431,13 +433,13 @@ def calculate_and_save_tax(
         salary_income=salary_income,
         fd_interest_income=fd_interest,
         savings_interest_income=savings_interest,
-        other_income=other_income,
+        other_income=other_income + other_interest + dividend_income,
         gross_total_income=gross_total_income,
         deductions_80c=deductions_80c,
         deductions_80d=deductions_80d,
         home_loan_interest=home_loan_interest,
         hra_exemption=hra_exemption,
-        standard_deduction=min(75000, salary_income + pension_income),
+        standard_deduction=new["standard_deduction"],
         taxable_income_new_regime=new["taxable_income"],
         tax_new_regime=new["base_tax"],
         cess_amount=new["cess"],
@@ -502,6 +504,10 @@ def project_next_year_income(person_id: int, current_fy: str) -> dict:
 
     expectations = get_income_expectations(person_id=person_id, financial_year=next_fy)
     expected_income = sum(float(e.get("expected_amount") or 0) for e in expectations)
+    salary_income_to_pass = sum(float(e.get("expected_amount") or 0)
+                                for e in expectations if e.get("income_type") == "Salary")
+    pension_income_to_pass = sum(float(e.get("expected_amount") or 0)
+                                 for e in expectations if e.get("income_type") == "Pension")
     income_source = "expectations"
 
     if expected_income <= 0:
@@ -510,13 +516,15 @@ def project_next_year_income(person_id: int, current_fy: str) -> dict:
             expected_income = (
                 float(profile.get("salary_income", 0)) + float(profile.get("other_income", 0))
             )
+            salary_income_to_pass = float(profile.get("salary_income", 0))
+            pension_income_to_pass = float(profile.get("pension_income", 0))
         income_source = "carry_forward"
 
     fd_interest = get_total_fd_interest(next_fy, person_id=person_id)
     savings_interest = get_total_savings_interest(current_fy, person_id=person_id)
 
     gross = expected_income + fd_interest + savings_interest
-    new = calculate_new_regime_tax(gross, salary_income=expected_income, financial_year=next_fy)
+    new = calculate_new_regime_tax(gross, salary_income=salary_income_to_pass, pension_income=pension_income_to_pass, financial_year=next_fy)
     slabs = _get_tax_slabs(next_fy)
     slab = slab_position(new["taxable_income"], slabs)
 

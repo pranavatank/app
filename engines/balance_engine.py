@@ -31,6 +31,12 @@ def recalculate_account_balance(account_id: int) -> float:
 
     for txn in transactions:
         txn_id = txn["transaction_id"]
+
+        # Re-anchor on bank-reported balance for statement-imported transactions
+        if txn.get("balance_after") is not None and txn.get("source") != "Manual":
+            running_balance = txn["balance_after"]
+            continue
+
         txn_type = txn["transaction_type"]
         amount = txn["amount"]
 

@@ -10,6 +10,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 from ui.theme import Theme
 from ui.icons import icon_label as app_icon_label
+from core.auth import verify_master_password
 
 
 class PrivacyPinDialog(QDialog):
@@ -60,14 +61,12 @@ class PrivacyPinDialog(QDialog):
 def reveal_with_password(parent, callback):
     """
     Show password dialog; call callback() only if correct.
-    Uses verify_login for proper password + device verification.
+    Uses verify_master_password for password verification without OTP requirement.
     """
     dialog = PrivacyPinDialog(parent)
     if dialog.exec() == QDialog.DialogCode.Accepted:
         password = dialog.get_password()
-        from core.auth import verify_login
-        success, _, _ = verify_login(password)
-        if success:
+        if verify_master_password(password):
             callback()
         else:
             QMessageBox.warning(parent, "Invalid Password",

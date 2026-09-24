@@ -636,7 +636,7 @@ class TransactionsScreen(QWidget):
             update_transaction(txn["transaction_id"], data["transaction_date"],
                                data["transaction_type"], data["amount"],
                                data.get("category"), data.get("mode"), data.get("description"), data.get("reference_no"),
-                               data.get("balance_after"))
+                               data.get("balance_after"), account_id=data.get("account_id"), person_id=data.get("person_id"))
             self._fetch_and_display()
             if self._parent_window: self._parent_window.refresh_overview()
 

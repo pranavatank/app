@@ -782,7 +782,7 @@ class IncomePredictionScreen(QWidget):
         def _load():
             from engines.prediction_engine import get_prediction_summary
             try:
-                return get_prediction_summary(person_id, financial_year=None, as_of=None)
+                return get_prediction_summary(person_id, financial_year=session.selected_fy, as_of=None)
             except Exception as e:
                 print(f"Error loading prediction: {e}")
                 return {}

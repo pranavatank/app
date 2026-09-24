@@ -309,24 +309,7 @@ class ExcelTable(QTableWidget):
         
     def deleteSelectedRows(self):
         """Delete selected rows."""
-        selected_rows = set()
-        for item in self.selectedItems():
-            selected_rows.add(item.row())
-        
-        if not selected_rows:
-            return
-            
-        reply = QMessageBox.question(
-            self,
-            "Delete Rows",
-            f"Delete {len(selected_rows)} selected row(s)?\n\nThis action cannot be undone.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No
-        )
-        
-        if reply == QMessageBox.StandardButton.Yes:
-            for row in sorted(selected_rows, reverse=True):
-                self.removeRow(row)
+        if self.selectedItems():
             self.deleteRequested.emit()
         
     def copySelection(self):

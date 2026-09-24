@@ -570,7 +570,7 @@ class FixedDepositsScreen(QWidget):
 
                 if principal <= 0:
                     raise ValueError("Principal must be greater than 0")
-                if rate <= 0 or rate > 100:
+                if rate is not None and (rate <= 0 or rate > 100):
                     raise ValueError("Interest rate must be between 0 and 100")
 
                 tenure_text = self.table.item(row, 5+1).text().strip()
@@ -673,6 +673,12 @@ class FixedDepositsScreen(QWidget):
                 if not fd_id:
                     continue
 
+                # Get existing FD data to preserve certain fields
+                from models.fixed_deposit import get_fd
+                fd_data = get_fd(fd_id)
+                if not fd_data:
+                    continue
+
                 # Extract values from table
                 principal_text = self.table.item(row, 3+1).text().replace("₹", "").replace(",", "").strip()
                 rate_text = self.table.item(row, 4+1).text().replace("%", "").strip()
@@ -752,15 +758,15 @@ class FixedDepositsScreen(QWidget):
                 # Update FD in database
                 update_fd(
                     fd_id, principal, start_date.isoformat(), months, rate,
-                    compounding or "Quarterly", mat_date.isoformat(), mat_amt, "Active",
+                    compounding or "Quarterly", mat_date.isoformat(), mat_amt, "Active" if fd_data["status"] == "Pending Details" else fd_data["status"],
                     mat_formula, mat_bank, method,
                     years, days,
                     self.table.item(row, 2+1).text() if self.table.item(row, 2+1).text() != "—" else None,
                     mat_amt - principal,  # expected interest
-                    None,  # actual interest - keep existing
-                    None,  # linked_transaction_id
-                    None,  # source_statement_file
-                    None   # source_transaction_id
+                    fd_data.get("actual_interest_amount"),  # actual interest - keep existing
+                    fd_data.get("linked_transaction_id"),  # linked_transaction_id - keep existing
+                    fd_data.get("source_statement_file"),  # source_statement_file - keep existing
+                    fd_data.get("source_transaction_id")   # source_transaction_id - keep existing
                 )
                 recalculated += 1
 

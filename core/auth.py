@@ -12,7 +12,8 @@ import pyotp
 
 from core.database import get_connection
 from core.encryption import (
-    generate_salt, hash_password, verify_password, derive_key
+    generate_salt, hash_password, verify_password, derive_key,
+    decrypt_field, encrypt_field
 )
 
 
@@ -98,22 +99,81 @@ def verify_login(password: str, totp_code: str = None) -> tuple[bool, str, bytes
     return True, "Login successful.", aes_key
 
 
+def verify_master_password(password: str) -> bool:
+    """
+    Verify master password only (no OTP check, no AES key derivation).
+    Used for privacy overlay password verification when 2FA is enabled.
+    """
+    record = _get_auth_record()
+    if not record or record["device_id_hash"] != get_device_fingerprint():
+        return False
+    salt = base64.b64decode(record["password_salt"].encode())
+    return verify_password(password, salt, record["password_hash"])
+
+
 # ── Password Change ───────────────────────────────────────────────────────────
 
-def change_password(old_password: str, new_password: str) -> tuple[bool, str]:
+def change_password(old_password: str, new_password: str) -> tuple[bool, str, bytes | None]:
     record = _get_auth_record()
     if not record:
-        return False, "No auth record found."
+        return False, "No auth record found.", None
 
     salt = base64.b64decode(record["password_salt"].encode())
     if not verify_password(old_password, salt, record["password_hash"]):
-        return False, "Old password is incorrect."
+        return False, "Old password is incorrect.", None
 
-    new_salt     = generate_salt()
-    new_hash     = hash_password(new_password, new_salt)
+    # Compute old and new encryption keys
+    old_key  = derive_key(old_password, salt)
+    new_salt = generate_salt()
+    new_key  = derive_key(new_password, new_salt)
+    new_hash = hash_password(new_password, new_salt)
     new_salt_b64 = base64.b64encode(new_salt).decode()
 
     conn = get_connection()
+
+    # Re-encrypt BankAccount.statement_password_enc
+    try:
+        bank_rows = conn.execute(
+            "SELECT account_id, statement_password_enc FROM BankAccount WHERE statement_password_enc IS NOT NULL"
+        ).fetchall()
+        for row in bank_rows:
+            try:
+                decrypted = decrypt_field(row["statement_password_enc"], old_key)
+                if decrypted:
+                    re_encrypted = encrypt_field(decrypted, new_key)
+                    conn.execute(
+                        "UPDATE BankAccount SET statement_password_enc = ? WHERE account_id = ?",
+                        (re_encrypted, row["account_id"])
+                    )
+            except Exception:
+                # Skip rows that fail decryption
+                pass
+    except Exception:
+        # If BankAccount query fails, continue with other tables
+        pass
+
+    # Re-encrypt Person.ais_tis_password_enc
+    try:
+        person_rows = conn.execute(
+            "SELECT person_id, ais_tis_password_enc FROM Person WHERE ais_tis_password_enc IS NOT NULL"
+        ).fetchall()
+        for row in person_rows:
+            try:
+                decrypted = decrypt_field(row["ais_tis_password_enc"], old_key)
+                if decrypted:
+                    re_encrypted = encrypt_field(decrypted, new_key)
+                    conn.execute(
+                        "UPDATE Person SET ais_tis_password_enc = ? WHERE person_id = ?",
+                        (re_encrypted, row["person_id"])
+                    )
+            except Exception:
+                # Skip rows that fail decryption
+                pass
+    except Exception:
+        # If Person query fails, continue
+        pass
+
+    # Update password hash and salt
     conn.execute("""
         UPDATE AuthSecurity
         SET password_hash = ?, password_salt = ?
@@ -121,7 +181,7 @@ def change_password(old_password: str, new_password: str) -> tuple[bool, str]:
     """, (new_hash, new_salt_b64, record["auth_id"]))
     conn.commit()
     conn.close()
-    return True, "Password changed successfully."
+    return True, "Password changed successfully.", new_key
 
 
 # ── Privacy Mode ──────────────────────────────────────────────────────────────

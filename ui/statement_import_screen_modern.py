@@ -36,7 +36,7 @@ from models.bank_account import (
 from models.bank import get_or_create_bank, update_bank_tan_code_if_exists
 from models.transaction import add_transaction, check_duplicate, display_transaction_type
 from models.transaction import add_transactions_batch, delete_transactions_by_ids, reprocess_internal_transfers
-from models.fixed_deposit import add_fd_from_statement, apply_statement_redemption_event
+from models.fixed_deposit import add_fd_from_statement, apply_statement_redemption_event, delete_fd
 from models.statement_import_log import log_import
 from engines.statement_parser import (
     parse_statement_with_debug, validate_transactions,
@@ -149,6 +149,7 @@ class _TransactionImportWorker(QObject):
         fds_created = 0
         batch_rows = []
         batch_preview_rows = []
+        created_fd_ids = []
 
         # Collect transactions to import
         for idx in self.checked_rows:
@@ -213,8 +214,11 @@ class _TransactionImportWorker(QObject):
                     )
                     if fd_id:
                         fds_created += 1
+                        created_fd_ids.append(fd_id)
         except Exception:
             delete_transactions_by_ids(inserted_ids)
+            for fd_id in created_fd_ids:
+                delete_fd(fd_id)
             raise
 
         self.progress.emit("Finalizing import log...")
@@ -227,7 +231,7 @@ class _TransactionImportWorker(QObject):
             account_id=self.selected_account_id,
             person_id=self.selected_person_id,
             bank_name=self.bank_name,
-            file_name=(self.selected_file.split("/")[-1] or self.selected_file.split("\\")[-1]),
+            file_name=os.path.basename(self.selected_file),
             file_type=self.file_type,
             records_imported=imported,
             status="Success"
@@ -252,7 +256,7 @@ class _TransactionImportWorker(QObject):
 
     def _extract_maturity_amount(self, desc):
         """Extract maturity amount from description."""
-        match = re.search(r'₹?\s*([\d,]+\.?\d*)', desc)
+        match = re.search(r'(?:\bMATURITY\s*(?:AMT|AMOUNT|VALUE)?|₹|\bRS\.?|\bINR)\s*[:\-]?\s*(\d[\d,]*(?:\.\d{1,2})?)', desc, re.I)
         if match:
             try:
                 return float(match.group(1).replace(",", ""))
@@ -1771,11 +1775,10 @@ class StatementImportScreen(QWidget):
             self._update_preview_summary()
 
     def _selected_preview_rows(self) -> list[int]:
-        rows = sorted(set(self.preview_table.getCheckedRows()))
-        if rows:
-            return rows
         selected = sorted({item.row() for item in self.preview_table.selectedItems()})
-        return selected
+        if selected:
+            return selected
+        return sorted(set(self.preview_table.getCheckedRows()))
 
     def _on_preview_item_changed(self, item: QTableWidgetItem):
         if self._preview_cell_change_lock:
@@ -1791,19 +1794,19 @@ class StatementImportScreen(QWidget):
         text = (item.text() or "").strip()
         try:
             if col == 1:
-                txn["transaction_type"] = "Income" if text.lower().startswith("credit") or text == "Income" else "Expense"
+                txn["transaction_date"] = datetime.strptime(text, "%d/%m/%y").date().isoformat()
             elif col == 2:
-                txn["mode"] = text or None
+                txn["transaction_type"] = "Income" if text.lower().startswith("credit") or text == "Income" else "Expense"
             elif col == 3:
-                txn["category"] = text or None
+                txn["mode"] = text or None
             elif col == 4:
-                txn["amount"] = float(text.replace("₹", "").replace(",", "").strip() or 0)
+                txn["category"] = text or None
             elif col == 5:
-                txn["balance_after"] = None if not text or text in ["—", "-"] else float(text.replace("₹", "").replace(",", "").strip())
+                txn["amount"] = float(text.replace("₹", "").replace(",", "").strip() or 0)
             elif col == 6:
-                txn["description"] = text or None
+                txn["balance_after"] = None if not text or text in ["—", "-"] else float(text.replace("₹", "").replace(",", "").strip())
             elif col == 7:
-                txn["reference_no"] = text or None
+                txn["description"] = text or None
         except Exception:
             show_warning("Could not apply the edit. Reverting the row.")
         finally:

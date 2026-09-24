@@ -188,8 +188,9 @@ class TestFDAllocationFromModel:
         total_from_records = get_total_fd_interest_for_fd(fd_id)
         assert total_from_records > 0, "FDInterestRecord should have calculated interest"
 
-        # Verify both columns match the sum from FDInterestRecord
+        # Verify expected_interest matches the calculated total from FDInterestRecord
         assert expected_interest == total_from_records, \
             f"expected_interest_amount {expected_interest} should equal FDInterestRecord sum {total_from_records}"
-        assert actual_interest == total_from_records, \
-            f"actual_interest_amount {actual_interest} should equal FDInterestRecord sum {total_from_records}"
+        # Verify actual_interest is 0 for fresh FD (no longer overwritten by rollup to match calculated total)
+        assert actual_interest == 0, \
+            f"actual_interest_amount {actual_interest} should be 0 for a fresh FD, not the calculated total"

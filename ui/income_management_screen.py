@@ -56,7 +56,7 @@ def _format_inr(value: float) -> str:
     formatted = f"{abs(value):,.2f}"
 
     # Replace commas with Indian-style grouping: 2,56,642.00
-    parts = str(abs(value)).split('.')
+    parts = f"{round(abs(value), 2):.2f}".split('.')
     integer_part = parts[0]
     decimal_part = parts[1] if len(parts) > 1 else "00"
 

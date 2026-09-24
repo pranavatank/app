@@ -39,14 +39,13 @@ def format_inr(amount: float) -> str:
     is_negative = amount < 0
     abs_amount = abs(amount)
 
+    # Round to 2 decimals before splitting
+    abs_amount = round(abs_amount, 2)
+
     # Split into integer and decimal parts
-    if isinstance(abs_amount, float):
-        int_part = int(abs_amount)
-        dec_part = abs_amount - int_part
-        has_decimals = dec_part > 0
-    else:
-        int_part = int(abs_amount)
-        has_decimals = False
+    int_part = int(abs_amount)
+    dec_str = f"{abs_amount:.2f}".split(".")[1]
+    has_decimals = dec_str != "00"
 
     # Convert to string and apply Indian grouping to the integer part
     int_str = str(int_part)
@@ -69,7 +68,6 @@ def format_inr(amount: float) -> str:
 
     # Reconstruct with decimals if needed
     if has_decimals:
-        dec_str = f"{dec_part:.2f}"[2:]  # Get ".56" part and remove the dot
         result = f"{grouped_int}.{dec_str}"
     else:
         result = grouped_int

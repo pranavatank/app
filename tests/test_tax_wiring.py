@@ -216,10 +216,16 @@ class TestAdvanceTaxEngine:
     def test_safe_harbours_12_36_75_100(self):
         """Safe harbour percentages must be 12/36/75/100, not 15/45/75/100."""
         from engines.advance_tax_engine import INSTALLMENTS
-        assert INSTALLMENTS[0]["cum_pct"] == 0.12, "Q1 should be 12%"
-        assert INSTALLMENTS[1]["cum_pct"] == 0.36, "Q2 should be 36%"
-        assert INSTALLMENTS[2]["cum_pct"] == 0.75, "Q3 should be 75%"
-        assert INSTALLMENTS[3]["cum_pct"] == 1.00, "Q4 should be 100%"
+        # Section 211 due percentages (cum_pct)
+        assert INSTALLMENTS[0]["cum_pct"] == 0.15, "Q1 cum_pct should be 15% (Section 211)"
+        assert INSTALLMENTS[1]["cum_pct"] == 0.45, "Q2 cum_pct should be 45% (Section 211)"
+        assert INSTALLMENTS[2]["cum_pct"] == 0.75, "Q3 cum_pct should be 75% (Section 211)"
+        assert INSTALLMENTS[3]["cum_pct"] == 1.00, "Q4 cum_pct should be 100% (Section 211)"
+        # Section 234C safe-harbour percentages (safe_pct)
+        assert INSTALLMENTS[0]["safe_pct"] == 0.12, "Q1 safe_pct should be 12% (Section 234C)"
+        assert INSTALLMENTS[1]["safe_pct"] == 0.36, "Q2 safe_pct should be 36% (Section 234C)"
+        assert INSTALLMENTS[2]["safe_pct"] == 0.75, "Q3 safe_pct should be 75% (Section 234C)"
+        assert INSTALLMENTS[3]["safe_pct"] == 1.00, "Q4 safe_pct should be 100% (Section 234C)"
 
     def test_44ada_single_instalment(self):
         """A 44ADA taxpayer should have exactly ONE instalment due 15 March."""
@@ -276,15 +282,15 @@ class TestAdvanceTaxEngine:
             gross_income=100000,
             annual_tax=10000,
             tds_deducted=0,
-            advance_tax_paid=1200,  # Q1 payment
+            advance_tax_paid=1200,  # Q1 payment (meets safe-harbour of 12%, even though Q1 due is 15%)
             today=date(2026, 12, 1),  # Q3 period
         )
         # With advance_tax_paid = 1200:
-        # Q1 due: 12% = 1200, shortfall = 1200 - 1200 = 0 (Paid)
-        # Q2 due: 36% = 3600, shortfall = 3600 - 1200 = 2400 (Overdue)
+        # Q1 due: 15% = 1500, shortfall = 1500 - 1200 = 300, but safe-harbour 12% met → interest = 0
+        # Q2 due: 45% = 4500, shortfall = 4500 - 1200 = 3300 (Overdue)
         # Q3 due: 75% = 7500, shortfall = 7500 - 1200 = 6300 (Overdue)
-        assert result.installments[0].shortfall < 1.0, "Q1 should be paid"
-        assert result.installments[1].shortfall == 2400.0, "Q2 shortfall should be 2400"
+        assert result.installments[0].interest_234c == 0.0, "Q1 should have 0 interest (safe-harbour 12% met)"
+        assert result.installments[1].shortfall == 3300.0, "Q2 shortfall should be 3300"
         assert result.installments[2].shortfall == 6300.0, "Q3 shortfall should be 6300"
 
     def test_march_shortfall_1_month_interest(self):

@@ -18,18 +18,20 @@ from dataclasses import dataclass, field
 
 
 # ── Installment schedule ──────────────────────────────────────────────────────
-# Safe harbour percentages per s.234C: 12%, 36%, 75%, 100%
+# cum_pct: Section 211 required due amounts (15%, 45%, 75%, 100%)
+# safe_pct: Section 234C safe-harbour percentages (12%, 36%, 75%, 100%)
+#   Interest is charged only if advance_tax_paid < safe_pct threshold
 
 INSTALLMENTS = [
-    {"name": "1st Installment",  "due_month": 6,  "due_day": 15, "cum_pct": 0.12, "quarter": "Q1"},
-    {"name": "2nd Installment",  "due_month": 9,  "due_day": 15, "cum_pct": 0.36, "quarter": "Q2"},
-    {"name": "3rd Installment",  "due_month": 12, "due_day": 15, "cum_pct": 0.75, "quarter": "Q3"},
-    {"name": "4th Installment",  "due_month": 3,  "due_day": 15, "cum_pct": 1.00, "quarter": "Q4"},
+    {"name": "1st Installment",  "due_month": 6,  "due_day": 15, "cum_pct": 0.15, "safe_pct": 0.12, "quarter": "Q1"},
+    {"name": "2nd Installment",  "due_month": 9,  "due_day": 15, "cum_pct": 0.45, "safe_pct": 0.36, "quarter": "Q2"},
+    {"name": "3rd Installment",  "due_month": 12, "due_day": 15, "cum_pct": 0.75, "safe_pct": 0.75, "quarter": "Q3"},
+    {"name": "4th Installment",  "due_month": 3,  "due_day": 15, "cum_pct": 1.00, "safe_pct": 1.00, "quarter": "Q4"},
 ]
 
 # Section 44ADA single-instalment schedule (100% by 15 March)
 INSTALLMENTS_44ADA = [
-    {"name": "Single Installment", "due_month": 3, "due_day": 15, "cum_pct": 1.00, "quarter": "Q4"},
+    {"name": "Single Installment", "due_month": 3, "due_day": 15, "cum_pct": 1.00, "safe_pct": 1.00, "quarter": "Q4"},
 ]
 
 
@@ -195,7 +197,15 @@ def calculate_advance_tax(
         # Calculate interest on shortfall
         # 15 March shortfall uses 1 month interest, others use 3 months
         is_march = inst["due_month"] == 3
-        interest = _interest_234c(shortfall, is_march_shortfall=is_march) if status in ("Overdue", "Partial") else 0.0
+
+        # Check if safe harbour threshold is met (s.234C safe_pct)
+        safe_ok = advance_tax_paid >= round(net_tax * inst.get("safe_pct", inst["cum_pct"]), 2)
+
+        # Interest is charged only if safe harbour is not met
+        if safe_ok:
+            interest = 0.0
+        else:
+            interest = _interest_234c(shortfall, is_march_shortfall=is_march) if status in ("Overdue", "Partial") else 0.0
 
         s = InstallmentStatus(
             name=inst["name"],

@@ -387,17 +387,43 @@ def update_transaction(transaction_id: int, transaction_date: str,
                        category: str = None, mode: str = None,
                        description: str = None,
                        reference_no: str = None,
-                       balance_after: float | None = None) -> None:
+                       balance_after: float | None = None,
+                       account_id: int = None,
+                       person_id: int = None) -> None:
     txn_type = normalize_transaction_type(transaction_type)
+
+    # Build SET clause dynamically
+    set_clauses = [
+        "transaction_date = ?",
+        "transaction_type = ?",
+        "amount = ?",
+        "category = ?",
+        "mode = ?",
+        "description = ?",
+        "reference_no = ?",
+        "balance_after = ?"
+    ]
+    params = [
+        transaction_date, txn_type, amount,
+        category, mode, description, reference_no, balance_after
+    ]
+
+    if account_id is not None:
+        set_clauses.append("account_id = ?")
+        params.append(account_id)
+
+    if person_id is not None:
+        set_clauses.append("person_id = ?")
+        params.append(person_id)
+
+    params.append(transaction_id)
+
     conn = get_connection()
-    conn.execute("""
+    conn.execute(f"""
         UPDATE Transactions
-        SET transaction_date = ?, transaction_type = ?, amount = ?,
-                        category = ?, mode = ?, description = ?,
-                        reference_no = ?, balance_after = ?
+        SET {', '.join(set_clauses)}
         WHERE transaction_id = ?
-    """, (transaction_date, txn_type, amount,
-                    category, mode, description, reference_no, balance_after, transaction_id))
+    """, params)
     conn.commit()
     conn.close()
 
@@ -494,16 +520,16 @@ def get_transactions_by_account(account_id: int, start_date: str = None,
     """Get transactions for an account within date range."""
     query = "SELECT * FROM Transactions WHERE account_id = ?"
     params = [account_id]
-    
+
     if start_date:
         query += " AND transaction_date >= ?"
         params.append(start_date)
     if end_date:
         query += " AND transaction_date <= ?"
         params.append(end_date)
-    
-    query += " ORDER BY transaction_date"
-    
+
+    query += " ORDER BY transaction_date, transaction_id"
+
     conn = get_connection()
     rows = conn.execute(query, params).fetchall()
     conn.close()
@@ -548,7 +574,7 @@ def get_account_transactions_for_balance(account_id: int) -> list[dict]:
     """Get all transactions for an account in chronological order for balance calculation."""
     conn = get_connection()
     rows = conn.execute("""
-        SELECT transaction_id, transaction_type, amount, transaction_date
+        SELECT transaction_id, transaction_type, amount, transaction_date, balance_after, source
         FROM Transactions
         WHERE account_id = ?
         ORDER BY transaction_date ASC, transaction_id ASC
@@ -589,7 +615,7 @@ def get_balance_points(account_id: int, start_date: str = None, end_date: str = 
         query += " AND transaction_date <= ?"
         params.append(end_date)
 
-    query += " ORDER BY transaction_date ASC"
+    query += " ORDER BY transaction_date ASC, transaction_id ASC"
 
     conn = get_connection()
     rows = conn.execute(query, params).fetchall()

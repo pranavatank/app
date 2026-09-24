@@ -139,10 +139,20 @@ class TransactionDialog(QDialog):
         typ = display_transaction_type(txn.get("transaction_type", "Income"))
         self.cmb_type.setCurrentText(typ)
         self._populate_categories(typ)
-        idx = self.cmb_category.findText(txn.get("category") or "")
-        if idx >= 0: self.cmb_category.setCurrentIndex(idx)
-        idx = self.cmb_mode.findText(txn.get("mode") or "")
-        if idx >= 0: self.cmb_mode.setCurrentIndex(idx)
+        cat = txn.get("category") or ""
+        idx = self.cmb_category.findText(cat)
+        if idx < 0 and cat:
+            self.cmb_category.addItem(cat)
+            idx = self.cmb_category.findText(cat)
+        if idx >= 0:
+            self.cmb_category.setCurrentIndex(idx)
+        mode = txn.get("mode") or ""
+        idx = self.cmb_mode.findText(mode)
+        if idx < 0 and mode:
+            self.cmb_mode.addItem(mode)
+            idx = self.cmb_mode.findText(mode)
+        if idx >= 0:
+            self.cmb_mode.setCurrentIndex(idx)
         self.ref_input.setText(txn.get("reference_no") or "")
         self.amount_spin.setValue(txn.get("amount",0.0))
         bal = txn.get("balance_after")

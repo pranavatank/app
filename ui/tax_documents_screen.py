@@ -36,7 +36,7 @@ from engines.taxdocs.persist import (
     SOURCE_TYPE_AIS, SOURCE_TYPE_TIS,
 )
 from engines.statement_parser import is_pdf_encrypted
-from models.fixed_deposit import get_all_fds
+from models.fixed_deposit import get_all_fds, find_fd_by_account_no
 from models.person import get_ais_tis_password, set_ais_tis_password
 from config import get_current_financial_year
 import os
@@ -46,49 +46,9 @@ def _format_inr(amount: float) -> str:
     """Format amount as Indian rupees with Indian digit grouping (2,56,642)."""
     if amount is None:
         return "₹ —"
-
-    # Convert to int if whole number, else keep decimals
-    if isinstance(amount, float) and amount == int(amount):
-        amount = int(amount)
-
-    # Format with 2 decimals
-    if isinstance(amount, int):
-        formatted = f"{amount:,}"
-    else:
-        formatted = f"{amount:,.2f}"
-
-    # Convert English grouping (1,000) to Indian grouping (1,00,000)
-    # Only if the number is >= 1 lakh (100,000)
-    if abs(amount) >= 100000:
-        # Remove existing commas
-        no_comma = str(amount).replace(',', '').split('.')[0]
-        decimal_part = ""
-        if '.' in str(amount):
-            decimal_part = str(amount).split('.')[1]
-
-        # Build Indian grouping
-        if len(no_comma) > 3:
-            # Reverse string to make grouping easier
-            reversed_str = no_comma[::-1]
-            groups = []
-
-            # First group is 3 digits from the right
-            groups.append(reversed_str[:3])
-            remaining = reversed_str[3:]
-
-            # Rest are 2 digits each
-            while remaining:
-                groups.append(remaining[:2])
-                remaining = remaining[2:]
-
-            # Reverse back and join with commas
-            formatted = ','.join(groups[::-1])
-            if decimal_part:
-                formatted = f"{formatted}.{decimal_part}"
-
-        return f"₹ {formatted}"
-
-    return f"₹ {formatted}"
+    from ui.widgets.money_label import format_inr
+    s = format_inr(round(float(amount), 2))
+    return s.replace("₹", "₹ ", 1)
 
 
 def _extract_financial_year(pdf_data: dict) -> str:
@@ -367,7 +327,7 @@ class TaxDocumentsScreen(QWidget):
 
         def parse_ais():
             parsed = parse_ais_pdf(path, password=password)
-            fy = self._itr_financial_year or get_current_financial_year()
+            fy = self._itr_financial_year or session.selected_fy or get_current_financial_year()
             info = persist_ais_tis(session.selected_person_id or 1, parsed, SOURCE_TYPE_AIS, fy,
                                    source_file=os.path.basename(path))
             return parsed, info
@@ -430,7 +390,7 @@ class TaxDocumentsScreen(QWidget):
 
         def parse_tis():
             parsed = parse_tis_pdf(path, password=password)
-            fy = self._itr_financial_year or get_current_financial_year()
+            fy = self._itr_financial_year or session.selected_fy or get_current_financial_year()
             info = persist_ais_tis(session.selected_person_id or 1, parsed, SOURCE_TYPE_TIS, fy,
                                    source_file=os.path.basename(path))
             return parsed, info
@@ -466,14 +426,7 @@ class TaxDocumentsScreen(QWidget):
         """Called when all three documents are loaded."""
         try:
             # Build FD lookup function
-            fds = get_all_fds()
-            fd_by_account = {}
-            for fd in fds:
-                if fd.get('account_number'):
-                    fd_by_account[fd['account_number']] = fd
-
-            def lookup_fd(account_no: str):
-                return fd_by_account.get(account_no)
+            lookup_fd = lambda acct: find_fd_by_account_no(acct, session.selected_person_id)
 
             # Merge documents
             self.merge_result = merge_tax_documents(

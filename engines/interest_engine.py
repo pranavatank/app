@@ -427,8 +427,9 @@ def _update_fd_interest_rollup(fd_id: int) -> None:
     from models.fixed_deposit import update_fd_interest_summary
 
     total_interest = get_total_fd_interest_for_fd(fd_id)
-    if total_interest > 0:
-        update_fd_interest_summary(fd_id, total_interest, total_interest)
+    fd = get_fd(fd_id)
+    if total_interest > 0 and fd:
+        update_fd_interest_summary(fd_id, total_interest, fd.get("actual_interest_amount") or 0)
 
 
 def allocate_fd_interest_to_fy(fd_id: int) -> None:
@@ -514,6 +515,15 @@ def calculate_savings_interest_for_fy(account_id: int, financial_year: str,
 
     # Accumulate interest per quarter
     quarter_data = {}
+
+    # For FYs after the first, look up the prior FY's closing balance
+    # to use as opening balance for days before the first transaction in this FY
+    prior = get_transactions_by_account(account_id, end_date=(fy_start - timedelta(days=1)).isoformat())
+    for p in reversed(prior):
+        if p.get("balance_after") is not None:
+            opening_balance = p["balance_after"]
+            break
+
     for q_name, q_start, q_end in _fy_quarters(financial_year):
         # Find the balance at the start of this quarter
         # (the last known balance before q_start)
