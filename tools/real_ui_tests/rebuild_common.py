@@ -382,7 +382,26 @@ class Prearm:
             self.done = True
 
     def arm(self):
-        QTimer.singleShot(0, self._run)
+        # Wait for the modal dialog to open before running the callback,
+        # so the click that opens it can complete before we interact with it.
+        self._timer = QTimer()
+        self._timer.setInterval(200)
+        deadline = time.time() + 120
+
+        def tick():
+            if self.done:
+                return
+            if time.time() > deadline:
+                self._timer.stop()
+                self.error = TimeoutError("no modal dialog appeared")
+                self.done = True
+                return
+            if QApplication.activeModalWidget() is not None:
+                self._timer.stop()
+                self._run()
+
+        self._timer.timeout.connect(tick)
+        self._timer.start()
         return self
 
 
