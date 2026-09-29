@@ -3,8 +3,9 @@ models/bank.py — Bank master table for managing unique banks
 """
 
 import re
+import sqlite3
 
-from core.database import get_connection
+from core.database import get_connection, _seed_bank_fd_conventions
 
 
 _TAN_RE = re.compile(r"\(([A-Z0-9]{10})\)")
@@ -28,15 +29,18 @@ def add_bank(bank_name: str, nickname: str = None) -> int:
                 "INSERT INTO Bank (bank_name, nickname) VALUES (?, ?)",
                 (bank_name, nick),
             )
-            conn.commit()
-            return cur.lastrowid
-        except Exception:
+            bank_id = cur.lastrowid
+        except sqlite3.IntegrityError:
             # Bank already exists, get its ID
             row = conn.execute("SELECT bank_id FROM Bank WHERE bank_name = ?", (bank_name,)).fetchone()
-            if row and nick:
-                conn.execute("UPDATE Bank SET nickname = COALESCE(NULLIF(nickname,''), ?) WHERE bank_id = ?", (nick, row["bank_id"]))
-                conn.commit()
-            return row["bank_id"] if row else None
+            bank_id = row["bank_id"] if row else None
+            if bank_id and nick:
+                conn.execute("UPDATE Bank SET nickname = COALESCE(NULLIF(nickname,''), ?) WHERE bank_id = ?", (nick, bank_id))
+        else:
+            # Insert succeeded, seed FD conventions
+            _seed_bank_fd_conventions(conn.cursor())
+        conn.commit()
+        return bank_id
     finally:
         conn.close()
 
@@ -161,6 +165,7 @@ def update_bank(bank_id: int, bank_name: str, nickname: str = None, tan_code: st
 def delete_bank(bank_id: int) -> None:
     conn = get_connection()
     try:
+        conn.execute("DELETE FROM BankFDConvention WHERE bank_id = ?", (bank_id,))
         conn.execute("DELETE FROM Bank WHERE bank_id = ?", (bank_id,))
         conn.commit()
     finally:

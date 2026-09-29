@@ -244,24 +244,46 @@ class _TransactionImportWorker(QObject):
             "batch_rows": batch_rows
         }
 
-    def _is_fd_opening_transaction(self, txn):
-        """Check if transaction opens a fixed deposit."""
-        desc = (txn.get("description") or "").lower()
-        return any(phrase in desc for phrase in ["fd accepted", "opening", "fixed deposit"])
+    def _is_fd_opening_transaction(self, txn: dict) -> bool:
+        if txn.get("transaction_type") != "Expense":
+            return False
+        if (txn.get("category") or "").strip().upper() == "FD PRINCIPAL":
+            return True
+        desc = (txn.get("description") or "").upper()
+        patterns = [
+            r"\bINITIAL\s+PAYIN\s+FD\b", r"\bFD\d{6,}\b",
+            r"\bTD\.?\s+GENERIC\s+PAYIN\b", r"\bPAYIN\s+DEBIT\b",
+            r"\bTERM\s+DEPOSIT\b", r"\bFIXED\s+DEPOSIT\b",
+        ]
+        return any(re.search(p, desc) for p in patterns)
 
-    def _extract_fd_reference(self, desc):
-        """Extract FD reference number from description."""
-        match = re.search(r'[Rr]ef\.?\s*[:#]?\s*(\S+)', desc)
-        return match.group(1) if match else None
+    def _extract_fd_reference(self, description: str) -> str | None:
+        text = (description or "").upper()
+        patterns = [
+            r"\bFD\s*(?:NO|NUMBER|A/C|ACCOUNT)?\s*[:\-]?\s*([A-Z0-9\-/]{5,})\b",
+            r"\bTD\s*(?:NO|NUMBER|A/C|ACCOUNT)?\s*[:\-]?\s*([A-Z0-9\-/]{5,})\b",
+            r"\bTERM\s*DEPOSIT\s*(?:NO|NUMBER|A/C|ACCOUNT)?\s*[:\-]?\s*([A-Z0-9\-/]{5,})\b",
+            r"\bTD/([A-Z0-9\-/]{5,})\b",
+        ]
+        for pattern in patterns:
+            m = re.search(pattern, text)
+            if m:
+                return m.group(1).strip("-/ ")[:50]
+        return None
 
-    def _extract_maturity_amount(self, desc):
-        """Extract maturity amount from description."""
-        match = re.search(r'(?:\bMATURITY\s*(?:AMT|AMOUNT|VALUE)?|₹|\bRS\.?|\bINR)\s*[:\-]?\s*(\d[\d,]*(?:\.\d{1,2})?)', desc, re.I)
-        if match:
-            try:
-                return float(match.group(1).replace(",", ""))
-            except ValueError:
-                pass
+    def _extract_maturity_amount(self, description: str) -> float | None:
+        text = (description or "")
+        patterns = [
+            r"(?i)MATURITY\s*(?:AMT|AMOUNT|VALUE)?\s*[:\-]?\s*\₹?\s*([\d,]+(?:\.\d{1,2})?)",
+            r"(?i)MAT\s*AMT\s*[:\-]?\s*\₹?\s*([\d,]+(?:\.\d{1,2})?)",
+        ]
+        for pattern in patterns:
+            m = re.search(pattern, text)
+            if m:
+                try:
+                    return float(m.group(1).replace(",", ""))
+                except ValueError:
+                    return None
         return None
 
 
@@ -1670,48 +1692,6 @@ class StatementImportScreen(QWidget):
             show_warning("Password is required to open the file.")
             return None, False
         return password, dlg.should_save()
-
-    def _is_fd_opening_transaction(self, txn: dict) -> bool:
-        if txn.get("transaction_type") != "Expense":
-            return False
-        if (txn.get("category") or "").strip().upper() == "FD PRINCIPAL":
-            return True
-        desc = (txn.get("description") or "").upper()
-        patterns = [
-            r"\bINITIAL\s+PAYIN\s+FD\b", r"\bFD\d{6,}\b", r"\bTD/\d+\b",
-            r"\bTD\.?\s+GENERIC\s+PAYIN\b", r"\bPAYIN\s+DEBIT\b",
-            r"\bTERM\s+DEPOSIT\b", r"\bFIXED\s+DEPOSIT\b", r"\b\d+\s*FD\b",
-        ]
-        return any(re.search(p, desc) for p in patterns)
-
-    def _extract_fd_reference(self, description: str) -> str | None:
-        text = (description or "").upper()
-        patterns = [
-            r"\bFD\s*(?:NO|NUMBER|A/C|ACCOUNT)?\s*[:\-]?\s*([A-Z0-9\-/]{5,})\b",
-            r"\bTD\s*(?:NO|NUMBER|A/C|ACCOUNT)?\s*[:\-]?\s*([A-Z0-9\-/]{5,})\b",
-            r"\bTERM\s*DEPOSIT\s*(?:NO|NUMBER|A/C|ACCOUNT)?\s*[:\-]?\s*([A-Z0-9\-/]{5,})\b",
-            r"\bTD/([A-Z0-9\-/]{5,})\b",
-        ]
-        for pattern in patterns:
-            m = re.search(pattern, text)
-            if m:
-                return m.group(1).strip("-/ ")[:50]
-        return None
-
-    def _extract_maturity_amount(self, description: str) -> float | None:
-        text = (description or "")
-        patterns = [
-            r"(?i)MATURITY\s*(?:AMT|AMOUNT|VALUE)?\s*[:\-]?\s*\₹?\s*([\d,]+(?:\.\d{1,2})?)",
-            r"(?i)MAT\s*AMT\s*[:\-]?\s*\₹?\s*([\d,]+(?:\.\d{1,2})?)",
-        ]
-        for pattern in patterns:
-            m = re.search(pattern, text)
-            if m:
-                try:
-                    return float(m.group(1).replace(",", ""))
-                except ValueError:
-                    return None
-        return None
 
     def _toggle_debug_panel(self):
         """Toggle debug panel visibility"""

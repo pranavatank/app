@@ -18,6 +18,8 @@ import json
 import shutil
 import sqlite3
 import hashlib
+import traceback
+import faulthandler
 import datetime as _dt
 from pathlib import Path
 
@@ -397,6 +399,70 @@ def wait_until(harness: RealUIHarness, pred, timeout=30, interval=0.2):
     return False
 
 
+def answer_password_dialog(harness, title, secret, tick_save=True, timeout=90):
+    """In-process modal answerer for PasswordDialog.exec(); retries password entry up to 3 times."""
+    from ui.dialogs.password_dialog import PasswordDialog
+
+    state = {"done": False, "error": None, "typed_ok": None, "save_checked": None}
+    deadline = time.time() + timeout
+    timer = QTimer()
+    timer.setInterval(200)
+
+    def tick():
+        if state["done"]:
+            return
+        if time.time() > deadline:
+            timer.stop()
+            dlg = QApplication.activeModalWidget()
+            if isinstance(dlg, PasswordDialog) and dlg.windowTitle() == title and dlg.isVisible():
+                dlg.reject()
+            state.update(error="timeout", done=True)
+            return
+        dlg = QApplication.activeModalWidget()
+        if not isinstance(dlg, PasswordDialog) or dlg.windowTitle() != title or not dlg.isVisible():
+            return
+        timer.stop()
+        try:
+            # Retry the clear+type sequence up to 3 times on readback mismatch, like os_type does
+            last_typed_ok = None
+            for attempt in range(1, 4):
+                try:
+                    adopt_window(dlg)
+                    os_click_widget(harness, dlg.password_input, wait=0.3)
+                    pyautogui.hotkey("ctrl", "a")
+                    harness.settle(0.3)
+                    pyautogui.press("backspace")
+                    harness.settle(0.3)
+                    pyautogui.write(secret, interval=0.05)
+                    harness.settle(0.5)
+                    last_typed_ok = dlg.password_input.text() == secret
+                    if last_typed_ok:
+                        break
+                    print(f"answer_password_dialog attempt {attempt}/3 readback mismatch, retrying")
+                except Exception as e:
+                    if attempt < 3:
+                        print(f"answer_password_dialog attempt {attempt}/3 failed: {repr(e)}, retrying")
+                    else:
+                        raise
+            state["typed_ok"] = last_typed_ok
+            if not state["typed_ok"]:
+                raise RuntimeError("password readback mismatch")
+            if tick_save and dlg.save_check is not None and not dlg.save_check.isChecked():
+                os_click_widget(harness, dlg.save_check, wait=0.4)
+            state["save_checked"] = bool(dlg.save_check is not None and dlg.save_check.isChecked())
+            os_click(harness, dlg, "Confirm password", wait=0.5)
+        except Exception as e:
+            state["error"] = repr(e)
+            dlg.reject()
+        finally:
+            state["done"] = True
+
+    timer.timeout.connect(tick)
+    timer.start()
+    state["_timer"] = timer
+    return state
+
+
 # ------------------------------------------------------------------- login --
 
 def login_to_dashboard(harness: RealUIHarness, master_pw=None, login_screen=None):
@@ -432,11 +498,19 @@ def login_to_dashboard(harness: RealUIHarness, master_pw=None, login_screen=None
 
 
 def set_fy(harness: RealUIHarness, dashboard, fy="2025-26"):
-    os_select_combo(harness, dashboard.fy_combo, fy)
-    from core import session
-    if session.session.selected_fy != fy:
-        raise RuntimeError(f"session.selected_fy is {session.session.selected_fy!r}, expected {fy!r}")
-    return True
+    for attempt in range(1, 4):
+        try:
+            os_select_combo(harness, dashboard.fy_combo, fy)
+            from core import session
+            if session.session.selected_fy != fy:
+                raise AssertionError(f"session.selected_fy is {session.session.selected_fy!r}, expected {fy!r}")
+            return True
+        except (RuntimeError, AssertionError) as e:
+            if attempt < 3:
+                print(f"set_fy attempt {attempt}/3 failed: {e!r}, retrying")
+                harness.settle(0.5)
+            else:
+                raise
 
 
 # ----------------------------------------------------------------------- DB --
@@ -497,3 +571,15 @@ def fingerprint_real_db():
 def append_progress(line: str):
     with open(PROGRESS_MD, "a", encoding="utf-8") as f:
         f.write(f"- [{_dt.datetime.now().isoformat(timespec='seconds')}] {redact(line)}\n")
+
+
+def run_logged(main_fn, log_name):
+    """Run main_fn with faulthandler enabled and exception logging."""
+    faulthandler.enable()
+    try:
+        main_fn()
+    except SystemExit:
+        raise
+    except BaseException:
+        redacting_logger(log_name).log("UNCAUGHT EXCEPTION:\n" + traceback.format_exc())
+        raise

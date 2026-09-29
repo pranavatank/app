@@ -212,7 +212,17 @@ class ThemeManager:
     def _write_pref(name: str) -> None:
         try:
             os.makedirs(_CONFIG_DIR, exist_ok=True)
+            data = {}
+            if os.path.exists(_CONFIG_FILE):
+                try:
+                    with open(_CONFIG_FILE, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                except (OSError, ValueError):
+                    data = {}
+            if not isinstance(data, dict):
+                data = {}
+            data["theme"] = name
             with open(_CONFIG_FILE, "w", encoding="utf-8") as f:
-                json.dump({"theme": name}, f, indent=2)
+                json.dump(data, f, indent=2)
         except Exception:
             pass

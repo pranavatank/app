@@ -23,6 +23,7 @@ from tools.real_ui_tests.rebuild_common import (
     bootstrap_app, adopt_window, os_click, os_type, read_secret,
     login_to_dashboard, set_fy, snapshot_db, append_progress,
     redacting_logger, nav_click, prearm, wait_until, assert_foreground,
+    run_logged, answer_password_dialog,
 )
 from tools.real_ui_test_harness import RealUIHarness, find_by_accessible_name, find_dialog_by_title
 
@@ -137,30 +138,11 @@ def main():
         log.log(f"file selected: {pdf_path.name}")
 
         if bank == "Equitas":
-            # PasswordDialog.exec() is a genuine blocking modal (unlike the
-            # non-modal "Manage Data" dialogs elsewhere). With real OS-level
-            # input, a QTimer.singleShot(0) prearm callback in *this* process
-            # races the real-world latency of the OS click actually being
-            # delivered and can end up running its own dialog-search loop
-            # before the dialog exists, deadlocking against the very
-            # processEvents() call that would go on to enter exec(). A
-            # separate process -- independent of this process's GIL/event
-            # loop, using Windows UI Automation to find the dialog's controls
-            # by their accessible name -- sidesteps this entirely, the same
-            # way the native file-open dialog is already handled.
-            import os as _os2
-            pw = read_secret("equitas")
-            pw_typer = Path(__file__).resolve().parent / "password_dialog_typer.py"
-            pwproc = subprocess.Popen(
-                [sys.executable, str(pw_typer), "--pid", str(_os2.getpid()),
-                 "--title", "Enter Statement Password", "--password", pw,
-                 "--save-toggle", "--timeout", "30"],
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-            )
+            pw_state = answer_password_dialog(harness, "Enter Statement Password", read_secret("equitas"))
             os_click(harness, import_screen, "Next button", wait=2.0)
-            out, _ = pwproc.communicate(timeout=40)
-            log.log(f"password_dialog_typer exit={pwproc.returncode} output={out.strip()!r}")
-            assert pwproc.returncode == 0, f"password_dialog_typer failed rc={pwproc.returncode}"
+            wait_until(harness, lambda: pw_state["done"], timeout=90)
+            log.log(f"password dialog: done={pw_state['done']} typed_ok={pw_state['typed_ok']} save_checked={pw_state['save_checked']} error={pw_state['error']}")
+            assert pw_state["done"] and pw_state["error"] is None and pw_state["typed_ok"]
         else:
             os_click(harness, import_screen, "Next button", wait=2.0)
 
@@ -220,11 +202,15 @@ def main():
     log.log(f"non-'Statement Import' source rows = {n_not_stmt} (expect 0)")
     assert n_not_stmt == 0
 
-    fd_rows = conn.execute(
-        "SELECT fd_id, status, principal_amount, start_date, source_transaction_id FROM FixedDeposit WHERE account_id=?",
+    fd_total = conn.execute(
+        "SELECT COUNT(*) FROM FixedDeposit WHERE account_id=?",
         (account_id,),
-    ).fetchall()
-    log.log(f"FixedDeposit rows for account: {fd_rows}")
+    ).fetchone()[0]
+    fd_with_source_tx = conn.execute(
+        "SELECT COUNT(*) FROM FixedDeposit WHERE account_id=? AND source_transaction_id IS NOT NULL",
+        (account_id,),
+    ).fetchone()[0]
+    log.log(f"FixedDeposit for account: total_count={fd_total} with_source_transaction_id={fd_with_source_tx}")
 
     n_internal = conn.execute(
         "SELECT COUNT(*) FROM Transactions WHERE account_id=? AND is_internal_transfer=1", (account_id,)
@@ -238,6 +224,10 @@ def main():
         has_enc = pw_enc_row[0] is not None
         log.log(f"Equitas statement_password_enc is set = {has_enc}")
         assert has_enc
+        from models.bank_account import get_statement_password
+        from core import session
+        decrypts_ok = get_statement_password(account_id, session.session.aes_key) == read_secret('equitas')
+        log.log(f"Equitas password decrypts = {decrypts_ok}")
 
     conn.close()
 
@@ -248,4 +238,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    run_logged(main, "P2_4_crash")

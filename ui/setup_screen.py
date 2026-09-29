@@ -14,7 +14,6 @@ from config import APP_NAME
 from ui.logo import logo_pixmap, set_window_icon
 from ui.theme import Theme, ThemeManager
 from ui.icons import set_btn_icon
-from ui.widgets.toast_utils import show_warning, show_success
 
 
 class SetupScreen(QWidget):
@@ -100,6 +99,11 @@ class SetupScreen(QWidget):
         self.confirm_input.setAccessibleName("Confirm password input")
         self.confirm_input.setAccessibleDescription("Re-enter your master password to confirm.")
         cl.addWidget(self.confirm_input)
+        self.error_label = QLabel("")
+        self.error_label.setObjectName("LoginErrorLabel")
+        self.error_label.setWordWrap(True)
+        self.error_label.hide()
+        cl.addWidget(self.error_label)
         cl.addSpacing(16)
 
         # TOTP
@@ -177,19 +181,23 @@ class SetupScreen(QWidget):
         pwd     = self.pwd_input.text()
         confirm = self.confirm_input.text()
         if len(pwd) < 8:
-            show_warning("Password must be at least 8 characters.")
+            self._show_error("Password must be at least 8 characters.")
             return
         if pwd != confirm:
-            show_warning("Passwords do not match.")
+            self._show_error("Passwords do not match.")
             return
+        self.error_label.hide()
         totp_uri = setup_master_password(pwd, self.totp_check.isChecked())
         if totp_uri:
-            show_success(f"Scan this URI in Google Authenticator:\n\n{totp_uri}")
-        show_success("Account created! Please log in.")
+            QMessageBox.information(self, "TOTP Enabled", f"Scan this URI in Google Authenticator:\n\n{totp_uri}")
         from ui.login_screen import LoginScreen
         self.login = LoginScreen()
         self.login.show()
         self.close()
+
+    def _show_error(self, msg: str):
+        self.error_label.setText(msg)
+        self.error_label.show()
 
     def _center_on_screen(self):
         from PySide6.QtGui import QGuiApplication

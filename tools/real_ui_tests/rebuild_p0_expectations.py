@@ -20,6 +20,12 @@ for _s in (sys.stdout, sys.stderr):
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
+try:
+    from PySide6.QtWidgets import QApplication
+    QApplication.instance() or QApplication([])
+except Exception:
+    pass
+
 from engines.statement import parse_statement_pdf
 from engines.statement_parser import extract_statement_text
 from engines.statement_metadata_extractor import extract_account_metadata, mask_account_number
@@ -42,10 +48,11 @@ def mask_pan(pan):
 
 
 def is_fd_opening(txn):
-    """Mirrors _TransactionImportWorker._is_fd_opening_transaction exactly
-    (ui/statement_import_screen_modern.py:247-250) — substring rule."""
-    desc = (txn.get("description") or "").lower()
-    return any(p in desc for p in ["fd accepted", "opening", "fixed deposit"])
+    """Call _TransactionImportWorker._is_fd_opening_transaction from
+    ui/statement_import_screen_modern.py."""
+    from ui.statement_import_screen_modern import _TransactionImportWorker
+    worker = _TransactionImportWorker(None, None, [], [], '', '', '', [])
+    return worker._is_fd_opening_transaction(txn)
 
 
 def statement_expectations(name, filename, password=None):
