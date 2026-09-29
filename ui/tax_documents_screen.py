@@ -293,11 +293,12 @@ class TaxDocumentsScreen(QWidget):
         """Handle AIS file selection."""
         self.zone_ais.set_status("Parsing...", error=False)
 
+        person_id = session.selected_person_id or 1
+
         # Check if encrypted and prompt for password on GUI thread BEFORE starting background parse
         password = None
         if is_pdf_encrypted(path):
             # Try saved password first
-            person_id = 1  # Currently assuming single person
             saved_password = get_ais_tis_password(person_id, session.aes_key)
 
             # Prompt for password
@@ -336,7 +337,7 @@ class TaxDocumentsScreen(QWidget):
             parsed, info = result
             # Save password if requested
             if should_save and password:
-                set_ais_tis_password(1, password, session.aes_key)
+                set_ais_tis_password(person_id, password, session.aes_key)
 
             self.zone_ais.pdf_data = parsed
             self.zone_ais.pdf_path = path
@@ -356,11 +357,12 @@ class TaxDocumentsScreen(QWidget):
         """Handle TIS file selection."""
         self.zone_tis.set_status("Parsing...", error=False)
 
+        person_id = session.selected_person_id or 1
+
         # Check if encrypted and prompt for password on GUI thread BEFORE starting background parse
         password = None
         if is_pdf_encrypted(path):
             # Try saved password first
-            person_id = 1  # Currently assuming single person
             saved_password = get_ais_tis_password(person_id, session.aes_key)
 
             # Prompt for password
@@ -399,7 +401,7 @@ class TaxDocumentsScreen(QWidget):
             parsed, info = result
             # Save password if requested
             if should_save and password:
-                set_ais_tis_password(1, password, session.aes_key)
+                set_ais_tis_password(person_id, password, session.aes_key)
 
             self.zone_tis.pdf_data = parsed
             self.zone_tis.pdf_path = path

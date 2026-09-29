@@ -20,7 +20,7 @@ from ui.date_utils import format_display_date
 from models.person import add_person, get_all_persons, get_person, update_person, delete_person
 from models.bank import add_bank, get_all_banks, get_bank, update_bank, delete_bank
 from models.bank_account import add_account, get_all_accounts, update_account, delete_account
-from models.account_holder import get_account_holders, add_account_holder
+from models.account_holder import get_account_holders, add_account_holder, set_primary_holder
 
 from ui.dialogs.person_dialog import PersonDialog
 from ui.dialogs.bank_dialog import BankDialog
@@ -364,6 +364,11 @@ class ManageDataScreen(QWidget):
             # Save account holders
             for holder in dlg._holders_data:
                 add_account_holder(account_id, holder["person_id"], holder["is_primary"])
+
+            # Set primary holder if specified in dialog
+            primary = next((h["person_id"] for h in dlg._holders_data if h["is_primary"]), None)
+            if primary:
+                set_primary_holder(account_id, primary)
 
             self._load_accounts()
 

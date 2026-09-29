@@ -866,8 +866,8 @@ class DashboardScreen(QMainWindow):
             balance = acc["current_balance"] if acc else 0.0
         else:
             balance = get_total_balance(person_id=pid)
-        income  = get_income_total(person_id=pid,  financial_year=fy)
-        expense = get_expense_total(person_id=pid, financial_year=fy)
+        income  = get_income_total(person_id=pid,  financial_year=fy, account_id=aid)
+        expense = get_expense_total(person_id=pid, financial_year=fy, account_id=aid)
         net     = income - expense
         next_start = int(fy.split("-")[0]) + 1
         next_fy = f"{next_start}-{str(next_start + 1)[2:]}"
@@ -906,6 +906,8 @@ class DashboardScreen(QMainWindow):
             monthly_expense = {}
 
             for tx in transactions:
+                if tx.get("is_internal_transfer"):
+                    continue
                 if not tx.get("transaction_date"):
                     continue
                 try:
@@ -1020,8 +1022,9 @@ class DashboardScreen(QMainWindow):
             lambda: self.income_page.refresh() if hasattr(self, 'income_page') else None,
             lambda: self.fd_page.refresh() if hasattr(self, 'fd_page') else None,
             lambda: self.import_page.refresh() if hasattr(self, 'import_page') else None,
-            lambda: self.ais_tis_page.refresh() if hasattr(self, 'ais_tis_page') else None,
+            lambda: None,  # Tax Documents keeps no persisted view to reload
             lambda: self.tax_page.refresh() if hasattr(self, 'tax_page') else None,
+            lambda: self.prediction_page.refresh() if hasattr(self, 'prediction_page') else None,
             lambda: self.settings_page.refresh() if hasattr(self, 'settings_page') else None,
         ]
         if 0 <= idx < len(pages):

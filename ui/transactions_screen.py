@@ -34,6 +34,7 @@ from models.transaction import (
     reprocess_internal_transfers, display_transaction_type, normalize_transaction_type,
     get_category_summary
 )
+from engines.balance_engine import recalculate_account_balance
 
 _COL_DATE=0; _COL_TYPE=1; _COL_CAT=2; _COL_MODE=3; _COL_REF=4; _COL_DESC=5
 _COL_AMOUNT=6; _COL_BAL=7; _COL_ACCT=8; _COL_PERSON=9; _COL_ID=10
@@ -622,7 +623,9 @@ class TransactionsScreen(QWidget):
                                 preselect_person_id=session.selected_person_id,
                                 preselect_account_id=session.selected_account_id)
         if dlg.exec() == QDialog.DialogCode.Accepted:
-            add_transaction(**dlg.get_data())
+            data = dlg.get_data()
+            add_transaction(**data)
+            recalculate_account_balance(data["account_id"])
             self._fetch_and_display()
             if self._parent_window: self._parent_window.refresh_overview()
 
@@ -633,10 +636,14 @@ class TransactionsScreen(QWidget):
                                 accounts=get_all_accounts(), existing=txn)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             data = dlg.get_data()
+            moved = data.get("account_id") != txn["account_id"]
             update_transaction(txn["transaction_id"], data["transaction_date"],
                                data["transaction_type"], data["amount"],
                                data.get("category"), data.get("mode"), data.get("description"), data.get("reference_no"),
-                               data.get("balance_after"), account_id=data.get("account_id"), person_id=data.get("person_id"))
+                               None if moved else data.get("balance_after"), account_id=data.get("account_id"), person_id=data.get("person_id"))
+            for account_id in {txn["account_id"], data.get("account_id")}:
+                if account_id:
+                    recalculate_account_balance(account_id)
             self._fetch_and_display()
             if self._parent_window: self._parent_window.refresh_overview()
 
@@ -650,6 +657,7 @@ class TransactionsScreen(QWidget):
             QMessageBox.StandardButton.No)
         if reply == QMessageBox.StandardButton.Yes:
             delete_transaction(txn["transaction_id"])
+            recalculate_account_balance(txn["account_id"])
             self._fetch_and_display()
             if self._parent_window: self._parent_window.refresh_overview()
 
@@ -680,8 +688,13 @@ class TransactionsScreen(QWidget):
         if reply != QMessageBox.StandardButton.Yes:
             return
 
+        account_ids = {r["account_id"] for r in self._current_rows if r["transaction_id"] in txn_ids}
         for txn_id in txn_ids:
             delete_transaction(txn_id)
+
+        for account_id in account_ids:
+            if account_id:
+                recalculate_account_balance(account_id)
 
         self._fetch_and_display()
         if self._parent_window:
@@ -863,6 +876,11 @@ class TransactionsScreen(QWidget):
                 data.get("reference_no"),
                 data.get("balance_after"),
             )
+
+        account_ids = {orig["account_id"] for orig, _ in updates}
+        for account_id in account_ids:
+            if account_id:
+                recalculate_account_balance(account_id)
 
         self._clear_dirty()
         self._fetch_and_display()

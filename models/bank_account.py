@@ -44,6 +44,9 @@ def add_account(person_id: int, bank_name: str, account_type: str,
           opening_balance, opening_balance, interest_rate))
     conn.commit()
     account_id = cur.lastrowid
+    if person_id:
+        conn.execute("INSERT OR IGNORE INTO AccountHolder (account_id, person_id, is_primary) VALUES (?, ?, 1)", (account_id, person_id))
+        conn.commit()
     conn.close()
     return account_id
 

@@ -2,10 +2,10 @@
 import os
 import threading
 from datetime import datetime, timezone
-import shutil
 from typing import Optional
 
 from config import BACKUP_DIR, DB_PATH
+from core.database import backup_database
 
 # Scheduler globals
 _scheduler_thread: threading.Thread | None = None
@@ -24,7 +24,7 @@ def create_backup() -> Optional[str]:
         ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         base = os.path.basename(DB_PATH)
         dest = os.path.join(BACKUP_DIR, f"{ts}-{base}")
-        shutil.copy2(DB_PATH, dest)
+        backup_database(dest)
         return dest
     except Exception:
         return None

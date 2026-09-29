@@ -4,229 +4,100 @@
 you should not need to read source files to understand what this project is, what
 state it is in, what is pending, or how to test it.
 
-**Last updated:** 2026-09-24 (mid-rebuild, session paused by user — see §0).
+**Last updated:** 2026-09-29 (fresh DB rebuilt through the real UI; Phase 3 walkthrough pending — see §0).
 **Audience:** an AI agent (or human) picking this project up with zero prior context.
 This guide keeps only what is pending and what you need to know to avoid repeating
 past mistakes — not a changelog. Full history is in git log / commit messages.
 
 ---
 
-## 0. STOP — read this before doing anything. A rebuild is in progress, paused mid-Phase-2.
+## 0. CURRENT STATE — the fresh-DB rebuild is DONE through Phase 2; Phase 3 walkthrough is what remains
 
-A prior session (2026-09-24) committed 27+ logic-bug fixes (`git log` → commit `e721005`),
-then started a from-scratch DB rebuild + full real-mouse UI test pass, driven through
-`tools/real_ui_tests/rebuild_p2_*.py` scripts. **The user explicitly said "stop execution"
-mid-Phase-2** — nothing is currently running, the DB is in a safe, verified, consistent
-state, but the rebuild is NOT finished. Resume exactly where this section says to, in
-order. Do not restart from scratch — the work already done is real and verified.
+**Authorisation model (from the owner):** the agent may drive the real mouse and keyboard on its own
+(`pyautogui` scripts) — the owner never needs to type anything or wait. Code changes and DB/schema changes
+are allowed when necessary. The only hard rule left from earlier sessions: **do not run
+`tools/backfill_transactions.py`** (the fresh-import pipeline is being tested exactly as production runs it).
 
-### 0.1 Exact current state (verified via read-only SQL, 2026-09-24 ~22:35 IST)
+### 0.1 Verified state of `data/financial.db` (rebuilt 2026-09-29 through the real UI)
 
 | table | count | detail |
 |---|---|---|
-| Person | 1 | person_id=1, full_name="Pranav", DOB 2004-03-08, PAN from real 26AS |
-| Bank | 4 | Jana Small Finance Bank, IDFC FIRST Bank, Ujjivan Small Finance Bank, Equitas Small Finance Bank |
-| BankAccount | 4 | one Savings account per bank, person_id=1 |
-| Transactions | **468** | Jana (account_id=1) 65 ✓, IDFC FIRST (account_id=2) 376 ✓, Ujjivan (account_id=3) 27 ✓ — all three match the real statement counts exactly and have a `Success` `StatementImportLog` row. **Equitas (account_id=4) = 0 — NOT imported yet.** |
-| FixedDeposit | 0 | See §0.3 finding 3 — likely a real bug, not yet 100% confirmed because Equitas never finished importing |
-| Form26ASImport / AISTISImport | 0 / 0 | Not started (Phase 2.5–2.7) |
+| Person | 1 | "Pranav", DOB 2004-03-08, PAN from the real 26AS |
+| Bank / BankAccount | 4 / 4 | Jana, IDFC FIRST, Ujjivan, Equitas (Small Finance Bank legal names), one Savings account each |
+| Transactions | **506** | 65 / 376 / 27 / 38, every `balance_after` matches the parsed statement |
+| StatementImportLog | 4 | all `Success` |
+| FixedDeposit | 23 | Jana 14 `Pending Details`; Equitas 9 `Matured` (see §0.3-B: 5 of these are WRONG until the redemption-matching repair) |
+| Form26ASImport / Record | 1 / 158 | FY 2025-26, total TDS 13,367.00 |
+| AISTISImport | 2 | AIS + TIS, **both FY 2025-26** (import order 26AS → AIS → TIS keeps the FY correct) |
+| AccountHolder | 4 | present after restart; see §0.3 (A2 fix creates them at add time) |
 
-This is a **fresh, real DB** — the pre-rebuild DB was deleted by explicit user instruction,
-no backup exists or is wanted ("not needed now"). Treat the counts above as ground truth,
-not the old §3 baseline further down this file (which describes the *previous*, now-deleted
-DB — kept below for reference/comparison only, not as current state).
+Taxable income measured on this DB is **₹96,056** (not the old ₹2,54,784): the owner-approved
+Commission/Professional-Fees recategorisation lived in the deleted DB and the backfill is deliberately not applied.
+`tools/test_prediction_engine.py` and `tests/test_chart_db_agreement.py` still hard-code the old baseline numbers —
+**re-baseline them from measured output** (see §7) rather than loosening them.
 
-Password file `data\PersonalData\Pranav\password.txt` now also has a `master:` line (the
-app's real login password) in addition to the pre-existing `equitas:` and `ais_tis:` lines.
-Read all three via `tools/real_ui_tests/rebuild_common.py:read_secret(kind)` — never print,
-log, or hardcode any of them.
+Master password = `master:` line of `data\PersonalData\Pranav\password.txt`; read with
+`tools/real_ui_tests/rebuild_common.py:read_secret("master"|"ais_tis"|"equitas")`. Never print/log/hardcode.
 
-### 0.2 Exact next steps — resume in this order
+### 0.2 How the rebuild was run (repeatable)
 
-1. **Sanity check first, every time, before touching anything**: confirm no `python.exe`
-   process is currently running (see §0.4's caveat about this check being unreliable — do
-   it anyway, it's still useful as a heuristic, just don't fully trust a clean result), and
-   re-verify the table counts above via a fresh read-only SQL query. If they've drifted,
-   stop and figure out why before proceeding — don't assume this doc is still accurate.
-2. **Import Equitas** (Phase 2.4, 4th and last bank): run
-   `.venv\Scripts\python.exe tools\real_ui_tests\rebuild_p2_4_statement.py --bank Equitas`.
-   This has failed silently twice already this session (see §0.3 finding 1) — before
-   this run, confirm the script's `main()` is wrapped in a top-level try/except that logs
-   any uncaught exception's traceback to the log file (add it if missing; the version in
-   the repo as of this handoff may or may not already have it — check). If it fails again
-   with a captured traceback, that's real diagnostic evidence — read it before retrying.
-   Verify success: `Transactions WHERE account_id=4` = 38, `StatementImportLog` has a
-   `Success` row for it.
-3. **Import tax documents** (Phase 2.5–2.7): 26AS → AIS → TIS, in that fixed order, one
-   `TaxDocumentsScreen` session. Script exists at `tools/real_ui_tests/rebuild_p2_5_7_taxdocs.py`
-   — written but **never successfully run in this session**, read it and fix anything wrong
-   before trusting it. AIS/TIS need the `ais_tis` password; 26AS needs none. Verify:
-   `Form26ASImport`=1 row (FY 2025-26, `total_tds`=13367.00), `Form26ASRecord`=158,
-   `AISTISImport`=2 rows **both under FY 2025-26** (not 2026-27 — if they land under
-   2026-27, that's a real regression of a previously-fixed bug, report it, don't ignore it).
-4. **FD origin check** (Phase 2.8, read-only): `SELECT status, COUNT(*) FROM FixedDeposit
-   GROUP BY status`. Script exists at `tools/real_ui_tests/rebuild_p2_8_fd_origin.py`
-   (written, never run — all 4 statements weren't in yet when it was written). This is
-   where you confirm or refute finding 3 in §0.3 for real, with all 4 statements present.
-5. **Do NOT run `tools/backfill_transactions.py`** (Phase 2.9 stays skipped). This is a
-   deliberate, explicit user instruction: test the fresh import pipeline exactly as a real
-   new user would experience production, with no manual recategorisation script applied
-   afterward. If real taxable income (salary/commission/professional-fee transactions from
-   real employers/clients) ends up miscategorised by the pipeline, **that is a genuine bug
-   to fix in the actual parsing/categorisation logic** (`engines/parser_utils.py` or
-   wherever category matching happens) — not something to patch by running the backfill
-   script. Record it precisely (transaction ids, descriptions, amounts) as a finding.
-6. Check Phase 2 exit criteria: Person=1, Bank=4, BankAccount=4, Transactions=506
-   (65+376+27+38), Form26ASImport=1/158 records, AISTISImport=2, FixedDeposit explained.
-7. Only after Phase 2 is fully done: **Phase 3** (full mouse-driven walkthrough of every
-   control on all 10 screens) and **Phase 4** (backend verification against
-   `tools/test_prediction_engine.py`, `tools/tax_reconcile.py`, etc.) — both fully specified
-   in the saved planning doc, see §0.5 for where to find it. **Phase 5** is writing up the
-   final findings list. None of Phase 3/4/5 has started.
-8. Append progress to `tools/real_ui_tests/screenshots/rebuild/PROGRESS.md` as you go
-   (it currently ends at the Ujjivan import — don't recreate it, append).
-9. **Never run two real-UI processes concurrently** (see §0.4 — this was violated once
-   this session and caused real confusion/risk). Before starting any script, confirm
-   nothing else is mid-run.
+All in `tools/real_ui_tests/`, run **one at a time, nothing else running** (no other heavy CPU either — a parallel
+Opus/pytest run once starved the UI and made a dialog appear "not found"). Log to a file, never `| tail`.
+```
+# reset (explicit literal paths only; never wildcards): delete data\financial.db, -wal, -shm, -journal
+rebuild_p2_0_setup.py  →  rebuild_p2_1_person.py  →  rebuild_p2_2_banks.py  →  rebuild_p2_3_accounts.py
+rebuild_p2_4_statement.py --bank "Jana"|"IDFC FIRST"|"Ujjivan"|"Equitas"   (in that order)
+rebuild_p2_5_7_taxdocs.py   (26AS → AIS → TIS in ONE screen instance)
+rebuild_p2_8_fd_origin.py   (read-only: compares expected FD-opening ids with FixedDeposit.source_transaction_id)
+```
+Each step is idempotent, snapshots to `backups\rebuild_<UTC>_<tag>.db`, appends to
+`screenshots\rebuild\PROGRESS.md`. `rebuild_common.py` provides: `os_click`/`os_type`/`os_select_combo`/`os_set_date`,
+`prearm(app, cb)` (now **polls until a modal dialog is active** before running `cb`), `answer_password_dialog(...)`
+(in-process modal answerer, no secret on any command line), `run_logged(main, name)` (logs uncaught tracebacks),
+`set_fy` (retries 3×), `snapshot_db`, `fingerprint_real_db`, `diff_fingerprints`, `read/restore_theme_prefs`, `Checks`,
+`require_scratch`. `run_on_scratch.py [--fresh] <script>` runs a mutating script against a scratch copy
+(`backups\phase3_scratch.db`) and aborts (exit 3) if the real DB or real `theme_prefs.json` changed.
 
-### 0.3 Findings already confirmed this session (carry these into the final Phase 5 list)
+### 0.3 Bugs found and fixed in this effort (all committed; `git log`)
 
-1. **Fixed already, uncommitted** — `ui/widgets/toast.py` and `ui/widgets/toast_utils.py`
-   both had `setAttribute(WA_TransparentForMouseEvents, False)` on the app-wide
-   `ToastContainer`, despite a comment claiming click-through behaviour. Since the
-   container is raised to the top of the z-order and sized to the full content area, this
-   made it **opaque to all mouse hit-testing for as long as any toast was visible** —
-   blocking every real click anywhere in the window, not just on the toast itself. Real
-   production impact: a genuine user could click a button right after an action that shows
-   a toast (e.g. "Saved successfully") and the click would silently do nothing. Already
-   changed to `True` in both files this session (`git diff` shows it) — **not yet
-   committed**. Verify it's still `True` before doing anything else; if reverted, that's
-   worth investigating (don't blindly re-apply without checking why).
-2. **Real bug, needs a proper fix (not yet fixed)** — `ui/setup_screen.py:_on_setup`
-   (~lines 176-192) calls `show_success("Account created! Please log in.")` at line 188
-   *before* the code that creates/shows `LoginScreen` (lines 189-192). `show_success`
-   (`ui/widgets/toast_utils.py`) raises `RuntimeError("Toast container not initialized")`
-   whenever no `DashboardScreen` has ever been constructed in the process — true for
-   *every* real first-run, since `init_toast_container` is only ever called from
-   `DashboardScreen.__init__`. That RuntimeError aborts the rest of `_on_setup`, so the
-   master password **is** saved correctly (confirmed: `AuthSecurity` row exists,
-   `is_first_run()` flips to False), but **the UI never transitions to the login screen** —
-   a real first-time user's app appears to hang after clicking "Create account," with no
-   error shown, and they'd have to force-restart to reach login. Fix: either don't call
-   `show_success`/`show_warning` before a `DashboardScreen` exists (skip the toast on this
-   specific path, or show it differently, e.g. a plain label already on `SetupScreen`), or
-   make `init_toast_container`/`show_success` degrade gracefully (log + no-op) instead of
-   raising when no container exists yet, so a stray toast call anywhere never crashes a
-   flow silently. Location: `ui/setup_screen.py:180,183,188`,
-   `ui/widgets/toast_utils.py:47-48`.
-3. **Predicted, not yet 100% confirmed (confirm in step 4 of §0.2)** — the real Jana and
-   Equitas statements contain FD-opening transactions (Jana: "TD. GENERIC PAYIN DEBIT",
-   Equitas: "INITIAL PAYIN FD300014105662...EQUITAS TD/...") that do **not** match the
-   substring rule actually used in production,
-   `_TransactionImportWorker._is_fd_opening_transaction()` in
-   `ui/statement_import_screen_modern.py` (~lines 247-250: only matches "fd accepted",
-   "opening", "fixed deposit"). A **different, unused** method in the same file (~line
-   1674, on `StatementImportScreen` itself, regex-based, includes patterns like
-   `TD\.?\s+GENERIC\s+PAYIN` and `INITIAL\s+PAYIN\s+FD`) would have matched — but it's
-   dead code, never called. **Predicted real-world impact: a fresh production import
-   creates 0 FixedDeposit rows**, even though the user has real FDs. This is high/critical
-   severity (FD tracking, TDS-risk projection, and tax prediction all depend on
-   `FixedDeposit` rows existing) but wasn't empirically confirmed with all 4 statements in
-   place before the session was paused — confirm for real in Phase 2.8, then fix the
-   production code path (likely: replace the worker's substring check with the better
-   regex method, or merge the two).
-4. **Confirmed as fact, self-healing, low severity** — `BankFDConvention` is not seeded for
-   banks added mid-session through the UI (`models/bank.py:add_bank()` never calls
-   `_seed_bank_fd_conventions`, only `initialise_database()` does, once, at process start).
-   Confirmed via direct SQL: it was 0 right after adding 4 banks mid-session, then became 4
-   after the next process restart (which re-runs `initialise_database()` and retroactively
-   seeds it). Not a permanent gap, but worth a proper fix (call the seeder from
-   `add_bank()` too) since between-restart FD interest calculations could use the wrong
-   convention in the meantime.
-5. **Harness/test-tooling issue, not necessarily an app bug** — the FY top-bar combo
-   selection helper (`os_select_combo` in `tools/real_ui_tests/rebuild_common.py`)
-   sometimes lands on the wrong FY (observed: wanted 2025-26, got 2026-27, the app's live
-   default). Looks like a timing/scroll-position flake in the helper, not the app itself —
-   but always verify `session.selected_fy` actually equals what you intended after any FY
-   combo change, don't assume the click landed correctly.
-6. **Test-script bug, already fixed** — `rebuild_p2_4_statement.py`'s file-selection
-   assertion originally compared `import_screen.selected_file == str(pdf_path)` as raw
-   strings; `QFileDialog` returns forward-slash paths on Windows so this false-failed.
-   Fixed to compare `Path(...).resolve()` on both sides.
+Fixed and verified:
+1. **First-run hang.** `SetupScreen._on_setup` used toasts, which raise `RuntimeError` before any `DashboardScreen`
+   exists → the login screen never appeared. Now uses an inline `LoginErrorLabel`. Verified in the real UI.
+2. **FD-opening detection.** The production import worker used a weak substring rule → **0 FDs created** for Jana/Equitas.
+   The regex detector (formerly dead code on the screen class) now lives in `_TransactionImportWorker`; two patterns that
+   matched ordinary debits (`\d+ FD`, `TD/\d+`) were removed. Real result: Jana 14, IDFC 0, Ujjivan 0, Equitas 5.
+3. `add_bank` did not seed `BankFDConvention`; `delete_bank` hit an FK IntegrityError once a convention row existed.
+4. `ThemeManager._write_pref` dropped `sidebar_open` (now read-merge-write, tolerant of a corrupt file).
+5. Toast container was opaque to mouse events (`WA_TransparentForMouseEvents` now True) — earlier session.
+6. Test tooling: `prearm` fired before the click (dialog never filled), password passed on a command line, no crash
+   logging, AIS/TIS password-dialog race, `tools/real_ui_tests/password_dialog_typer.py` removed.
+7. Later fixes (see `git log`): FD redemption matching (`_extract_actual_fd_no` now accepts `"<digits> /1"`; redemptions
+   naming a *different* numeric FD no longer mark unrelated FDs Matured), `add_account` creates the primary
+   `AccountHolder`, the import screen really blocks an import that fails balance validation (`_import_blocked`),
+   dashboard `_on_refresh_all` now has 10 aligned entries + `IncomePredictionScreen.refresh()`, Overview income/expense
+   tiles honour the account filter and the bar chart skips internal transfers, `INCOME_CATEGORIES` gained Commission
+   Income / Professional Fees, transaction add/edit/move/delete recalculates account balances, AIS/TIS handlers use
+   `session.selected_person_id or 1`, `core/backup_manager.create_backup` is WAL-safe.
 
-### 0.4 Known environment/tool limitation discovered this session — read before debugging "is it stuck?"
+**Still to do on the real DB (data repair, not code):** the pre-fix import wrongly matched Equitas FDs 15–19 as Matured
+and created placeholder FDs 20–23 with `start_date` NULL. Repair = reset the Equitas account and re-import it with the fixed
+matching: `run_on_scratch.py --fresh rebuild_p2_4_reset_account.py --bank Equitas --expect-count 38`, then
+`run_on_scratch.py rebuild_p2_4_statement.py --bank Equitas` (rehearsal), verify Pending=5 (900000) / Matured=9
+(850000, interest 91,590), then apply to the real DB with `rebuild_p2_4_reset_account.py --real --confirm-account-id 4`.
 
-**This session's own process-listing tools (`Get-Process`, `Get-CimInstance` run via the
-orchestrating agent's Bash/PowerShell tool calls) repeatedly reported zero `python.exe`
-processes running, at a moment when the user's own screenshot proved the real app was
-alive, visible, and mid-interaction (a password dialog, correctly filled in).** This is a
-**visibility gap, not a crash** — don't trust "no python process found" via this specific
-check as proof the app died. What *did* seem to work reliably: the real-UI test scripts'
-own OS-level `pyautogui` mouse/keyboard input and window screenshots did reach the real,
-visible desktop (confirmed — real progress was made this way). So: **input injection and
-screenshots seem to reach the real session; process enumeration via the orchestrating
-agent's own shell tools does not, reliably.** Treat any "process not found" result from
-that specific angle with suspicion — cross-check against the log file's last-modified
-timestamp and, if possible, the DB state, before concluding something crashed. This cost
-significant time and caused a real operational problem this session (see below) — don't
-repeat it.
-
-**A second, related, more serious problem this session**: because of the above confusion,
-the orchestrating agent dispatched more than one background agent to "investigate/fix" the
-same stalled Equitas import, and at least one of those agent lines kept running (and
-kept spawning real OS-level automation against the live app and live DB) even after being
-believed finished/handed-off. For a period, **two separate automation processes were
-plausibly driving real clicks against the same live app window and the same real database
-concurrently** — a direct violation of this guide's own "never run two real-UI tests at
-once" rule (§5.3, now also true for any future agent's own spawned sub-processes, not just
-two manually-run scripts). No data corruption resulted (verified: the affected account,
-Equitas, stayed at 0 transactions throughout — the concurrent activity never got far enough
-to write conflicting rows), but it easily could have. **Whoever resumes this must be
-strict about the single-process rule** — before starting anything, verify (via the DB
-state and the PROGRESS.md log, not just a process check) that nothing is actually mid-run,
-and if delegating to a background agent, do not layer a second one on top "just to check"
-without first confirming the first one has actually, fully stopped (not just "no longer
-needs a response" — background agents can keep executing after handing back a status
-update).
-
-### 0.5 Where the full detailed plan lives
-
-The complete, reviewed, phase-by-phase implementation plan (Phase 0 pre-flight, Phase 1
-reset, Phase 2 data reentry — sub-phases P2.0 through P2.9 — Phase 3 full control
-walkthrough, Phase 4 backend verification, Phase 5 findings writeup, plus a full appendix
-of helper-tooling specs) is saved at:
-`tools/real_ui_tests/REBUILD_PLAN.md` (copied into the repo so it survives outside any
-one chat session — read it in full before continuing Phase 3 onward, it has exact SQL
-verification queries and expected values for every step).
-
-### 0.6 Scripts already written this session (all in `tools/real_ui_tests/`, all untracked/uncommitted)
-
-- `rebuild_common.py` — shared helpers: `bootstrap_app()`, `read_secret()`,
-  `login_to_dashboard()`, `os_click`/`os_type`/`os_select_combo`/`os_set_date`,
-  `snapshot_db()`, `db_ro()`, `fingerprint_real_db()`, `append_progress()`, etc.
-- `rebuild_p0_expectations.py` — headless parser-only sanity check (already run, passed).
-- `rebuild_p2_0_setup.py` / `_p2_1_person.py` / `_p2_2_banks.py` / `_p2_3_accounts.py` —
-  already run successfully, idempotent (safe to re-run, they'll detect completion and skip).
-- `rebuild_p2_4_statement.py --bank <name>` — the statement-import driver; proven for
-  Jana/IDFC FIRST/Ujjivan, not yet successful for Equitas (see §0.3 finding 1).
-- `rebuild_p2_5_7_taxdocs.py` — written, never successfully run yet.
-- `rebuild_p2_8_fd_origin.py` — written, never run yet (nothing meaningful to check until
-  all 4 statements are in).
-- `os_file_dialog_typer.py` — subprocess helper that types a path into the native
-  Windows file-open dialog; confirmed working (used successfully for Jana/IDFC/Ujjivan).
-- `password_dialog_typer.py` — subprocess helper that answers a modal `PasswordDialog`
-  from a separate OS process (same rationale as `os_file_dialog_typer.py`: the dialog's
-  `.exec()` blocks the main test process's own event loop, so nothing scheduled from
-  inside that same process can reliably win the race to interact with it — a second,
-  independent process sidesteps this). Needed for the Equitas/AIS/TIS password steps.
-
-(The abandoned duplicate `rebuild_p2_4_statements.py` — plural, no `--bank` arg — has
-already been deleted; use `rebuild_p2_4_statement.py --bank <name>` only.)
-
-DB snapshots from each completed step are in `backups\rebuild_<UTC-timestamp>_<step>.db`
-(+ `-shm`/`-wal`) — e.g. `rebuild_20260924T164459Z_P2_4_Ujjivan.db` is the last known-good
-snapshot (post-Ujjivan, pre-Equitas). Progress log:
-`tools/real_ui_tests/screenshots/rebuild/PROGRESS.md`.
+### 0.4 Environment/tooling lessons (each cost real time)
+- **Process enumeration from the agent's shell is unreliable** (guide earlier: `Get-CimInstance` returned 0 while the app
+  was visibly running). Cross-check with log mtimes and DB state.
+- **A screenshot is not proof; a script's own PASS is not proof** — verify with independent read-only SQL.
+- **Never run two real-UI processes, or a real-UI process plus heavy CPU work, at once.**
+- **Never chain real-UI scripts blindly with `&&`/`for` and no failure check** — one failing step let the loop continue.
+- `answer_password_dialog` / `prearm` must run *inside* the modal's nested event loop via a polling `QTimer`; a
+  `singleShot(0)` fires before the click that opens the dialog.
+- Parallel Haiku test runs can hit `run_full_tests.py`'s 120 s per-file timeout on `test_screen_render.py`
+  (takes ~110 s alone) — re-run it alone.
+- The auto-mode classifier refused an unprompted `restore_database` over the live DB; deleting the DB files was
+  explicitly requested by the owner, so it is done by explicit literal path.
+- Schema has **21** tables (older docs said 22).
 
 ---
 
@@ -296,7 +167,7 @@ delete the guard.
 
 ---
 
-## 3. Current state of the real database — READ THIS, it changed recently
+## 3. OLD baseline (the DB that was deleted 2026-09-29) — for comparison only; current state is §0.1
 
 `data/financial.db` is **REAL USER DATA**, not a fixture. It is gitignored
 (`.gitignore:2` → `data/*.db`). Back it up before any writing operation — see
@@ -475,6 +346,13 @@ API: `launch(factory, maximized=True)`, `click(root, "Accessible Name")`,
   (no return statement) — checking `if backup_path:` on its return value
   always looks like failure. Check `os.path.exists(dest)` /
   `os.path.getsize(dest) > 0` instead.
+
+- **§L `prearm` must wait for the modal.** A `QTimer.singleShot(0)` callback runs *before* the OS click that opens the
+  dialog and blocks the loop while searching for it; the click then opens an unfilled dialog. `prearm` now polls
+  `QApplication.activeModalWidget()`; `answer_password_dialog` does the same for `PasswordDialog`.
+- **§M Never pass a secret as a subprocess argument** (visible in any process listing). Answer password dialogs in-process.
+- **§N Wrap every script `main()` in `run_logged`** — uncaught exceptions otherwise go to stderr only and a run "fails silently".
+- **§O Verify the FY combo after every change** (`session.selected_fy`); `set_fy` retries but always assert.
 
 ### 5.4 Testing colour / theme problems
 **Grep cannot find them.** A file can be grep-clean of hex literals and still
@@ -668,6 +546,18 @@ chart and table it owns, or a live theme switch leaves it visually stale.
 ---
 
 ## 7. PENDING — start here
+
+### Pending after the 2026-09-29 rebuild
+0. **Real-DB data repair for Equitas FDs** (§0.3) and re-baseline `tools/test_prediction_engine.py` /
+   `tests/test_chart_db_agreement.py` from measured output (taxable ≈ ₹96,056 without the backfill; do NOT loosen
+   the CRITICAL GUARD). Then run `tools/rebuild_verify.py --engines` / `--tempdb`.
+0b. **Phase 3 walkthrough** (REBUILD_PLAN.md Phase 3): scaffolding exists (`run_on_scratch.py`, helpers in
+   `rebuild_common.py`); the per-screen `rebuild_p3_*.py` scripts are NOT written yet.
+0c. Report-only findings: H9 (Tax Documents refund logic hard-coded), H12 (`change_password` skips undecryptable
+   ciphertexts), H14 (import rollback does not undo redemption updates), H15 (`project_fy_income` ignores expectations,
+   possible FD-interest double count), H18 (Overview "Income (FY)" is a gross figure), TDS-risk uses projection only,
+   Tax Documents screen never reloads persisted 26AS/AIS/TIS, `format_inr(-0.004)` → "₹-0", Link Transfers confirm
+   defaults to Yes.
 
 ### High value
 1. **Enter the real FD rates.** The bulk-entry dialog exists (Fixed Deposits

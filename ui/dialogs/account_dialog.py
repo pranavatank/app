@@ -22,7 +22,7 @@ from config import ACCOUNT_TYPES
 from models.person import get_all_persons
 from models.bank_account import add_account, get_all_accounts, update_account, delete_account
 from models.bank import get_all_banks, get_or_create_bank, update_bank_tan_code_if_exists
-from models.account_holder import get_account_holders, add_account_holder
+from models.account_holder import get_account_holders, add_account_holder, set_primary_holder
 
 
 def _btn(text: str, style: str = "primary") -> QPushButton:
@@ -124,6 +124,11 @@ class AccountManagementDialog(QDialog):
             # Save account holders
             for holder in dlg._holders_data:
                 add_account_holder(account_id, holder["person_id"], holder["is_primary"])
+
+            # Set primary holder if specified in dialog
+            primary = next((h["person_id"] for h in dlg._holders_data if h["is_primary"]), None)
+            if primary:
+                set_primary_holder(account_id, primary)
 
             self._load_accounts()
 

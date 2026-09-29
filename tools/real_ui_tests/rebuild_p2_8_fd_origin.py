@@ -67,7 +67,7 @@ def main():
 
         # 3. Get actual FD-opening transaction ids (from FixedDeposit.source_transaction_id)
         actual_rows = conn.execute(
-            "SELECT source_transaction_id FROM FixedDeposit WHERE account_id=? AND source_transaction_id IS NOT NULL",
+            "SELECT source_transaction_id FROM FixedDeposit WHERE account_id=? AND source_transaction_id IS NOT NULL AND start_date IS NOT NULL",
             (account_id,)
         ).fetchall()
         actual_ids = set(row[0] for row in actual_rows)

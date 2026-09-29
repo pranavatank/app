@@ -20,6 +20,7 @@ from ui.dialogs.account_details_dialog import AccountDetailsPanel
 from models.bank_account import get_all_accounts, add_account, update_account, delete_account, get_account
 from models.bank import get_or_create_bank, update_bank_tan_code_if_exists
 from models.person import get_all_persons
+from models.account_holder import add_account_holder, set_primary_holder
 from models.fixed_deposit import get_all_fds
 from models.fd_interest_record import get_total_fd_interest
 from models.savings_interest import get_total_savings_interest
@@ -437,8 +438,18 @@ class AccountsScreen(QWidget):
         if dlg.exec() == QDialog.DialogCode.Accepted:
             payload = dlg.get_data()
             tan_code = payload.pop("tan_code", None)
-            add_account(**payload)
+            account_id = add_account(**payload)
             get_or_create_bank(payload.get("bank_name") or "")
             if tan_code:
                 update_bank_tan_code_if_exists(payload.get("bank_name") or "", tan_code)
+
+            # Save account holders
+            for holder in dlg._holders_data:
+                add_account_holder(account_id, holder["person_id"], holder["is_primary"])
+
+            # Set primary holder if specified in dialog
+            primary = next((h["person_id"] for h in dlg._holders_data if h["is_primary"]), None)
+            if primary:
+                set_primary_holder(account_id, primary)
+
             self._load_accounts()

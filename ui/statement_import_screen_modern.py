@@ -45,7 +45,7 @@ from engines.statement_parser import (
 
 )
 from engines.statement import parse_statement_pdf
-from engines.statement.validate import confidence, balance_walk, extract_control_totals, reconcile_totals, LowConfidenceParse, normalise_order
+from engines.statement.validate import confidence, balance_walk, extract_control_totals, reconcile_totals, LowConfidenceParse, normalise_order, direction_errors
 from engines.statement_metadata_extractor import extract_account_metadata
 from engines.interest_engine import allocate_savings_interest_to_fy
 from engines.balance_engine import recalculate_account_balance
@@ -333,6 +333,7 @@ class StatementImportScreen(QWidget):
         self.fds_created_last_import = 0
         self.parse_confidence = 0.0
         self.failing_rows_balance = []
+        self._import_blocked = False
         self._loader = None
         self._preview_cell_change_lock = False
         self._selection_tab_order_ready = False
@@ -1216,8 +1217,11 @@ class StatementImportScreen(QWidget):
             self.failing_rows_balance = balance_walk(valid)
             balance_pass_rate = 1.0 - (len(self.failing_rows_balance) / len(valid)) if valid else 0.0
 
-            # Block import if confidence is too low (< 0.9 / 90%)
-            if self.parse_confidence < 0.9 and valid:
+            # Block import if balance column present but no tied rows or low confidence
+            tied, _ = direction_errors(valid)
+            has_balances = sum(1 for t in valid if t.get("balance_after") is not None) >= 2
+            self._import_blocked = has_balances and (tied == 0 or self.parse_confidence < 0.9)
+            if self._import_blocked:
                 fail_count = sum(1 for txn in valid if any(f["index"] == valid.index(txn) for f in self.failing_rows_balance))
                 reason = f"Balance validation failed for {len(self.failing_rows_balance)} row(s) (confidence: {self.parse_confidence:.0%})"
                 show_warning(f"Import blocked: {reason}\n\nPlease review the statement and try again.")
@@ -1275,6 +1279,10 @@ class StatementImportScreen(QWidget):
         """Import selected transactions using background worker thread."""
         if not self.preview_transactions:
             show_warning("No transactions available. Please go back and choose another file.")
+            return
+
+        if self._import_blocked:
+            show_warning("Import blocked: balance validation failed for this statement. Please review the statement and try again.")
             return
 
         checked_rows = self.preview_table.getCheckedRows()
@@ -1405,6 +1413,7 @@ class StatementImportScreen(QWidget):
         self.fds_created_last_import = 0
         self.parse_confidence = 0.0
         self.failing_rows_balance = []
+        self._import_blocked = False
 
         # Reset UI to selection screen step 1
         self.stack.setCurrentIndex(0)

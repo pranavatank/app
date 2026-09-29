@@ -1,3 +1,5 @@
+> **Status (2026-09-29):** Phases 0-2 are complete and verified (see docs/VISUAL_TESTING_GUIDE.md §0). Phase 4 headless checks were run (results in the guide); Phase 3 walkthrough scripts are not written yet. Corrections learned: the schema has 21 tables; `prearm` now waits for the modal; FD redemption placeholders come from a redemption-matching bug, not a missing start date; secrets are never passed as subprocess arguments.
+
 # Plan: rebuild `financial.db` from scratch through the real UI, then validate frontend and backend
 
 ## 0. Discoveries that change the brief

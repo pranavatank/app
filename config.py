@@ -63,6 +63,7 @@ def get_all_financial_years(since_year: int = 2020) -> list:
 # ── Transaction Categories ────────────────────────────────────────────────────
 INCOME_CATEGORIES = [
     "Salary", "Pension", "FD Interest", "Savings Interest",
+    "Commission Income", "Professional Fees",
     "FD Maturity", "Rental Income", "Business Income", "Dividend", "Other Income",
 ]
 

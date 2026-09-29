@@ -416,6 +416,7 @@ def _extract_actual_fd_no(description: str, reference_no: str | None = None) -> 
 
     patterns = [
         r"\b(\d{10,}/\d+)\b",  # e.g. 4522030012104165/1
+        r"\b(\d{10,})\s+/\d+\b",  # e.g. 4522030012104165 /1
         r"\bFD\s*(?:NO|NUMBER|A/C|ACCOUNT)?\s*[:\-]?\s*([A-Z0-9\-/]{6,})\b",
         r"\bTD\s*(?:NO|NUMBER|A/C|ACCOUNT)?\s*[:\-]?\s*([A-Z0-9\-/]{6,})\b",
     ]
@@ -424,6 +425,15 @@ def _extract_actual_fd_no(description: str, reference_no: str | None = None) -> 
         if m:
             return m.group(1).strip(" -/").upper()[:50]
     return None
+
+
+def _fd_base_no(ref):
+    return (ref or "").split("/")[0].strip().upper()
+
+
+def _is_different_numbered_fd(fd_reference_no, fd_no) -> bool:
+    a, b = _fd_base_no(fd_reference_no), _fd_base_no(fd_no)
+    return a.isdigit() and b.isdigit() and a != b
 
 
 def apply_statement_redemption_event(account_id: int, person_id: int,
@@ -470,12 +480,12 @@ def apply_statement_redemption_event(account_id: int, person_id: int,
             FROM FixedDeposit
             WHERE account_id = ?
               AND person_id = ?
-              AND UPPER(COALESCE(fd_reference_no, '')) = ?
+              AND UPPER(COALESCE(fd_reference_no,'')) IN (?, ?)
             ORDER BY CASE status WHEN 'Active' THEN 0 WHEN 'Pending Details' THEN 1 WHEN 'Matured' THEN 2 ELSE 3 END,
                      fd_id DESC
             LIMIT 1
             """,
-            (account_id, person_id, fd_no),
+            (account_id, person_id, fd_no.upper(), _fd_base_no(fd_no)),
         ).fetchone()
 
     if fd_no and chosen is not None and is_principal_redemption and not chosen["start_date"]:
@@ -496,6 +506,7 @@ def apply_statement_redemption_event(account_id: int, person_id: int,
             (account_id, person_id, fd_no),
         ).fetchall()
 
+        candidates = [r for r in candidates if not _is_different_numbered_fd(r["fd_reference_no"], fd_no)]
         if candidates:
             def _score(row):
                 principal = float(row["principal_amount"] or 0)
@@ -550,10 +561,11 @@ def apply_statement_redemption_event(account_id: int, person_id: int,
             """,
             (account_id, person_id, transaction_date),
         ).fetchall()
+        rows = [r for r in rows if not _is_different_numbered_fd(r["fd_reference_no"], fd_no)]
         if rows:
             scored = sorted(
                 rows,
-                key=lambda r: (abs(float(r["principal_amount"] or 0) - float(amount or 0)), r["fd_id"]),
+                key=lambda r: (_fd_base_no(r["fd_reference_no"]) != _fd_base_no(fd_no), abs(float(r["principal_amount"] or 0) - float(amount or 0)), r["fd_id"]),
             )
             chosen = scored[0]
 

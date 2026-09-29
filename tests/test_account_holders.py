@@ -100,6 +100,66 @@ class TestAccountHoldersT034:
         exists = holder_exists(acc_id, p_id)
         assert exists, "Migration should create AccountHolder row for existing BankAccount.person_id"
 
+    def test_add_account_creates_account_holder_row(self):
+        """
+        Test that add_account creates an AccountHolder row with the person as primary.
+        """
+        pid = add_person("Primary", first_name="Primary", last_name="Holder")
+        acc_id = add_account(pid, "HDFC Bank", "Savings")
+
+        primary = get_primary_holder(acc_id)
+        assert primary is not None, "Primary holder should exist after add_account"
+        assert primary["person_id"] == pid, "Primary holder person_id should match"
+
+        holders = get_account_holders(acc_id)
+        assert len(holders) == 1, "Should have exactly 1 holder when account is created"
+
+    def test_set_primary_holder_after_add_account(self):
+        """
+        Test that after add_account creates an initial primary holder,
+        calling set_primary_holder with a different person leaves exactly one primary.
+
+        This tests the fix for the case where add_account auto-creates a primary,
+        then dialog holders are added, and set_primary_holder ensures only one is primary.
+        """
+        # Create three persons
+        p1_id = add_person("Alice", first_name="Alice", last_name="A")
+        p2_id = add_person("Bob", first_name="Bob", last_name="B")
+        p3_id = add_person("Charlie", first_name="Charlie", last_name="C")
+
+        # Create account with p1 (auto-creates p1 as primary)
+        acc_id = add_account(p1_id, "HDFC Bank", "Savings")
+
+        # Verify p1 is primary
+        primary = get_primary_holder(acc_id)
+        assert primary["person_id"] == p1_id
+
+        # Add p2 and p3 as secondary holders
+        add_account_holder(acc_id, p2_id, is_primary=0)
+        add_account_holder(acc_id, p3_id, is_primary=0)
+
+        # Verify three holders, only p1 is primary
+        holders = get_account_holders(acc_id)
+        assert len(holders) == 3
+        assert sum(h["is_primary"] for h in holders) == 1
+        assert get_primary_holder(acc_id)["person_id"] == p1_id
+
+        # Now set p2 as primary (simulating dialog changing owner)
+        set_primary_holder(acc_id, p2_id)
+
+        # Verify exactly one primary (p2), and others are secondary
+        holders = get_account_holders(acc_id)
+        assert len(holders) == 3, "Should still have three holders"
+        assert sum(h["is_primary"] for h in holders) == 1, "Must have exactly one primary"
+        primary = get_primary_holder(acc_id)
+        assert primary["person_id"] == p2_id, "Primary should now be p2"
+
+        # Verify p1 and p3 are not primary
+        p1_holder = next((h for h in holders if h["person_id"] == p1_id), None)
+        p3_holder = next((h for h in holders if h["person_id"] == p3_id), None)
+        assert p1_holder["is_primary"] == 0, "p1 should not be primary"
+        assert p3_holder["is_primary"] == 0, "p3 should not be primary"
+
     def test_senior_citizen_date_of_birth_threshold(self):
         """
         Test that Person.date_of_birth feeds the senior-citizen 15G vs 15H decision.

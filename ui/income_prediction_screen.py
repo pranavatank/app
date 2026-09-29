@@ -797,6 +797,9 @@ class IncomePredictionScreen(QWidget):
 
         Loader.run(self, fn=_load, message="Loading prediction…", on_done=_on_done, on_error=_on_error)
 
+    def refresh(self):
+        self.load_data()
+
     def _refresh_all_sections(self):
         """Rebuild every section against freshly loaded data.
 

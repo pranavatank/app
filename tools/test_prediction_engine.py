@@ -25,6 +25,7 @@ from engines.prediction_engine import (
     get_prediction_summary, build_strategies,
     STRATEGY_DECLARATION, STRATEGY_REDISTRIBUTION, STRATEGY_NEW_BANK,
     STRATEGY_DEFER_MATURITY, STRATEGY_HEADROOM_INVESTMENT, STRATEGY_DATA_QUALITY,
+    DEFAULT_FD_TENURE_MONTHS,
 )
 from config import DB_PATH
 
@@ -227,13 +228,32 @@ def run_tests():
     passed += test
     failed += not test
 
-    # INVARIANT 1: estimated_fd_count + known_fd_count == total FD count from DB
-    total_fds_in_db = count_table_rows("FixedDeposit")
+    # INVARIANT 1: Check FD counts align with project_fd_interest assumptions
     fd_sum = result["projected_fd_interest"]["estimated_fd_count"] + result["projected_fd_interest"]["known_fd_count"]
+    conn = get_db_connection()
+    projectable = conn.execute(
+        f"""SELECT COUNT(*) FROM FixedDeposit
+            WHERE person_id = ? AND start_date IS NOT NULL AND principal_amount > 0
+              AND start_date <= '2026-03-31'
+              AND COALESCE(maturity_date, date(start_date, '+{DEFAULT_FD_TENURE_MONTHS} months')) >= '2025-04-01'""",
+        (person_id,)).fetchone()[0]
+    undated_not_matured = conn.execute(
+        "SELECT COUNT(*) FROM FixedDeposit WHERE person_id = ? AND start_date IS NULL AND status != 'Matured'",
+        (person_id,)).fetchone()[0]
+    conn.close()
+
     test = assert_equal(
         fd_sum,
-        total_fds_in_db,
-        label="estimated_fd_count + known_fd_count == total FD count"
+        projectable,
+        label="estimated_fd_count + known_fd_count == dated FDs overlapping FY"
+    )
+    passed += test
+    failed += not test
+
+    test = assert_equal(
+        undated_not_matured,
+        0,
+        label="FDs without start_date are all Matured redemption placeholders"
     )
     passed += test
     failed += not test

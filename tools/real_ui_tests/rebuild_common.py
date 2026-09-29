@@ -49,6 +49,7 @@ RUIH_DIR.mkdir(parents=True, exist_ok=True)
 BACKUPS = BASE / "backups"
 BACKUPS.mkdir(parents=True, exist_ok=True)
 PROGRESS_MD = RUIH_DIR / "PROGRESS.md"
+REAL_DB_PATH = BASE / "data" / "financial.db"
 
 _SECRET_PATTERNS = []  # populated by read_secret() calls; masked in redacting_logger
 
@@ -534,8 +535,42 @@ def set_fy(harness: RealUIHarness, dashboard, fy="2025-26"):
 
 # ----------------------------------------------------------------------- DB --
 
+def db_ro(path=None):
+    if path is None:
+        from config import DB_PATH
+        path = DB_PATH
+    return sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+
+
+def fingerprint_real_db(path=None):
+    if path is None:
+        from config import DB_PATH
+        path = DB_PATH
+    conn = db_ro(path)
+    tables = [r[0] for r in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+    ).fetchall()]
+    fp = {}
+    for t in tables:
+        rows = conn.execute(f"SELECT * FROM [{t}] ORDER BY rowid").fetchall()
+        h = hashlib.sha256(repr(rows).encode("utf-8", errors="replace")).hexdigest()
+        cnt = conn.execute(f"SELECT COUNT(*) FROM [{t}]").fetchone()[0]
+        fp[t] = {"count": cnt, "sha256": h}
+    conn.close()
+    return fp
+
+
+def require_scratch():
+    from config import DB_PATH
+    if Path(DB_PATH).resolve() == REAL_DB_PATH.resolve():
+        raise RuntimeError("S-script must run via run_on_scratch.py")
+
+
 def snapshot_db(tag: str):
     from config import DB_PATH
+    is_scratch = Path(DB_PATH).resolve() != REAL_DB_PATH.resolve()
+    if is_scratch:
+        tag = f"scratch_{tag}"
     ts = _dt.datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
     dest = BACKUPS / f"rebuild_{ts}_{tag}.db"
     src_conn = sqlite3.connect(DB_PATH)
@@ -567,29 +602,62 @@ def snapshot_db(tag: str):
     return str(dest)
 
 
-def db_ro():
-    from config import DB_PATH
-    return sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
-
-
-def fingerprint_real_db():
-    conn = db_ro()
-    tables = [r[0] for r in conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
-    ).fetchall()]
-    fp = {}
-    for t in tables:
-        rows = conn.execute(f"SELECT * FROM [{t}] ORDER BY rowid").fetchall()
-        h = hashlib.sha256(repr(rows).encode("utf-8", errors="replace")).hexdigest()
-        cnt = conn.execute(f"SELECT COUNT(*) FROM [{t}]").fetchone()[0]
-        fp[t] = {"count": cnt, "sha256": h}
-    conn.close()
-    return fp
+def diff_fingerprints(before, after, allowed=()):
+    changed = []
+    for table in before.keys():
+        if table not in after:
+            continue
+        if before[table]["count"] != after[table]["count"] or before[table]["sha256"] != after[table]["sha256"]:
+            if table not in allowed:
+                changed.append(table)
+    return changed
 
 
 def append_progress(line: str):
     with open(PROGRESS_MD, "a", encoding="utf-8") as f:
         f.write(f"- [{_dt.datetime.now().isoformat(timespec='seconds')}] {redact(line)}\n")
+
+
+def read_theme_prefs():
+    import core.session
+    config_file = Path(core.session._CONFIG_FILE)
+    if config_file.exists():
+        return config_file.read_bytes()
+    return None
+
+
+def restore_theme_prefs(b):
+    import core.session
+    config_file = Path(core.session._CONFIG_FILE)
+    if b is None:
+        if config_file.exists():
+            config_file.unlink()
+    else:
+        config_file.parent.mkdir(parents=True, exist_ok=True)
+        config_file.write_bytes(b)
+
+
+class Checks:
+    def __init__(self, log: RedactingLogger):
+        self.log = log
+        self.results = []
+        self.a11y = []
+
+    def check(self, name, ok, detail=""):
+        status = "PASS" if ok else "FAIL"
+        self.log.log(f"[{status}] {name} {detail}")
+        self.results.append({"name": name, "ok": ok, "detail": detail})
+
+    def finish(self, json_path):
+        path = Path(json_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        data = {
+            "results": self.results,
+            "a11y": self.a11y,
+        }
+        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        has_fail = any(not r["ok"] for r in self.results)
+        return 1 if has_fail else 0
 
 
 def run_logged(main_fn, log_name):

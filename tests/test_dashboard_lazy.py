@@ -239,3 +239,65 @@ def test_nav_labels_hidden_when_collapsed(monkeypatch):
                 visible_count += 1
 
     assert visible_count == 0, f"{visible_count} nav labels should be hidden in collapsed mode"
+
+
+def test_refresh_prediction_and_settings_pages():
+    """Test that prediction and settings pages refresh correctly on FY change and navigation.
+
+    Verifies that:
+    - navigating to screen 8 (Income Prediction) refreshes it
+    - FY change while on Income Prediction refreshes it again
+    - navigating to screen 9 (Settings) refreshes it
+    """
+    from unittest.mock import MagicMock
+
+    dash = DashboardScreen()
+    dash.resize(1280, 720)
+
+    # Navigate to screen 8 (Income Prediction) to instantiate prediction_page
+    dash._navigate(8)
+    assert hasattr(dash, 'prediction_page'), "prediction_page should be created"
+    assert dash._screen_pages[8] is not None
+
+    # Navigate to screen 9 (Settings) to instantiate settings_page
+    dash._navigate(9)
+    assert hasattr(dash, 'settings_page'), "settings_page should be created"
+    assert dash._screen_pages[9] is not None
+
+    # Record refresh calls by replacing with mocks
+    calls = []
+
+    original_pred_refresh = dash.prediction_page.refresh
+    original_settings_refresh = dash.settings_page.refresh
+
+    def mock_pred_refresh():
+        calls.append("p")
+        original_pred_refresh()
+
+    def mock_settings_refresh():
+        calls.append("s")
+        original_settings_refresh()
+
+    dash.prediction_page.refresh = mock_pred_refresh
+    dash.settings_page.refresh = mock_settings_refresh
+
+    # Reset call list for the actual test
+    calls.clear()
+
+    # Navigate to Income Prediction (screen 8) - should call refresh
+    dash._navigate(8)
+    assert "p" in calls, "prediction_page.refresh should be called on navigation to screen 8"
+
+    # Simulate FY change while on Income Prediction - should refresh prediction page
+    if dash.fy_combo.count() > 0:
+        fy_text = dash.fy_combo.itemText(0)
+        dash._on_fy_changed(fy_text)
+        assert calls.count("p") >= 2, "prediction_page.refresh should be called on FY change"
+
+    # Navigate to Settings (screen 9) - should call refresh
+    dash._navigate(9)
+    assert "s" in calls, "settings_page.refresh should be called on navigation to screen 9"
+
+    # Restore original methods
+    dash.prediction_page.refresh = original_pred_refresh
+    dash.settings_page.refresh = original_settings_refresh
