@@ -1,4 +1,21 @@
-> **Status (2026-09-29):** Phases 0-2 are complete and verified (see docs/VISUAL_TESTING_GUIDE.md §0). Phase 4 headless checks were run (results in the guide); Phase 3 walkthrough scripts are not written yet. Corrections learned: the schema has 21 tables; `prearm` now waits for the modal; FD redemption placeholders come from a redemption-matching bug, not a missing start date; secrets are never passed as subprocess arguments.
+> **Status (2026-10-01):** Phases 0-2 are complete and verified (see docs/VISUAL_TESTING_GUIDE.md §0). Phase 4 headless checks were run (results in the guide). Corrections learned: the schema has 21 tables; `prearm` now waits for the modal; FD redemption placeholders come from a redemption-matching bug, not a missing start date; secrets are never passed as subprocess arguments.
+>
+> **Phase 3 tooling (written and committed, NOT yet run against the real UI):**
+> - Shared: `rebuild_common.py` (OS-input helpers, title-matched `prearm`, message-box/modal answerers, toast reader, `parse_inr`, modal watchdog), `rebuild_p3_common.py` (`P3Run`, `main_wrapper`; R refuses scratch/`FINMGR_SCRATCH`, real-DB fingerprint taken before bootstrap and compared after, `R_ALLOWED` empty), `run_on_scratch.py` (`--fresh`, `--from`, rejects `--env R` and hard refresh), `rebuild_verify.py` (`--fingerprint --out`, `--compare`, all 21 tables), `rebuild_p5_collect.py` (writes `screenshots/rebuild/P5_collected.md`).
+> - Per-screen scripts `rebuild_p3_00` overview, `01` accounts, `02` transactions, `03` income, `04` fixed deposits, `05` statement import (S only), `06` tax documents, `07` tax, `08` income prediction (R only), `09` settings, `10` topbar (R only), `11` hard refresh (R only, last). Run as `rebuild_p3_NN_x.py --env R`, or `run_on_scratch.py [--fresh] rebuild_p3_NN_x.py --env S`.
+> - Stale nav index 8 fixed to 9 in `test_add_person_flow`, `test_add_bank_flow`, `test_add_account_flow`; they now require the scratch DB.
+> - Opus review round 2 found no real-DB write path in R mode. The Restore click in Settings R is always preceded by an armed "No".
+>
+> **Known remaining items (from review, not yet fixed or re-verified):**
+> - `02` category-preservation edit arms Cancel; it must Save without changes.
+> - `03` link/unlink should assert `actual_transaction_id` set/NULL; Salary standard-deduction check must run both without and with a Salary expectation.
+> - `06` `matched_count > 0 or not_in_app_count > 0` check is weak and the tables are empty in R; replace with SQL checks plus an observation.
+> - `05` delete-row step and exact "only the selected rows changed" diff are not confirmed.
+> - A final Opus verification pass over commit `bfb0c98` has not been done.
+>
+> **Open decisions:** strict zero-write R (default) vs allowing the `TaxProfile` delta; Equitas data repair (guide §0.3, and `rebuild_p2_4_reset_account.py` has two crash bugs); scratch source (current real DB, no `P2_final` snapshot); synthetic xlsx vs `Data 26-27.xlsx`; whether to click "Warm up local AI model".
+>
+> **Next:** run the scripts one at a time with the mouse and keyboard untouched (order in Appendix: topbar R, screens 00-09 R, S scripts via `run_on_scratch --fresh`, hard refresh last), then `rebuild_verify.py --compare` and `rebuild_p5_collect.py`. `FINDINGS.md` fix-claim ledger and hypotheses are all "pending".
 
 # Plan: rebuild `financial.db` from scratch through the real UI, then validate frontend and backend
 
