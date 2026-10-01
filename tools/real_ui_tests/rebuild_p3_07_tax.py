@@ -29,7 +29,7 @@ def run_r(p):
     p.harness.settle(0.8)
 
     ais_row = p.sql(
-        "SELECT fd_interest, savings_interest FROM AISTISImport WHERE person_id=1 AND financial_year='2025-26' ORDER BY import_date DESC LIMIT 1"
+        "SELECT fd_interest, savings_interest, other_income, dividend_income FROM AISTISImport WHERE person_id=1 AND financial_year='2025-26' AND source_type='AIS' ORDER BY import_date DESC LIMIT 1"
     )
     expected_ais_fd = ais_row[0][0] if ais_row else 0
     expected_ais_savings = ais_row[0][1] if ais_row else 0
@@ -47,7 +47,11 @@ def run_r(p):
 
     other_val = tax_page.other_income_input.value()
     dividend_val = tax_page.dividend_income.value()
-    p.log.log(f"AIS other_income={other_val} dividend={dividend_val}")
+    if ais_row:
+        ais_other = ais_row[0][2]
+        ais_dividend = ais_row[0][3]
+        assert other_val == ais_other, f"other_income mismatch: ui={other_val} ais={ais_other}"
+        assert dividend_val == ais_dividend, f"dividend_income mismatch: ui={dividend_val} ais={ais_dividend}"
 
     os_select_combo(p.harness, tax_page.source_combo, "App Actual Data")
     p.harness.settle(0.8)
@@ -115,7 +119,7 @@ def run_s(p):
 
     waterfall_total_text = tax_page.waterfall_total.value_label.text()
     waterfall_parsed = parse_inr(waterfall_total_text)
-    ok_waterfall_parse = abs(waterfall_parsed - waterfall_total_val) < 0.01 if (waterfall_total_val and waterfall_parsed) else False
+    ok_waterfall_parse = waterfall_parsed is not None and waterfall_total_val is not None and abs(waterfall_parsed - waterfall_total_val) < 0.01
     p.checks.check("tax waterfall parse matches value", ok_waterfall_parse, f"text={waterfall_total_text} parsed={waterfall_parsed} value={waterfall_total_val}")
 
     tax_profile_row = p.sql(
@@ -125,7 +129,7 @@ def run_s(p):
     db_total = None
     if tax_profile_row:
         db_total = tax_profile_row[0][0]
-        ok_db_match = abs(db_total - waterfall_total_val) < 0.01 if waterfall_total_val else False
+        ok_db_match = waterfall_total_val is not None and abs(db_total - waterfall_total_val) < 0.01
         p.checks.check("tax DB total equals waterfall", ok_db_match, f"db={db_total} waterfall={waterfall_total_val}")
     else:
         p.checks.check("tax DB total equals waterfall", False, "no TaxProfile row found")
@@ -179,7 +183,7 @@ def run_s(p):
     )
     engine_total = engine_result.get('total_tax', 0)
 
-    ok_engine_match = abs(engine_total - waterfall_total_val) < 0.01 if waterfall_total_val else False
+    ok_engine_match = waterfall_total_val is not None and abs(engine_total - waterfall_total_val) < 0.01
     p.checks.check("tax engine result matches waterfall", ok_engine_match, f"engine={engine_total} waterfall={waterfall_total_val}")
 
     vectors = [
@@ -238,7 +242,7 @@ def run_s(p):
         )
         vec_engine_total = vec_engine.get('total_tax', 0)
 
-        ok_vec = abs(vec_engine_total - vec_waterfall_val) < 0.01 if vec_waterfall_val else False
+        ok_vec = vec_waterfall_val is not None and abs(vec_engine_total - vec_waterfall_val) < 0.01
         p.checks.check(f"tax vector {idx} matches engine", ok_vec, f"engine={vec_engine_total} waterfall={vec_waterfall_val}")
 
     p.observe("H24", "plan tax vectors include prefilled AIS interest so pure vectors are unreachable")

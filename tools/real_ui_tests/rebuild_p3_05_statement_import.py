@@ -22,7 +22,9 @@ from tools.real_ui_tests.rebuild_common import (
     read_secret, wait_until, set_fy, find_button, toast_texts,
 )
 from tools.real_ui_test_harness import RealUIHarness, find_by_accessible_name
-from PySide6.QtWidgets import QDialog
+from PySide6.QtWidgets import QDialog, QInputDialog
+from models.bank_account import get_account
+import pyautogui
 import openpyxl
 
 
@@ -200,6 +202,10 @@ def run_part_b(p, nav_page):
         snapshot_before_split = list(nav_page.preview_transactions)
         os_click_widget(p.harness, nav_page.preview_table.cellWidget(0, 0), wait=0.3)
         p.harness.settle(0.3)
+        def split_fill_fn(dlg):
+            os_type(p.harness, dlg, "Amount to split", "1000", wait=0.3)
+            os_click(p.harness, dlg, "OK", wait=0.5)
+        split_prearm = answer_modal_dialog(p.harness, p.app, QInputDialog, "Split Row", split_fill_fn)
         os_click(p.harness, nav_page, "Split selected transaction", wait=1.0)
         p.harness.settle(0.5)
         n_after_split = nav_page.preview_table.rowCount()
@@ -213,14 +219,16 @@ def run_part_b(p, nav_page):
         os_click_widget(p.harness, nav_page.preview_table.cellWidget(0, 0), wait=0.3)
         p.harness.settle(0.3)
         def shift_fill_fn(dlg):
-            dlg.reject()
-        shift_prearm = answer_modal_dialog(p.harness, p.app, QDialog, "Shift Transaction Dates", shift_fill_fn)
+            os_type(p.harness, dlg, "Days to shift", "1", wait=0.3)
+            os_click(p.harness, dlg, "OK", wait=0.5)
+        shift_prearm = answer_modal_dialog(p.harness, p.app, QInputDialog, "Shift Dates", shift_fill_fn)
         os_click(p.harness, nav_page, "Shift selected transaction dates", wait=0.8)
         p.harness.settle(1.5)
         p.log.log("Shift dates dialog handled")
 
     def bulk_fill_fn(dlg):
-        os_click(p.harness, dlg, "Cancel", wait=0.5)
+        os_type(p.harness, dlg, "Description input", "RUIH_TEST", wait=0.3)
+        os_click(p.harness, dlg, "Save transaction edit", wait=0.5)
     bulk_prearm = answer_modal_dialog(p.harness, p.app, QDialog, "Bulk Edit Selected Rows", bulk_fill_fn)
     os_click(p.harness, nav_page, "Bulk edit selected transactions", wait=0.8)
     p.harness.settle(1.5)
@@ -251,8 +259,12 @@ def run_part_c(p, nav_page):
         return
 
     acc_id = all_accounts[0][0]
-    acc = p.sql("SELECT bank_name, account_type FROM BankAccount WHERE account_id=?", (acc_id,))[0]
-    account_label = f"{acc[0]} — {acc[1]}"
+    acc_info = get_account(acc_id)
+    if acc_info:
+        account_label = f"{acc_info['bank_display_name']} — {acc_info['account_type']}"
+    else:
+        acc = p.sql("SELECT bank_name, account_type FROM BankAccount WHERE account_id=?", (acc_id,))[0]
+        account_label = f"{acc[0]} — {acc[1]}"
     os_click(p.harness, nav_page, f"Select account: {account_label}", wait=0.8)
     os_click(p.harness, nav_page, "Select PDF format", wait=0.6)
 
@@ -315,8 +327,12 @@ def run_part_d(p, nav_page):
         return
 
     acc_id = all_accounts[0][0]
-    acc = p.sql("SELECT bank_name, account_type FROM BankAccount WHERE account_id=?", (acc_id,))[0]
-    account_label = f"{acc[0]} — {acc[1]}"
+    acc_info = get_account(acc_id)
+    if acc_info:
+        account_label = f"{acc_info['bank_display_name']} — {acc_info['account_type']}"
+    else:
+        acc = p.sql("SELECT bank_name, account_type FROM BankAccount WHERE account_id=?", (acc_id,))[0]
+        account_label = f"{acc[0]} — {acc[1]}"
     os_click(p.harness, nav_page, f"Select account: {account_label}", wait=0.8)
 
     os_click(p.harness, nav_page, "Select Excel format", wait=0.6)
@@ -328,13 +344,12 @@ def run_part_d(p, nav_page):
     wait_until(p.harness, lambda: nav_page.selected_file is not None, timeout=10)
 
     if hasattr(nav_page, "map_columns_btn") and nav_page.map_columns_btn.isVisible():
+        from ui.dialogs.column_mapping_dialog import ColumnMappingDialog
+        def mapping_fill_fn(dlg):
+            os_click(p.harness, dlg, "Save column mapping", wait=0.5)
+        mapping_prearm = answer_modal_dialog(p.harness, p.app, ColumnMappingDialog, "Map Columns — Excel Import", mapping_fill_fn)
         os_click(p.harness, nav_page, "Map Excel columns", wait=0.8)
         p.harness.settle(1.0)
-        from ui.dialogs.column_mapping_dialog import ColumnMappingDialog
-        dlg = p.app.activeModalWidget() if hasattr(p, "app") else None
-        if dlg and isinstance(dlg, ColumnMappingDialog):
-            os_click(p.harness, dlg, "Save column mapping", wait=0.6)
-            p.harness.settle(0.5)
 
     os_click(p.harness, nav_page, "Next button", wait=2.0)
     ok = wait_until(p.harness, lambda: nav_page.preview_table.rowCount() > 0, timeout=180, interval=0.5)

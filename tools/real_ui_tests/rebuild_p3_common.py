@@ -185,7 +185,7 @@ class P3Run:
 
             # Write results JSON
             results_path = RUIH_DIR / f"P3_{self.nn}_{self.screen}_{self.env}.json"
-            extra = {"screen": self.screen, "env": self.env, "watchdog": self.watchdog.failures if self.watchdog else []}
+            extra = {"screen": self.screen, "env": self.env, "watchdog": self.watchdog.failures if self.watchdog else [], "observations": self.observations}
             rc = self.checks.finish(str(results_path), extra=extra)
 
             # Append progress

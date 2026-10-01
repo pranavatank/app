@@ -53,9 +53,9 @@ def run_r(p):
             try:
                 close_btn = find_button(page.detail_panel, "Close")
                 os_click_widget(p.harness, close_btn, wait=0.3)
-            except Exception:
-                pass
-            p.checks.check("06_detail_panel_closes", page.detail_frame.maximumWidth() == 0)
+                p.checks.check("06_detail_panel_closes", page.detail_frame.maximumWidth() == 0)
+            except Exception as e:
+                p.checks.check("06_detail_panel_closes", False, repr(e))
 
 
 def run_s(p):
@@ -162,6 +162,9 @@ def run_s(p):
     p.checks.check("13_micr_error_blocks_save", before_micr_count == after_micr_count,
                    f"before={before_micr_count}, after={after_micr_count}")
 
+    result = p.sql("SELECT COUNT(*) as cnt FROM BankAccount")
+    before_email_count = result[0][0] if result else 0
+
     def fill_invalid_email(dlg):
         person_combo = find_by_accessible_name(dlg, "Person selector")
         os_select_combo(p.harness, person_combo, "Pranav")
@@ -171,14 +174,11 @@ def run_s(p):
         type_combo = find_by_accessible_name(dlg, "Account type")
         os_select_combo(p.harness, type_combo, "Current")
 
-        try:
-            inner_tabs = find_by_accessible_name(dlg, "Account details tabs")
-            contact_tab_rect = inner_tabs.tabBar().tabRect(2)
-            QTest.mouseClick(inner_tabs.tabBar(), Qt.MouseButton.LeftButton, pos=contact_tab_rect.center())
-            p.harness.settle(0.3)
-            os_type(p.harness, dlg, "Email", "bad@")
-        except Exception:
-            pass
+        inner_tabs = find_by_accessible_name(dlg, "Account details tabs")
+        contact_tab_rect = inner_tabs.tabBar().tabRect(2)
+        p.harness.click_at_via_os(inner_tabs.tabBar(), contact_tab_rect.center(), wait=0.3)
+        p.harness.settle(0.3)
+        os_type(p.harness, dlg, "Email address", "bad@")
 
         os_click(p.harness, dlg, "Save account", wait=0.5)
         try:
@@ -194,6 +194,14 @@ def run_s(p):
     has_email_error = any("email" in t.lower() or "invalid" in t.lower() for t in toasts)
     p.checks.check("14_invalid_email_shows_error", has_email_error, f"toasts={toasts}")
 
+    result = p.sql("SELECT COUNT(*) as cnt FROM BankAccount")
+    after_email_count = result[0][0] if result else 0
+    p.checks.check("14b_email_error_blocks_save", before_email_count == after_email_count,
+                   f"before={before_email_count}, after={after_email_count}")
+
+    result = p.sql("SELECT COUNT(*) as cnt FROM BankAccount")
+    before_phone_count = result[0][0] if result else 0
+
     def fill_invalid_phone(dlg):
         person_combo = find_by_accessible_name(dlg, "Person selector")
         os_select_combo(p.harness, person_combo, "Pranav")
@@ -203,14 +211,11 @@ def run_s(p):
         type_combo = find_by_accessible_name(dlg, "Account type")
         os_select_combo(p.harness, type_combo, "Current")
 
-        try:
-            inner_tabs = find_by_accessible_name(dlg, "Account details tabs")
-            contact_tab_rect = inner_tabs.tabBar().tabRect(2)
-            QTest.mouseClick(inner_tabs.tabBar(), Qt.MouseButton.LeftButton, pos=contact_tab_rect.center())
-            p.harness.settle(0.3)
-            os_type(p.harness, dlg, "Phone", "12345")
-        except Exception:
-            pass
+        inner_tabs = find_by_accessible_name(dlg, "Account details tabs")
+        contact_tab_rect = inner_tabs.tabBar().tabRect(2)
+        p.harness.click_at_via_os(inner_tabs.tabBar(), contact_tab_rect.center(), wait=0.3)
+        p.harness.settle(0.3)
+        os_type(p.harness, dlg, "Phone number", "12345")
 
         os_click(p.harness, dlg, "Save account", wait=0.5)
         try:
@@ -226,6 +231,14 @@ def run_s(p):
     has_phone_error = any("phone" in t.lower() or "invalid" in t.lower() for t in toasts)
     p.checks.check("15_invalid_phone_shows_error", has_phone_error, f"toasts={toasts}")
 
+    result = p.sql("SELECT COUNT(*) as cnt FROM BankAccount")
+    after_phone_count = result[0][0] if result else 0
+    p.checks.check("15b_phone_error_blocks_save", before_phone_count == after_phone_count,
+                   f"before={before_phone_count}, after={after_phone_count}")
+
+    result = p.sql("SELECT COUNT(*) as cnt FROM BankAccount")
+    before_tan_count = result[0][0] if result else 0
+
     def fill_invalid_tan(dlg):
         person_combo = find_by_accessible_name(dlg, "Person selector")
         os_select_combo(p.harness, person_combo, "Pranav")
@@ -235,14 +248,11 @@ def run_s(p):
         type_combo = find_by_accessible_name(dlg, "Account type")
         os_select_combo(p.harness, type_combo, "Current")
 
-        try:
-            inner_tabs = find_by_accessible_name(dlg, "Account details tabs")
-            contact_tab_rect = inner_tabs.tabBar().tabRect(2)
-            QTest.mouseClick(inner_tabs.tabBar(), Qt.MouseButton.LeftButton, pos=contact_tab_rect.center())
-            p.harness.settle(0.3)
-            os_type(p.harness, dlg, "TAN", "ABC")
-        except Exception:
-            pass
+        inner_tabs = find_by_accessible_name(dlg, "Account details tabs")
+        bank_tab_rect = inner_tabs.tabBar().tabRect(1)
+        p.harness.click_at_via_os(inner_tabs.tabBar(), bank_tab_rect.center(), wait=0.3)
+        p.harness.settle(0.3)
+        os_type(p.harness, dlg, "TAN code", "ABC")
 
         os_click(p.harness, dlg, "Save account", wait=0.5)
         try:
@@ -258,6 +268,11 @@ def run_s(p):
     has_tan_error = any("tan" in t.lower() or "invalid" in t.lower() for t in toasts)
     p.checks.check("16_invalid_tan_shows_error", has_tan_error, f"toasts={toasts}")
 
+    result = p.sql("SELECT COUNT(*) as cnt FROM BankAccount")
+    after_tan_count = result[0][0] if result else 0
+    p.checks.check("16b_tan_error_blocks_save", before_tan_count == after_tan_count,
+                   f"before={before_tan_count}, after={after_tan_count}")
+
     def fill_valid_ruih_account(dlg):
         person_combo = find_by_accessible_name(dlg, "Person selector")
         os_select_combo(p.harness, person_combo, "Pranav")
@@ -267,14 +282,11 @@ def run_s(p):
         type_combo = find_by_accessible_name(dlg, "Account type")
         os_select_combo(p.harness, type_combo, "Current")
 
-        try:
-            inner_tabs = find_by_accessible_name(dlg, "Account details tabs")
-            bank_tab_rect = inner_tabs.tabBar().tabRect(1)
-            QTest.mouseClick(inner_tabs.tabBar(), Qt.MouseButton.LeftButton, pos=bank_tab_rect.center())
-            p.harness.settle(0.3)
-            os_type(p.harness, dlg, "IFSC code", "JSFB0000001")
-        except Exception:
-            pass
+        inner_tabs = find_by_accessible_name(dlg, "Account details tabs")
+        bank_tab_rect = inner_tabs.tabBar().tabRect(1)
+        p.harness.click_at_via_os(inner_tabs.tabBar(), bank_tab_rect.center(), wait=0.3)
+        p.harness.settle(0.3)
+        os_type(p.harness, dlg, "IFSC code", "JSFB0000001")
 
         os_click(p.harness, dlg, "Save account", wait=1.0)
 
@@ -286,14 +298,100 @@ def run_s(p):
     ruih_account_id = None
     if result:
         ruih_account_id = result[0][0]
-        p.checks.check("17_ruih_account_created", ruih_account_id is not None,
-                       f"account_id={ruih_account_id}")
+
+    p.checks.check("17_ruih_account_created", ruih_account_id is not None,
+                   f"account_id={ruih_account_id}")
 
     if ruih_account_id:
         result = p.sql("SELECT ifsc_code FROM BankAccount WHERE account_id = ?", (ruih_account_id,))
         if result:
             ifsc = result[0][0]
             p.checks.check("18_ruih_ifsc_set_correctly", ifsc == "JSFB0000001", f"ifsc={ifsc}")
+
+    # Test Edit IFSC
+    if ruih_account_id:
+        try:
+            p.harness.settle(0.5)
+            page.refresh()
+            p.harness.settle(1.0)
+
+            ruih_cards = [w for w in page.container.findChildren(QFrame)
+                         if w.objectName() == "accountCard"]
+            ruih_card = None
+            for card in ruih_cards:
+                labels = [l.text() for l in card.findChildren(QLabel)]
+                if any("RUIH" in str(l) for l in labels):
+                    ruih_card = card
+                    break
+
+            if ruih_card:
+                os_click_widget(p.harness, ruih_card, wait=0.5)
+                p.harness.settle(0.5)
+
+                def fill_edit_ifsc(dlg):
+                    inner_tabs = find_by_accessible_name(dlg, "Account details tabs")
+                    bank_tab_rect = inner_tabs.tabBar().tabRect(1)
+                    p.harness.click_at_via_os(inner_tabs.tabBar(), bank_tab_rect.center(), wait=0.3)
+                    p.harness.settle(0.3)
+                    os_type(p.harness, dlg, "IFSC code", "JSFB0000002", retries=2)
+                    os_click(p.harness, dlg, "Save account", wait=1.0)
+
+                prearm = answer_modal_dialog(p.harness, p.app, AccountDialog, "Edit Account", fill_edit_ifsc)
+                try:
+                    edit_btn = find_button(page.detail_panel, "Edit")
+                    os_click_widget(p.harness, edit_btn, wait=0.5)
+                except Exception:
+                    pass
+                ok = wait_until(p.harness, lambda: prearm.done, timeout=15)
+                if not ok or prearm.error:
+                    p.checks.check("edit account IFSC", False, f"{prearm.error}")
+                else:
+                    p.harness.settle(0.5)
+                    result = p.sql("SELECT ifsc_code FROM BankAccount WHERE account_id = ?", (ruih_account_id,))
+                    if result and result[0][0] == "JSFB0000002":
+                        p.checks.check("edit account IFSC", True)
+                    else:
+                        p.checks.check("edit account IFSC", False, f"ifsc={result[0][0] if result else None}")
+        except Exception as e:
+            p.checks.check("edit account IFSC", False, repr(e))
+
+    # Test Delete
+    if ruih_account_id:
+        try:
+            p.harness.settle(0.5)
+            page.refresh()
+            p.harness.settle(1.0)
+
+            ruih_cards = [w for w in page.container.findChildren(QFrame)
+                         if w.objectName() == "accountCard"]
+            ruih_card = None
+            for card in ruih_cards:
+                labels = [l.text() for l in card.findChildren(QLabel)]
+                if any("RUIH" in str(l) for l in labels):
+                    ruih_card = card
+                    break
+
+            if ruih_card:
+                os_click_widget(p.harness, ruih_card, wait=0.5)
+                p.harness.settle(0.5)
+
+                prearm = answer_message_box(p.harness, p.app, QMessageBox.StandardButton.Yes,
+                    expect_title="Confirm Delete")
+                try:
+                    delete_btn = find_button(page.detail_panel, "Delete")
+                    os_click_widget(p.harness, delete_btn, wait=0.5)
+                except Exception:
+                    pass
+                ok = wait_until(p.harness, lambda: prearm.done, timeout=15)
+                if not ok or prearm.error:
+                    p.checks.check("delete account", False, f"{prearm.error}")
+                else:
+                    p.harness.settle(1.0)
+                    result = p.sql("SELECT COUNT(*) FROM BankAccount WHERE account_id = ?", (ruih_account_id,))
+                    row_count = result[0][0] if result else 0
+                    p.checks.check("delete account", row_count == 0, f"account still exists")
+        except Exception as e:
+            p.checks.check("delete account", False, repr(e))
 
 
 if __name__ == "__main__":

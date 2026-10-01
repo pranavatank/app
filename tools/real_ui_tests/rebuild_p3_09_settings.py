@@ -66,6 +66,14 @@ def run_r(p):
 
     orig_theme = ThemeManager.current_name()
     theme_names = ["Aurora", "Slate", "Nova", "Midnight Pro"]
+    import json
+    from pathlib import Path
+    from core import session
+    config_file = Path(session._CONFIG_FILE)
+    orig_sidebar_open = None
+    if config_file.exists():
+        prefs = json.loads(config_file.read_text())
+        orig_sidebar_open = prefs.get("sidebar_open")
     for theme_name in theme_names:
         if theme_name in settings_page._theme_cards:
             card = settings_page._theme_cards[theme_name]
@@ -77,13 +85,9 @@ def run_r(p):
             p.checks.check(f"settings theme {theme_name} applied", ok_theme, f"got {current_theme}")
 
             if current_theme == theme_name:
-                import json
-                from pathlib import Path
-                from core import session
-                config_file = Path(session._CONFIG_FILE)
                 if config_file.exists():
                     prefs = json.loads(config_file.read_text())
-                    ok_sidebar = prefs.get("sidebar_open", True) is not None
+                    ok_sidebar = "sidebar_open" in prefs and prefs["sidebar_open"] == orig_sidebar_open
                     p.checks.check(f"settings theme {theme_name} sidebar_open preserved", ok_sidebar)
         else:
             p.checks.check(f"settings theme {theme_name} found", False, f"not in _theme_cards")
@@ -169,12 +173,12 @@ def run_r(p):
             if after_hash:
                 after_hash = after_hash[0][0]
 
-            ok_no_change = before_hash == after_hash if (before_hash and after_hash) else False
+            ok_no_change = before_hash is not None and after_hash is not None and before_hash == after_hash
             p.checks.check("settings password hash unchanged", ok_no_change)
         else:
             p.checks.check("settings password inputs found", False)
     except Exception as e:
-        p.log.log(f"change password validation failed: {e}")
+        p.checks.check("settings password validation", False, repr(e))
 
     try:
         os_click(p.harness, settings_page, "Create database backup", wait=1.0)
@@ -197,19 +201,21 @@ def run_r(p):
         else:
             p.checks.check("settings backup file created", False, "no backup files found")
     except Exception as e:
-        p.log.log(f"backup creation failed: {e}")
+        p.checks.check("settings backup creation", False, repr(e))
 
     try:
         prearm = answer_message_box(p.harness, p.app, QMessageBox.StandardButton.No, expect_title="Confirm Restore")
         os_click(p.harness, settings_page, "Restore database from backup", wait=0.8)
         p.harness.settle(0.5)
 
-        if prearm.info.get('error'):
-            p.checks.check("settings restore cancelled", False, detail=prearm.info['error'])
+        ok_prearm = prearm.done and prearm.info.get("title") == "Confirm Restore" and prearm.info.get("error") is None
+        p.checks.check("settings restore prearm ran", ok_prearm, detail=str(prearm.info) if not ok_prearm else "")
+        if not ok_prearm:
+            p.checks.check("settings restore cancelled", False, detail=prearm.info.get('error', 'prearm failed'))
         else:
             p.checks.check("settings restore cancelled", True)
     except Exception as e:
-        p.log.log(f"restore test failed: {e}")
+        p.checks.check("settings restore test", False, repr(e))
 
     try:
         os_click(p.harness, settings_page, "Check AI availability", wait=0.8)
@@ -227,7 +233,7 @@ def run_r(p):
         else:
             p.checks.check("settings AI status visible", False)
     except Exception as e:
-        p.log.log(f"AI availability check failed: {e}")
+        p.checks.check("settings AI availability", False, repr(e))
 
     for dialog_title in ["Manage people", "Manage bank accounts", "Manage banks (master)"]:
         try:
@@ -242,7 +248,7 @@ def run_r(p):
                 dlg.reject()
                 p.harness.settle(0.3)
         except Exception as e:
-            p.log.log(f"{dialog_title} failed: {e}")
+            p.checks.check(f"settings {dialog_title}", False, repr(e))
 
 
 def run_s(p):
@@ -277,7 +283,8 @@ def run_s(p):
             p.dashboard = login_to_dashboard(p.harness, login_screen=login_screen, otp=otp_code)
             p.harness.settle(1.0)
 
-            p.checks.check("settings TOTP login success", True)
+            ok_dashboard = p.dashboard.isVisible()
+            p.checks.check("settings TOTP login success", ok_dashboard, "dashboard not visible" if not ok_dashboard else "")
 
             settings_page = p.nav("Settings")
             p.harness.settle(0.5)
@@ -292,11 +299,11 @@ def run_s(p):
                 else:
                     p.checks.check("settings TOTP disabled", False, "totp_secret still set")
             except Exception as e:
-                p.log.log(f"disable TOTP failed: {e}")
+                p.checks.check("settings TOTP disable", False, repr(e))
         else:
             p.checks.check("settings TOTP secret generated", False)
     except Exception as e:
-        p.log.log(f"TOTP setup failed: {e}")
+        p.checks.check("settings TOTP setup", False, repr(e))
 
     try:
         backup_path = snapshot_db("before_restore_test")
@@ -328,23 +335,89 @@ def run_s(p):
         else:
             p.checks.check("settings full restore removed test person", False)
     except Exception as e:
-        p.log.log(f"full restore test failed: {e}")
+        p.checks.check("settings full restore", False, repr(e))
 
-    for data_op in ["Edit person", "Delete person"]:
-        try:
-            if "person" in data_op.lower():
-                os_click(p.harness, settings_page, "Manage people", wait=0.8)
+    from models.person import add_person, delete_person
+    from models.bank import add_bank, delete_bank
+    from PySide6.QtWidgets import QDialog
+    try:
+        test_person_id = add_person("RUIH_test_person")
+        p.harness.settle(0.3)
+
+        os_click(p.harness, settings_page, "Manage people", wait=0.8)
+        p.harness.settle(0.5)
+
+        dlg = find_dialog_by_title(QDialog, "Manage Data")
+        if dlg:
+            os_click(p.harness, dlg, "Edit person", wait=0.8)
             p.harness.settle(0.5)
 
-            dlg = find_dialog_by_title(QDialog, "Manage Data")
-            if dlg:
-                dlg.reject()
+            edit_dlg = find_dialog_by_title(QDialog, "Person")
+            if edit_dlg:
+                edit_dlg.reject()
                 p.harness.settle(0.3)
-                p.checks.check(f"settings {data_op} dialog closed", True)
+                p.checks.check("settings Edit person dialog opened", True)
             else:
-                p.checks.check(f"settings {data_op} dialog found", False)
-        except Exception as e:
-            p.log.log(f"{data_op} failed: {e}")
+                p.checks.check("settings Edit person dialog opened", False)
+
+            prearm_del = answer_message_box(p.harness, p.app, QMessageBox.StandardButton.Yes, expect_title="Confirm Delete")
+            os_click(p.harness, dlg, "Delete person", wait=0.8)
+            p.harness.settle(1.0)
+
+            ok_delete = prearm_del.done and prearm_del.info.get("error") is None
+            p.checks.check("settings Delete person confirmed", ok_delete)
+
+            after_delete = p.sql("SELECT COUNT(*) FROM Person WHERE person_id=?", (test_person_id,))
+            ok_deleted = after_delete[0][0] == 0 if after_delete else False
+            p.checks.check("settings Delete person persisted", ok_deleted)
+
+            dlg.reject()
+            p.harness.settle(0.3)
+        else:
+            p.checks.check("settings Manage people dialog found", False)
+    except Exception as e:
+        p.checks.check("settings person edit/delete", False, repr(e))
+
+    try:
+        test_bank_id = add_bank("RUIH_TestBank")
+        p.harness.settle(0.3)
+
+        settings_page = p.nav("Settings")
+        p.harness.settle(0.5)
+
+        os_click(p.harness, settings_page, "Manage banks (master)", wait=0.8)
+        p.harness.settle(0.5)
+
+        dlg = find_dialog_by_title(QDialog, "Manage Data")
+        if dlg:
+            os_click(p.harness, dlg, "Edit bank", wait=0.8)
+            p.harness.settle(0.5)
+
+            edit_dlg = find_dialog_by_title(QDialog, "Bank")
+            if edit_dlg:
+                edit_dlg.reject()
+                p.harness.settle(0.3)
+                p.checks.check("settings Edit bank dialog opened", True)
+            else:
+                p.checks.check("settings Edit bank dialog opened", False)
+
+            prearm_del = answer_message_box(p.harness, p.app, QMessageBox.StandardButton.Yes, expect_title="Confirm Delete")
+            os_click(p.harness, dlg, "Delete bank", wait=0.8)
+            p.harness.settle(1.0)
+
+            ok_delete = prearm_del.done and prearm_del.info.get("error") is None
+            p.checks.check("settings Delete bank confirmed", ok_delete)
+
+            after_delete = p.sql("SELECT COUNT(*) FROM Bank WHERE bank_id=?", (test_bank_id,))
+            ok_deleted = after_delete[0][0] == 0 if after_delete else False
+            p.checks.check("settings Delete bank persisted", ok_deleted)
+
+            dlg.reject()
+            p.harness.settle(0.3)
+        else:
+            p.checks.check("settings Manage banks dialog found", False)
+    except Exception as e:
+        p.checks.check("settings bank edit/delete", False, repr(e))
 
 
 if __name__ == "__main__":

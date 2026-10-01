@@ -36,9 +36,10 @@ def run_r(p):
     p.harness.settle(3.0)
 
     secret = read_secret('master')
-    # reload cleared _SECRET_PATTERNS; re-register for redaction
 
     from core import session
+    old_stack = p.dashboard.stack
+    old_title = p.dashboard.page_title_lbl
 
     aes_key_before = None
     if hasattr(session, 'session') and hasattr(session.session, 'aes_key'):
@@ -57,12 +58,25 @@ def run_r(p):
         if dashboard_widgets:
             p.dashboard = dashboard_widgets[0]
             p.harness.window = p.dashboard
-            ok = p.dashboard is not None
-            p.checks.check("hard refresh dashboard reference updated", ok)
+            ok_reference = p.dashboard is not None
+            p.checks.check("hard refresh dashboard reference updated", ok_reference)
+            ok_stack = p.dashboard.stack is not old_stack
+            p.checks.check("hard refresh rebuilds stack", ok_stack)
+            ok_errors = p.dashboard._screen_errors == {}
+            p.checks.check("hard refresh clears screen errors", ok_errors)
+            ok_title_hidden = not old_title.isVisible()
+            p.checks.check("hard refresh resets page title visibility", ok_title_hidden)
         else:
             p.checks.check("hard refresh dashboard reference updated", False, "no dashboard found")
     except Exception as e:
-        p.log.log(f"dashboard refresh error: {e}")
+        p.checks.check("hard refresh dashboard update", False, str(e))
+
+    aes_key_after = None
+    if hasattr(session, 'session') and hasattr(session.session, 'aes_key'):
+        aes_key_after = session.session.aes_key
+    ok_aes_after = aes_key_after is not None
+    p.checks.check("hard refresh keeps session key", ok_aes_after,
+                  f"aes_key is None: {aes_key_after is None}")
 
     for label in nav_labels:
         try:

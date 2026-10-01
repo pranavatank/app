@@ -170,7 +170,7 @@ def load_p3_results():
                 all_watchdog.append({
                     "file": p3_file.name,
                     "title": wd.get("title", ""),
-                    "detail": str(wd.get("detail", "")),
+                    "text": str(wd.get("text", "")),
                 })
 
         except Exception as e:

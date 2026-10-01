@@ -284,7 +284,7 @@ def os_type_widget(harness: RealUIHarness, widget, text, secret=False, retries=3
         pyautogui.write(text, interval=0.05)
         harness.settle(0.8)
         # Readback: check spin boxes FIRST, then QLineEdit.text(), then QTextEdit.toPlainText()
-        if isinstance(widget, QAbstractSpinBox):
+        if isinstance(widget, QAbstractSpinBox) and hasattr(widget, "value"):
             try:
                 ok = abs(widget.value() - float(text or 0)) < 0.005
             except (ValueError, TypeError):
@@ -352,7 +352,8 @@ def answer_message_box(harness: RealUIHarness, app, button, expect_title=None):
                 box.reject()
             raise
 
-    prearm_obj = prearm(app, cb)
+    match_fn = lambda w: isinstance(w, QMessageBox) and (expect_title is None or w.windowTitle() == expect_title)
+    prearm_obj = prearm(app, cb, match=match_fn)
     prearm_obj.info = info
     return prearm_obj
 
@@ -378,7 +379,8 @@ def answer_modal_dialog(harness: RealUIHarness, app, dialog_cls, title, fill_fn)
                 dlg.reject()
             raise
 
-    prearm_obj = prearm(app, cb)
+    match_fn = lambda w: isinstance(w, dialog_cls) and w.windowTitle() == title
+    prearm_obj = prearm(app, cb, match=match_fn)
     prearm_obj.info = info
     return prearm_obj
 
@@ -541,16 +543,17 @@ def native_file_dialog(trigger_fn, path, timeout=30):
 
 class Prearm:
     """QTimer.singleShot(0, cb) wrapper capturing exceptions."""
-    def __init__(self, app, cb):
+    def __init__(self, app, cb, match=None):
         global _modal_handlers_active
         self.app = app
         self.cb = cb
+        self.match = match
         self.done = False
         self.error = None
-        _modal_handlers_active += 1
 
     def _run(self):
         global _modal_handlers_active
+        _modal_handlers_active += 1
         try:
             self.cb()
         except Exception as e:
@@ -574,17 +577,19 @@ class Prearm:
                 self.error = TimeoutError("no modal dialog appeared")
                 self.done = True
                 return
-            if QApplication.activeModalWidget() is not None:
-                self._timer.stop()
-                self._run()
+            w = QApplication.activeModalWidget()
+            if w is None or (self.match and not self.match(w)):
+                return
+            self._timer.stop()
+            self._run()
 
         self._timer.timeout.connect(tick)
         self._timer.start()
         return self
 
 
-def prearm(app, cb):
-    return Prearm(app, cb).arm()
+def prearm(app, cb, match=None):
+    return Prearm(app, cb, match=match).arm()
 
 
 def wait_until(harness: RealUIHarness, pred, timeout=30, interval=0.2):

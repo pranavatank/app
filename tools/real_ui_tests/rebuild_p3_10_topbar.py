@@ -68,6 +68,7 @@ def run_r(p):
         ok_session = session.session.selected_account_id is None
         p.checks.check("session.selected_account_id is None for All Accounts", ok_session)
 
+    from tools.real_ui_tests.rebuild_common import parse_inr, db_ro
     for item in account_items:
         if item != "All Accounts":
             os_select_combo(p.harness, dashboard.account_combo, item)
@@ -76,7 +77,18 @@ def run_r(p):
             p.checks.check(f"Account combo select to {item}", ok)
             ok_session = session.session.selected_account_id is not None
             p.checks.check(f"session.selected_account_id set for {item}", ok_session)
-            break
+            acct_id = dashboard.account_combo.currentData()
+            acct_balance = db_ro().execute(
+                "SELECT current_balance FROM BankAccount WHERE account_id=?",
+                (acct_id,)
+            ).fetchone()
+            if acct_balance:
+                acct_balance = acct_balance[0]
+                kpi_text = dashboard.kpi_balance._value_lbl.text()
+                kpi_val = parse_inr(kpi_text)
+                ok_kpi = kpi_val is not None and abs(kpi_val - acct_balance) < 0.01
+                p.checks.check(f"Total Balance KPI for {item} matches SQL", ok_kpi,
+                              f"ui={kpi_val} sql={acct_balance}")
 
     os_select_combo(p.harness, dashboard.account_combo, "All Accounts")
     p.harness.settle(0.5)
@@ -97,10 +109,8 @@ def run_r(p):
     os_select_combo(p.harness, dashboard.fy_combo, "2025-26")
     p.harness.settle(0.5)
 
-    sidebar = dashboard.findChild(type(dashboard), "sidebar")
-    if sidebar is None:
-        from PySide6.QtWidgets import QWidget
-        sidebar = dashboard.findChild(QWidget, "sidebar")
+    from PySide6.QtWidgets import QWidget
+    sidebar = dashboard.findChild(QWidget, "sidebar")
 
     initial_width = sidebar.width() if sidebar else 248
     p.observe("H14", f"initial_sidebar_width={initial_width}")

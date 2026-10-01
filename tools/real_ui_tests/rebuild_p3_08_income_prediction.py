@@ -44,8 +44,8 @@ def run_r(p):
     summary_limit = summary_fy.get('limit', 0)
     summary_headroom = summary_fy.get('headroom', 0)
 
-    ok_projected = abs(fy_projected - summary_projected) < 0.01 if (fy_projected or summary_projected) else False
-    ok_limit = abs(fy_limit - summary_limit) < 0.01 if (fy_limit or summary_limit) else False
+    ok_projected = abs(fy_projected - summary_projected) < 0.01
+    ok_limit = abs(fy_limit - summary_limit) < 0.01
     ok_headroom = abs(fy_headroom - summary_headroom) < 0.01 if (fy_headroom or summary_headroom) else True
 
     p.checks.check("income prediction projected total matches", ok_projected,
@@ -54,6 +54,27 @@ def run_r(p):
                    f"page={fy_limit} summary={summary_limit}")
     p.checks.check("income prediction headroom matches", ok_headroom,
                    f"page={fy_headroom} summary={summary_headroom}")
+
+    from tools.real_ui_tests.rebuild_common import parse_inr
+    from PySide6.QtWidgets import QLabel
+    for label_widget in prediction_page.findChildren(QLabel):
+        if label_widget.isVisible():
+            text = label_widget.text().lower()
+            if 'projected' in text or 'limit' in text or 'headroom' in text:
+                parsed_val = parse_inr(label_widget.text())
+                if parsed_val is not None:
+                    if 'projected' in text:
+                        ok_label = abs(parsed_val - summary_projected) < 0.01
+                        p.checks.check("income prediction projected label text matches", ok_label,
+                                     f"label={parsed_val} summary={summary_projected}")
+                    elif 'limit' in text:
+                        ok_label = abs(parsed_val - summary_limit) < 0.01
+                        p.checks.check("income prediction limit label text matches", ok_label,
+                                     f"label={parsed_val} summary={summary_limit}")
+                    elif 'headroom' in text:
+                        ok_label = abs(parsed_val - summary_headroom) < 0.01
+                        p.checks.check("income prediction headroom label text matches", ok_label,
+                                     f"label={parsed_val} summary={summary_headroom}")
 
     page_tds_risk = prediction_page._prediction_data.get('tds_risk', {})
     page_by_bank = page_tds_risk.get('by_bank', [])
@@ -93,8 +114,8 @@ def run_r(p):
             summary_itr_value = comp_row.get('itr_value', 0)
             page_our_value = page_row.get('our_value', 0)
             page_itr_value = page_row.get('itr_value', 0)
-            ok_our = abs(page_our_value - our_value) < 0.01 if (page_our_value or our_value) else False
-            ok_itr = abs(page_itr_value - summary_itr_value) < 0.01 if (page_itr_value or summary_itr_value) else False
+            ok_our = abs(page_our_value - our_value) < 0.01
+            ok_itr = abs(page_itr_value - summary_itr_value) < 0.01
             p.checks.check(f"income prediction comparison {label} our value matches", ok_our,
                            f"page={page_our_value} summary={our_value}")
             p.checks.check(f"income prediction comparison {label} ITR value matches", ok_itr,

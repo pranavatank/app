@@ -127,21 +127,110 @@ def run_r(p):
             p.harness.settle(0.5)
             ok_item = dashboard.account_combo.currentText() == acct_item
             p.checks.check(f"Account combo select to {acct_item}", ok_item)
-            break
+            acct_id = dashboard.account_combo.currentData()
+            acct_balance = p.sql(
+                "SELECT current_balance FROM BankAccount WHERE account_id=?",
+                (acct_id,)
+            )[0][0] if p.sql("SELECT current_balance FROM BankAccount WHERE account_id=?", (acct_id,)) else 0.0
+            kpi_text = dashboard.kpi_balance._value_lbl.text()
+            kpi_val = parse_inr(kpi_text)
+            ok_balance = kpi_val is not None and abs(kpi_val - acct_balance) < 0.01
+            p.checks.check(f"Account {acct_item} balance matches SQL", ok_balance,
+                          f"ui={kpi_val} sql={acct_balance}")
 
     os_select_combo(p.harness, dashboard.account_combo, "All Accounts")
     p.harness.settle(0.5)
 
-    ok_chart_income = hasattr(dashboard.chart_income_expense, "_last_call") and \
-                      dashboard.chart_income_expense._last_call is not None
-    p.checks.check("Chart income_expense has _last_call", ok_chart_income)
+    sql_months_query = """
+    SELECT DISTINCT CAST(STRFTIME('%m', transaction_date) AS INTEGER) as month_num
+    FROM Transactions
+    WHERE person_id=? AND COALESCE(is_internal_transfer,0)=0
+      AND transaction_date BETWEEN ? AND ?
+    ORDER BY month_num
+    """
+    months_rows = p.sql(sql_months_query, (person_id, fy_date_start, fy_date_end))
+    expected_months = sorted([int(row[0]) for row in months_rows])
 
-    ok_chart_dist = hasattr(dashboard.chart_distribution, "_last_call") and \
-                    dashboard.chart_distribution._last_call is not None
-    p.checks.check("Chart distribution has _last_call", ok_chart_dist)
+    sql_income_by_month = {}
+    for m in range(1, 13):
+        result = p.sql(
+            "SELECT SUM(amount) FROM Transactions WHERE person_id=? AND transaction_type='Income' "
+            "AND COALESCE(is_internal_transfer,0)=0 AND CAST(STRFTIME('%m', transaction_date) AS INTEGER)=? "
+            "AND transaction_date BETWEEN ? AND ?",
+            (person_id, m, fy_date_start, fy_date_end)
+        )
+        sql_income_by_month[m] = result[0][0] or 0.0
+
+    sql_expense_by_month = {}
+    for m in range(1, 13):
+        result = p.sql(
+            "SELECT SUM(amount) FROM Transactions WHERE person_id=? AND transaction_type='Expense' "
+            "AND COALESCE(is_internal_transfer,0)=0 AND CAST(STRFTIME('%m', transaction_date) AS INTEGER)=? "
+            "AND transaction_date BETWEEN ? AND ?",
+            (person_id, m, fy_date_start, fy_date_end)
+        )
+        sql_expense_by_month[m] = result[0][0] or 0.0
+
+    ok_chart_income = (hasattr(dashboard.chart_income_expense, "_last_call") and
+                       dashboard.chart_income_expense._last_call is not None and
+                       dashboard.chart_income_expense._last_call[0] == "plot_monthly_bar")
+    if ok_chart_income:
+        _, chart_args, _ = dashboard.chart_income_expense._last_call
+        chart_income_vals = chart_args[1] if len(chart_args) > 1 else []
+        chart_expense_vals = chart_args[2] if len(chart_args) > 2 else []
+        for i, m in enumerate(expected_months):
+            if i < len(chart_income_vals):
+                ok_income_m = abs(chart_income_vals[i] - sql_income_by_month[m]) < 0.01
+                p.checks.check(f"Chart income month {m}", ok_income_m,
+                              f"chart={chart_income_vals[i]} sql={sql_income_by_month[m]}")
+            if i < len(chart_expense_vals):
+                ok_expense_m = abs(chart_expense_vals[i] - sql_expense_by_month[m]) < 0.01
+                p.checks.check(f"Chart expense month {m}", ok_expense_m,
+                              f"chart={chart_expense_vals[i]} sql={sql_expense_by_month[m]}")
+    else:
+        p.checks.check("Chart income_expense plots data (not empty_state)", ok_chart_income)
+
+    all_accounts = p.sql(
+        "SELECT account_id, current_balance FROM BankAccount WHERE person_id=? AND current_balance > 0",
+        (person_id,)
+    )
+    expected_balances = sorted([row[1] for row in all_accounts])
+
+    ok_chart_dist = (hasattr(dashboard.chart_distribution, "_last_call") and
+                     dashboard.chart_distribution._last_call is not None and
+                     dashboard.chart_distribution._last_call[0] == "plot_pie")
+    if ok_chart_dist:
+        _, chart_args, _ = dashboard.chart_distribution._last_call
+        chart_values = sorted(chart_args[1]) if len(chart_args) > 1 else []
+        ok_dist = chart_values == expected_balances or abs(sum(chart_values) - sum(expected_balances)) < 0.01
+        p.checks.check("Chart distribution values match SQL balances", ok_dist,
+                      f"chart={len(chart_values)} sql={len(expected_balances)}")
+    else:
+        p.checks.check("Chart distribution plots data (not empty_state)", ok_chart_dist)
 
     panel_interest_rows = dashboard.panel_interest._rows if hasattr(dashboard.panel_interest, "_rows") else {}
     p.observe("H06", f"panel_interest_rows={len(panel_interest_rows)}")
+
+    fd_curr_label = panel_interest_rows.get("fd_curr")
+    fd_curr_text = fd_curr_label.text() if fd_curr_label else ""
+    fd_curr_ui = parse_inr(fd_curr_text)
+    ok_fd_curr = fd_curr_ui is not None and abs(fd_curr_ui - sql_fd_interest) < 0.01
+    p.checks.check("Interest panel FD current matches SQL", ok_fd_curr,
+                  f"ui={fd_curr_ui} sql={sql_fd_interest}")
+
+    sav_curr_label = panel_interest_rows.get("sav_curr")
+    sav_curr_text = sav_curr_label.text() if sav_curr_label else ""
+    sav_curr_ui = parse_inr(sav_curr_text)
+    ok_sav_curr = sav_curr_ui is not None and abs(sav_curr_ui - sql_sav_interest) < 0.01
+    p.checks.check("Interest panel savings current matches SQL", ok_sav_curr,
+                  f"ui={sav_curr_ui} sql={sql_sav_interest}")
+
+    total_int_label = panel_interest_rows.get("total_int")
+    total_int_text = total_int_label.text() if total_int_label else ""
+    total_int_ui = parse_inr(total_int_text)
+    ok_total_int = total_int_ui is not None and abs(total_int_ui - sql_total_interest) < 0.01
+    p.checks.check("Interest panel total matches SQL", ok_total_int,
+                  f"ui={total_int_ui} sql={sql_total_interest}")
 
     tax_profile = p.sql(
         "SELECT COUNT(*) FROM TaxProfile WHERE person_id=?",
