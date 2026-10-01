@@ -6,8 +6,7 @@ Per unit 3 spec, creates person and bank programmatically first (not via UI),
 then tests the Account dialog workflow end-to-end, including Statement Import
 cross-check.
 
-Run with:
-    .venv/Scripts/python tools/real_ui_tests/test_add_account_flow.py
+Run with: run_on_scratch.py <this script>
 """
 import os
 import sys
@@ -68,6 +67,9 @@ def dump_names(root, label=""):
 
 
 def main():
+    from tools.real_ui_tests.rebuild_common import require_scratch
+    require_scratch()
+
     global test_person_id, test_bank_id, test_account_id
 
     # 1. Create person and bank programmatically for deterministic cleanup
@@ -88,13 +90,12 @@ def main():
     harness.shot("00_dashboard")
 
     # 2. Navigate to Settings via the real sidebar button widget.
-    settings_btn = dashboard._nav_buttons[8]
-    harness.click(settings_btn)
+    harness.click(dashboard, "Navigate to Settings")
     harness.settle(1.5)
     harness.shot("01_settings")
     title_lbl = getattr(dashboard, "page_title_lbl", None)
     check("Settings page title shows 'Settings'", title_lbl and title_lbl.text() == "Settings")
-    check("Settings is at nav index 8", dashboard.stack.currentIndex() == 8)
+    check("Settings is at nav index 9", dashboard.stack.currentIndex() == 9)
 
     # 3. Click "Manage bank accounts" on the Settings screen
     settings_screen = dashboard.settings_page

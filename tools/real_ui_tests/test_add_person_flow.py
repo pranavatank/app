@@ -15,8 +15,7 @@ Self-cleans the person record it creates so repeated runs don't pollute the real
 database. If a run is interrupted before cleanup, look for a person named
 TEST_NICKNAME below and delete it manually.
 
-Run with:
-    .venv/Scripts/python tools/real_ui_tests/test_add_person_flow.py
+Run with: run_on_scratch.py <this script>
 """
 import os
 import sys
@@ -58,6 +57,9 @@ def check(label, condition):
 
 
 def main():
+    from tools.real_ui_tests.rebuild_common import require_scratch
+    require_scratch()
+
     before_names = {p["full_name"] for p in get_all_persons()}
     print(f"[db] persons before: {sorted(before_names)}")
 
@@ -67,8 +69,7 @@ def main():
     harness.shot("00_dashboard")
 
     # 1. Navigate to Settings via the real sidebar button widget.
-    settings_btn = dashboard._nav_buttons[8]
-    harness.click(settings_btn)
+    harness.click(dashboard, "Navigate to Settings")
     harness.shot("01_settings")
     title_lbl = getattr(dashboard, "page_title_lbl", None)
     check("Settings page title shows 'Settings'", title_lbl and title_lbl.text() == "Settings")

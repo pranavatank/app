@@ -1,6 +1,6 @@
 r"""tools/real_ui_tests/run_on_scratch.py — Run a rebuild script in scratch-DB mode.
 
-Usage: python run_on_scratch.py [--fresh] <script> [args...]
+Usage: python run_on_scratch.py [--fresh] [--from <db path>] <script> [args...]
 
 Scratch DB = BASE/"backups"/"phase3_scratch.db"
 Scratch theme prefs = tools/real_ui_tests/screenshots/rebuild/scratch_theme_prefs.json
@@ -69,36 +69,58 @@ def verify_db_integrity_and_counts(db_path, src_db_path):
 
 def main():
     fresh = False
+    from_db = None
     script = None
     script_args = []
 
-    for i, arg in enumerate(sys.argv[1:]):
+    i = 1
+    while i < len(sys.argv):
+        arg = sys.argv[i]
         if arg == "--fresh":
             fresh = True
+            i += 1
+        elif arg == "--from":
+            if i + 1 >= len(sys.argv):
+                print("Usage: --from requires a db path argument")
+                sys.exit(1)
+            from_db = sys.argv[i + 1]
+            i += 2
         else:
             script = arg
-            script_args = sys.argv[i+2:]
+            script_args = sys.argv[i+1:]
             break
 
     if script is None:
-        print("Usage: python run_on_scratch.py [--fresh] <script> [args...]")
+        print("Usage: python run_on_scratch.py [--fresh] [--from <db path>] <script> [args...]")
         sys.exit(1)
 
     if "--real" in script_args:
         print("STOP: --real not allowed in target script args")
         sys.exit(1)
 
+    # Check for --env R pattern in script_args
+    for j in range(len(script_args) - 1):
+        if script_args[j] == "--env" and script_args[j + 1] == "R":
+            print("STOP: R-env script under scratch")
+            sys.exit(1)
+
     script_path = Path(script).resolve()
     if not script_path.exists():
         print(f"Script not found: {script_path}")
+        sys.exit(1)
+
+    # Determine source DB for copying
+    source_db = Path(from_db).resolve() if from_db else REAL_DB_PATH
+    if source_db.resolve() == SCRATCH_DB.resolve():
+        print(f"STOP: source DB cannot equal scratch DB: {source_db}")
         sys.exit(1)
 
     BACKUPS.mkdir(parents=True, exist_ok=True)
     RUIH_DIR.mkdir(parents=True, exist_ok=True)
 
     if fresh or not SCRATCH_DB.exists():
-        copy_db_with_sqlite_backup_api(REAL_DB_PATH, SCRATCH_DB)
-        verify_db_integrity_and_counts(SCRATCH_DB, REAL_DB_PATH)
+        copy_db_with_sqlite_backup_api(source_db, SCRATCH_DB)
+        verify_db_integrity_and_counts(SCRATCH_DB, source_db)
         print(f"Scratch DB copied and verified: {SCRATCH_DB}")
 
         real_theme_bytes = read_theme_prefs()
@@ -128,12 +150,15 @@ def main():
 
     resolved_db = Path(config.DB_PATH).resolve()
     assert resolved_db != REAL_DB_PATH.resolve(), f"DB patch failed: {resolved_db} == {REAL_DB_PATH.resolve()}"
+    resolved_config = Path(core.session._CONFIG_FILE).resolve()
+    assert resolved_config != REAL_THEME_PREFS.resolve(), f"CONFIG_FILE patch failed: {resolved_config} == {REAL_THEME_PREFS.resolve()}"
     print(f"Config patched to scratch DB: {config.DB_PATH}")
 
     exit_code = 0
     exception_to_raise = None
     try:
         sys.argv = [str(script_path)] + script_args
+        os.environ["FINMGR_SCRATCH"] = "1"
         runpy.run_path(str(script_path), run_name="__main__")
     except SystemExit as e:
         exit_code = e.code if isinstance(e.code, int) else (1 if e.code else 0)

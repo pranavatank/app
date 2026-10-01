@@ -26,19 +26,18 @@ DEFAULT_FD_RATE = 7.5
 
 def fingerprint_real_db():
     conn = sqlite3.connect(f"file:{REAL_DB}?mode=ro", uri=True)
-    cur = conn.cursor()
     result = {}
 
-    tables = [
-        "Person", "Bank", "BankAccount", "Transactions", "FixedDeposit",
-        "Form26ASImport", "Form26ASRecord", "AISTISImport", "AISTISRecord"
-    ]
+    # Get all tables from sqlite_master (excludes sqlite_* internal tables)
+    tables = [r[0] for r in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+    ).fetchall()]
 
     for tbl in tables:
         try:
-            count = cur.execute(f"SELECT COUNT(*) FROM {tbl}").fetchone()[0]
-            rows = cur.execute(f"SELECT * FROM {tbl} ORDER BY rowid").fetchall()
-            sha = hashlib.sha256(str(rows).encode()).hexdigest()
+            count = conn.execute(f"SELECT COUNT(*) FROM [{tbl}]").fetchone()[0]
+            rows = conn.execute(f"SELECT * FROM [{tbl}] ORDER BY rowid").fetchall()
+            sha = hashlib.sha256(repr(rows).encode("utf-8", errors="replace")).hexdigest()
             result[tbl] = {"count": count, "sha256": sha}
         except sqlite3.OperationalError:
             result[tbl] = {"count": 0, "sha256": ""}
@@ -47,13 +46,60 @@ def fingerprint_real_db():
     return result
 
 
-def test_fingerprint():
+def test_fingerprint(output_name=None):
     fp = fingerprint_real_db()
-    output_file = REBUILD_DIR / "P4_verify_fingerprint.json"
+    if output_name:
+        output_file = REBUILD_DIR / f"FP_{output_name}.json"
+    else:
+        output_file = REBUILD_DIR / "P4_verify_fingerprint.json"
     with open(output_file, "w") as f:
         json.dump(fp, f, indent=2)
-    print("PASS fingerprint observed=captured expected=baseline")
+    print(f"PASS fingerprint observed=captured expected=baseline output={output_file}")
     return True
+
+
+def diff_fingerprints(before, after, allowed=()):
+    """Compare two fingerprints and return list of changed tables."""
+    changed = []
+    for table in before.keys():
+        if table not in after:
+            continue
+        if before[table]["count"] != after[table]["count"] or before[table]["sha256"] != after[table]["sha256"]:
+            if table not in allowed:
+                changed.append(table)
+    return changed
+
+
+def compare_fingerprints(name_a, name_b, allowed_tables=None):
+    """Load two fingerprint files and compare them."""
+    if allowed_tables is None:
+        allowed_tables = ()
+
+    fp_a_file = REBUILD_DIR / f"FP_{name_a}.json"
+    fp_b_file = REBUILD_DIR / f"FP_{name_b}.json"
+
+    if not fp_a_file.exists():
+        print(f"ERROR: {fp_a_file} not found")
+        return 1
+    if not fp_b_file.exists():
+        print(f"ERROR: {fp_b_file} not found")
+        return 1
+
+    with open(fp_a_file, "r") as f:
+        fp_a = json.load(f)
+    with open(fp_b_file, "r") as f:
+        fp_b = json.load(f)
+
+    changed = diff_fingerprints(fp_a, fp_b, allowed=allowed_tables)
+
+    if changed:
+        print(f"FAIL fingerprints differ in tables: {changed}")
+        for table in changed:
+            print(f"  {table}: a_count={fp_a[table]['count']} b_count={fp_b[table]['count']}")
+        return 1
+    else:
+        print("PASS fingerprints match (no non-allowed tables changed)")
+        return 0
 
 
 def test_engines():
@@ -483,20 +529,29 @@ def test_tempdb():
 def main():
     parser = argparse.ArgumentParser(description="Rebuild verification tool")
     parser.add_argument("--fingerprint", action="store_true", help="Fingerprint real DB")
+    parser.add_argument("--out", type=str, help="Output name for fingerprint (writes to FP_NAME.json)")
+    parser.add_argument("--compare", nargs=2, metavar=("A", "B"), help="Compare two fingerprints (A and B are names)")
+    parser.add_argument("--allow", type=str, help="Comma-separated list of tables allowed to change in comparison")
     parser.add_argument("--engines", action="store_true", help="Test engine functions")
     parser.add_argument("--tempdb", action="store_true", help="Test with temporary DB")
 
     args = parser.parse_args()
 
-    if not args.fingerprint and not args.engines and not args.tempdb:
+    if not args.fingerprint and not args.engines and not args.tempdb and not args.compare:
         parser.print_help()
         return 1
 
     exit_code = 0
 
     if args.fingerprint:
-        if not test_fingerprint():
+        if not test_fingerprint(output_name=args.out):
             exit_code = 1
+
+    if args.compare:
+        allowed = ()
+        if args.allow:
+            allowed = tuple(t.strip() for t in args.allow.split(","))
+        exit_code = compare_fingerprints(args.compare[0], args.compare[1], allowed_tables=allowed)
 
     if args.engines:
         if not test_engines():

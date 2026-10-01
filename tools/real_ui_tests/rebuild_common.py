@@ -267,6 +267,44 @@ def os_click_widget(harness: RealUIHarness, widget, wait=0.8, double=False):
     return widget
 
 
+def os_type_widget(harness: RealUIHarness, widget, text, secret=False, retries=3):
+    """Direct widget version of os_type. Takes the widget directly (e.g. found
+    by property lookup rather than accessibleName()), clears it, types text,
+    and verifies readback. Retries on mismatch."""
+    last_ok = None
+    for attempt in range(1, retries + 1):
+        os_click_widget(harness, widget, wait=0.3)
+        pyautogui.hotkey("ctrl", "a")
+        harness.settle(0.3)
+        pyautogui.press("backspace")
+        harness.settle(0.3)
+        pyautogui.write(text, interval=0.05)
+        harness.settle(0.8)
+        # Readback: QLineEdit.text(), QDoubleSpinBox/QSpinBox.value(), QTextEdit.toPlainText()
+        if hasattr(widget, "text") and callable(widget.text):
+            ok = widget.text() == text
+        elif hasattr(widget, "value") and callable(widget.value):
+            try:
+                ok = abs(widget.value() - float(text)) < 0.005
+            except (ValueError, TypeError):
+                ok = None
+        elif hasattr(widget, "toPlainText") and callable(widget.toPlainText):
+            ok = widget.toPlainText() == text
+        else:
+            ok = None
+        last_ok = ok
+        if ok is not False:
+            break
+        print(f"os_type_widget({widget!r}) attempt {attempt}/{retries} readback mismatch, retrying")
+    if secret:
+        print(f"os_type_widget({widget!r}) readback_ok={last_ok}")
+    else:
+        print(f"os_type_widget({widget!r}) = {text!r} readback_ok={last_ok}")
+    if last_ok is False:
+        raise RuntimeError(f"readback mismatch for {widget!r} after {retries} attempts")
+    return widget
+
+
 def os_type(harness: RealUIHarness, root, accessible_name, text, secret=False, wait=0.3, retries=3):
     # Real OS-level keystroke delivery is genuinely more fragile than QTest's
     # synthetic path -- it depends on actual Windows focus and message-queue
@@ -274,27 +312,159 @@ def os_type(harness: RealUIHarness, root, accessible_name, text, secret=False, w
     # click_via_os()/type_text_via_os() docstring). Retry the whole
     # click-clear-type sequence a few times on readback mismatch rather than
     # failing the entire script on one transient miss.
-    last_ok = None
-    for attempt in range(1, retries + 1):
-        widget = os_click(harness, root, accessible_name, wait=0.3)
-        pyautogui.hotkey("ctrl", "a")
-        harness.settle(0.3)
-        pyautogui.press("backspace")
-        harness.settle(0.3)
-        pyautogui.write(text, interval=0.05)
-        harness.settle(max(wait, 0.8))
-        ok = (widget.text() == text) if hasattr(widget, "text") else None
-        last_ok = ok
-        if ok is not False:
-            break
-        print(f"os_type({accessible_name!r}) attempt {attempt}/{retries} readback mismatch, retrying")
+    widget = find_by_accessible_name(root, accessible_name)
+    if widget is None:
+        raise LookupError(f"widget not found: {accessible_name!r}")
+    os_type_widget(harness, widget, text, secret=secret, retries=retries)
     if secret:
-        print(f"os_type({accessible_name!r}) readback_ok={last_ok}")
+        print(f"os_type({accessible_name!r}) readback_ok=True")
     else:
-        print(f"os_type({accessible_name!r}) = {text!r} readback_ok={last_ok}")
-    if last_ok is False:
-        raise RuntimeError(f"readback mismatch for {accessible_name!r} after {retries} attempts")
+        print(f"os_type({accessible_name!r}) = {text!r} readback_ok=True")
     return widget
+
+
+def answer_message_box(harness: RealUIHarness, app, button, expect_title=None):
+    """Prearm wrapper for QMessageBox. Asserts activeModalWidget() is a QMessageBox,
+    stores its title and redacted text in .info dict, optionally asserts title matches
+    expect_title, then clicks the button. If title mismatch, stores error and rejects.
+    Call BEFORE the click that opens the box."""
+    info = {"title": None, "text": None, "error": None}
+
+    def cb():
+        try:
+            box = QApplication.activeModalWidget()
+            if not isinstance(box, QMessageBox):
+                raise AssertionError(f"expected QMessageBox, got {type(box).__name__}")
+            info["title"] = box.windowTitle()
+            info["text"] = redact(box.text())
+            if expect_title is not None and box.windowTitle() != expect_title:
+                info["error"] = f"title mismatch: expected {expect_title!r}, got {info['title']!r}"
+                box.reject()
+                return
+            os_click_widget(harness, box.button(button), wait=0.6)
+        except Exception as e:
+            info["error"] = repr(e)
+            box = QApplication.activeModalWidget()
+            if isinstance(box, QMessageBox):
+                box.reject()
+            raise
+
+    prearm_obj = prearm(app, cb)
+    prearm_obj.info = info
+    return prearm_obj
+
+
+def answer_modal_dialog(harness: RealUIHarness, app, dialog_cls, title, fill_fn):
+    """Prearm wrapper for a modal dialog. Asserts activeModalWidget() is dialog_cls
+    with windowTitle()==title, then calls fill_fn(dlg). On exception, rejects the
+    dialog and stores error in .info. Call BEFORE the click that opens the dialog."""
+    info = {"error": None}
+
+    def cb():
+        try:
+            dlg = QApplication.activeModalWidget()
+            if not isinstance(dlg, dialog_cls):
+                raise AssertionError(f"expected {dialog_cls.__name__}, got {type(dlg).__name__}")
+            if dlg.windowTitle() != title:
+                raise AssertionError(f"title mismatch: expected {title!r}, got {dlg.windowTitle()!r}")
+            fill_fn(dlg)
+        except Exception as e:
+            info["error"] = repr(e)
+            dlg = QApplication.activeModalWidget()
+            if dlg is not None:
+                dlg.reject()
+            raise
+
+    prearm_obj = prearm(app, cb)
+    prearm_obj.info = info
+    return prearm_obj
+
+
+def toast_texts():
+    """Return redacted texts of all visible Toast instances."""
+    from ui.widgets.toast import Toast
+    texts = []
+    for w in QApplication.instance().allWidgets():
+        if isinstance(w, Toast) and w.isVisible():
+            if hasattr(w, "message_label") and w.message_label is not None:
+                texts.append(redact(w.message_label.text()))
+    return texts
+
+
+def find_button(root, text):
+    """Find first visible QAbstractButton in root with text().strip()==text.
+    Raise LookupError if none found."""
+    from PySide6.QtWidgets import QAbstractButton
+    for btn in root.findChildren(QAbstractButton):
+        if btn.isVisible() and btn.text().strip() == text:
+            return btn
+    raise LookupError(f"button not found: {text!r}")
+
+
+def label_scan(root, words):
+    """Return redacted texts of visible QLabels whose lowercase text contains
+    any of the given words (case-insensitive search)."""
+    from PySide6.QtWidgets import QLabel
+    texts = []
+    words_lower = [w.lower() for w in words]
+    for label in root.findChildren(QLabel):
+        if label.isVisible():
+            label_text = label.text().lower()
+            if any(w in label_text for w in words_lower):
+                texts.append(redact(label.text()))
+    return texts
+
+
+def parse_inr(text):
+    """Parse Indian rupee amount. Strips ₹, spaces, commas. Returns None for '****',
+    '—' or empty string. Handles leading '-' before or after ₹. Returns float.
+    Examples:
+      parse_inr('₹ 1,23,456.78') == 123456.78
+      parse_inr('-₹1,00,000.10') == -100000.10
+      parse_inr('₹ ****') is None
+    """
+    if not text:
+        return None
+    text = text.strip()
+    if not text or text == "****" or text == "—":
+        return None
+    is_negative = text.startswith("-")
+    text = text.lstrip("-")
+    text = text.strip()
+    text = text.lstrip("₹").strip()
+    if text.startswith("-"):
+        is_negative = True
+    text = text.lstrip("-").strip()
+    if not text or text == "****" or text == "—":
+        return None
+    text = text.replace(",", "")
+    try:
+        val = float(text)
+        return -val if is_negative else val
+    except ValueError:
+        return None
+
+
+def close_all_windows():
+    """Reject visible QDialogs and close top-level windows, then processEvents."""
+    try:
+        app = QApplication.instance()
+        if not app:
+            return
+        for w in list(app.topLevelWidgets()):
+            try:
+                if isinstance(w, QDialog) and w.isVisible():
+                    w.reject()
+            except Exception:
+                pass
+        for w in list(app.topLevelWidgets()):
+            try:
+                w.close()
+            except Exception:
+                pass
+        app.processEvents()
+    except Exception:
+        pass
 
 
 def os_select_combo(harness: RealUIHarness, combo, text):
@@ -485,7 +655,7 @@ def answer_password_dialog(harness, title, secret, tick_save=True, timeout=90):
 
 # ------------------------------------------------------------------- login --
 
-def login_to_dashboard(harness: RealUIHarness, master_pw=None, login_screen=None):
+def login_to_dashboard(harness: RealUIHarness, master_pw=None, login_screen=None, otp=None):
     from core.auth import is_first_run
     if is_first_run():
         raise RuntimeError("is_first_run() is True; cannot log in yet")
@@ -496,6 +666,8 @@ def login_to_dashboard(harness: RealUIHarness, master_pw=None, login_screen=None
         login_screen = harness.launch(lambda: LoginScreen(), title="RUIH_LOGIN", maximized=False)
     adopt_window(login_screen)
     os_type(harness, login_screen, "Master password", master_pw, secret=True)
+    if otp is not None:
+        os_type(harness, login_screen, "One-time password", otp, secret=True)
     os_click(harness, login_screen, "Unlock account", wait=1.5)
 
     dashboard_ref = {}
@@ -515,6 +687,53 @@ def login_to_dashboard(harness: RealUIHarness, master_pw=None, login_screen=None
     adopt_window(dashboard)
     harness.window = dashboard
     return dashboard
+
+
+def start_modal_watchdog(harness: RealUIHarness, log: RedactingLogger, expected_titles):
+    """Start a 500ms QTimer watchdog that monitors for unexpected modal dialogs.
+    For each visible activeModalWidget() whose title is not in expected_titles
+    (a mutable set that the caller can edit), logs the title and redacted text.
+    If the same widget persists >5s, takes a screenshot, rejects it, and appends
+    to .failures list. Returns object with .timer and .failures."""
+
+    class ModalWatchdog:
+        def __init__(self):
+            self.timer = QTimer()
+            self.failures = []
+            self.last_widget = None
+            self.last_widget_time = None
+
+        def tick(self):
+            w = QApplication.activeModalWidget()
+            if w is None:
+                self.last_widget = None
+                self.last_widget_time = None
+                return
+            title = w.windowTitle() if hasattr(w, "windowTitle") else "<no title>"
+            if title not in expected_titles:
+                text = redact(w.text()) if hasattr(w, "text") else "<no text>"
+                log.log(f"WATCHDOG: unexpected modal: title={title!r} text={text!r}")
+                if self.last_widget is w:
+                    if self.last_widget_time is not None:
+                        elapsed = time.time() - self.last_widget_time
+                        if elapsed > 5:
+                            harness.shot(f"WATCHDOG_{title}")
+                            w.reject()
+                            self.failures.append({"title": title, "text": text, "elapsed": elapsed})
+                            self.last_widget = None
+                            self.last_widget_time = None
+                else:
+                    self.last_widget = w
+                    self.last_widget_time = time.time()
+
+        def start_watching(self):
+            self.timer.setInterval(500)
+            self.timer.timeout.connect(self.tick)
+            self.timer.start()
+            return self
+
+    wd = ModalWatchdog()
+    return wd.start_watching()
 
 
 def set_fy(harness: RealUIHarness, dashboard, fy="2025-26"):
