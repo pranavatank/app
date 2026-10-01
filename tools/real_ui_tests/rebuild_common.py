@@ -1,5 +1,5 @@
 r"""tools/real_ui_tests/rebuild_common.py — shared tooling for the DB rebuild
-(Phase 0-2 of the rebuild plan). Not committed; untracked helper.
+(Phase 0-2 of the rebuild plan). Shared testing utilities and helpers.
 
 Interaction model: full OS-level input for every interaction (real pyautogui
 mouse movement + click at the widget's actual physical screen coordinates,
@@ -38,7 +38,7 @@ import win32con
 import win32gui
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
+from PySide6.QtWidgets import QApplication, QDialog, QMessageBox, QAbstractSpinBox
 
 from tools.real_ui_test_harness import RealUIHarness, find_by_accessible_name, find_dialog_by_title
 
@@ -52,6 +52,7 @@ PROGRESS_MD = RUIH_DIR / "PROGRESS.md"
 REAL_DB_PATH = BASE / "data" / "financial.db"
 
 _SECRET_PATTERNS = []  # populated by read_secret() calls; masked in redacting_logger
+_modal_handlers_active = 0
 
 
 # --------------------------------------------------------------------- secrets --
@@ -197,6 +198,8 @@ def _verify_click_target(widget, global_pt, px, py):
 
 
 def os_click(harness: RealUIHarness, root, accessible_name, wait=0.8, double=False):
+    if not accessible_name:
+        raise ValueError("empty accessible_name")
     widget = find_by_accessible_name(root, accessible_name)
     if widget is None:
         raise LookupError(f"widget not found: {accessible_name!r}")
@@ -280,14 +283,14 @@ def os_type_widget(harness: RealUIHarness, widget, text, secret=False, retries=3
         harness.settle(0.3)
         pyautogui.write(text, interval=0.05)
         harness.settle(0.8)
-        # Readback: QLineEdit.text(), QDoubleSpinBox/QSpinBox.value(), QTextEdit.toPlainText()
-        if hasattr(widget, "text") and callable(widget.text):
-            ok = widget.text() == text
-        elif hasattr(widget, "value") and callable(widget.value):
+        # Readback: check spin boxes FIRST, then QLineEdit.text(), then QTextEdit.toPlainText()
+        if isinstance(widget, QAbstractSpinBox):
             try:
-                ok = abs(widget.value() - float(text)) < 0.005
+                ok = abs(widget.value() - float(text or 0)) < 0.005
             except (ValueError, TypeError):
                 ok = None
+        elif hasattr(widget, "text") and callable(widget.text):
+            ok = widget.text() == text
         elif hasattr(widget, "toPlainText") and callable(widget.toPlainText):
             ok = widget.toPlainText() == text
         else:
@@ -539,17 +542,21 @@ def native_file_dialog(trigger_fn, path, timeout=30):
 class Prearm:
     """QTimer.singleShot(0, cb) wrapper capturing exceptions."""
     def __init__(self, app, cb):
+        global _modal_handlers_active
         self.app = app
         self.cb = cb
         self.done = False
         self.error = None
+        _modal_handlers_active += 1
 
     def _run(self):
+        global _modal_handlers_active
         try:
             self.cb()
         except Exception as e:
             self.error = e
         finally:
+            _modal_handlers_active -= 1
             self.done = True
 
     def arm(self):
@@ -704,6 +711,11 @@ def start_modal_watchdog(harness: RealUIHarness, log: RedactingLogger, expected_
             self.last_widget_time = None
 
         def tick(self):
+            global _modal_handlers_active
+            if _modal_handlers_active > 0:
+                self.last_widget = None
+                self.last_widget_time = None
+                return
             w = QApplication.activeModalWidget()
             if w is None:
                 self.last_widget = None
@@ -829,6 +841,7 @@ def diff_fingerprints(before, after, allowed=()):
         if before[table]["count"] != after[table]["count"] or before[table]["sha256"] != after[table]["sha256"]:
             if table not in allowed:
                 changed.append(table)
+    changed += [t for t in set(before) ^ set(after) if t not in allowed]
     return changed
 
 
@@ -865,15 +878,17 @@ class Checks:
     def check(self, name, ok, detail=""):
         status = "PASS" if ok else "FAIL"
         self.log.log(f"[{status}] {name} {detail}")
-        self.results.append({"name": name, "ok": ok, "detail": detail})
+        self.results.append({"name": name, "ok": ok, "detail": redact(str(detail))})
 
-    def finish(self, json_path):
+    def finish(self, json_path, extra=None):
         path = Path(json_path)
         path.parent.mkdir(parents=True, exist_ok=True)
         data = {
             "results": self.results,
             "a11y": self.a11y,
         }
+        if extra:
+            data.update(extra)
         path.write_text(json.dumps(data, indent=2), encoding="utf-8")
         has_fail = any(not r["ok"] for r in self.results)
         return 1 if has_fail else 0

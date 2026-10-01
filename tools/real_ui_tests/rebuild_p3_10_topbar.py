@@ -11,12 +11,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from tools.real_ui_tests.rebuild_p3_common import P3Run, main_wrapper
 from tools.real_ui_tests.rebuild_common import (
     os_select_combo, answer_message_box, answer_password_dialog,
-    login_to_dashboard, os_click_widget, os_type, adopt_window
+    login_to_dashboard, os_click_widget, os_type, adopt_window, os_click
 )
 
 
 def run_r(p):
-    dashboard = p.start()
+    dashboard = p.dashboard
 
     nav_labels = [
         "Overview", "Accounts", "Transactions", "Income & Expectations",
@@ -51,8 +51,8 @@ def run_r(p):
         p.harness.settle(0.5)
         ok = dashboard.person_combo.currentText() == "Pranav"
         p.checks.check("Person combo select to Pranav", ok)
-        ok_session = session.session.selected_person_id is not None
-        p.checks.check("session.selected_person_id set for Pranav", ok_session)
+        ok_session = session.session.selected_person_id == 1
+        p.checks.check("session.selected_person_id is 1 for Pranav", ok_session)
 
     os_select_combo(p.harness, dashboard.person_combo, "All Persons")
     p.harness.settle(0.5)
@@ -145,18 +145,7 @@ def run_r(p):
     p.app.processEvents()
     time.sleep(0.1)
 
-    logout_btn = None
-    for w in dashboard.findChildren(type(dashboard)):
-        if hasattr(w, "text") and w.text() == "Logout":
-            logout_btn = w
-            break
-    if logout_btn is None:
-        for w in dashboard.findChildren(type(dashboard)):
-            if hasattr(w, "accessibleName") and w.accessibleName() == "Logout":
-                logout_btn = w
-                break
-    if logout_btn:
-        os_click_widget(p.harness, logout_btn, wait=0.6)
+    os_click(p.harness, dashboard, "Logout", wait=0.6)
     p.harness.settle(1.0)
 
     if hasattr(msg_answer, "info"):
@@ -169,18 +158,7 @@ def run_r(p):
     p.app.processEvents()
     time.sleep(0.1)
 
-    logout_btn = None
-    for w in dashboard.findChildren(type(dashboard)):
-        if hasattr(w, "text") and w.text() == "Logout":
-            logout_btn = w
-            break
-    if logout_btn is None:
-        for w in dashboard.findChildren(type(dashboard)):
-            if hasattr(w, "accessibleName") and w.accessibleName() == "Logout":
-                logout_btn = w
-                break
-    if logout_btn:
-        os_click_widget(p.harness, logout_btn, wait=0.6)
+    os_click(p.harness, dashboard, "Logout", wait=0.6)
     p.harness.settle(1.0)
 
     from ui.login_screen import LoginScreen
@@ -194,13 +172,7 @@ def run_r(p):
     if login_screen:
         adopt_window(login_screen)
         os_type(p.harness, login_screen, "Master password", "RUIH_wrong_pw1", secret=True)
-        unlock_btn = None
-        for w in login_screen.findChildren(type(login_screen)):
-            if hasattr(w, "accessibleName") and w.accessibleName() == "Unlock account":
-                unlock_btn = w
-                break
-        if unlock_btn:
-            os_click_widget(p.harness, unlock_btn, wait=0.8)
+        os_click(p.harness, login_screen, "Unlock account", wait=0.8)
         p.harness.settle(1.0)
 
         error_text = login_screen.error_label.text() if hasattr(login_screen, "error_label") else ""

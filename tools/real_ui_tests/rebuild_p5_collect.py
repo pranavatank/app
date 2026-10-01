@@ -55,7 +55,7 @@ def load_p0_hashes():
     if not P0_HASHES_FILE.exists():
         return {}
     try:
-        with open(P0_HASHES_FILE, "r") as f:
+        with open(P0_HASHES_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception as e:
         print(f"WARNING: cannot load P0 hashes: {e}")
@@ -134,7 +134,7 @@ def load_p3_results():
 
     for p3_file in p3_files:
         try:
-            with open(p3_file, "r") as f:
+            with open(p3_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
             # Collect FAILs
@@ -191,7 +191,7 @@ def read_progress():
         return []
 
     try:
-        with open(PROGRESS_FILE, "r") as f:
+        with open(PROGRESS_FILE, "r", encoding="utf-8") as f:
             lines = [l.strip() for l in f if l.strip() and l.startswith("-")]
         return lines
     except Exception as e:
@@ -393,7 +393,7 @@ def main():
             baseline_file = REBUILD_DIR / f"FP_{args.baseline}.json"
             if baseline_file.exists():
                 try:
-                    with open(baseline_file, "r") as f:
+                    with open(baseline_file, "r", encoding="utf-8") as f:
                         fp_baseline = json.load(f)
                     changed = []
                     for table in fp_baseline.keys():
@@ -443,7 +443,7 @@ def main():
     output.append("*End of P5 collected data.*\n")
 
     # Write output
-    with open(OUTPUT_FILE, "w") as f:
+    with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         f.write("".join(output))
 
     print(f"\nOutput written to {OUTPUT_FILE}")

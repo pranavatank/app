@@ -5,12 +5,12 @@ Tests statement import idempotency, new account creation, transaction editing,
 debug report export, and Excel format parsing.
 
 Usage: python rebuild_p3_05_statement_import.py --env S [--part a|b|c|d]
+
+Note: test_statement_import_flow.py and test_tax_documents_flow.py are separate
+run_on_scratch commands and should be run independently.
 """
 import sys
-import os
 import json
-import sqlite3
-import subprocess
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
@@ -37,8 +37,7 @@ def run_r(p):
 
 
 def run_s(p):
-    dashboard = p.start(fy="2025-26")
-
+    dashboard = p.dashboard
     nav_page = p.nav("Statement Import")
     p.harness.settle(2.5)
 
@@ -92,18 +91,36 @@ def run_part_a(p, nav_page):
     p.checks.check("part_a all duplicate_flags True", all_flags_true,
                    f"count={n_preview} flags={len(nav_page.preview_duplicate_flags)}")
 
-    count_before = p.sql("SELECT COUNT(*) FROM Transactions WHERE account_id=? AND bank_name=?",
-                         (1, "Jana Small Finance Bank"))[0][0]
+    count_before = p.sql("SELECT COUNT(*) FROM Transactions WHERE account_id=?",
+                         (1,))[0][0]
     p.log.log(f"Jana transaction count before: {count_before}")
     expected = 65
     p.checks.check("part_a Jana count is 65", count_before == expected, f"got {count_before}")
 
-    os_click(p.harness, nav_page, "Back button", wait=1.0)
-    p.harness.settle(1.0)
+    if all_flags_true:
+        select_all_btn = find_button(nav_page, "Select all new transactions")
+        if select_all_btn and select_all_btn.isEnabled():
+            p.log.log("Idempotency: clicking 'Select all new transactions' (should be empty since all duplicates)")
+            os_click(p.harness, nav_page, "Select all new transactions", wait=1.0)
+            os_click(p.harness, nav_page, "Next button", wait=2.0)
+            ok_import = wait_until(p.harness, lambda: nav_page.person_cards_container.isVisible(), timeout=30, interval=0.5)
+            p.checks.check("part_a idempotent import completed", ok_import, "")
+            count_after_import = p.sql("SELECT COUNT(*) FROM Transactions WHERE account_id=?", (1,))[0][0]
+            p.checks.check("part_a idempotent import adds 0 rows", count_after_import == count_before, f"before={count_before} after={count_after_import}")
+            os_click(p.harness, nav_page, "Back button", wait=1.0)
+            p.harness.settle(1.0)
+        else:
+            p.log.log("Idempotency: 'Select all new transactions' is disabled (expected when all duplicates)")
+            p.checks.check("part_a select all button disabled when all duplicates", select_all_btn is None or not select_all_btn.isEnabled(), "")
+            os_click(p.harness, nav_page, "Back button", wait=1.0)
+            p.harness.settle(1.0)
+    else:
+        os_click(p.harness, nav_page, "Back button", wait=1.0)
+        p.harness.settle(1.0)
 
-    count_after = p.sql("SELECT COUNT(*) FROM Transactions WHERE account_id=? AND bank_name=?",
-                        (1, "Jana Small Finance Bank"))[0][0]
-    p.checks.check("part_a Jana count unchanged", count_before == count_after, "")
+    count_final = p.sql("SELECT COUNT(*) FROM Transactions WHERE account_id=?",
+                        (1,))[0][0]
+    p.checks.check("part_a Jana count unchanged after all operations", count_before == count_final, "")
 
 
 def run_part_b(p, nav_page):
@@ -125,9 +142,9 @@ def run_part_b(p, nav_page):
         acc_id = add_account(
             person_id=1,
             bank_name="Jana Small Finance Bank",
-            account_number="999_TEST_CURRENT",
+            account_number_masked="999_TEST_CURRENT",
             account_type="Current",
-            account_holder="Pranav Tank",
+            account_holder_name="Pranav Tank",
             opening_balance=opening_balance,
         )
         p.log.log(f"Created Jana Current account: {acc_id}")
@@ -168,35 +185,46 @@ def run_part_b(p, nav_page):
 
         ok = wait_until(p.harness, lambda: find_button(nav_page, "Merge selected transactions") is not None, timeout=5)
         if ok:
+            snapshot_before_merge = list(nav_page.preview_transactions)
             os_click(p.harness, nav_page, "Merge selected transactions", wait=1.0)
             p.harness.settle(0.5)
             n_after_merge = nav_page.preview_table.rowCount()
+            snapshot_after_merge = list(nav_page.preview_transactions)
             p.log.log(f"After merge: {n_after_merge} rows (was {n_preview})")
             p.checks.check("part_b merge rows", n_after_merge < n_preview, "")
+            merged_correctly = len(snapshot_after_merge) == n_after_merge
+            p.checks.check("part_b merge snapshot updated", merged_correctly, f"rows={n_after_merge} snapshot_len={len(snapshot_after_merge)}")
 
     if nav_page.preview_table.rowCount() >= 1:
+        n_before_split = nav_page.preview_table.rowCount()
+        snapshot_before_split = list(nav_page.preview_transactions)
         os_click_widget(p.harness, nav_page.preview_table.cellWidget(0, 0), wait=0.3)
         p.harness.settle(0.3)
         os_click(p.harness, nav_page, "Split selected transaction", wait=1.0)
         p.harness.settle(0.5)
         n_after_split = nav_page.preview_table.rowCount()
-        p.log.log(f"After split: {n_after_split} rows")
-        p.checks.check("part_b split row", n_after_split > nav_page.preview_table.rowCount() - 1, "")
+        snapshot_after_split = list(nav_page.preview_transactions)
+        p.log.log(f"After split: {n_after_split} rows (was {n_before_split})")
+        p.checks.check("part_b split row", n_after_split > n_before_split, "")
+        split_correctly = len(snapshot_after_split) == n_after_split
+        p.checks.check("part_b split snapshot updated", split_correctly, f"rows={n_after_split} snapshot_len={len(snapshot_after_split)}")
 
     if nav_page.preview_table.rowCount() >= 1:
         os_click_widget(p.harness, nav_page.preview_table.cellWidget(0, 0), wait=0.3)
         p.harness.settle(0.3)
+        def shift_fill_fn(dlg):
+            dlg.reject()
+        shift_prearm = answer_modal_dialog(p.harness, p.app, QDialog, "Shift Transaction Dates", shift_fill_fn)
         os_click(p.harness, nav_page, "Shift selected transaction dates", wait=0.8)
-        p.harness.settle(1.0)
-        p.log.log("Shift dates dialog opened")
+        p.harness.settle(1.5)
+        p.log.log("Shift dates dialog handled")
 
+    def bulk_fill_fn(dlg):
+        os_click(p.harness, dlg, "Cancel", wait=0.5)
+    bulk_prearm = answer_modal_dialog(p.harness, p.app, QDialog, "Bulk Edit Selected Rows", bulk_fill_fn)
     os_click(p.harness, nav_page, "Bulk edit selected transactions", wait=0.8)
-    p.harness.settle(1.0)
-    dlg = p.app.activeModalWidget() if hasattr(p, "app") else None
-    if dlg and dlg.windowTitle() == "Bulk Edit Selected Rows":
-        p.log.log("Bulk Edit dialog opened")
-        os_click(p.harness, dlg, "Cancel", wait=0.5) if find_button(dlg, "Cancel") else dlg.reject()
-        p.harness.settle(0.5)
+    p.harness.settle(1.5)
+    p.log.log("Bulk Edit dialog handled")
 
     os_click(p.harness, nav_page, "Clear transaction selection", wait=0.5)
     os_click(p.harness, nav_page, "Select all new transactions", wait=1.0)
@@ -223,7 +251,7 @@ def run_part_c(p, nav_page):
         return
 
     acc_id = all_accounts[0][0]
-    acc = p.sql("SELECT bank_display_name, account_type FROM BankAccount WHERE account_id=?", (acc_id,))[0]
+    acc = p.sql("SELECT bank_name, account_type FROM BankAccount WHERE account_id=?", (acc_id,))[0]
     account_label = f"{acc[0]} — {acc[1]}"
     os_click(p.harness, nav_page, f"Select account: {account_label}", wait=0.8)
     os_click(p.harness, nav_page, "Select PDF format", wait=0.6)
@@ -244,15 +272,9 @@ def run_part_c(p, nav_page):
         ok_copy = len(clipboard_text) > 0
         p.checks.check("part_c copy debug non-empty", ok_copy, f"len={len(clipboard_text)}")
 
-    os_click(p.harness, nav_page, "Export debug report", wait=0.8)
-    p.harness.settle(1.0)
-
     export_path = RUIH_DIR / "test_debug_export.txt"
-    def export_trigger():
-        os_type(p.harness, nav_page, "File drop zone", str(export_path), wait=1.0)
-
     try:
-        native_file_dialog(export_trigger, str(export_path), timeout=30)
+        native_file_dialog(lambda: os_click(p.harness, nav_page, "Export debug report"), str(export_path), timeout=30)
         p.harness.settle(1.0)
         file_exists = export_path.exists()
         p.checks.check("part_c export debug file exists", file_exists, "")
@@ -293,7 +315,7 @@ def run_part_d(p, nav_page):
         return
 
     acc_id = all_accounts[0][0]
-    acc = p.sql("SELECT bank_display_name, account_type FROM BankAccount WHERE account_id=?", (acc_id,))[0]
+    acc = p.sql("SELECT bank_name, account_type FROM BankAccount WHERE account_id=?", (acc_id,))[0]
     account_label = f"{acc[0]} — {acc[1]}"
     os_click(p.harness, nav_page, f"Select account: {account_label}", wait=0.8)
 

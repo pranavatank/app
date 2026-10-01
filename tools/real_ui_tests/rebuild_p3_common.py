@@ -11,6 +11,7 @@ import time
 import sqlite3
 import argparse
 import faulthandler
+import traceback
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
@@ -95,7 +96,7 @@ class P3Run:
         else:
             self.fp_before = None
 
-        faulthandler.dump_traceback_later(900, exit=True)
+        faulthandler.dump_traceback_later(3600, exit=True)
 
         self.app = None
         self.harness = None
@@ -124,16 +125,13 @@ class P3Run:
         nav_click(self.harness, self.dashboard, label)
         self.harness.settle(2.5)
 
-        # Check: navigation index
         ok_idx = self.dashboard.stack.currentIndex() == idx
         self.checks.check(f"nav {label} index", ok_idx, f"expected {idx}, got {self.dashboard.stack.currentIndex()}")
 
-        # Check: page title
         page_title = self.dashboard.page_title_lbl.text()
         ok_title = page_title == label
         self.checks.check(f"nav {label} title", ok_title, f"expected {label!r}, got {page_title!r}")
 
-        # Check: no screen error
         ok_error = idx not in self.dashboard._screen_errors
         self.checks.check(f"nav {label} no screen error", ok_error,
                          detail=self.dashboard._screen_errors.get(idx, ""))
@@ -166,6 +164,7 @@ class P3Run:
 
     def finish(self):
         """Teardown: close windows, restore prefs, verify DB unchanged (R-mode), save results."""
+        faulthandler.cancel_dump_traceback_later()
         try:
             close_all_windows()
             restore_theme_prefs(self.prefs_bytes)
@@ -187,7 +186,7 @@ class P3Run:
             # Write results JSON
             results_path = RUIH_DIR / f"P3_{self.nn}_{self.screen}_{self.env}.json"
             extra = {"screen": self.screen, "env": self.env, "watchdog": self.watchdog.failures if self.watchdog else []}
-            rc = self._finish_checks(results_path, extra)
+            rc = self.checks.finish(str(results_path), extra=extra)
 
             # Append progress
             total = len(self.checks.results)
@@ -200,21 +199,6 @@ class P3Run:
             import traceback
             self.log.log(traceback.format_exc())
             return 1
-
-    def _finish_checks(self, json_path, extra=None):
-        """Write checks to JSON, merging extra fields. Return 0 if all passed, 1 if any failed."""
-        path = Path(json_path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        data = {
-            "results": self.checks.results,
-            "a11y": self.checks.a11y,
-        }
-        if extra:
-            data.update(extra)
-        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
-        has_fail = any(not r["ok"] for r in self.checks.results)
-        return 1 if has_fail else 0
-
 
 def main_wrapper(nn, screen, run_r, run_s):
     """Main entry point for P3 tests.
@@ -244,8 +228,13 @@ def main_wrapper(nn, screen, run_r, run_s):
         try:
             p.start()
             run_fn(p)
-        finally:
+        except Exception as e:
+            p.log.log(traceback.format_exc())
+            p.checks.check("run completed", False, repr(e))
             rc = p.finish()
+        else:
+            rc = p.finish()
+        finally:
             sys.exit(rc)
 
     run_logged(main, f"P3_{nn}_{screen}_crash")

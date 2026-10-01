@@ -52,7 +52,7 @@ def test_fingerprint(output_name=None):
         output_file = REBUILD_DIR / f"FP_{output_name}.json"
     else:
         output_file = REBUILD_DIR / "P4_verify_fingerprint.json"
-    with open(output_file, "w") as f:
+    with open(output_file, "w", encoding="utf-8") as f:
         json.dump(fp, f, indent=2)
     print(f"PASS fingerprint observed=captured expected=baseline output={output_file}")
     return True
@@ -67,6 +67,7 @@ def diff_fingerprints(before, after, allowed=()):
         if before[table]["count"] != after[table]["count"] or before[table]["sha256"] != after[table]["sha256"]:
             if table not in allowed:
                 changed.append(table)
+    changed += [t for t in set(before) ^ set(after) if t not in allowed]
     return changed
 
 
@@ -85,9 +86,9 @@ def compare_fingerprints(name_a, name_b, allowed_tables=None):
         print(f"ERROR: {fp_b_file} not found")
         return 1
 
-    with open(fp_a_file, "r") as f:
+    with open(fp_a_file, "r", encoding="utf-8") as f:
         fp_a = json.load(f)
-    with open(fp_b_file, "r") as f:
+    with open(fp_b_file, "r", encoding="utf-8") as f:
         fp_b = json.load(f)
 
     changed = diff_fingerprints(fp_a, fp_b, allowed=allowed_tables)
@@ -337,7 +338,7 @@ def test_engines():
         conn.close()
 
     output_file = REBUILD_DIR / "P4_verify_engines.json"
-    with open(output_file, "w") as f:
+    with open(output_file, "w", encoding="utf-8") as f:
         json.dump({"failures": failures, "findings": findings}, f, indent=2)
 
     if failures:
@@ -515,7 +516,7 @@ def test_tempdb():
             pass
 
     output_file = REBUILD_DIR / "P4_verify_tempdb.json"
-    with open(output_file, "w") as f:
+    with open(output_file, "w", encoding="utf-8") as f:
         json.dump({"failures": failures, "findings": findings}, f, indent=2)
 
     if failures:

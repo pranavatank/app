@@ -15,29 +15,21 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from tools.real_ui_tests.rebuild_p3_common import P3Run, main_wrapper
 from tools.real_ui_tests.rebuild_common import (
-    os_click, os_type, os_select_combo, answer_modal_dialog, find_button,
-    toast_texts, wait_until,
+    os_click, os_click_widget, os_type_widget, os_select_combo, answer_modal_dialog,
+    find_button, find_by_accessible_name, toast_texts, wait_until, parse_inr,
 )
 from PySide6.QtWidgets import QApplication, QDialog
 
 
 def run_r(p):
     """R-mode: read-only validation of income screen."""
-    dashboard = p.start()
-
     page = p.nav("Income & Expectations")
 
-    # Check: tables exist with correct names
-    tables_found = {"ledger": False, "tds": False, "expectations": False}
-    for w in dashboard.allWidgets():
-        if hasattr(w, "accessibleName"):
-            name = w.accessibleName()
-            if "ledger table" in name.lower():
-                tables_found["ledger"] = True
-            if "tds" in name.lower() and "table" in name.lower():
-                tables_found["tds"] = True
-            if name == "Income expectations":
-                tables_found["expectations"] = True
+    tables_found = {
+        "ledger": find_by_accessible_name(page, "Income ledger table") is not None,
+        "tds": find_by_accessible_name(page, "FD TDS threshold status table") is not None,
+        "expectations": find_by_accessible_name(page, "Income expectations") is not None,
+    }
 
     p.checks.check("income ledger table found", tables_found["ledger"])
     p.checks.check("tds status table found", tables_found["tds"])
@@ -73,8 +65,6 @@ def run_r(p):
 
 def run_s(p):
     """S-mode: add expectations, link transactions, test matching and tax impacts."""
-    dashboard = p.start()
-
     page = p.nav("Income & Expectations")
     p.observe("S03.nav", "Navigated to Income & Expectations")
 
@@ -118,24 +108,10 @@ def run_s(p):
                     )
                 )
                 os_click(p.harness, page, "Add income expectation", wait=0.5)
-                # Wait for dialog and prearm callback
                 ok = wait_until(p.harness, lambda: prearm.done, timeout=15)
                 if not ok or prearm.error:
                     raise RuntimeError(f"Dialog prearm failed: {prearm.error}")
 
-                # Button text depends on mode; read it from dialog
-                p.harness.settle(0.5)
-
-                # Get the save button from modal
-                dlg = QApplication.activeModalWidget()
-                if dlg is None:
-                    raise RuntimeError("Dialog did not appear")
-
-                save_btn = find_button(dlg, "Add")
-                if save_btn is None:
-                    raise RuntimeError("Save button not found in dialog")
-
-                os_click(p.harness, dlg, save_btn.accessibleName(), wait=1.0)
                 added_count += 1
 
                 p.observe(
@@ -161,54 +137,89 @@ def run_s(p):
         db_count = result[0][0] if result else 0
         p.observe("S03.db_count", f"DB has {db_count} expectations for person")
 
-        # Test edit
-        try:
-            os_click(p.harness, page, "Edit selected income expectation", wait=0.5)
-            p.harness.settle(1.0)
-            p.observe("S03.edit", "Edit button clicked")
-        except Exception:
-            pass
+        # Select first expectation for editing/linking/deleting
+        if hasattr(page, "table_expectations") and page.table_expectations.rowCount() > 0:
+            page.table_expectations.selectRow(0)
+            p.harness.settle(0.3)
 
-        # Test link transaction
-        try:
-            os_click(p.harness, page, "Link actual transaction", wait=0.5)
-            p.harness.settle(1.0)
-            p.observe("S03.link", "Link transaction clicked")
-        except Exception:
-            pass
+            # Test edit - change amount and verify DB
+            try:
+                os_click(p.harness, page, "Edit selected income expectation", wait=0.5)
+                p.harness.settle(1.0)
+                dlg = QApplication.activeModalWidget()
+                if dlg and hasattr(dlg, "amount_spin"):
+                    os_type_widget(p.harness, dlg.amount_spin, "75000", retries=2)
+                    p.harness.settle(0.3)
+                    save_btn = find_button(dlg, "Save")
+                    os_click_widget(p.harness, save_btn, wait=1.0)
+                    p.harness.settle(0.5)
+                    p.observe("S03.edit", "Amount changed")
+            except Exception as e:
+                p.observe("S03.edit", f"Skipped: {str(e)}")
 
-        # Test auto-match
-        try:
-            os_click(p.harness, page, "Auto-match income expectations", wait=1.5)
-            toasts = toast_texts()
-            p.observe("S03.auto_match_toast", str(toasts))
-        except Exception:
-            pass
+            # Test link transaction
+            try:
+                os_click(p.harness, page, "Link actual transaction", wait=0.5)
+                p.harness.settle(1.5)
+                dlg = QApplication.activeModalWidget()
+                if dlg:
+                    dlg.reject()
+                    p.harness.settle(0.5)
+                p.observe("S03.link", "Link dialog handled")
+            except Exception:
+                pass
 
-        # Test delete
-        try:
-            os_click(p.harness, page, "Delete selected income expectation", wait=0.5)
-            p.harness.settle(1.0)
-            p.observe("S03.delete", "Delete button clicked")
-        except Exception:
-            pass
+            # Test auto-match
+            try:
+                os_click(p.harness, page, "Auto-match income expectations", wait=1.5)
+                toasts = toast_texts()
+                p.observe("S03.auto_match_toast", str(toasts))
+            except Exception:
+                pass
 
-    # Check tax screen: waterfall_std_ded should be non-zero only while Salary exists
+            # Test delete with confirmation
+            try:
+                if page.table_expectations.rowCount() > 0:
+                    page.table_expectations.selectRow(0)
+                    p.harness.settle(0.3)
+                    os_click(p.harness, page, "Delete selected income expectation", wait=0.5)
+                    p.harness.settle(1.0)
+                    dlg = QApplication.activeModalWidget()
+                    if dlg and hasattr(dlg, "windowTitle"):
+                        p.observe("S03.delete_dialog", dlg.windowTitle())
+                    p.observe("S03.delete", "Delete confirmed")
+            except Exception as e:
+                p.observe("S03.delete", f"Skipped: {str(e)}")
+
+    # Check tax screen: waterfall_std_ded and verify via SQL
     try:
-        p.nav("Tax")
+        tax_page = p.nav("Tax")
         p.harness.settle(2.0)
-        p.observe("S03.tax_nav", "Navigated to Tax screen")
 
-        # Look for projection screen and waterfall
-        tax_page = dashboard._screen_pages.get(7)
-        if tax_page and hasattr(tax_page, "waterfall_std_ded"):
-            std_ded_before = tax_page.waterfall_std_ded
-            p.observe("S03.waterfall_std_ded", f"Value: {std_ded_before}")
+        if hasattr(tax_page, "combo_source"):
+            os_select_combo(p.harness, tax_page.combo_source, "App Actual Data")
+            p.harness.settle(0.5)
+
+            if hasattr(tax_page, "btn_calc"):
+                os_click_widget(p.harness, tax_page.btn_calc, wait=1.0)
+                p.harness.settle(0.5)
+
+            if hasattr(tax_page, "waterfall_std_ded"):
+                std_ded_text = tax_page.waterfall_std_ded.text() if hasattr(tax_page.waterfall_std_ded, "text") else str(tax_page.waterfall_std_ded)
+                std_ded_val = parse_inr(std_ded_text) if isinstance(std_ded_text, str) else std_ded_text
+                has_salary = p.sql("SELECT COUNT(*) FROM IncomeExpectation WHERE person_id=? AND income_type='Salary'", (person_id,))
+                if has_salary and has_salary[0][0] > 0:
+                    ok = std_ded_val is not None and std_ded_val != 0
+                    p.checks.check("waterfall_std_ded non-zero with Salary", ok, f"value={std_ded_val}")
+                else:
+                    ok = std_ded_val is None or std_ded_val == 0
+                    p.checks.check("waterfall_std_ded zero without Salary", ok, f"value={std_ded_val}")
+                p.observe("S03.waterfall_std_ded", f"Value: {std_ded_val}")
 
     except Exception as e:
         p.observe("S03.tax_check", f"Error: {str(e)}")
 
-    # Check prediction summary for H15 (projected_total)
+    # Check prediction summary for H15 (projected_total) and ledger vs SQL
     try:
         from engines.prediction_engine import get_prediction_summary
         summary = get_prediction_summary(person_id, "2025-26")
@@ -216,6 +227,12 @@ def run_s(p):
             proj_total = summary["fy_income"]["projected_total"]
             p.observe("S03.H15.projected_total", f"₹{proj_total:,.2f}")
             p.checks.check("H15 projection available", True)
+
+            ledger_count = p.sql("SELECT COUNT(*) FROM IncomeExpectation WHERE person_id=?", (person_id,))
+            ledger_total = ledger_count[0][0] if ledger_count else 0
+            p.observe("S03.ledger_rowcount", f"Ledger has {ledger_total} rows")
+
+            p.checks.check("ledger expectations not empty", ledger_total > 0)
         else:
             p.checks.check("H15 projection available", False, "key not in summary")
     except Exception as e:
@@ -272,6 +289,11 @@ def _fill_income_dialog(p, income_type, frequency, person_id, account_id, fy):
 
     # Notes
     dlg.notes_edit.setText(f"RUIH_{income_type}")
+
+    p.harness.settle(0.3)
+
+    save_btn = find_button(dlg, "Add income expectation")
+    os_click_widget(p.harness, save_btn, wait=1.0)
 
 
 if __name__ == "__main__":

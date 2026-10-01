@@ -15,8 +15,11 @@ from tools.real_ui_tests.rebuild_common import (
 
 
 def run_r(p):
-    dashboard = p.start()
+    dashboard = p.dashboard
     p.nav("Overview")
+
+    os_select_combo(p.harness, dashboard.person_combo, "Pranav")
+    p.harness.settle(0.5)
 
     fy = dashboard.fy_combo.currentText()
     person_id = dashboard.person_combo.currentData()
@@ -92,15 +95,13 @@ def run_r(p):
                    f"ui={savings_val} calc={sql_income - sql_expense}")
 
     sql_fd_interest = p.sql(
-        "SELECT SUM(interest) FROM FDInterestRecord WHERE person_id=? "
-        "AND COALESCE(interest_date >= ?, 1) AND COALESCE(interest_date <= ?, 1)",
-        (person_id, fy_date_start, fy_date_end)
+        "SELECT SUM(r.interest_earned) FROM FDInterestRecord r JOIN FixedDeposit f ON f.fd_id=r.fd_id WHERE f.person_id=? AND r.financial_year=?",
+        (person_id, fy)
     )[0][0] or 0.0
 
     sql_sav_interest = p.sql(
-        "SELECT SUM(interest_amount) FROM SavingsInterestRecord WHERE person_id=? "
-        "AND COALESCE(interest_date >= ?, 1) AND COALESCE(interest_date <= ?, 1)",
-        (person_id, fy_date_start, fy_date_end)
+        "SELECT SUM(s.interest_earned) FROM SavingsInterestRecord s JOIN BankAccount b ON b.account_id=s.account_id WHERE b.person_id=? AND s.financial_year=?",
+        (person_id, fy)
     )[0][0] or 0.0
 
     sql_total_interest = sql_fd_interest + sql_sav_interest
@@ -114,9 +115,6 @@ def run_r(p):
     person_items = [dashboard.person_combo.itemText(i) for i in range(dashboard.person_combo.count())]
     p.observe("H04", f"person_combo_items={len(person_items)}")
     p.checks.check("Person combo has All Persons option", "All Persons" in person_items)
-
-    os_select_combo(p.harness, dashboard.person_combo, "Pranav")
-    p.harness.settle(0.5)
     ok_person = dashboard.person_combo.currentText() == "Pranav"
     p.checks.check("Person combo select to Pranav", ok_person)
 
@@ -142,8 +140,8 @@ def run_r(p):
                     dashboard.chart_distribution._last_call is not None
     p.checks.check("Chart distribution has _last_call", ok_chart_dist)
 
-    panel_interest_stats = dashboard.panel_interest._stats if hasattr(dashboard.panel_interest, "_stats") else {}
-    p.observe("H06", f"panel_interest_stats={len(panel_interest_stats)}")
+    panel_interest_rows = dashboard.panel_interest._rows if hasattr(dashboard.panel_interest, "_rows") else {}
+    p.observe("H06", f"panel_interest_rows={len(panel_interest_rows)}")
 
     tax_profile = p.sql(
         "SELECT COUNT(*) FROM TaxProfile WHERE person_id=?",
@@ -153,7 +151,8 @@ def run_r(p):
     p.observe("H07", f"tax_profile_rows={tax_profile}")
 
     if not has_tax_data:
-        panel_tax_text = dashboard.panel_tax._stats.get("gross", {}).get("value", "") if hasattr(dashboard.panel_tax, "_stats") else ""
+        panel_tax_label = dashboard.panel_tax._rows.get("gross", None) if hasattr(dashboard.panel_tax, "_rows") else None
+        panel_tax_text = panel_tax_label.text() if panel_tax_label else ""
         p.checks.check("Tax panel shows 'No data' when empty", "No data" in str(panel_tax_text))
 
     check_western = False
@@ -169,11 +168,11 @@ def run_r(p):
 
 
 def run_s(p):
-    dashboard = p.start()
+    dashboard = p.dashboard
     p.nav("Overview")
 
-    from core import session
-    original_privacy = session.session.privacy_mode_enabled if hasattr(session.session, "privacy_mode_enabled") else False
+    from core import auth
+    original_privacy = auth.get_privacy_mode()
     p.observe("S01", f"original_privacy={original_privacy}")
 
     p.nav("Settings")
@@ -212,7 +211,7 @@ def run_s(p):
     ok_unmasked = "****" not in balance_text_unmasked
     p.checks.check("Privacy mode toggle off restores KPI", ok_unmasked, f"text={balance_text_unmasked}")
 
-    final_privacy = session.session.privacy_mode_enabled if hasattr(session.session, "privacy_mode_enabled") else False
+    final_privacy = auth.get_privacy_mode()
     ok_final = final_privacy == original_privacy
     p.checks.check("Privacy mode restored to original", ok_final,
                    f"original={original_privacy} final={final_privacy}")

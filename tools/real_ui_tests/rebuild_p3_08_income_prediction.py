@@ -4,8 +4,9 @@ Validates prediction data, TDS risk tables, income comparison, and FY stability.
 """
 import sys
 from datetime import date
+from pathlib import Path
 
-sys.path.insert(0, str(__import__('pathlib').Path(__file__).resolve().parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from tools.real_ui_tests.rebuild_p3_common import P3Run, main_wrapper
 from tools.real_ui_tests.rebuild_common import (
@@ -34,17 +35,18 @@ def run_r(p):
     p.observe("P3.08_R_summary_keys", str(list(summary.keys())))
 
     fy_income = prediction_page._prediction_data.get('fy_income', {})
-    fy_projected = fy_income.get('projected_income_total', 0)
-    fy_limit = fy_income.get('annual_income_limit', 0)
-    fy_headroom = fy_income.get('income_headroom', 0)
+    fy_projected = fy_income.get('projected_total', 0)
+    fy_limit = fy_income.get('limit', 0)
+    fy_headroom = fy_income.get('headroom', 0)
 
-    summary_projected = summary.get('projected_income_total', 0)
-    summary_limit = summary.get('annual_income_limit', 0)
-    summary_headroom = summary.get('income_headroom', 0)
+    summary_fy = summary.get('fy_income', {})
+    summary_projected = summary_fy.get('projected_total', 0)
+    summary_limit = summary_fy.get('limit', 0)
+    summary_headroom = summary_fy.get('headroom', 0)
 
-    ok_projected = abs(fy_projected - summary_projected) < 0.01
-    ok_limit = abs(fy_limit - summary_limit) < 0.01
-    ok_headroom = abs(fy_headroom - summary_headroom) < 0.01
+    ok_projected = abs(fy_projected - summary_projected) < 0.01 if (fy_projected or summary_projected) else False
+    ok_limit = abs(fy_limit - summary_limit) < 0.01 if (fy_limit or summary_limit) else False
+    ok_headroom = abs(fy_headroom - summary_headroom) < 0.01 if (fy_headroom or summary_headroom) else True
 
     p.checks.check("income prediction projected total matches", ok_projected,
                    f"page={fy_projected} summary={summary_projected}")
@@ -59,9 +61,19 @@ def run_r(p):
     summary_tds = summary.get('tds_risk', {})
     summary_by_bank = summary_tds.get('by_bank', [])
 
-    ok_tds_banks = len(page_by_bank) == len(summary_by_bank)
+    ok_tds_banks = len(page_by_bank) == len(summary_by_bank) and len(page_by_bank) > 0
     p.checks.check("income prediction TDS risk bank count matches", ok_tds_banks,
                    f"page={len(page_by_bank)} summary={len(summary_by_bank)}")
+
+    for idx, bank_data in enumerate(summary_by_bank):
+        if idx < len(page_by_bank):
+            page_bank = page_by_bank[idx]
+            bank_name = bank_data.get('bank_name', '')
+            summary_will_cross = bank_data.get('will_cross', False)
+            page_will_cross = page_bank.get('will_cross', False)
+            ok_will_cross = summary_will_cross == page_will_cross
+            p.checks.check(f"income prediction TDS {bank_name} will_cross matches", ok_will_cross,
+                           f"page={page_will_cross} summary={summary_will_cross}")
 
     page_comparison = prediction_page._prediction_data.get('comparison', {})
     summary_comparison = summary.get('comparison', {})
@@ -72,6 +84,21 @@ def run_r(p):
     ok_comp_rows = len(page_comp_rows) == len(summary_comp_rows)
     p.checks.check("income prediction comparison rows match", ok_comp_rows,
                    f"page={len(page_comp_rows)} summary={len(summary_comp_rows)}")
+
+    for idx, comp_row in enumerate(summary_comp_rows):
+        if idx < len(page_comp_rows):
+            page_row = page_comp_rows[idx]
+            label = comp_row.get('label', '')
+            our_value = comp_row.get('our_value', 0)
+            summary_itr_value = comp_row.get('itr_value', 0)
+            page_our_value = page_row.get('our_value', 0)
+            page_itr_value = page_row.get('itr_value', 0)
+            ok_our = abs(page_our_value - our_value) < 0.01 if (page_our_value or our_value) else False
+            ok_itr = abs(page_itr_value - summary_itr_value) < 0.01 if (page_itr_value or summary_itr_value) else False
+            p.checks.check(f"income prediction comparison {label} our value matches", ok_our,
+                           f"page={page_our_value} summary={our_value}")
+            p.checks.check(f"income prediction comparison {label} ITR value matches", ok_itr,
+                           f"page={page_itr_value} summary={summary_itr_value}")
 
     error_labels = label_scan(prediction_page, ['gap', 'mismatch', 'error'])
     ok_no_errors = len(error_labels) == 0

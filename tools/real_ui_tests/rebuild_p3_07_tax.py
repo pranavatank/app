@@ -5,15 +5,18 @@ S: Validates tax calculation against engine, vector loop with various income val
 """
 import sys
 from datetime import date
+from pathlib import Path
 
-sys.path.insert(0, str(__import__('pathlib').Path(__file__).resolve().parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from tools.real_ui_tests.rebuild_p3_common import P3Run, main_wrapper
 from tools.real_ui_tests.rebuild_common import (
     os_select_combo, os_click_widget, os_type_widget, parse_inr, set_fy
 )
 from engines.tax_engine import calculate_new_regime_tax, calculate_gross_total_income
-from engines.prediction_engine import realised_income_to_date
+from models.fd_interest_record import get_total_fd_interest
+from models.savings_interest import get_total_savings_interest
+from models.tax_profile import get_tax_profile
 
 
 def run_r(p):
@@ -25,13 +28,22 @@ def run_r(p):
     os_select_combo(p.harness, tax_page.source_combo, "AIS/TIS Data")
     p.harness.settle(0.8)
 
+    ais_row = p.sql(
+        "SELECT fd_interest, savings_interest FROM AISTISImport WHERE person_id=1 AND financial_year='2025-26' ORDER BY import_date DESC LIMIT 1"
+    )
+    expected_ais_fd = ais_row[0][0] if ais_row else 0
+    expected_ais_savings = ais_row[0][1] if ais_row else 0
+
     fd_val = tax_page.fd_interest_input.value()
-    ok_fd = fd_val == 256642
-    p.checks.check("tax AIS FD interest 256642", ok_fd, f"got {fd_val}")
+    ok_fd = abs(fd_val - expected_ais_fd) < 0.01
+    p.checks.check("tax AIS FD interest matches", ok_fd, f"got {fd_val} expected {expected_ais_fd}")
 
     savings_val = tax_page.savings_interest_input.value()
-    ok_savings = savings_val == 46183
-    p.checks.check("tax AIS savings interest 46183", ok_savings, f"got {savings_val}")
+    ok_savings = abs(savings_val - expected_ais_savings) < 0.01
+    p.checks.check("tax AIS savings interest matches", ok_savings, f"got {savings_val} expected {expected_ais_savings}")
+
+    p.observe("P3.07_R_ais_fd_interest", str(expected_ais_fd))
+    p.observe("P3.07_R_ais_savings_interest", str(expected_ais_savings))
 
     other_val = tax_page.other_income_input.value()
     dividend_val = tax_page.dividend_income.value()
@@ -40,16 +52,14 @@ def run_r(p):
     os_select_combo(p.harness, tax_page.source_combo, "App Actual Data")
     p.harness.settle(0.8)
 
-    app_data = realised_income_to_date(1, '2025-26', date(2026, 3, 31))
-    p.observe("P3.07_R_app_data_keys", str(list(app_data.keys())))
-
     app_fd = tax_page.fd_interest_input.value()
     app_savings = tax_page.savings_interest_input.value()
     app_other = tax_page.other_income_input.value()
 
-    expected_fd = app_data.get('fd_interest', 0)
-    expected_savings = app_data.get('savings_interest', 0)
-    expected_other = app_data.get('other_income', 0)
+    expected_fd = get_total_fd_interest('2025-26', 1)
+    expected_savings = get_total_savings_interest('2025-26', 1)
+    tax_profile = get_tax_profile(1, '2025-26')
+    expected_other = (tax_profile or {}).get('other_income', 0)
 
     ok_app_fd = abs(app_fd - expected_fd) < 0.01
     ok_app_savings = abs(app_savings - expected_savings) < 0.01
@@ -109,7 +119,7 @@ def run_s(p):
     p.checks.check("tax waterfall parse matches value", ok_waterfall_parse, f"text={waterfall_total_text} parsed={waterfall_parsed} value={waterfall_total_val}")
 
     tax_profile_row = p.sql(
-        "SELECT total_tax FROM TaxProfile WHERE person_id=1 AND financial_year='2025-26' ORDER BY rowid DESC LIMIT 1"
+        "SELECT total_tax_new FROM TaxProfile WHERE person_id=1 AND financial_year='2025-26' ORDER BY rowid DESC LIMIT 1"
     )
 
     db_total = None
@@ -144,10 +154,12 @@ def run_s(p):
     other_interest = max(0, tax_page.other_interest.value())
     dividend = max(0, tax_page.dividend_income.value())
 
+    total_business_income = business_income + presumptive_income
+
     gross, special_rate = calculate_gross_total_income(
         salary_income=salary,
         pension_income=pension,
-        business_income=business_income,
+        business_income=total_business_income,
         house_property_income=0,
         capital_gains_normal=stcg_normal,
         capital_gains_stcg_111a=stcg_111a,
@@ -199,10 +211,14 @@ def run_s(p):
         vec_other_int = max(0, tax_page.other_interest.value())
         vec_dividend = max(0, tax_page.dividend_income.value())
 
+        vec_business = max(0, tax_page.manufacturing_income.value()) + max(0, tax_page.other_business_income.value())
+        vec_presumptive = max(0, tax_page.presumptive_income.value())
+        vec_total_business = vec_business + vec_presumptive
+
         vec_gross, vec_special = calculate_gross_total_income(
             salary_income=vec_salary,
             pension_income=max(0, tax_page.pension_income.value()),
-            business_income=max(0, tax_page.manufacturing_income.value()) + max(0, tax_page.other_business_income.value()),
+            business_income=vec_total_business,
             house_property_income=0,
             capital_gains_normal=max(0, tax_page.stcg_normal.value()),
             capital_gains_stcg_111a=max(0, tax_page.stcg_111a.value()),

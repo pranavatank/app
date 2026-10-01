@@ -4,8 +4,9 @@ Validates that hard refresh reloads all app modules, preserves session state.
 """
 import os
 import sys
+from pathlib import Path
 
-sys.path.insert(0, str(__import__('pathlib').Path(__file__).resolve().parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from tools.real_ui_tests.rebuild_p3_common import P3Run, main_wrapper
 from tools.real_ui_tests.rebuild_common import os_click, read_secret
@@ -35,8 +36,9 @@ def run_r(p):
     p.harness.settle(3.0)
 
     secret = read_secret('master')
+    # reload cleared _SECRET_PATTERNS; re-register for redaction
 
-    from core import session, core
+    from core import session
 
     aes_key_before = None
     if hasattr(session, 'session') and hasattr(session.session, 'aes_key'):
@@ -55,7 +57,8 @@ def run_r(p):
         if dashboard_widgets:
             p.dashboard = dashboard_widgets[0]
             p.harness.window = p.dashboard
-            p.checks.check("hard refresh dashboard reference updated", True)
+            ok = p.dashboard is not None
+            p.checks.check("hard refresh dashboard reference updated", ok)
         else:
             p.checks.check("hard refresh dashboard reference updated", False, "no dashboard found")
     except Exception as e:
@@ -63,9 +66,10 @@ def run_r(p):
 
     for label in nav_labels:
         try:
-            p.nav(label)
+            page = p.nav(label)
             p.harness.settle(0.5)
-            p.checks.check(f"hard refresh nav {label} ok", True)
+            ok = page is not None
+            p.checks.check(f"hard refresh nav {label} ok", ok)
         except Exception as e:
             p.checks.check(f"hard refresh nav {label} ok", False, detail=str(e))
 

@@ -104,6 +104,10 @@ def main():
             print("STOP: R-env script under scratch")
             sys.exit(1)
 
+    if "hard_refresh" in Path(script).name:
+        print("STOP: hard refresh cannot run on scratch")
+        sys.exit(1)
+
     script_path = Path(script).resolve()
     if not script_path.exists():
         print(f"Script not found: {script_path}")

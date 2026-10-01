@@ -16,26 +16,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from tools.real_ui_tests.rebuild_p3_common import P3Run, main_wrapper
 from tools.real_ui_tests.rebuild_common import (
-    os_click, os_type_widget, os_select_combo, answer_modal_dialog, find_button,
-    toast_texts, wait_until, parse_inr,
+    os_click, os_click_widget, os_type_widget, os_select_combo, answer_modal_dialog,
+    find_button, find_by_accessible_name, toast_texts, wait_until, parse_inr,
 )
 from PySide6.QtWidgets import QApplication, QDialog
 
 
 def run_r(p):
     """R-mode: read-only validation of fixed deposits screen."""
-    dashboard = p.start()
-
     page = p.nav("Fixed Deposits")
 
-    # Check: table exists with correct name
-    table_found = False
-    for w in dashboard.allWidgets():
-        if hasattr(w, "accessibleName"):
-            if w.accessibleName() == "Fixed deposits table":
-                table_found = True
-                break
-
+    table_found = find_by_accessible_name(page, "Fixed deposits table") is not None
     p.checks.check("fixed deposits table found", table_found)
 
     # Check: table rowCount vs DB
@@ -52,48 +43,32 @@ def run_r(p):
 
     # Check: Enter Real FD Rates dialog (cancel flow only)
     try:
-        os_click(p.harness, page, "Enter real fixed deposit rates", wait=0.5)
-        p.harness.settle(1.0)
-
-        dlg = QApplication.activeModalWidget()
-        ok = isinstance(dlg, QDialog) and dlg.windowTitle() == "Enter Real FD Rates"
-        p.checks.check("Enter Real FD Rates dialog opens", ok)
-
-        # Type in bulk rate
-        if ok:
+        def fill_test_rates_dialog(dlg):
             os_type_widget(p.harness, dlg.rate_spin, "7.10", retries=2)
             p.harness.settle(0.3)
-
-            # Set years spin
             os_type_widget(p.harness, dlg.years_spin, "1", retries=2)
             p.harness.settle(0.3)
-
-            # Set months
             os_type_widget(p.harness, dlg.months_spin, "0", retries=2)
             p.harness.settle(0.3)
-
-            # Set days
             os_type_widget(p.harness, dlg.days_spin, "0", retries=2)
             p.harness.settle(0.3)
-
-            # Set compounding
             try:
                 os_select_combo(p.harness, dlg.compounding_combo, "Quarterly")
             except Exception:
                 pass
-
             p.harness.settle(0.5)
+            cancel_btn = find_button(dlg, "Cancel")
+            os_click_widget(p.harness, cancel_btn, wait=0.8)
 
-            # Click cancel (find by p.a11y for unnamed cancel button)
-            try:
-                cancel_btn = find_button(dlg, "Cancel")
-                os_click(p.harness, dlg, cancel_btn.accessibleName(), wait=0.8)
-            except Exception:
-                dlg.reject()
-
-            p.harness.settle(1.0)
-
-            # Check: fingerprint unchanged (enforced by finish())
+        prearm = answer_modal_dialog(
+            p.harness, p.app, QDialog, "Enter Real FD Rates",
+            fill_test_rates_dialog
+        )
+        os_click(p.harness, page, "Enter real fixed deposit rates", wait=0.5)
+        ok = wait_until(p.harness, lambda: prearm.done, timeout=15)
+        if not ok or prearm.error:
+            p.checks.check("FD dialog test", False, str(prearm.error or "timeout"))
+        else:
             p.checks.check("FD dialog cancel preserves state", True)
 
     except Exception as e:
@@ -104,8 +79,6 @@ def run_r(p):
 
 def run_s(p):
     """S-mode: bulk save FDs, verify calculations, test editing and linking."""
-    dashboard = p.start()
-
     page = p.nav("Fixed Deposits")
     p.observe("S04.nav", "Navigated to Fixed Deposits")
 
@@ -130,60 +103,60 @@ def run_s(p):
         p.checks.check("fetch pending FDs", False, str(e))
         return
 
+    # Capture known_fd_count before bulk save
+    known_count_before = 0
+    try:
+        from engines.prediction_engine import get_prediction_summary
+        summary = get_prediction_summary(1, "2025-26")
+        if "projected_fd_interest" in summary:
+            known_count_before = summary["projected_fd_interest"].get("known_fd_count", 0)
+            p.observe("S04.known_fd_count_before", f"Before: {known_count_before}")
+    except Exception as e:
+        p.observe("S04.known_fd_count_before", f"Error: {str(e)}")
+
     # Bulk save FDs
     try:
-        # Click "Enter Real Rates" button
-        os_click(p.harness, page, "Enter real fixed deposit rates", wait=0.5)
-        p.harness.settle(1.0)
-
-        dlg = QApplication.activeModalWidget()
-        if not isinstance(dlg, QDialog):
-            raise RuntimeError("Dialog did not open")
-
-        # Fill in rate, tenure
-        os_type_widget(p.harness, dlg.rate_spin, "7.10", retries=2)
-        p.harness.settle(0.3)
-
-        os_type_widget(p.harness, dlg.years_spin, "1", retries=2)
-        p.harness.settle(0.3)
-
-        os_type_widget(p.harness, dlg.months_spin, "0", retries=2)
-        p.harness.settle(0.3)
-
-        os_type_widget(p.harness, dlg.days_spin, "0", retries=2)
-        p.harness.settle(0.3)
-
-        os_select_combo(p.harness, dlg.compounding_combo, "Quarterly")
-        p.harness.settle(0.5)
-
-        # Check first 2 rows
-        if hasattr(dlg, "table") and dlg.table:
-            for row in range(min(2, dlg.table.rowCount())):
-                # Check checkbox
-                cb_widget = dlg.table.cellWidget(row, 0)
-                if cb_widget:
-                    from PySide6.QtWidgets import QCheckBox
-                    for chk in cb_widget.findChildren(QCheckBox):
-                        chk.setChecked(True)
-                        break
-
+        def fill_bulk_rates_dialog(dlg):
+            os_type_widget(p.harness, dlg.rate_spin, "7.10", retries=2)
             p.harness.settle(0.3)
+            os_type_widget(p.harness, dlg.years_spin, "1", retries=2)
+            p.harness.settle(0.3)
+            os_type_widget(p.harness, dlg.months_spin, "0", retries=2)
+            p.harness.settle(0.3)
+            os_type_widget(p.harness, dlg.days_spin, "0", retries=2)
+            p.harness.settle(0.3)
+            os_select_combo(p.harness, dlg.compounding_combo, "Quarterly")
+            p.harness.settle(0.5)
 
-        # Click "Apply to Checked"
-        apply_btn = find_button(dlg, "Apply to Checked")
-        os_click(p.harness, dlg, apply_btn.accessibleName(), wait=0.5)
-        p.harness.settle(0.5)
+            if hasattr(dlg, "table") and dlg.table:
+                for row in range(min(2, dlg.table.rowCount())):
+                    cb_widget = dlg.table.cellWidget(row, 0)
+                    if cb_widget:
+                        from PySide6.QtWidgets import QCheckBox
+                        for chk in cb_widget.findChildren(QCheckBox):
+                            chk.setChecked(True)
+                            break
+                p.harness.settle(0.3)
 
-        # Click Save
-        save_btn = find_button(dlg, "Save Rates")
-        os_click(p.harness, dlg, save_btn.accessibleName(), wait=1.0)
+            apply_btn = find_button(dlg, "Apply to Checked")
+            os_click_widget(p.harness, apply_btn, wait=0.5)
+            p.harness.settle(0.5)
+
+            save_btn = find_button(dlg, "Save Rates")
+            os_click_widget(p.harness, save_btn, wait=1.0)
+
+        prearm = answer_modal_dialog(
+            p.harness, p.app, QDialog, "Enter Real FD Rates",
+            fill_bulk_rates_dialog
+        )
+        os_click(p.harness, page, "Enter real fixed deposit rates", wait=0.5)
+        ok = wait_until(p.harness, lambda: prearm.done, timeout=15)
+        if not ok or prearm.error:
+            raise RuntimeError(f"Dialog prearm failed: {prearm.error}")
 
         p.harness.settle(1.5)
-
-        # Check toasts
         toasts = toast_texts()
         p.observe("S04.bulk_save_toast", str(toasts))
-
         p.checks.check("bulk save FDs", True)
 
     except Exception as e:
@@ -232,12 +205,22 @@ def run_s(p):
                     f"amt_ok={ok_mat_amt} {detail}"
                 )
 
-            # Check: maturity_amount vs independent formula
-            # P * (1 + 0.071/4)^4 for 1 year quarterly compounding
-            expected_amt = principal * ((1 + 0.071/4) ** 4)
+            # Check: maturity_amount vs BankFDConvention-based calculation
+            # Actual/365, simple interest for <183 days, compound for >=183 days
+            expected_amt = principal
+            tenure_days = (ty * 365) + (tm * 30) + td
+            if tenure_days < 183:
+                daily_rate = 0.071 / 365.0
+                interest = principal * daily_rate * tenure_days
+                expected_amt = principal + interest
+            else:
+                expected_amt = principal * ((1 + 0.071/4) ** 4)
+
             if mat_amount:
                 diff = abs(mat_amount - expected_amt)
                 ok_calc = diff <= 1.0
+                p.checks.check(f"FD {i+1} maturity calculation vs convention", ok_calc,
+                    f"Calculated={expected_amt:.2f} Actual={mat_amount:.2f} Diff={diff:.2f}")
                 if not ok_calc:
                     p.observe(
                         f"S04.FD{i+1}_calc_mismatch",
@@ -264,7 +247,11 @@ def run_s(p):
         summary = get_prediction_summary(1, "2025-26")
         if "projected_fd_interest" in summary:
             known_count = summary["projected_fd_interest"].get("known_fd_count", 0)
-            p.observe("S04.known_fd_count", f"After bulk save: {known_count}")
+            p.observe("S04.known_fd_count_after", f"After bulk save: {known_count}")
+            if known_count_before >= 0:
+                increased = known_count > known_count_before
+                p.checks.check("known_fd_count increased after bulk save", increased,
+                    f"before={known_count_before} after={known_count}")
     except Exception as e:
         p.observe("S04.projection_check", f"Error: {str(e)}")
 
@@ -274,23 +261,15 @@ def run_s(p):
         page.refresh()
         p.harness.settle(1.0)
 
-        # Try to edit first FD in table (if any)
         if page.table.rowCount() > 0:
-            # Double-click first data cell to edit
-            first_item = page.table.item(0, 4)  # Rate column
-            if first_item:
-                page.table.setCurrentItem(first_item)
-                p.harness.settle(0.3)
-                # In-table edit by changing value (simplified)
-                # This tests that editing doesn't crash
-
-            # Click Save Changes
+            page.table.selectRow(0)
+            p.harness.settle(0.3)
             try:
                 os_click(p.harness, page, "Save fixed deposit changes", wait=1.0)
                 p.harness.settle(1.0)
                 p.checks.check("in-table edit and save", True)
-            except Exception:
-                pass
+            except Exception as e:
+                p.checks.check("in-table edit and save", False, str(e))
 
     except Exception as e:
         p.checks.check("in-table edit", False, str(e))
@@ -305,20 +284,24 @@ def run_s(p):
     except Exception:
         pass
 
-    # Test link transaction
+    # Test link transaction and verify columns
     try:
         if page.table.rowCount() > 0:
             page.table.selectRow(0)
             p.harness.settle(0.3)
             os_click(p.harness, page, "Link transaction to fixed deposit", wait=0.5)
             p.harness.settle(1.5)
-            # Dialog may or may not have candidates; just test it doesn't crash
             dlg = QApplication.activeModalWidget()
             if dlg:
                 dlg.reject()
                 p.harness.settle(0.5)
-    except Exception:
-        pass
+            p.observe("S04.link_dialog", "Link transaction dialog handled")
+
+            if hasattr(page.table, "horizontalHeaderItem"):
+                header_count = page.table.columnCount()
+                p.observe("S04.table_columns", f"FD table has {header_count} columns")
+    except Exception as e:
+        p.observe("S04.link_test", f"Skipped: {str(e)}")
 
     # Test auto-link
     try:
@@ -326,44 +309,53 @@ def run_s(p):
         p.harness.settle(1.0)
         toasts = toast_texts()
         p.observe("S04.auto_link_toast", str(toasts))
+        p.checks.check("auto-link executed", True)
+    except Exception as e:
+        p.observe("S04.auto_link", f"Skipped: {str(e)}")
+
+    # Test add FD and verify via SQL
+    fd_count_before = 0
+    try:
+        result = p.sql("SELECT COUNT(*) FROM FixedDeposit WHERE person_id=1")
+        fd_count_before = result[0][0] if result else 0
     except Exception:
         pass
 
-    # Test add FD
     try:
-        os_click(p.harness, page, "Add fixed deposit", wait=0.5)
-        p.harness.settle(1.0)
-        dlg = QApplication.activeModalWidget()
-        if dlg:
-            # Fill in minimal data with RUIH_ prefix
+        def fill_add_fd_dialog(dlg):
             if hasattr(dlg, "principal_input"):
-                dlg.principal_input.setValue(100000.0)
+                os_type_widget(p.harness, dlg.principal_input, "100000", retries=2)
             if hasattr(dlg, "fd_no_input"):
-                from PySide6.QtWidgets import QLineEdit
-                for widget in dlg.findChildren(QLineEdit):
-                    if widget.accessibleName() == "FD No" or "reference" in widget.accessibleName().lower():
-                        widget.setText("RUIH_FD1")
-                        break
+                os_type_widget(p.harness, dlg.fd_no_input, "RUIH_FD1", retries=2)
             if hasattr(dlg, "rate_input"):
-                dlg.rate_input.setValue(7.5)
+                os_type_widget(p.harness, dlg.rate_input, "7.5", retries=2)
             if hasattr(dlg, "tenure_years_input"):
-                dlg.tenure_years_input.setValue(1)
-
+                os_type_widget(p.harness, dlg.tenure_years_input, "1", retries=2)
             p.harness.settle(0.3)
+            save_btn = find_button(dlg, "Add")
+            os_click_widget(p.harness, save_btn, wait=1.0)
 
-            # Try to find and click save button
-            try:
-                save_btn = find_button(dlg, "Add")
-                os_click(p.harness, dlg, save_btn.accessibleName(), wait=1.0)
-            except Exception:
-                dlg.reject()
-
-            p.harness.settle(0.5)
+        prearm = answer_modal_dialog(
+            p.harness, p.app, QDialog, "Add Fixed Deposit",
+            fill_add_fd_dialog
+        )
+        os_click(p.harness, page, "Add fixed deposit", wait=0.5)
+        ok = wait_until(p.harness, lambda: prearm.done, timeout=15)
+        if not ok or prearm.error:
+            p.observe("S04.add_fd", f"Dialog failed: {prearm.error}")
+        else:
+            p.harness.settle(1.0)
+            result = p.sql("SELECT COUNT(*) FROM FixedDeposit WHERE person_id=1")
+            fd_count_after = result[0][0] if result else 0
+            added = fd_count_after > fd_count_before
+            p.checks.check("FD added and verified via SQL", added,
+                f"before={fd_count_before} after={fd_count_after}")
+            p.observe("S04.add_fd", f"FD added: {fd_count_before} -> {fd_count_after}")
 
     except Exception as e:
-        p.observe("S04.add_fd", f"Skipped or failed: {str(e)}")
+        p.observe("S04.add_fd", f"Skipped: {str(e)}")
 
-    # Test delete
+    # Test delete and verify via SQL
     try:
         p.harness.settle(0.5)
         page.refresh()
@@ -372,11 +364,34 @@ def run_s(p):
         if page.table.rowCount() > 0:
             page.table.selectRow(0)
             p.harness.settle(0.3)
+
+            count_before = p.sql("SELECT COUNT(*) FROM FixedDeposit WHERE person_id=1")
+            count_before = count_before[0][0] if count_before else 0
+
             os_click(p.harness, page, "Delete selected fixed deposit", wait=0.5)
             p.harness.settle(1.0)
 
-    except Exception:
-        pass
+            dlg = QApplication.activeModalWidget()
+            if dlg and hasattr(dlg, "windowTitle"):
+                p.observe("S04.delete_dialog_title", dlg.windowTitle())
+                try:
+                    from tools.real_ui_tests.rebuild_common import answer_message_box
+                    from PySide6.QtWidgets import QMessageBox
+                    os_click(p.harness, dlg, "Yes", wait=1.0)
+                except Exception:
+                    dlg.reject()
+
+            p.harness.settle(1.0)
+
+            count_after = p.sql("SELECT COUNT(*) FROM FixedDeposit WHERE person_id=1")
+            count_after = count_after[0][0] if count_after else 0
+
+            deleted = count_after < count_before
+            p.checks.check("FD deleted and verified via SQL", deleted,
+                f"before={count_before} after={count_after}")
+
+    except Exception as e:
+        p.observe("S04.delete", f"Skipped: {str(e)}")
 
     p.observe("S04", "Fixed deposits S-mode tests complete")
 
