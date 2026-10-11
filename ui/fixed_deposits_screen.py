@@ -19,6 +19,7 @@ from ui.widgets.chart_widget import ChartWidget
 from ui.widgets.section import CollapsibleSection
 from ui.widgets.states import EmptyState
 from ui.widgets.toast_utils import show_success, show_warning, show_info
+from ui.widgets.money_label import format_inr
 
 from ui.theme import Theme
 from ui.icons import icon as app_icon, icon_label
@@ -381,10 +382,10 @@ class FixedDepositsScreen(QWidget):
         for b in exceeding:
             q = b["crossing_quarter"]
             q_txt = f", crosses in {q}" if q else ""
-            parts.append(f"{b['bank_name']} (₹{b['total_interest']:,.0f}{q_txt})")
+            parts.append(f"{b['bank_name']} ({format_inr(round(b['total_interest']))}{q_txt})")
         banks_txt = "; ".join(parts)
         self.tds_banner_label.setText(
-            f"FD interest crosses the ₹{threshold:,.0f} TDS limit — {banks_txt}. "
+            f"FD interest crosses the {format_inr(round(threshold))} TDS limit — {banks_txt}. "
             f"File {FD_TDS_FORM_NAME} with the bank as soon as possible to avoid tax being deducted."
         )
         self.tds_banner.setVisible(True)

@@ -14,7 +14,7 @@ from ui.theme.theme import Theme
 from ui.icons import set_btn_icon, icon_label as app_icon_label, pixmap as app_pixmap, is_available as icons_available, tab_icon
 from ui.widgets.states import EmptyState
 from ui.widgets.toast_utils import show_success, show_warning
-from ui.widgets.money_label import MoneyLabel
+from ui.widgets.money_label import MoneyLabel, format_inr
 from ui.dialogs.account_dialog import AccountDialog
 from ui.dialogs.account_details_dialog import AccountDetailsPanel
 from models.bank_account import get_all_accounts, add_account, update_account, delete_account, get_account
@@ -258,7 +258,7 @@ class AccountsScreen(QWidget):
         bal_label = QLabel("Current Balance")
         bal_label.setProperty("textrole", "muted-sm")
         bal_box.addWidget(bal_label)
-        bal_val = QLabel(f"₹ {account['current_balance']:,.0f}")
+        bal_val = QLabel(format_inr(account['current_balance']))
         bal_val.setFont(QFont("Segoe UI", 15, QFont.Weight.Bold))
         bal_val.setProperty("textrole", "metric")
         bal_box.addWidget(bal_val)
@@ -270,7 +270,7 @@ class AccountsScreen(QWidget):
         fd_label = QLabel("Open FDs")
         fd_label.setProperty("textrole", "muted-sm")
         fd_box.addWidget(fd_label)
-        fd_val = QLabel(f"₹ {fd_value:,.0f}")
+        fd_val = QLabel(format_inr(fd_value))
         fd_val.setFont(QFont("Segoe UI", 15, QFont.Weight.Bold))
         fd_val.setProperty("textrole", "metric")
         fd_box.addWidget(fd_val)
@@ -282,7 +282,7 @@ class AccountsScreen(QWidget):
         fdi_label = QLabel(f"FD Interest ({self.selected_fy})")
         fdi_label.setProperty("textrole", "muted-sm")
         fdi_box.addWidget(fdi_label)
-        fdi_val = QLabel(f"₹ {fd_interest:,.0f}")
+        fdi_val = QLabel(format_inr(fd_interest))
         fdi_val.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
         fdi_val.setProperty("textrole", "metric")
         fdi_box.addWidget(fdi_val)
@@ -294,7 +294,7 @@ class AccountsScreen(QWidget):
         si_label = QLabel(f"Savings Interest ({self.selected_fy})")
         si_label.setProperty("textrole", "muted-sm")
         si_box.addWidget(si_label)
-        si_val = QLabel(f"₹ {savings_interest:,.0f}")
+        si_val = QLabel(format_inr(savings_interest))
         si_val.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
         si_val.setProperty("textrole", "metric")
         si_box.addWidget(si_val)

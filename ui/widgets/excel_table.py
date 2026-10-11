@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal, QModelIndex
 from PySide6.QtGui import QKeySequence, QKeyEvent
 from ui.theme import Theme
+from ui.widgets.money_label import format_inr
 
 
 class NoFocusRectDelegate(QStyledItemDelegate):
@@ -566,7 +567,7 @@ class ExcelTable(QTableWidget):
         else:
             total = sum(numeric_values)
             avg = total / len(numeric_values)
-            stats = f"Selected: {len(selection)} cells | Count: {len(numeric_values)} | Total: ₹{total:,.2f} | Avg: ₹{avg:,.2f}"
+            stats = f"Selected: {len(selection)} cells | Count: {len(numeric_values)} | Total: {format_inr(total)} | Avg: {format_inr(avg)}"
             
         self.selectionStatsChanged.emit(stats)
 

@@ -13,6 +13,7 @@ from PySide6.QtGui import QFont
 from ui.theme import Theme
 from ui.icons import set_btn_icon, tab_icon
 from ui.widgets.toast_utils import show_success
+from ui.widgets.money_label import format_inr
 from models.bank_account import update_account, delete_account
 from models.bank import get_or_create_bank, update_bank_tan_code_if_exists
 from models.person import get_all_persons
@@ -137,8 +138,8 @@ class AccountDetailsPanel(QWidget):
             ("Status",                   self.account.get("account_status","Active")),
         ]))
         l.addWidget(self._section("Balance", [
-            ("Opening Balance",  f"₹ {self.account.get('opening_balance',0):,.2f}"),
-            ("Current Balance",  f"₹ {self.account.get('current_balance',0):,.2f}"),
+            ("Opening Balance",  format_inr(self.account.get('opening_balance',0))),
+            ("Current Balance",  format_inr(self.account.get('current_balance',0))),
             ("Interest Rate",    f"{self.account.get('interest_rate',0):.2f}%"),
         ]))
         l.addStretch()
@@ -177,7 +178,7 @@ class AccountDetailsPanel(QWidget):
         if self.account.get("debit_card_enabled"):
             l.addWidget(self._section("Debit Card", [
                 ("Status",          "Enabled ✓"),
-                ("Annual Charges",  f"₹ {self.account.get('debit_card_charges',0):,.2f}"),
+                ("Annual Charges",  format_inr(self.account.get('debit_card_charges',0))),
                 ("Effective From",  self.account.get("debit_card_effective_from","—")),
             ]))
         else:

@@ -16,6 +16,7 @@ from ui.theme import Theme
 from ui.icons import set_btn_icon, icon_label
 from ui.widgets.excel_table import enable_copy_shortcut
 from ui.widgets.toast_utils import show_warning
+from ui.widgets.money_label import format_inr
 from ui.date_utils import format_display_date
 from models.person import add_person, get_all_persons, get_person, update_person, delete_person
 from models.bank import add_bank, get_all_banks, get_bank, update_bank, delete_bank
@@ -341,8 +342,8 @@ class ManageDataScreen(QWidget):
             self.accounts_table.setItem(r, 3, QTableWidgetItem(acc["account_type"]))
             self.accounts_table.setItem(r, 4, QTableWidgetItem(acc.get("account_number_masked") or "—"))
             self.accounts_table.setItem(r, 5, QTableWidgetItem(acc.get("ifsc_code") or "—"))
-            self.accounts_table.setItem(r, 6, QTableWidgetItem(f"₹ {acc['opening_balance']:,.2f}"))
-            self.accounts_table.setItem(r, 7, QTableWidgetItem(f"₹ {acc['current_balance']:,.2f}"))
+            self.accounts_table.setItem(r, 6, QTableWidgetItem(format_inr(acc['opening_balance'])))
+            self.accounts_table.setItem(r, 7, QTableWidgetItem(format_inr(acc['current_balance'])))
             self.accounts_table.setItem(r, 8, QTableWidgetItem(str(acc["account_id"])))
             self.accounts_table.setRowHeight(r, 32)
 

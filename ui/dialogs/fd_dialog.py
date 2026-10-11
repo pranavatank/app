@@ -190,9 +190,9 @@ class FDDialog(QDialog):
                 method = self.amount_method_combo.currentData()
                 selected = mat_bank if method == "BankStyle" else mat_formula
                 self.maturity_date_lbl.setText(mat_date.strftime("%d/%m/%y"))
-                self.maturity_amount_formula_lbl.setText(f"₹ {mat_formula:,.2f}")
-                self.maturity_amount_bank_lbl.setText(f"₹ {mat_bank:,.2f}")
-                self.maturity_amount_lbl.setText(f"₹ {selected:,.2f}")
+                self.maturity_amount_formula_lbl.setText(format_inr(mat_formula))
+                self.maturity_amount_bank_lbl.setText(format_inr(mat_bank))
+                self.maturity_amount_lbl.setText(format_inr(selected))
             else:
                 self.maturity_date_lbl.setText("—")
                 self.maturity_amount_formula_lbl.setText("—")
@@ -355,8 +355,8 @@ class FDDialog(QDialog):
         v.addWidget(title)
 
         summary = QLabel(
-            f"Selected Maturity: ₹ {snap['maturity_selected']:,.2f}   |   "
-            f"Selected Interest: ₹ {snap['maturity_selected'] - snap['principal']:,.2f}"
+            f"Selected Maturity: {format_inr(snap['maturity_selected'])}   |   "
+            f"Selected Interest: {format_inr(snap['maturity_selected'] - snap['principal'])}"
         )
         summary.setObjectName("FDDialogSummary")
         v.addWidget(summary)
@@ -378,7 +378,7 @@ class FDDialog(QDialog):
             q_table.setItem(i, 2, QTableWidgetItem(row["quarter"]))
             q_table.setItem(i, 3, QTableWidgetItem(row["period"]))
             q_table.setItem(i, 4, QTableWidgetItem(str(row["days"])))
-            q_table.setItem(i, 5, QTableWidgetItem(f"₹ {row['interest']:,.2f}"))
+            q_table.setItem(i, 5, QTableWidgetItem(format_inr(row['interest'])))
             q_table.setRowHeight(i, 28)
         q_table.setMinimumHeight(220)
         q_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)

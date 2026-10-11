@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
 
 from ui.theme import Theme
 from ui.date_utils import format_display_date
+from ui.widgets.money_label import format_inr
 from models.transaction import display_transaction_type
 from models.fixed_deposit import (
     get_fd_link_candidates, link_fd_transaction, unlink_fd_transaction
@@ -73,7 +74,7 @@ class LinkFDTransactionDialog(QDialog):
             self.table.insertRow(r)
             self.table.setItem(r, 0, QTableWidgetItem(format_display_date(row.get("transaction_date"))))
             self.table.setItem(r, 1, QTableWidgetItem(display_transaction_type(row.get("transaction_type") or "—")))
-            self.table.setItem(r, 2, QTableWidgetItem(f"₹ {float(row.get('amount') or 0):,.2f}"))
+            self.table.setItem(r, 2, QTableWidgetItem(format_inr(float(row.get('amount') or 0))))
             self.table.setItem(r, 3, QTableWidgetItem(row.get("category") or "—"))
             self.table.setItem(r, 4, QTableWidgetItem(row.get("mode") or "—"))
             self.table.setItem(r, 5, QTableWidgetItem((row.get("description") or "")[:220]))

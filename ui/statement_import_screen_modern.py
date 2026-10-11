@@ -24,6 +24,7 @@ from ui.widgets.excel_table import ExcelTableWithStats
 from ui.widgets.loader import Loader
 from ui.widgets.toast_utils import show_success, show_warning, show_info
 from ui.widgets.drop_zone import DropZone
+from ui.widgets.money_label import format_inr
 from ui.theme import Theme
 from ui.icons import icon_label, set_btn_icon, pixmap as icon_pixmap
 from ui.date_utils import format_display_date
@@ -1488,9 +1489,9 @@ class StatementImportScreen(QWidget):
             type_item = QTableWidgetItem(display_transaction_type(txn["transaction_type"]))
             mode_item = QTableWidgetItem(txn.get("mode", "") or "")
             cat_item = QTableWidgetItem(txn.get("category","") or "")
-            amt_item = QTableWidgetItem(f"₹ {txn['amount']:,.2f}")
+            amt_item = QTableWidgetItem(format_inr(txn['amount']))
             bal_val = txn.get("balance_after")
-            bal_item = QTableWidgetItem("—" if bal_val is None else f"₹ {bal_val:,.2f}")
+            bal_item = QTableWidgetItem("—" if bal_val is None else format_inr(bal_val))
             desc_item = QTableWidgetItem(txn.get("description","") or "")
             status_item = QTableWidgetItem("Duplicate" if is_duplicate else "New")
 
@@ -1532,9 +1533,9 @@ class StatementImportScreen(QWidget):
         type_item = QTableWidgetItem(display_transaction_type(txn["transaction_type"]))
         mode_item = QTableWidgetItem(txn.get("mode", "") or "")
         cat_item = QTableWidgetItem(txn.get("category","") or "")
-        amt_item = QTableWidgetItem(f"₹ {txn['amount']:,.2f}")
+        amt_item = QTableWidgetItem(format_inr(txn['amount']))
         bal_val = txn.get("balance_after")
-        bal_item = QTableWidgetItem("—" if bal_val is None else f"₹ {bal_val:,.2f}")
+        bal_item = QTableWidgetItem("—" if bal_val is None else format_inr(bal_val))
         desc_item = QTableWidgetItem(txn.get("description","") or "")
         status_item = QTableWidgetItem("Duplicate" if is_duplicate else "New")
 

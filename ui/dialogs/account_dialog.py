@@ -17,6 +17,7 @@ from PySide6.QtGui import QFont
 from ui.theme import Theme
 from ui.widgets.excel_table import enable_copy_shortcut
 from ui.widgets.toast_utils import show_success, show_warning
+from ui.widgets.money_label import format_inr
 from ui.icons import set_btn_icon, tab_icon, icon_label
 from config import ACCOUNT_TYPES
 from models.person import get_all_persons
@@ -103,8 +104,8 @@ class AccountManagementDialog(QDialog):
             self.table.setItem(r, 3, QTableWidgetItem(acc["account_type"]))
             self.table.setItem(r, 4, QTableWidgetItem(acc.get("account_number_masked") or "—"))
             self.table.setItem(r, 5, QTableWidgetItem(acc.get("ifsc_code") or "—"))
-            self.table.setItem(r, 6, QTableWidgetItem(f"₹ {acc['opening_balance']:,.2f}"))
-            self.table.setItem(r, 7, QTableWidgetItem(f"₹ {acc['current_balance']:,.2f}"))
+            self.table.setItem(r, 6, QTableWidgetItem(format_inr(acc['opening_balance'])))
+            self.table.setItem(r, 7, QTableWidgetItem(format_inr(acc['current_balance'])))
             self.table.setItem(r, 8, QTableWidgetItem(str(acc["account_id"])))
             self.table.setRowHeight(r, 32)
 
@@ -672,7 +673,7 @@ class AccountDialog(QDialog):
         self.status_combo.setCurrentText(d.get("account_status","Active"))
         self.currency_combo.setCurrentText(d.get("currency") or "INR")
         self.opening_balance.setValue(d.get("opening_balance",0.0))
-        self.current_balance_input.setText(f"₹ {d.get('current_balance', 0.0):,.2f}")
+        self.current_balance_input.setText(format_inr(d.get('current_balance', 0.0)))
         self.interest_rate.setValue(d.get("interest_rate",3.5))
         self.created_at_input.setText(d.get("created_at") or "")
         self.ifsc_input.setText(d.get("ifsc_code") or "")

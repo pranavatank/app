@@ -17,6 +17,7 @@ from ui.widgets.chart_widget import ChartWidget
 from ui.widgets.section import CollapsibleSection
 from ui.widgets.states import EmptyState
 from ui.widgets.toast_utils import show_success, show_warning
+from ui.widgets.money_label import format_inr
 
 from ui.theme import Theme
 from ui.icons import icon as app_icon, is_available as icons_available
@@ -548,10 +549,10 @@ class TransactionsScreen(QWidget):
             if r.get("transaction_type") == "Expense" and not r.get("is_internal_transfer")
         )
         net = income - expense
-        self.lbl_income_sum.setText(f"Income: ₹ {income:,.2f}")
-        self.lbl_expense_sum.setText(f"Expense: ₹ {expense:,.2f}")
+        self.lbl_income_sum.setText(f"Income: {format_inr(income)}")
+        self.lbl_expense_sum.setText(f"Expense: {format_inr(expense)}")
         sign = "+" if net >= 0 else ""
-        self.lbl_net_sum.setText(f"Net: {sign}₹ {net:,.2f}")
+        self.lbl_net_sum.setText(f"Net: {sign}{format_inr(net)}")
 
     def _refresh_charts(self):
         """Refresh the monthly and category charts based on current filters."""
@@ -650,7 +651,7 @@ class TransactionsScreen(QWidget):
     def _delete_transaction(self):
         txn = self._selected_transaction()
         if txn is None: return
-        desc = txn.get("description") or f"₹ {txn['amount']:,.2f}"
+        desc = txn.get("description") or format_inr(txn["amount"])
         reply = QMessageBox.question(self, "Confirm Delete",
             f"Delete \"{desc}\"?\nThis cannot be undone.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
