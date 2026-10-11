@@ -4,14 +4,17 @@
 you should not need to read source files to understand what this project is, what
 state it is in, what is pending, or how to test it.
 
-**Last updated:** 2026-09-29 (fresh DB rebuilt through the real UI; Phase 3 walkthrough pending — see §0).
+**Last updated:** 2026-10-12 (fresh DB rebuilt through the real UI; Phase 3 R-mode walkthrough run; S-mode re-run pending).
+**Read order:** this guide for the product and the testing rules, then **`tools/real_ui_tests/REBUILD_PLAN.md`** — the
+runbook with current test state, how to run every script, open decisions and next steps. The runbook supersedes §0.2 and
+§0.3 below where they differ.
 **Audience:** an AI agent (or human) picking this project up with zero prior context.
 This guide keeps only what is pending and what you need to know to avoid repeating
 past mistakes — not a changelog. Full history is in git log / commit messages.
 
 ---
 
-## 0. CURRENT STATE — the fresh-DB rebuild is DONE through Phase 2; Phase 3 walkthrough is what remains
+## 0. CURRENT STATE — fresh-DB rebuild done; Phase 3 R-mode scripts written and run; S-mode re-run pending (details: REBUILD_PLAN.md)
 
 **Authorisation model (from the owner):** the agent may drive the real mouse and keyboard on its own
 (`pyautogui` scripts) — the owner never needs to type anything or wait. Code changes and DB/schema changes
@@ -78,6 +81,15 @@ Fixed and verified:
    tiles honour the account filter and the bar chart skips internal transfers, `INCOME_CATEGORIES` gained Commission
    Income / Professional Fees, transaction add/edit/move/delete recalculates account balances, AIS/TIS handlers use
    `session.selected_person_id or 1`, `core/backup_manager.create_backup` is WAL-safe.
+
+8. **2026-10 batch (found by the Phase 3 walkthrough and review; all committed):** account details panel buttons were
+   unreachable (layout rebuilt on every update); Indian digit grouping on every screen (`session.mask` -> `format_inr`);
+   Tax Documents showed the full TDS as "Refund Due"; FY2025-26 capital-gains rates (20% / 12.5% above ₹1.25L — changes saved
+   tax figures); failed-import rollback now removes redemption-created FDs; import savings interest runs once per FY after
+   the balance recalculation; `change_password` rolls back on error; Shift Dates / Split Row PySide6 keyword bug; bulk edit
+   overwrote untouched fields; Excel column mapping was ignored; income-expectation Edit/Delete read the wrong column;
+   Income dialog defaulted to FY 2020-21; recurring-expectation edit lost its month; FD maturity rounds up per the audit doc.
+   The `core/auth.py` device check is temporarily commented out locally for testing and is NOT committed (REBUILD_PLAN.md D1).
 
 **Still to do on the real DB (data repair, not code):** the pre-fix import wrongly matched Equitas FDs 15–19 as Matured
 and created placeholder FDs 20–23 with `start_date` NULL. Repair = reset the Equitas account and re-import it with the fixed
@@ -551,13 +563,13 @@ chart and table it owns, or a live theme switch leaves it visually stale.
 0. **Real-DB data repair for Equitas FDs** (§0.3) and re-baseline `tools/test_prediction_engine.py` /
    `tests/test_chart_db_agreement.py` from measured output (taxable ≈ ₹96,056 without the backfill; do NOT loosen
    the CRITICAL GUARD). Then run `tools/rebuild_verify.py --engines` / `--tempdb`.
-0b. **Phase 3 walkthrough** (REBUILD_PLAN.md Phase 3): scaffolding exists (`run_on_scratch.py`, helpers in
-   `rebuild_common.py`); the per-screen `rebuild_p3_*.py` scripts are NOT written yet.
-0c. Report-only findings: H9 (Tax Documents refund logic hard-coded), H12 (`change_password` skips undecryptable
-   ciphertexts), H14 (import rollback does not undo redemption updates), H15 (`project_fy_income` ignores expectations,
-   possible FD-interest double count), H18 (Overview "Income (FY)" is a gross figure), TDS-risk uses projection only,
-   Tax Documents screen never reloads persisted 26AS/AIS/TIS, `format_inr(-0.004)` → "₹-0", Link Transfers confirm
-   defaults to Yes.
+0b. **Phase 3 walkthrough**: the per-screen `rebuild_p3_*.py` scripts exist and the R-mode runs pass (REBUILD_PLAN.md §4.3);
+   the S-mode scripts still need a re-run on a scratch DB, and `11_hard_refresh` has not been run.
+0c. Remaining report-only findings / owner decisions (full list: REBUILD_PLAN.md §6): the device-fingerprint lockout,
+   H5 privacy reveal is dead code, H14 rollback of updates to pre-existing FDs, H15 `project_fy_income` ignores expectations
+   (possible FD-interest double count), H18 Overview "Income (FY)" is a gross figure, TDS-risk uses projection only,
+   Tax Documents screen never reloads persisted 26AS/AIS/TIS and saves to person 1 for "All persons", Link Transfers
+   confirm defaults to Yes, tax-law gaps for a CA. (H9, H12 and the `format_inr` "₹-0" case are fixed.)
 
 ### High value
 1. **Enter the real FD rates.** The bulk-entry dialog exists (Fixed Deposits
