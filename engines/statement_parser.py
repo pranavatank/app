@@ -732,7 +732,14 @@ class GenericExcelParser(BankTemplate):
 
             # If user provided explicit column mapping, apply it by renaming columns
             if column_mapping:
-                rename_map = {v: k for k, v in column_mapping.items() if v}
+                # Rename to the longest known header so the user's choice outranks similar columns.
+                canonical_headers = {
+                    'date_col': max(date_cols, key=len), 'desc_col': max(desc_cols, key=len),
+                    'debit_col': max(debit_cols, key=len), 'credit_col': max(credit_cols, key=len),
+                    'balance_col': max(balance_cols, key=len), 'amount_col': max(amount_cols, key=len),
+                    'drcr_col': max(drcr_cols, key=len), 'ref_col': max(ref_cols, key=len),
+                }
+                rename_map = {v: canonical_headers[k] for k, v in column_mapping.items() if v and k in canonical_headers}
                 # Only rename if source column exists
                 valid_renames = {src: tgt for src, tgt in rename_map.items() if src in df.columns}
                 if valid_renames:
