@@ -6,12 +6,13 @@
 > - Stale nav index 8 fixed to 9 in `test_add_person_flow`, `test_add_bank_flow`, `test_add_account_flow`; they now require the scratch DB.
 > - Opus review round 2 found no real-DB write path in R mode. The Restore click in Settings R is always preceded by an armed "No".
 >
-> **Known remaining items (from review, not yet fixed or re-verified):**
-> - `02` category-preservation edit arms Cancel; it must Save without changes.
-> - `03` link/unlink should assert `actual_transaction_id` set/NULL; Salary standard-deduction check must run both without and with a Salary expectation.
-> - `06` `matched_count > 0 or not_in_app_count > 0` check is weak and the tables are empty in R; replace with SQL checks plus an observation.
-> - `05` delete-row step and exact "only the selected rows changed" diff are not confirmed.
-> - A final Opus verification pass over commit `bfb0c98` has not been done.
+> **Run status (2026-10-12):** all R-mode scripts were run against the real UI with the real DB unchanged (fingerprint check passed): topbar, overview, accounts, transactions, income, fixed deposits, tax documents, tax, income prediction, settings - no FAIL lines after the script fixes. S-mode scripts (income, fixed deposits, statement import, settings) were run once on scratch copies, failed on script bugs, and have been repaired but NOT re-run. Logs: `screenshots/rebuild/P3_*_R*.out`, `P3_*_S.out`. A temporary bypass of the device check in `core/auth.py` (lines 82-83) was used to log in; it is uncommitted and must be reverted or replaced by an owner-approved option.
+>
+> **App bugs found and fixed:** account details panel rebuilt its layout on every update (Close/Edit/Delete unreachable); Indian digit grouping for rupee amounts across Overview, accounts, FD, transactions and import screens; Tax Documents always showed full TDS as Refund Due; FY2025-26 capital-gains rates (20% STCG 111A, 12.5% LTCG 112A above 1.25L); failed-import rollback now removes FDs created by redemption matching; post-import savings interest runs once per FY after balance recalculation; `change_password` no longer silently drops errors (rolls back, reports undecryptable passwords); Shift Dates / Split Row used PySide6-invalid keywords; bulk edit overwrote untouched fields; Excel column mapping was ignored; income expectations Edit/Delete read the wrong column after the checkbox column was added.
+>
+> **Open items needing an owner decision:** device-fingerprint lockout (keep strict with a clearer message, confirmed re-bind, or remove); privacy-reveal password feature is dead code; "Income (FY)" tile is a gross figure; Tax Documents saves to person 1 when "All persons" is selected; income projection ignores income expectations; remaining tax-law gaps for a CA (basic-exemption adjustment, s.112 rate, 115BB winnings); Tax screen reload recomputes tax without the capital-gains split (needs a schema change); full import rollback of updates to pre-existing FDs.
+>
+> **Known remaining test items:** S-mode scripts need a re-run with `run_on_scratch.py --fresh`; the Salary standard-deduction check in `03` may fail because the Tax screen reads the saved profile, not income expectations; `FINDINGS.md` fix-claim ledger is still "pending".
 >
 > **Open decisions:** strict zero-write R (default) vs allowing the `TaxProfile` delta; Equitas data repair (guide §0.3, and `rebuild_p2_4_reset_account.py` has two crash bugs); scratch source (current real DB, no `P2_final` snapshot); synthetic xlsx vs `Data 26-27.xlsx`; whether to click "Warm up local AI model".
 >

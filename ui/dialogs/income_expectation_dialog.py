@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QDate
 from PySide6.QtGui import QFont, QColor
 
+import calendar
 from datetime import date, datetime
 from dateutil.relativedelta import relativedelta
 
@@ -17,7 +18,8 @@ from ui.icons import set_btn_icon, set_btn_icon_auto
 from ui.widgets.toast_utils import show_warning
 from ui.widgets.excel_table import ExcelTableWithStats
 from ui.widgets.money_label import format_inr
-from config import get_all_financial_years, fy_date_range
+from config import get_all_financial_years, fy_date_range, get_current_financial_year
+from core.session import session
 from models.bank_account import get_accounts_for_person
 from models.transaction import get_transactions
 from models.income_expectation import (
@@ -339,6 +341,9 @@ class IncomeExpectationDialog(QDialog):
                     if self.person_combo.itemData(i) == self.preselect_person_id:
                         self.person_combo.setCurrentIndex(i)
                         break
+            fy_idx = self.fy_combo.findText(session.selected_fy or get_current_financial_year())
+            if fy_idx >= 0:
+                self.fy_combo.setCurrentIndex(fy_idx)
             return
 
         # Editing mode: load data
@@ -378,7 +383,10 @@ class IncomeExpectationDialog(QDialog):
         if freq in ("Monthly", "Quarterly", "Half-Yearly"):
             # Day of month
             try:
-                self.day_spin.setValue(int(expected_date_str))
+                if "-" in expected_date_str:
+                    self.day_spin.setValue(date.fromisoformat(expected_date_str).day)
+                else:
+                    self.day_spin.setValue(int(expected_date_str))
             except (ValueError, TypeError):
                 self.day_spin.setValue(1)
         else:
@@ -423,7 +431,7 @@ class IncomeExpectationDialog(QDialog):
         freq = self.frequency_combo.currentText()
 
         if freq in ("Monthly", "Quarterly", "Half-Yearly"):
-            expected_date = str(self.day_spin.value())
+            expected_date = self._recurring_expected_date()
         else:
             expected_date = self.date_edit.date().toString("yyyy-MM-dd")
 
@@ -437,6 +445,16 @@ class IncomeExpectationDialog(QDialog):
             "financial_year": self.fy_combo.currentText(),
             "notes": self.notes_edit.toPlainText().strip() or None,
         }
+
+    def _recurring_expected_date(self) -> str:
+        """Add passes the day number (the model builds the dated rows); edit keeps the record's month."""
+        original_date_str = self.existing.get("expected_date") if self.existing else None
+        if not original_date_str or "-" not in original_date_str:
+            return str(self.day_spin.value())
+
+        original_date = date.fromisoformat(original_date_str)
+        last_day = calendar.monthrange(original_date.year, original_date.month)[1]
+        return original_date.replace(day=min(self.day_spin.value(), last_day)).isoformat()
 
 
 class LinkActualDialog(QDialog):

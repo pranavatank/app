@@ -4,6 +4,7 @@ engines/interest_engine.py — FD compounding, savings interest, FY allocation
 
 from datetime import date, timedelta
 import calendar
+import math
 from dateutil.relativedelta import relativedelta
 from config import (
     get_assessment_year, fy_date_range, FD_TDS_THRESHOLD, FD_TDS_THRESHOLD_SENIOR,
@@ -155,7 +156,7 @@ def calculate_fd_maturity_flexible(principal: float, rate: float,
     maturity = principal * ((1 + r / n) ** (n * t))
 
     # Apply the rounding adjustment (default 4, per spec's column H)
-    interest = round(maturity - principal, 0) - rounding_adjustment
+    interest = math.ceil(maturity) - principal - rounding_adjustment
     return round(principal + interest, 2)
 
 
