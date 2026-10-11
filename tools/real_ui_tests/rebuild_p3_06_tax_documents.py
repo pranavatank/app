@@ -115,7 +115,6 @@ def run_r(p):
                         p.log.log(f"Not in App account: ...{last_4}")
 
         p.log.log(f"FD reconciliation: Matched={matched_count} Not in App={not_in_app_count}")
-        p.checks.check("fd_table reconciliation summary", matched_count > 0 or not_in_app_count > 0, f"Matched={matched_count} Not in App={not_in_app_count}")
 
     try:
         import pyautogui

@@ -177,9 +177,6 @@ def run_part_b(p, nav_page):
     n_preview = nav_page.preview_table.rowCount()
     p.log.log(f"Preview has {n_preview} rows")
 
-    snapshot_before = list(nav_page.preview_transactions)
-    snapshot_before_dup_flags = list(nav_page.preview_duplicate_flags)
-
     if n_preview >= 2:
         os_click_widget(p.harness, nav_page.preview_table.cellWidget(0, 0), wait=0.3)
         p.harness.settle(0.3)
@@ -187,33 +184,40 @@ def run_part_b(p, nav_page):
 
         ok = wait_until(p.harness, lambda: find_button(nav_page, "Merge selected transactions") is not None, timeout=5)
         if ok:
-            snapshot_before_merge = list(nav_page.preview_transactions)
+            selected_merge = nav_page._selected_preview_rows()
+            snapshot_before_merge = _snapshot_preview(nav_page)
             os_click(p.harness, nav_page, "Merge selected transactions", wait=1.0)
             p.harness.settle(0.5)
             n_after_merge = nav_page.preview_table.rowCount()
-            snapshot_after_merge = list(nav_page.preview_transactions)
+            snapshot_after_merge = _snapshot_preview(nav_page)
             p.log.log(f"After merge: {n_after_merge} rows (was {n_preview})")
             p.checks.check("part_b merge rows", n_after_merge < n_preview, "")
             merged_correctly = len(snapshot_after_merge) == n_after_merge
             p.checks.check("part_b merge snapshot updated", merged_correctly, f"rows={n_after_merge} snapshot_len={len(snapshot_after_merge)}")
+            unselected_kept = _unselected_rows(snapshot_after_merge, {selected_merge[0]}) == _unselected_rows(snapshot_before_merge, set(selected_merge))
+            p.checks.check("part_b merge keeps unselected rows", unselected_kept, f"selected={selected_merge}")
 
     if nav_page.preview_table.rowCount() >= 1:
         n_before_split = nav_page.preview_table.rowCount()
-        snapshot_before_split = list(nav_page.preview_transactions)
         os_click_widget(p.harness, nav_page.preview_table.cellWidget(0, 0), wait=0.3)
         p.harness.settle(0.3)
         def split_fill_fn(dlg):
             os_type(p.harness, dlg, "Amount to split", "1000", wait=0.3)
             os_click(p.harness, dlg, "OK", wait=0.5)
         split_prearm = answer_modal_dialog(p.harness, p.app, QInputDialog, "Split Row", split_fill_fn)
+        selected_split = nav_page._selected_preview_rows()
+        snapshot_before_split = _snapshot_preview(nav_page)
         os_click(p.harness, nav_page, "Split selected transaction", wait=1.0)
         p.harness.settle(0.5)
         n_after_split = nav_page.preview_table.rowCount()
-        snapshot_after_split = list(nav_page.preview_transactions)
+        snapshot_after_split = _snapshot_preview(nav_page)
         p.log.log(f"After split: {n_after_split} rows (was {n_before_split})")
         p.checks.check("part_b split row", n_after_split > n_before_split, "")
         split_correctly = len(snapshot_after_split) == n_after_split
         p.checks.check("part_b split snapshot updated", split_correctly, f"rows={n_after_split} snapshot_len={len(snapshot_after_split)}")
+        split_row = selected_split[0]
+        unselected_kept = _unselected_rows(snapshot_after_split, {split_row, split_row + 1}) == _unselected_rows(snapshot_before_split, {split_row})
+        p.checks.check("part_b split keeps unselected rows", unselected_kept, f"selected={selected_split}")
 
     if nav_page.preview_table.rowCount() >= 1:
         os_click_widget(p.harness, nav_page.preview_table.cellWidget(0, 0), wait=0.3)
@@ -222,17 +226,31 @@ def run_part_b(p, nav_page):
             os_type(p.harness, dlg, "Days to shift", "1", wait=0.3)
             os_click(p.harness, dlg, "OK", wait=0.5)
         shift_prearm = answer_modal_dialog(p.harness, p.app, QInputDialog, "Shift Dates", shift_fill_fn)
+        selected_shift = nav_page._selected_preview_rows()
+        snapshot_before_shift = _snapshot_preview(nav_page)
         os_click(p.harness, nav_page, "Shift selected transaction dates", wait=0.8)
         p.harness.settle(1.5)
+        snapshot_after_shift = _snapshot_preview(nav_page)
+        unselected_kept = len(snapshot_after_shift) == len(snapshot_before_shift) and \
+            _unselected_rows(snapshot_after_shift, set(selected_shift)) == _unselected_rows(snapshot_before_shift, set(selected_shift))
+        p.checks.check("part_b shift keeps unselected rows", unselected_kept, f"selected={selected_shift}")
         p.log.log("Shift dates dialog handled")
 
     def bulk_fill_fn(dlg):
         os_type(p.harness, dlg, "Description input", "RUIH_TEST", wait=0.3)
         os_click(p.harness, dlg, "Save transaction edit", wait=0.5)
+    selected_bulk = nav_page._selected_preview_rows()
+    snapshot_before_bulk = _snapshot_preview(nav_page)
     bulk_prearm = answer_modal_dialog(p.harness, p.app, QDialog, "Bulk Edit Selected Rows", bulk_fill_fn)
     os_click(p.harness, nav_page, "Bulk edit selected transactions", wait=0.8)
     p.harness.settle(1.5)
+    snapshot_after_bulk = _snapshot_preview(nav_page)
+    unselected_kept = len(snapshot_after_bulk) == len(snapshot_before_bulk) and \
+        _unselected_rows(snapshot_after_bulk, set(selected_bulk)) == _unselected_rows(snapshot_before_bulk, set(selected_bulk))
+    p.checks.check("part_b bulk edit keeps unselected rows", unselected_kept, f"selected={selected_bulk}")
     p.log.log("Bulk Edit dialog handled")
+
+    p.observe("part_b delete row", "not reachable: statement import preview has no delete control")
 
     os_click(p.harness, nav_page, "Clear transaction selection", wait=0.5)
     os_click(p.harness, nav_page, "Select all new transactions", wait=1.0)
@@ -243,6 +261,15 @@ def run_part_b(p, nav_page):
 
     final_count = p.sql("SELECT COUNT(*) FROM Transactions WHERE account_id=?", (acc_id,))[0][0]
     p.log.log(f"Final transaction count for new Jana Current: {final_count}")
+
+
+def _snapshot_preview(page):
+    """Copy each preview row dict; handlers mutate the dicts in place, so a list() copy is not enough."""
+    return [dict(txn) for txn in page.preview_transactions]
+
+
+def _unselected_rows(rows, selected_indices):
+    return [txn for idx, txn in enumerate(rows) if idx not in selected_indices]
 
 
 def run_part_c(p, nav_page):

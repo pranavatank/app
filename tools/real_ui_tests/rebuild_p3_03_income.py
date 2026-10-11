@@ -91,54 +91,12 @@ def run_s(p):
         p.checks.check("fetch person/account", False, str(e))
         return
 
-    # Test income types
-    income_types = ["Salary", "Rent", "Interest", "Dividend", "Business", "Freelance", "Other"]
+    # Salary is last so the tax check without Salary runs before it is added
+    income_types = ["Rent", "Interest", "Dividend", "Business", "Freelance", "Other", "Salary"]
     frequencies = ["One-Time", "Monthly", "Quarterly", "Half-Yearly", "Annual"]
+    non_salary_types = [t for t in income_types if t != "Salary"]
 
-    added_count = 0
-
-    for income_type in income_types:
-        for frequency in frequencies:
-            try:
-                is_recurring = frequency in ("Monthly", "Quarterly", "Half-Yearly")
-
-                if is_recurring:
-                    msg_prearm = answer_message_box(
-                        p.harness, p.app, QMessageBox.StandardButton.Yes,
-                        expect_title="Create Recurring Expectations"
-                    )
-
-                prearm = answer_modal_dialog(
-                    p.harness, p.app, QDialog, "Add Income Expectation",
-                    lambda dlg=None: _fill_income_dialog(
-                        p, income_type, frequency, person_id, account_id, "2025-26"
-                    )
-                )
-                os_click(p.harness, page, "Add income expectation", wait=0.5)
-                ok = wait_until(p.harness, lambda: prearm.done, timeout=15)
-                if not ok or prearm.error:
-                    raise RuntimeError(f"Dialog prearm failed: {prearm.error}")
-
-                if is_recurring:
-                    ok = wait_until(p.harness, lambda: msg_prearm.done, timeout=10)
-                    if not ok or msg_prearm.info.get("error"):
-                        raise RuntimeError(f"Message box prearm failed: {msg_prearm.info.get('error')}")
-
-                added_count += 1
-
-                p.observe(
-                    f"S03.add.{income_type}.{frequency}",
-                    f"Added {income_type}/{frequency}"
-                )
-
-                # Brief pause between adds
-                p.harness.settle(0.5)
-
-            except Exception as e:
-                p.checks.check(
-                    f"add {income_type}/{frequency}",
-                    False, repr(e)
-                )
+    added_count = _add_expectations(p, page, person_id, account_id, non_salary_types, frequencies)
 
     if added_count > 0:
         p.checks.check("add income expectations", True, f"added {added_count}")
@@ -178,25 +136,7 @@ def run_s(p):
             except Exception as e:
                 p.checks.check("edit income expectation", False, repr(e))
 
-            # Test link transaction
-            try:
-                def fill_link(dlg):
-                    os_click(p.harness, dlg, "Link selected transaction", wait=0.5)
-
-                link_prearm = answer_modal_dialog(
-                    p.harness, p.app, QDialog, "Link Transaction", fill_link
-                )
-                os_click(p.harness, page, "Link actual transaction", wait=0.5)
-                ok = wait_until(p.harness, lambda: link_prearm.done, timeout=10)
-                if not ok or link_prearm.info.get("error"):
-                    p.observe("S03.link", f"Link dialog: {link_prearm.info.get('error')}")
-                else:
-                    p.harness.settle(0.5)
-                    result = p.sql("SELECT COUNT(*) FROM IncomeExpectation WHERE person_id=? AND actual_transaction_id IS NOT NULL", (person_id,))
-                    linked_count = result[0][0] if result else 0
-                    p.observe("S03.link", f"Linked transactions: {linked_count}")
-            except Exception as e:
-                p.checks.check("link transaction", False, repr(e))
+            _check_link_and_unlink(p, page)
 
             # Test auto-match
             try:
@@ -244,38 +184,10 @@ def run_s(p):
             except Exception as e:
                 p.checks.check("delete income expectation", False, repr(e))
 
-    # Check tax screen: waterfall_std_ded and verify via SQL
-    try:
-        tax_page = p.nav("Tax")
-        p.harness.settle(2.0)
+    _check_std_ded(p, "without Salary", lambda value: value in (None, 0))
 
-        if not hasattr(tax_page, "source_combo"):
-            raise RuntimeError("source_combo attribute not found on tax_page")
-
-        os_select_combo(p.harness, tax_page.source_combo, "App Actual Data")
-        p.harness.settle(0.5)
-
-        if hasattr(tax_page, "btn_calc"):
-            os_click_widget(p.harness, tax_page.btn_calc, wait=1.0)
-            p.harness.settle(0.5)
-
-        if not hasattr(tax_page, "waterfall_std_ded"):
-            raise RuntimeError("waterfall_std_ded attribute not found on tax_page")
-
-        std_ded_val = tax_page.waterfall_std_ded.value
-        has_salary = p.sql("SELECT COUNT(*) FROM IncomeExpectation WHERE person_id=? AND income_type='Salary'", (person_id,))
-        has_salary_count = has_salary[0][0] if has_salary else 0
-
-        if has_salary_count > 0:
-            ok = std_ded_val is not None and std_ded_val != 0
-            p.checks.check("waterfall_std_ded non-zero with Salary", ok, f"value={std_ded_val}")
-        else:
-            ok = std_ded_val is None or std_ded_val == 0
-            p.checks.check("waterfall_std_ded zero without Salary", ok, f"value={std_ded_val}")
-        p.observe("S03.waterfall_std_ded", f"Value: {std_ded_val}")
-
-    except Exception as e:
-        p.checks.check("tax screen std_ded check", False, repr(e))
+    _add_expectations(p, page, person_id, account_id, ["Salary"], frequencies)
+    _check_std_ded(p, "with Salary", lambda value: value is not None and value < 0)
 
     # Capture projected_total before test operations
     try:
@@ -310,6 +222,134 @@ def run_s(p):
         p.checks.check("H15 projection check", False, repr(e))
 
     p.observe("S03", "Income S-mode tests complete")
+
+
+def _add_expectations(p, page, person_id, account_id, income_types, frequencies):
+    """Add one expectation per income type and frequency. Returns the number added."""
+    added_count = 0
+
+    for income_type in income_types:
+        for frequency in frequencies:
+            try:
+                is_recurring = frequency in ("Monthly", "Quarterly", "Half-Yearly")
+
+                if is_recurring:
+                    msg_prearm = answer_message_box(
+                        p.harness, p.app, QMessageBox.StandardButton.Yes,
+                        expect_title="Create Recurring Expectations"
+                    )
+
+                prearm = answer_modal_dialog(
+                    p.harness, p.app, QDialog, "Add Income Expectation",
+                    lambda dlg=None: _fill_income_dialog(
+                        p, income_type, frequency, person_id, account_id, "2025-26"
+                    )
+                )
+                os_click(p.harness, page, "Add income expectation", wait=0.5)
+                ok = wait_until(p.harness, lambda: prearm.done, timeout=15)
+                if not ok or prearm.error:
+                    raise RuntimeError(f"Dialog prearm failed: {prearm.error}")
+
+                if is_recurring:
+                    ok = wait_until(p.harness, lambda: msg_prearm.done, timeout=10)
+                    if not ok or msg_prearm.info.get("error"):
+                        raise RuntimeError(f"Message box prearm failed: {msg_prearm.info.get('error')}")
+
+                added_count += 1
+
+                p.observe(
+                    f"S03.add.{income_type}.{frequency}",
+                    f"Added {income_type}/{frequency}"
+                )
+
+                # Brief pause between adds
+                p.harness.settle(0.5)
+
+            except Exception as e:
+                p.checks.check(
+                    f"add {income_type}/{frequency}",
+                    False, repr(e)
+                )
+
+    return added_count
+
+
+def _check_link_and_unlink(p, page):
+    """Link then unlink the first expectation from its Edit dialog, verifying the DB after each."""
+    try:
+        page.table_expectations.setCurrentCell(0, 0)
+        exp_id = int(page.table_expectations.item(0, 8).text())
+
+        def linked_transaction_id():
+            result = p.sql("SELECT actual_transaction_id FROM IncomeExpectation WHERE expectation_id=?", (exp_id,))
+            return result[0][0] if result else None
+
+        def fill_link_transaction(link_dlg):
+            if link_dlg.table.rowCount() == 0:
+                raise RuntimeError("no unlinked income transactions available to link")
+            link_dlg.table.setCurrentCell(0, 0)
+            link_dlg.table.selectRow(0)
+            p.harness.settle(0.3)
+            os_click(p.harness, link_dlg, "Link selected transaction", wait=0.5)
+
+        def fill_edit_for_link(edit_dlg):
+            link_prearm = answer_modal_dialog(p.harness, p.app, QDialog, "Link Transaction", fill_link_transaction)
+            os_click(p.harness, edit_dlg, "Link actual transaction", wait=0.5)
+            if not wait_until(p.harness, lambda: link_prearm.done, timeout=10) or link_prearm.info.get("error"):
+                raise RuntimeError(f"link dialog failed: {link_prearm.info.get('error')}")
+            os_click(p.harness, edit_dlg, "Cancel income expectation dialog", wait=0.5)
+
+        def fill_edit_for_unlink(edit_dlg):
+            unlink_prearm = answer_message_box(
+                p.harness, p.app, QMessageBox.StandardButton.Yes, expect_title="Confirm Unlink"
+            )
+            os_click(p.harness, edit_dlg, "Unlink transaction", wait=0.5)
+            if not wait_until(p.harness, lambda: unlink_prearm.done, timeout=10) or unlink_prearm.info.get("error"):
+                raise RuntimeError(f"unlink confirm failed: {unlink_prearm.info.get('error')}")
+            os_click(p.harness, edit_dlg, "Cancel income expectation dialog", wait=0.5)
+
+        _run_in_edit_dialog(p, page, fill_edit_for_link)
+        p.checks.check("link sets actual_transaction_id", linked_transaction_id() is not None, f"expectation_id={exp_id}")
+
+        _run_in_edit_dialog(p, page, fill_edit_for_unlink)
+        p.checks.check("unlink clears actual_transaction_id", linked_transaction_id() is None, f"expectation_id={exp_id}")
+    except Exception as e:
+        p.checks.check("link/unlink transaction", False, repr(e))
+
+
+def _run_in_edit_dialog(p, page, fill_fn):
+    edit_prearm = answer_modal_dialog(p.harness, p.app, QDialog, "Edit Income Expectation", fill_fn)
+    page.table_expectations.setCurrentCell(0, 0)
+    p.harness.settle(0.3)
+    os_click(p.harness, page, "Edit selected income expectation", wait=0.5)
+    if not wait_until(p.harness, lambda: edit_prearm.done, timeout=20) or edit_prearm.info.get("error"):
+        raise RuntimeError(f"edit dialog failed: {edit_prearm.info.get('error')}")
+
+
+def _check_std_ded(p, label, is_expected):
+    """Run the Tax estimate on App Actual Data and check the waterfall standard deduction."""
+    try:
+        tax_page = p.nav("Tax")
+        p.harness.settle(2.0)
+
+        if not hasattr(tax_page, "source_combo"):
+            raise RuntimeError("source_combo attribute not found on tax_page")
+
+        os_select_combo(p.harness, tax_page.source_combo, "App Actual Data")
+        p.harness.settle(0.5)
+
+        os_click_widget(p.harness, tax_page.btn_calc, wait=1.0)
+        p.harness.settle(0.5)
+
+        if not hasattr(tax_page, "waterfall_std_ded"):
+            raise RuntimeError("waterfall_std_ded attribute not found on tax_page")
+
+        std_ded_val = tax_page.waterfall_std_ded.value
+        p.checks.check(f"waterfall_std_ded {label}", is_expected(std_ded_val), f"value={std_ded_val}")
+        p.observe(f"S03.waterfall_std_ded.{label}", f"Value: {std_ded_val}")
+
+    except Exception as e:
+        p.checks.check(f"tax screen std_ded {label}", False, repr(e))
 
 
 def _fill_income_dialog(p, income_type, frequency, person_id, account_id, fy):

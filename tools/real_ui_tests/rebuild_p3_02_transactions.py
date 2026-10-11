@@ -272,7 +272,7 @@ def run_s(p):
 
             def fill_edit_preserve(dlg):
                 btn_box = dlg.findChild(QDialogButtonBox)
-                os_click_widget(p.harness, btn_box.button(QDialogButtonBox.StandardButton.Cancel), wait=0.8)
+                os_click_widget(p.harness, btn_box.button(QDialogButtonBox.StandardButton.Ok), wait=0.8)
 
             state = answer_modal_dialog(p.harness, p.app, TransactionDialog, "Edit Transaction", fill_edit_preserve)
             os_click_widget(p.harness, page.btn_edit)
