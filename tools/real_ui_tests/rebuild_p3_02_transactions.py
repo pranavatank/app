@@ -87,6 +87,7 @@ def run_r(p):
         p.checks.check("03_search_description", False, repr(e))
 
     try:
+        os_click_widget(p.harness, find_button(page, "Clear"), wait=0.8)
         p.a11y("f_type", "accessible name")
         os_select_combo(p.harness, page.f_type, "Expense")
         filter_btn = find_button(page, "Apply")

@@ -38,7 +38,10 @@ def run_r(p):
     current_person_id = session.session.selected_person_id
     p.observe("H11", f"initial selected_person_id={current_person_id}")
 
-    if "All Persons" in person_items:
+    single_person = dashboard.person_combo.count() == 2
+    if single_person:
+        p.observe("single-person auto-select", "'All Persons' cannot stay selected when only one person exists (dashboard_screen.py:791)")
+    elif "All Persons" in person_items:
         os_select_combo(p.harness, dashboard.person_combo, "All Persons")
         p.harness.settle(0.5)
         ok = dashboard.person_combo.currentText() == "All Persons"
@@ -54,8 +57,9 @@ def run_r(p):
         ok_session = session.session.selected_person_id == 1
         p.checks.check("session.selected_person_id is 1 for Pranav", ok_session)
 
-    os_select_combo(p.harness, dashboard.person_combo, "All Persons")
-    p.harness.settle(0.5)
+    if not single_person:
+        os_select_combo(p.harness, dashboard.person_combo, "All Persons")
+        p.harness.settle(0.5)
 
     account_items = [dashboard.account_combo.itemText(i) for i in range(dashboard.account_combo.count())]
     p.observe("H12", f"account_combo has {len(account_items)} items")

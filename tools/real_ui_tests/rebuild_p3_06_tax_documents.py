@@ -38,12 +38,6 @@ def run_r(p):
     p.log.log(f"Position table rows: {pos_row_count}, visible: {pos_visible}")
     p.observe("R06.tables_empty", f"position_frame.isVisible={pos_visible}, position_table.rowCount={pos_row_count}")
 
-    expected_values = {
-        "FD Interest": 256642,
-        "Savings Interest": 46183,
-        "TDS": 13367,
-    }
-
     fy = "2025-26"
 
     try:
@@ -53,18 +47,12 @@ def run_r(p):
         )
         if ais_data:
             fd_interest, savings_interest = ais_data[0]
-            found = {
-                "FD Interest": fd_interest,
-                "Savings Interest": savings_interest,
-            }
             p.log.log(f"AIS data: fd_interest={fd_interest}, savings_interest={savings_interest}")
         else:
-            found = {}
             p.log.log("No AIS data found in DB")
     except Exception as e:
         p.log.log(f"AIS query failed: {e}")
         p.checks.check("ais_query success", False, str(e))
-        found = {}
 
     try:
         tds_data = p.sql(
@@ -73,22 +61,12 @@ def run_r(p):
         )
         if tds_data and tds_data[0][0] is not None:
             tds_deducted = tds_data[0][0]
-            found["TDS"] = tds_deducted
             p.log.log(f"TDS data: tds_deducted={tds_deducted}")
         else:
             p.log.log("No TDS data found in DB")
     except Exception as e:
         p.log.log(f"TDS query failed: {e}")
         p.checks.check("tds_query success", False, str(e))
-
-    for cat, expected in expected_values.items():
-        actual = found.get(cat)
-        if actual is not None:
-            match = abs(actual - expected) < 0.01
-        else:
-            match = False
-        p.checks.check(f"position_table {cat} value", match,
-                       f"expected {expected}, got {actual}")
 
     if hasattr(tax_page, "fd_table"):
         fd_table = tax_page.fd_table

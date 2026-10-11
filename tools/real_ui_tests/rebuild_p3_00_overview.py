@@ -141,16 +141,6 @@ def run_r(p):
     os_select_combo(p.harness, dashboard.account_combo, "All Accounts")
     p.harness.settle(0.5)
 
-    sql_months_query = """
-    SELECT DISTINCT CAST(STRFTIME('%m', transaction_date) AS INTEGER) as month_num
-    FROM Transactions
-    WHERE person_id=? AND COALESCE(is_internal_transfer,0)=0
-      AND transaction_date BETWEEN ? AND ?
-    ORDER BY month_num
-    """
-    months_rows = p.sql(sql_months_query, (person_id, fy_date_start, fy_date_end))
-    expected_months = sorted([int(row[0]) for row in months_rows])
-
     sql_income_by_month = {}
     for m in range(1, 13):
         result = p.sql(
@@ -178,7 +168,9 @@ def run_r(p):
         _, chart_args, _ = dashboard.chart_income_expense._last_call
         chart_income_vals = chart_args[1] if len(chart_args) > 1 else []
         chart_expense_vals = chart_args[2] if len(chart_args) > 2 else []
-        for i, m in enumerate(expected_months):
+        for i in range(12):
+            # Chart values run FY order (Apr..Mar); map index to calendar month
+            m = ((i + 3) % 12) + 1
             if i < len(chart_income_vals):
                 ok_income_m = abs(chart_income_vals[i] - sql_income_by_month[m]) < 0.01
                 p.checks.check(f"Chart income month {m}", ok_income_m,

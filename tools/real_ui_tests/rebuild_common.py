@@ -694,7 +694,8 @@ def login_to_dashboard(harness: RealUIHarness, master_pw=None, login_screen=None
         isinstance(w, DashboardScreen) and w.isVisible() for w in QApplication.instance().allWidgets()
     ), timeout=90)
     if not ok:
-        raise RuntimeError("dashboard did not appear within 90s after login")
+        err = redact(login_screen.error_label.text()) if hasattr(login_screen, "error_label") else ""
+        raise RuntimeError(f"dashboard did not appear within 90s after login; login error={err!r}")
     dashboard = next(w for w in QApplication.instance().allWidgets() if isinstance(w, DashboardScreen) and w.isVisible())
     adopt_window(dashboard)
     harness.window = dashboard

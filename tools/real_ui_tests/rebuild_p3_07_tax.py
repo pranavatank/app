@@ -90,8 +90,11 @@ def run_r(p):
     p.checks.check("tax FY switch FD stable", ok_fd_stable, f"before {app_fd} after {fd_back}")
     p.checks.check("tax FY switch savings stable", ok_savings_stable, f"before {app_savings} after {savings_back}")
 
-    os_select_combo(p.harness, tax_page.person_combo, "All Persons")
-    p.harness.settle(0.5)
+    if tax_page.person_combo.count() == 2:
+        p.observe("single-person auto-select", "'All Persons' cannot stay selected when only one person exists (dashboard_screen.py:791)")
+    else:
+        os_select_combo(p.harness, tax_page.person_combo, "All Persons")
+        p.harness.settle(0.5)
 
     os_select_combo(p.harness, tax_page.person_combo, "Pranav")
     p.harness.settle(0.5)

@@ -31,9 +31,15 @@ class AccountDetailsPanel(QWidget):
         self._build_ui()
 
     def _build_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setSpacing(0)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout = self.layout()
+        if layout is None:
+            layout = QVBoxLayout(self)
+            layout.setSpacing(0)
+            layout.setContentsMargins(0, 0, 0, 0)
+        while layout.count():
+            item = layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
 
         if not self.account:
             empty = QLabel("No account selected")
