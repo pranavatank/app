@@ -435,7 +435,8 @@ class TaxDocumentsScreen(QWidget):
                 tis_data=self.zone_tis.pdf_data,
                 ais_data=self.zone_ais.pdf_data,
                 form26as_data=self.zone_26as.pdf_data,
-                fd_by_account_no_lookup=lookup_fd
+                fd_by_account_no_lookup=lookup_fd,
+                financial_year=self._itr_financial_year or session.selected_fy,
             )
 
             # Display results

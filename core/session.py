@@ -100,10 +100,12 @@ class Session:
     # ── Helpers ───────────────────────────────────────────────────────────────
 
     def mask(self, value: float) -> str:
-        """Return '****' if privacy mode is on, else formatted currency."""
+        """Return '****' if privacy mode is on, else Indian-grouped currency."""
         if self.privacy_mode:
             return "₹ ****"
-        return f"₹ {value:,.2f}"
+        # Local import: money_label imports core.session at module level.
+        from ui.widgets.money_label import format_inr
+        return format_inr(value)
 
     def __repr__(self):
         return (

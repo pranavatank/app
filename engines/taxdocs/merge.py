@@ -13,6 +13,9 @@ Authority rules:
 from typing import Dict, Any, Optional, List, Callable
 from decimal import Decimal, ROUND_HALF_UP
 
+from config import get_current_financial_year
+from engines.tax_engine import calculate_new_regime_tax
+
 
 def _apply_44ada_presumptive_profit(business_receipts: float) -> Dict[str, Any]:
     """
@@ -50,6 +53,7 @@ def merge_tax_documents(
     ais_data: Dict[str, Any],
     form26as_data: Dict[str, Any],
     fd_by_account_no_lookup: Optional[Callable] = None,
+    financial_year: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Merge three tax documents (TIS, AIS, Form 26AS) into a single financial position.
@@ -73,6 +77,7 @@ def merge_tax_documents(
 
         fd_by_account_no_lookup: optional callable(account_no: str) -> FixedDeposit or None
             Used to match AIS account numbers to FD records.
+        financial_year: optional FY string (e.g. '2025-26') for tax slabs; defaults to current FY
 
     Returns:
         dict with:
@@ -183,6 +188,8 @@ def merge_tax_documents(
                     else:
                         fd_not_in_app.append(account_no)
 
+    tax = calculate_new_regime_tax(total_income, financial_year=financial_year or get_current_financial_year())
+
     # ========== 8. BUILD FINANCIAL POSITION ==========
     financial_position = {
         'dividend': tis_dividend,
@@ -192,11 +199,11 @@ def merge_tax_documents(
         'total_income': total_income,
         'presumptive_profit': presumptive_profit,
         'presumptive_profit_rule': presumptive_calc.get('rule', ''),
-        'standard_deduction': 0.0,  # No salary income
-        'taxable_income': total_income,  # Simplified; full calculation requires rebates/surcharge
-        'tax_payable': 0.0,  # Below basic exemption (4L)
+        'standard_deduction': tax['standard_deduction'],
+        'taxable_income': tax['taxable_income'],
+        'tax_payable': tax['total_tax'],
         'tds_deducted': form26as_total_tds,
-        'refund_due': form26as_total_tds  # Entire TDS is refunded (tax_payable is 0)
+        'refund_due': round(max(0.0, form26as_total_tds - tax['total_tax']), 2)
     }
 
     # ========== 9. BUILD NON-INCOME ITEMS ==========

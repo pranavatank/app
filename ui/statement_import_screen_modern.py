@@ -36,7 +36,7 @@ from models.bank_account import (
 from models.bank import get_or_create_bank, update_bank_tan_code_if_exists
 from models.transaction import add_transaction, check_duplicate, display_transaction_type
 from models.transaction import add_transactions_batch, delete_transactions_by_ids, reprocess_internal_transfers
-from models.fixed_deposit import add_fd_from_statement, apply_statement_redemption_event, delete_fd
+from models.fixed_deposit import add_fd_from_statement, apply_statement_redemption_event, delete_fd, get_all_fds
 from models.statement_import_log import log_import
 from engines.statement_parser import (
     parse_statement_with_debug, validate_transactions,
@@ -165,6 +165,8 @@ class _TransactionImportWorker(QObject):
             batch_rows.append(txn)
             batch_preview_rows.append(idx)
 
+        existing_fd_ids = {fd["fd_id"] for fd in get_all_fds(person_id=self.selected_person_id)}
+
         # Add transactions to database
         inserted_ids = add_transactions_batch(
             account_id=self.selected_account_id,
@@ -179,7 +181,7 @@ class _TransactionImportWorker(QObject):
 
                 # Handle FD maturity
                 if txn.get("transaction_type") == "Income":
-                    apply_statement_redemption_event(
+                    redeemed_fd_id = apply_statement_redemption_event(
                         account_id=self.selected_account_id,
                         person_id=self.selected_person_id,
                         transaction_id=txn_id,
@@ -188,6 +190,8 @@ class _TransactionImportWorker(QObject):
                         description=txn.get("description") or "",
                         reference_no=txn.get("reference_no"),
                     )
+                    if redeemed_fd_id and redeemed_fd_id not in existing_fd_ids and redeemed_fd_id not in created_fd_ids:
+                        created_fd_ids.append(redeemed_fd_id)
 
                 # Handle FD opening
                 if self._is_fd_opening_transaction(txn):
@@ -1302,32 +1306,6 @@ class StatementImportScreen(QWidget):
                 fds_created = result["fds_created"]
                 batch_rows = result["batch_rows"]
 
-                self._update_loader("Calculating savings interest...")
-
-                # Recalculate savings interest for affected FYs and update running balances
-                # This MUST run on the GUI thread as per task requirements
-                account = get_account(self.selected_account_id)
-                if account:
-                    interest_rate = float(account.get("interest_rate") or 0)
-                    opening_balance = float(account.get("opening_balance") or 0)
-
-                    # Determine which FYs were affected by the import
-                    for txn in batch_rows:
-                        txn_date = datetime.fromisoformat(txn["transaction_date"]).date()
-                        # Determine FY of transaction
-                        if txn_date.month >= 4:
-                            fy = f"{txn_date.year}-{str(txn_date.year + 1)[2:]}"
-                        else:
-                            fy = f"{txn_date.year - 1}-{str(txn_date.year)[2:]}"
-
-                        try:
-                            allocate_savings_interest_to_fy(
-                                self.selected_account_id, fy, interest_rate, opening_balance
-                            )
-                        except Exception:
-                            # Log but don't fail the import
-                            pass
-
                 # Recalculate running balances after import (ensures current_balance matches last transaction)
                 # This MUST run on the GUI thread as per task requirements
                 self._update_loader("Updating account balance...")
@@ -1336,6 +1314,31 @@ class StatementImportScreen(QWidget):
                 except Exception:
                     # Log but don't fail the import
                     pass
+
+                # Recalculate savings interest for affected FYs (uses balances recalculated above)
+                # This MUST run on the GUI thread as per task requirements
+                self._update_loader("Calculating savings interest...")
+                account = get_account(self.selected_account_id)
+                if account:
+                    interest_rate = float(account.get("interest_rate") or 0)
+                    opening_balance = float(account.get("opening_balance") or 0)
+
+                    affected_fys = set()
+                    for txn in batch_rows:
+                        txn_date = datetime.fromisoformat(txn["transaction_date"]).date()
+                        if txn_date.month >= 4:
+                            affected_fys.add(f"{txn_date.year}-{str(txn_date.year + 1)[2:]}")
+                        else:
+                            affected_fys.add(f"{txn_date.year - 1}-{str(txn_date.year)[2:]}")
+
+                    for fy in sorted(affected_fys):
+                        try:
+                            allocate_savings_interest_to_fy(
+                                self.selected_account_id, fy, interest_rate, opening_balance
+                            )
+                        except Exception:
+                            # Log but don't fail the import
+                            pass
 
                 self.fds_created_last_import = fds_created
 

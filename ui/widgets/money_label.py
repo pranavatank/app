@@ -36,7 +36,7 @@ def format_inr(amount: float) -> str:
         Formatted string with ₹ prefix and Indian grouping
     """
     # Handle sign
-    is_negative = amount < 0
+    is_negative = round(amount, 2) < 0
     abs_amount = abs(amount)
 
     # Round to 2 decimals before splitting

@@ -414,9 +414,9 @@ class TaxScreen(QWidget):
             layout = QFormLayout(group)
         layout.setSpacing(12)
         self.stcg_normal = self._spin(); layout.addRow("Short Term Capital Gains (Normal rates):", self._wrap_left_align(self.stcg_normal))
-        self.stcg_111a   = self._spin(); layout.addRow("STCG u/s 111A (@ 15%):", self._wrap_left_align(self.stcg_111a))
+        self.stcg_111a   = self._spin(); layout.addRow("STCG u/s 111A (@ 20%):", self._wrap_left_align(self.stcg_111a))
         self.ltcg_20     = self._spin(); layout.addRow("Long Term Capital Gains (@ 20%):", self._wrap_left_align(self.ltcg_20))
-        self.ltcg_112a   = self._spin(); layout.addRow("LTCG u/s 112A (@ 12.5%):", self._wrap_left_align(self.ltcg_112a))
+        self.ltcg_112a   = self._spin(); layout.addRow("LTCG u/s 112A (@ 12.5% above ₹1.25L):", self._wrap_left_align(self.ltcg_112a))
         return group
 
     def _build_business_section(self) -> QWidget:

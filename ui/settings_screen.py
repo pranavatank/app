@@ -715,7 +715,7 @@ class SettingsScreen(QWidget):
             show_warning("Password must be at least 8 characters."); return
         success, msg, new_key = change_password(cur, new)
         if success:
-            show_success("Password changed successfully!")
+            show_success(msg)
             session.aes_key = new_key
             for f in [self.current_pwd, self.new_pwd, self.confirm_pwd]: f.clear()
         else:

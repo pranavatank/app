@@ -29,6 +29,11 @@ FD_TDS_FORM_NAME         = "Form 15G"
 FD_TDS_FORM_NAME_SENIOR  = "Form 15H"
 FD_TDS_THRESHOLD_SENIOR  = 100_000
 
+# Special-rate capital gains, FY2025-26 onwards
+STCG_111A_RATE           = 20.0
+LTCG_112A_RATE           = 12.5
+LTCG_112A_EXEMPTION      = 125_000
+
 # ── Financial Year Helpers ────────────────────────────────────────────────────
 def get_current_financial_year() -> str:
     """Returns e.g. '2024-25' based on today's date."""

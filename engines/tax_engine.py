@@ -3,7 +3,7 @@ engines/tax_engine.py — Indian income tax calculation (FY2025-26 onwards)
 Implements correct tax calculation with 87A rebate, marginal relief, surcharge, cess.
 """
 
-from config import get_assessment_year
+from config import get_assessment_year, STCG_111A_RATE, LTCG_112A_RATE, LTCG_112A_EXEMPTION
 from models.tax_profile import upsert_tax_profile
 from core.database import get_connection
 
@@ -160,7 +160,7 @@ def calculate_gross_total_income(
         capital_gains_normal + interest_income + dividend_income + other_income
     )
 
-    # Special-rate income (taxed at 15% for s.111A, 12.5% for s.112/112A)
+    # Special-rate income (taxed at 20% s.111A, 12.5% s.112A above ₹1.25L)
     special_rate_income = capital_gains_stcg_111a + capital_gains_ltcg_112a
 
     gross_total_income = normal_gross + capital_gains_ltcg_112 + special_rate_income
@@ -174,6 +174,7 @@ def calculate_new_regime_tax(
     pension_income: float = 0,
     special_rate_income: float = 0,
     special_rate_pct: float = 15.0,
+    special_rate_tax: float | None = None,
     financial_year: str = "2026-27"
 ) -> dict:
     """
@@ -198,6 +199,8 @@ def calculate_new_regime_tax(
     special_rate_pct : float
         Tax rate for special-rate income. Default 15.0 for s.111A (STCG).
         Pass 12.5 for s.112/112A (LTCG).
+    special_rate_tax : float | None
+        Pre-computed tax on special-rate income. When given, replaces special_rate_pct * special_rate_income.
     financial_year : str
         Financial year for tax parameters
     """
@@ -219,7 +222,9 @@ def calculate_new_regime_tax(
     slab_tax = calculate_tax_by_slabs(normal_taxable_income, slabs)
 
     # 2. Calculate tax on special-rate income at its own rate
-    special_rate_tax = round(special_rate_taxable_income * special_rate_pct / 100, 2)
+    if special_rate_tax is None:
+        special_rate_tax = special_rate_taxable_income * special_rate_pct / 100
+    special_rate_tax = round(special_rate_tax, 2)
 
     # Calculate total taxable income (normal + special-rate) for rebate and surcharge thresholds
     total_taxable_income = normal_taxable_income + special_rate_taxable_income
@@ -369,7 +374,7 @@ def calculate_and_save_tax(
     Returns dict with calculation details, net payable/refund, and ITR recommendation.
 
     All income categories must be passed separately so the engine can handle
-    special-rate income (s.111A at 15%, s.112A at 12.5%) correctly.
+    special-rate income (20% s.111A, 12.5% s.112A above ₹1.25L) correctly.
 
     REGIME CHOICE REMOVED (T030):
     The old-vs-new regime choice has been deleted from this application because
@@ -402,6 +407,10 @@ def calculate_and_save_tax(
 
     total_interest = fd_interest + savings_interest + other_interest
     taxes_paid = tds_deducted + tcs_collected + advance_tax_paid + self_assessment_tax
+    special_rate_tax = (
+        capital_gains_stcg_111a * STCG_111A_RATE / 100
+        + max(0, capital_gains_ltcg_112a - LTCG_112A_EXEMPTION) * LTCG_112A_RATE / 100
+    )
 
     # Calculate tax using New Regime
     new = calculate_new_regime_tax(
@@ -409,6 +418,7 @@ def calculate_and_save_tax(
         salary_income=salary_income,
         pension_income=pension_income,
         special_rate_income=special_rate_income,
+        special_rate_tax=special_rate_tax,
         financial_year=financial_year
     )
     new["net_payable"] = round(new["total_tax"] - taxes_paid, 2)
