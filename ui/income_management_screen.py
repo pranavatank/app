@@ -204,7 +204,7 @@ class IncomeManagementScreen(QWidget):
             "Income Type", "Frequency", "Expected Date", "Expected Amount",
             "Actual Amount", "Variance", "Status", "Account", "ID"
         ])
-        self.table_expectations.setColumnHidden(8, True)  # Hide ID column
+        self.table_expectations.setColumnHidden(9, True)  # ID column (+1 for the checkbox column)
         self.table_expectations.setAccessibleName("Income expectations")
         self.table_expectations.setAccessibleDescription("List of individual income expectations with their status and matching transactions.")
         self.table_expectations.setSortingEnabled(False)
@@ -739,27 +739,27 @@ class IncomeManagementScreen(QWidget):
                 # Apply colors to the newly added row
                 row = self.table_expectations.rowCount() - 1
 
-                # Right-align amounts (columns 3, 4, 5)
-                for col in [3, 4, 5]:
+                # Right-align amounts (columns 4, 5, 6; column 0 is the checkbox)
+                for col in [4, 5, 6]:
                     item = self.table_expectations.item(row, col)
                     if item:
                         item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
                 # Color actual amount
                 if actual:
-                    actual_item = self.table_expectations.item(row, 4)
+                    actual_item = self.table_expectations.item(row, 5)
                     if actual_item:
                         actual_item.setForeground(QColor(Theme.SUCCESS))
 
                 # Color variance
                 if actual:
-                    variance_item = self.table_expectations.item(row, 5)
+                    variance_item = self.table_expectations.item(row, 6)
                     if variance_item:
                         color = Theme.SUCCESS if variance >= 0 else Theme.DANGER
                         variance_item.setForeground(QColor(color))
 
                 # Color status
-                status_item = self.table_expectations.item(row, 6)
+                status_item = self.table_expectations.item(row, 7)
                 if status_item:
                     if exp["actual_transaction_id"]:
                         color = Theme.SUCCESS
@@ -816,7 +816,7 @@ class IncomeManagementScreen(QWidget):
             show_warning("Please select an expectation to edit.")
             return
 
-        exp_id_item = self.table_expectations.item(row, 8)
+        exp_id_item = self.table_expectations.item(row, 9)
         if not exp_id_item:
             return
 
@@ -869,7 +869,7 @@ class IncomeManagementScreen(QWidget):
 
         try:
             for row in sorted(checked_rows, reverse=True):
-                exp_id_item = self.table_expectations.item(row, 8)
+                exp_id_item = self.table_expectations.item(row, 9)
                 if exp_id_item:
                     exp_id = int(exp_id_item.text())
                     delete_income_expectation(exp_id)

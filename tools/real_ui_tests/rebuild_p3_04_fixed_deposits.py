@@ -405,7 +405,7 @@ def _check_in_table_edit(p, page):
         if rate_item.text() != "7.1":
             raise RuntimeError(f"rate cell shows {rate_item.text()!r} after typing, expected '7.1'")
 
-        _tick_row(p, page, row)
+        _tick_row(p, page, _fd_row(page, fd_id))
         os_click(p.harness, page, "Save fixed deposit changes", wait=1.0)
         p.harness.settle(1.0)
 
