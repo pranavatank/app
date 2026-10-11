@@ -1817,7 +1817,7 @@ class StatementImportScreen(QWidget):
         dialog.setWindowTitle("Bulk Edit Selected Rows")
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
-        updated = dialog.get_data()
+        updated = {key: value for key, value in dialog.get_data().items() if base.get(key) != value}
         for row in rows:
             if row >= len(self.preview_transactions):
                 continue
@@ -1830,7 +1830,7 @@ class StatementImportScreen(QWidget):
         if not rows:
             show_warning("Select one or more rows to shift dates.")
             return
-        days, ok = QInputDialog.getInt(self, "Shift Dates", "Shift selected dates by how many days?", value=1, min=-3650, max=3650)
+        days, ok = QInputDialog.getInt(self, "Shift Dates", "Shift selected dates by how many days?", value=1, minValue=-3650, maxValue=3650)
         if not ok or days == 0:
             return
         from datetime import timedelta
@@ -1854,7 +1854,7 @@ class StatementImportScreen(QWidget):
         if max_split <= 0:
             show_warning("This row does not have a valid amount.")
             return
-        split_amount, ok = QInputDialog.getDouble(self, "Split Row", "Amount to move into the new split row:", value=max_split / 2, min=0.01, max=max_split, decimals=2)
+        split_amount, ok = QInputDialog.getDouble(self, "Split Row", "Amount to move into the new split row:", value=max_split / 2, minValue=0.01, maxValue=max_split, decimals=2)
         if not ok or split_amount <= 0 or split_amount >= max_split:
             return
         new_row = dict(txn)

@@ -14,11 +14,17 @@ from tools.real_ui_tests.rebuild_p3_common import P3Run, main_wrapper
 from tools.real_ui_tests.rebuild_common import (
     os_click, os_click_widget, os_type_widget, answer_message_box, toast_texts,
     read_secret, native_file_dialog, snapshot_db, find_dialog_by_title, redact,
-    _SECRET_PATTERNS, BACKUPS
+    _SECRET_PATTERNS, BACKUPS, answer_modal_dialog, wait_until, assert_foreground,
+    login_to_dashboard,
 )
+from tools.real_ui_test_harness import find_by_accessible_name
+from PySide6.QtCore import QPoint
 from PySide6.QtWidgets import QMessageBox, QLineEdit, QLabel, QApplication, QDialog
 from ui.theme.theme_manager import ThemeManager
 from ui.dashboard_screen import DashboardScreen
+from ui.manage_data_screen import ManageDataScreen
+from ui.dialogs.person_dialog import PersonDialog
+from ui.dialogs.bank_dialog import BankDialog
 
 
 def _brightness_scan(harness, root, exclude_types=None):
@@ -251,173 +257,236 @@ def run_r(p):
             p.checks.check(f"settings {dialog_title}", False, repr(e))
 
 
-def run_s(p):
+def _totp_secret(p):
+    rows = p.sql("SELECT totp_secret FROM AuthSecurity LIMIT 1")
+    return rows[0][0] if rows else None
+
+
+def _toggle_totp_checkbox(p, settings_page, want_enabled):
+    """OS-click the checkbox indicator; the centre of the full-width checkbox
+    widget is not a reliable click target."""
+    checkbox = find_by_accessible_name(settings_page, "Enable two-factor authentication")
+    for _ in range(2):
+        if checkbox.isChecked() == want_enabled:
+            break
+        assert_foreground(checkbox.window())
+        p.harness.click_at_via_os(checkbox, QPoint(10, checkbox.height() // 2), wait=0.8)
+    wait_until(p.harness, lambda: bool(_totp_secret(p)) == want_enabled, timeout=5)
+    return checkbox
+
+
+def _visible_login_screen():
+    from ui.login_screen import LoginScreen
+    return next((w for w in QApplication.instance().allWidgets() if isinstance(w, LoginScreen) and w.isVisible()), None)
+
+
+def _prearm_ok(prearm):
+    """True if the prearmed handler ran without error; always disarms it."""
+    ran = prearm.done
+    prearm.done = True
+    return ran and prearm.error is None and prearm.info.get("error") is None
+
+
+def _open_manage_data(p, settings_page, button_name):
+    os_click(p.harness, settings_page, button_name, wait=0.8)
+    dlg = find_dialog_by_title(QDialog, "Manage Data")
+    return dlg, (dlg.findChild(ManageDataScreen) if dlg else None)
+
+
+def _select_row_by_id(p, dlg, table, id_col, record_id):
+    """OS-click the table row whose hidden ID column matches; the Edit/Delete
+    buttons act on currentRow() and only warn when nothing is selected."""
+    row = next((r for r in range(table.rowCount()) if table.item(r, id_col).text() == str(record_id)), None)
+    if row is None:
+        return None
+    table.scrollToItem(table.item(row, 0))
+    p.harness.settle(0.3)
+    assert_foreground(dlg)
+    p.harness.click_at_via_os(table.viewport(), table.visualItemRect(table.item(row, 0)).center(), wait=0.5)
+    return row if table.currentRow() == row else None
+
+
+def _edit_then_cancel(p, dlg, button_name, dialog_cls, title, prefill_attr, cancel_name):
+    seen = {}
+
+    def fill(edit_dlg):
+        seen["prefill"] = getattr(edit_dlg, prefill_attr).text()
+        os_click(p.harness, edit_dlg, cancel_name, wait=0.5)
+
+    prearm = answer_modal_dialog(p.harness, p.app, dialog_cls, title, fill)
+    os_click(p.harness, dlg, button_name, wait=0.8)
+    p.harness.settle(0.5)
+    return _prearm_ok(prearm), seen.get("prefill")
+
+
+def _delete_with_confirm(p, dlg, button_name):
+    prearm = answer_message_box(p.harness, p.app, QMessageBox.StandardButton.Yes, expect_title="Confirm Delete")
+    os_click(p.harness, dlg, button_name, wait=0.8)
+    p.harness.settle(1.0)
+    return _prearm_ok(prearm)
+
+
+def _run_totp_roundtrip(p):
     settings_page = p.nav("Settings")
     p.harness.settle(0.5)
 
-    try:
-        os_click(p.harness, settings_page, "Enable two-factor authentication", wait=0.8)
-        p.harness.settle(1.0)
+    _toggle_totp_checkbox(p, settings_page, True)
+    secret = _totp_secret(p)
+    if secret:
+        _SECRET_PATTERNS.append(secret)
+    p.checks.check("settings TOTP secret generated", bool(secret),
+                   f"checkbox_checked={settings_page.totp_checkbox.isChecked()} toasts={toast_texts()}")
+    if not secret:
+        return
+    p.checks.check("settings TOTP badge shows 2FA On", settings_page.badge_totp.text() == "2FA On",
+                   settings_page.badge_totp.text())
 
-        totp_secret = p.sql("SELECT totp_secret FROM AuthSecurity LIMIT 1")
-        if totp_secret and totp_secret[0][0]:
-            secret = totp_secret[0][0]
-            _SECRET_PATTERNS.append(secret)
+    import pyotp
+    prearm_logout = answer_message_box(p.harness, p.app, QMessageBox.StandardButton.Yes, expect_title="Logout")
+    os_click(p.harness, p.dashboard, "Logout", wait=0.5)
+    p.harness.settle(1.0)
+    p.checks.check("settings logout confirmed", _prearm_ok(prearm_logout), str(prearm_logout.info))
 
-            import pyotp
-            otp_code = pyotp.TOTP(secret).now()
+    wait_until(p.harness, lambda: _visible_login_screen() is not None, timeout=15)
+    login_screen = _visible_login_screen()
+    if login_screen is None:
+        p.checks.check("settings login screen shown after logout", False)
+        return
+    p.checks.check("settings login screen requires OTP", login_screen.otp_input.isVisible(), "")
 
-            from tools.real_ui_tests.rebuild_common import login_to_dashboard
-            prearm_logout = answer_message_box(p.harness, p.app, QMessageBox.StandardButton.Yes, expect_title="Logout")
-            os_click(p.harness, p.dashboard, "Logout", wait=0.5)
-            p.harness.settle(1.0)
+    p.dashboard = login_to_dashboard(p.harness, login_screen=login_screen, otp=pyotp.TOTP(secret).now())
+    p.harness.settle(1.0)
+    p.checks.check("settings TOTP login success", p.dashboard.isVisible(), "")
 
-            from ui.login_screen import LoginScreen
-            login_screen = p.harness.window
-            if not isinstance(login_screen, LoginScreen):
-                for w in QApplication.instance().allWidgets():
-                    if isinstance(w, LoginScreen) and w.isVisible():
-                        login_screen = w
-                        break
+    settings_page = p.nav("Settings")
+    p.harness.settle(0.5)
+    checkbox = _toggle_totp_checkbox(p, settings_page, False)
+    p.checks.check("settings TOTP disabled", _totp_secret(p) is None and not checkbox.isChecked(),
+                   f"secret_set={bool(_totp_secret(p))} checkbox_checked={checkbox.isChecked()}")
 
-            p.dashboard = login_to_dashboard(p.harness, login_screen=login_screen, otp=otp_code)
-            p.harness.settle(1.0)
 
-            ok_dashboard = p.dashboard.isVisible()
-            p.checks.check("settings TOTP login success", ok_dashboard, "dashboard not visible" if not ok_dashboard else "")
+def _run_restore(p):
+    backup_path = snapshot_db("before_restore_test")
+    p.observe("P3.09_S_backup_path", backup_path)
 
-            settings_page = p.nav("Settings")
-            p.harness.settle(0.5)
+    from models.person import add_person
+    add_person("RUIH_test")
+    p.harness.settle(0.3)
 
-            try:
-                os_click(p.harness, settings_page, "Disable two-factor authentication", wait=0.8)
-                p.harness.settle(0.5)
+    settings_page = p.nav("Settings")
+    p.harness.settle(0.5)
 
-                after_disable = p.sql("SELECT totp_secret FROM AuthSecurity LIMIT 1")
-                if after_disable and after_disable[0][0] is None:
-                    p.checks.check("settings TOTP disabled", True)
-                else:
-                    p.checks.check("settings TOTP disabled", False, "totp_secret still set")
-            except Exception as e:
-                p.checks.check("settings TOTP disable", False, repr(e))
-        else:
-            p.checks.check("settings TOTP secret generated", False)
-    except Exception as e:
-        p.checks.check("settings TOTP setup", False, repr(e))
+    prearm_restore = answer_message_box(
+        p.harness, p.app,
+        QMessageBox.StandardButton.Yes,
+        expect_title="Confirm Restore"
+    )
 
-    try:
-        backup_path = snapshot_db("before_restore_test")
-        p.observe("P3.09_S_backup_path", backup_path)
+    native_file_dialog(
+        lambda: os_click(p.harness, settings_page, "Restore database from backup", wait=0.5),
+        backup_path,
+        timeout=30
+    )
+    p.harness.settle(2.0)
+    p.checks.check("settings restore confirmed", _prearm_ok(prearm_restore), str(prearm_restore.info))
 
-        from models.person import add_person
-        test_pid = add_person("RUIH_test")
-        p.harness.settle(0.3)
+    after_restore = p.sql("SELECT COUNT(*) FROM Person WHERE full_name='RUIH_test'")
+    p.checks.check("settings full restore removed test person", bool(after_restore) and after_restore[0][0] == 0)
 
-        settings_page = p.nav("Settings")
-        p.harness.settle(0.5)
 
-        prearm_restore = answer_message_box(
-            p.harness, p.app,
-            QMessageBox.StandardButton.Yes,
-            expect_title="Confirm Restore"
-        )
+def _run_manage_people(p):
+    from models.person import add_person
+    test_person_id = add_person("RUIH_test_person")
+    p.harness.settle(0.3)
 
-        native_file_dialog(
-            lambda: os_click(p.harness, settings_page, "Restore database from backup", wait=0.5),
-            backup_path,
-            timeout=30
-        )
-        p.harness.settle(2.0)
+    settings_page = p.nav("Settings")
+    p.harness.settle(0.5)
 
-        after_restore = p.sql("SELECT COUNT(*) FROM Person WHERE full_name='RUIH_test'")
-        if after_restore and after_restore[0][0] == 0:
-            p.checks.check("settings full restore removed test person", True)
-        else:
-            p.checks.check("settings full restore removed test person", False)
-    except Exception as e:
-        p.checks.check("settings full restore", False, repr(e))
+    dlg, manage = _open_manage_data(p, settings_page, "Manage people")
+    if dlg is None or manage is None:
+        p.checks.check("settings Manage people dialog found", False)
+        return
+    table = manage.people_table
 
-    from models.person import add_person, delete_person
-    from models.bank import add_bank, delete_bank
-    from PySide6.QtWidgets import QDialog
-    try:
-        test_person_id = add_person("RUIH_test_person")
-        p.harness.settle(0.3)
+    row = _select_row_by_id(p, dlg, table, 4, test_person_id)
+    p.checks.check("settings Manage people row selected", row is not None, f"person_id={test_person_id}")
+    if row is None:
+        dlg.reject()
+        return
 
-        os_click(p.harness, settings_page, "Manage people", wait=0.8)
-        p.harness.settle(0.5)
+    opened, prefill = _edit_then_cancel(p, dlg, "Edit person", PersonDialog, "Edit Person",
+                                        "nickname_input", "Cancel person dialog")
+    p.checks.check("settings Edit person dialog opened", opened and prefill == "RUIH_test_person", f"prefill={prefill!r}")
 
-        dlg = find_dialog_by_title(QDialog, "Manage Data")
-        if dlg:
-            os_click(p.harness, dlg, "Edit person", wait=0.8)
-            p.harness.settle(0.5)
+    confirmed = _delete_with_confirm(p, dlg, "Delete person")
+    p.checks.check("settings Delete person confirmed", confirmed)
+    remaining = p.sql("SELECT COUNT(*) FROM Person WHERE person_id=?", (test_person_id,))
+    p.checks.check("settings Delete person persisted", bool(remaining) and remaining[0][0] == 0)
+    p.checks.check("settings Delete person removed table row",
+                   all(table.item(r, 4).text() != str(test_person_id) for r in range(table.rowCount())))
+    dlg.reject()
+    p.harness.settle(0.3)
 
-            edit_dlg = find_dialog_by_title(QDialog, "Person")
-            if edit_dlg:
-                edit_dlg.reject()
-                p.harness.settle(0.3)
-                p.checks.check("settings Edit person dialog opened", True)
-            else:
-                p.checks.check("settings Edit person dialog opened", False)
 
-            prearm_del = answer_message_box(p.harness, p.app, QMessageBox.StandardButton.Yes, expect_title="Confirm Delete")
-            os_click(p.harness, dlg, "Delete person", wait=0.8)
-            p.harness.settle(1.0)
+def _run_manage_banks(p):
+    from models.bank import add_bank
+    test_bank_id = add_bank("RUIH_TestBank")
+    p.harness.settle(0.3)
 
-            ok_delete = prearm_del.done and prearm_del.info.get("error") is None
-            p.checks.check("settings Delete person confirmed", ok_delete)
+    settings_page = p.nav("Settings")
+    p.harness.settle(0.5)
 
-            after_delete = p.sql("SELECT COUNT(*) FROM Person WHERE person_id=?", (test_person_id,))
-            ok_deleted = after_delete[0][0] == 0 if after_delete else False
-            p.checks.check("settings Delete person persisted", ok_deleted)
+    dlg, manage = _open_manage_data(p, settings_page, "Manage banks (master)")
+    if dlg is None or manage is None:
+        p.checks.check("settings Manage banks dialog found", False)
+        return
 
-            dlg.reject()
-            p.harness.settle(0.3)
-        else:
-            p.checks.check("settings Manage people dialog found", False)
-    except Exception as e:
-        p.checks.check("settings person edit/delete", False, repr(e))
+    tab_bar = manage.tabs.tabBar()
+    assert_foreground(dlg)
+    p.harness.click_at_via_os(tab_bar, tab_bar.tabRect(1).center(), wait=0.5)
+    p.checks.check("settings Banks tab opened", manage.tabs.currentIndex() == 1,
+                   f"tab={manage.tabs.tabText(manage.tabs.currentIndex())}")
+    table = manage.banks_table
 
-    try:
-        test_bank_id = add_bank("RUIH_TestBank")
-        p.harness.settle(0.3)
+    row = _select_row_by_id(p, dlg, table, 4, test_bank_id)
+    p.checks.check("settings Manage banks row selected", row is not None, f"bank_id={test_bank_id}")
+    if row is None:
+        dlg.reject()
+        return
 
-        settings_page = p.nav("Settings")
-        p.harness.settle(0.5)
+    bank_name = p.sql("SELECT bank_name FROM Bank WHERE bank_id=?", (test_bank_id,))[0][0]
+    opened, prefill = _edit_then_cancel(p, dlg, "Edit bank", BankDialog, "Edit Bank",
+                                        "bank_name_input", "Cancel bank dialog")
+    p.checks.check("settings Edit bank dialog opened", opened and prefill == bank_name, f"prefill={prefill!r}")
 
-        os_click(p.harness, settings_page, "Manage banks (master)", wait=0.8)
-        p.harness.settle(0.5)
+    confirmed = _delete_with_confirm(p, dlg, "Delete bank")
+    p.checks.check("settings Delete bank confirmed", confirmed)
+    remaining = p.sql("SELECT COUNT(*) FROM Bank WHERE bank_id=?", (test_bank_id,))
+    p.checks.check("settings Delete bank persisted", bool(remaining) and remaining[0][0] == 0)
+    dlg.reject()
+    p.harness.settle(0.3)
 
-        dlg = find_dialog_by_title(QDialog, "Manage Data")
-        if dlg:
-            os_click(p.harness, dlg, "Edit bank", wait=0.8)
-            p.harness.settle(0.5)
 
-            edit_dlg = find_dialog_by_title(QDialog, "Bank")
-            if edit_dlg:
-                edit_dlg.reject()
-                p.harness.settle(0.3)
-                p.checks.check("settings Edit bank dialog opened", True)
-            else:
-                p.checks.check("settings Edit bank dialog opened", False)
+def run_s(p):
+    p.expected_titles.add("Select Backup File")
 
-            prearm_del = answer_message_box(p.harness, p.app, QMessageBox.StandardButton.Yes, expect_title="Confirm Delete")
-            os_click(p.harness, dlg, "Delete bank", wait=0.8)
-            p.harness.settle(1.0)
+    steps = [
+        ("settings TOTP setup", _run_totp_roundtrip),
+        ("settings full restore", _run_restore),
+        ("settings person edit/delete", _run_manage_people),
+        ("settings bank edit/delete", _run_manage_banks),
+    ]
+    for name, step in steps:
+        try:
+            step(p)
+        except Exception as e:
+            p.checks.check(name, False, repr(e))
 
-            ok_delete = prearm_del.done and prearm_del.info.get("error") is None
-            p.checks.check("settings Delete bank confirmed", ok_delete)
-
-            after_delete = p.sql("SELECT COUNT(*) FROM Bank WHERE bank_id=?", (test_bank_id,))
-            ok_deleted = after_delete[0][0] == 0 if after_delete else False
-            p.checks.check("settings Delete bank persisted", ok_deleted)
-
-            dlg.reject()
-            p.harness.settle(0.3)
-        else:
-            p.checks.check("settings Manage banks dialog found", False)
-    except Exception as e:
-        p.checks.check("settings bank edit/delete", False, repr(e))
+    # A leftover TOTP secret would make every later scratch login demand an OTP.
+    from core.auth import is_totp_enabled, disable_totp
+    if is_totp_enabled():
+        disable_totp()
+        p.observe("P3.09_S_cleanup", "TOTP was still enabled after the test; disabled it directly (non-UI cleanup)")
 
 
 if __name__ == "__main__":
