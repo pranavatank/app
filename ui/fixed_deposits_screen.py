@@ -115,6 +115,13 @@ class FixedDepositsScreen(QWidget):
         btn_rates.clicked.connect(self._on_enter_real_rates)
         header.addWidget(btn_rates)
 
+        btn_planner = Theme.btn("  FD Planner", "secondary", height=38, min_width=140)
+        btn_planner.setIcon(app_icon("fixed_deposits", color=Theme.TEXT_PRIMARY, size=16))
+        btn_planner.setAccessibleName("Open FD planner")
+        btn_planner.setAccessibleDescription("Compare current bank FD rates and split savings across banks within the deposit insurance limit.")
+        btn_planner.clicked.connect(self._on_open_planner)
+        header.addWidget(btn_planner)
+
         btn_save = Theme.btn("  Save Changes", "secondary", height=38, min_width=155)
         btn_save.setIcon(app_icon("save", color=Theme.TEXT_PRIMARY, size=16))
         btn_save.setAccessibleName("Save fixed deposit changes")
@@ -795,5 +802,10 @@ class FixedDepositsScreen(QWidget):
             self.refresh()
             if self.parent_window:
                 self.parent_window.refresh_overview()
+
+    def _on_open_planner(self):
+        """Open the FD planner to compare current rates and split savings across banks."""
+        from ui.dialogs.fd_planner_dialog import FDPlannerDialog
+        FDPlannerDialog(self, person_id=session.selected_person_id).exec()
 
 

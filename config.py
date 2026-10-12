@@ -29,6 +29,11 @@ FD_TDS_FORM_NAME         = "Form 15G"
 FD_TDS_FORM_NAME_SENIOR  = "Form 15H"
 FD_TDS_THRESHOLD_SENIOR  = 100_000
 
+# ── Deposit insurance (DICGC) ─────────────────────────────────────────────────
+# DICGC insures up to this amount per depositor per bank, counting all savings,
+# current and FD balances at that bank plus interest.
+DICGC_INSURANCE_LIMIT    = 500_000
+
 # Special-rate capital gains, FY2025-26 onwards
 STCG_111A_RATE           = 20.0
 LTCG_112A_RATE           = 12.5
