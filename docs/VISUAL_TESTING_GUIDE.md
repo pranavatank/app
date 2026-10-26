@@ -4,7 +4,7 @@
 you should not need to read source files to understand what this project is, what
 state it is in, what is pending, or how to test it.
 
-**Last updated:** 2026-10-12 (fresh DB rebuilt through the real UI; Phase 3 R-mode walkthrough run; S-mode re-run pending).
+**Last updated:** 2026-10-26 (family FD Planner checkpoint; current testing limits below). Earlier rebuild figures are historical snapshots, not a new audit of the live database.
 **Read order:** this guide for the product and the testing rules, then **`tools/real_ui_tests/REBUILD_PLAN.md`** — the
 runbook with current test state, how to run every script, open decisions and next steps. The runbook supersedes §0.2 and
 §0.3 below where they differ.
@@ -14,7 +14,28 @@ past mistakes — not a changelog. Full history is in git log / commit messages.
 
 ---
 
-## 0. CURRENT STATE — fresh-DB rebuild done; Phase 3 R-mode scripts written and run; S-mode re-run pending (details: REBUILD_PLAN.md)
+## 0. CURRENT STATE — family FD Planner committed; earlier rebuild follow-ups retained below
+
+### 0.0 Current FD Planner checkpoint — 2026-10-26
+
+**Checkout:** `B:\Study\App\App`, branch **main**. The owner requires changes directly on main; see `AGENTS.md`. Implementation checkpoint: **`2738be5`** (`feat: add full-page family FD planning with official bank rates`). No push was requested. The owner asked to commit the current work before continuing; do not resume further repairs automatically.
+
+**Current feature:** restart the app and open **FD Planner** in the sidebar, or use the button on Fixed Deposits. It is a full page, not the superseded optimizer modal. The main inputs are cash to keep available and the planning horizon. The animated tree expands family → person → bank account → FD tenure/ready cash. Extra bank accounts are grouped until clicked. Privacy, pause animation, pan and zoom are supported.
+
+**Data and planning:** the default workbook is `data/data/Data 26-27.xlsx`, read without modification. Workbook savings/FD/salary data are supplemented by app people, complete FD records and unmatched income expectations. Overlapping salary months and matched expectations are not counted twice. Family transfers are allowed as a planning pool; ownership/clubbing and HUF taxation remain conditional. General-customer rates are used for everyone. Future income and FD maturities are displayed separately and are not spent today. Missing balances or FD terms stay explicitly incomplete; tax estimates remain provisional.
+
+**Rates checked on 26 October:** official publications were obtained for Jana, Ujjivan, Unity, HDFC, SBI and IDFC FIRST. Equitas, AU and BOI requests were blocked/failed; YES Bank and RNSB did not provide an unambiguous table through their adapters. These banks remain visibly unavailable. Unity's savings bands are displayed, but their calculation basis is unverified and excluded from optimization. Never substitute a comparison-site snapshot or an old PDF as a confirmed current quote. The local cache expires after 24 hours; refresh it before use. Neither the cache nor private financial documents are committed.
+
+**Optimizer:** the family model currently uses fixed FY 2025-26/2026-27 ordinary new-regime tax parameters and assumes continuity in later years; it does not yet read editable `TaxParams`/`TaxSlabConfig`. Reviewing that integration is pending, and no declaration eligibility is certified. `engines/family_fd_engine.py` jointly chooses FD principal, tenure, recipient account and retained savings, subject to reserves, bank concentration, modeled insurance and annual income/interest limits. Large models obtain an audited feasible seed, then search all allowed tenure days with HiGHS. A time-limited result is labelled best found with a search gap, not a proven optimum. The last actual-workbook audit preserved the reserve, reconciled available cash, left the workbook hash unchanged and reported a 4.13% gap. This is a recorded scenario, not a promise for later rate/data changes.
+
+**Cleanup:** the duplicate optimized-dialog tab, first optimizer, manual-rate workflow, manual-rate example and generated comparison cache were removed. Shared calculations live in `engines/fd_planner_math.py`; quote metadata live in `engines/fd_rates.py`. Original comparison/coverage/other-options components remain for compatibility. All four themes now include the `fd_planner` navigation accent. Private-data ignore rules cover both `data/PersonalData/` and `data/data/`.
+
+**Verification and limits:** the new family engine, page, workbook, official-rate, quote-metadata and financial-math test files passed individually. The repaired chart/relocation/currency group passed **22 tests** together. Those repairs use a shared QApplication and current read-only SQL totals, including flagged transfers in other categories; they do not change ledger classifications or data. The old hard-coded tool guard in `tools/test_prediction_engine.py` was not changed. An earlier 194-test selection passed before cleanup; that is not a claim that the current whole suite is green. The subsequent monolithic suite displayed two error markers and did not complete; it was stopped at the owner's request. Diagnose those errors on the next testing pass. Use the documented per-file runner below and run real-window checks separately. Offscreen renders and unit tests are not a substitute for real mouse/keyboard verification of the new page.
+
+Current implementation details and source limitations: **[FD_PLANNER.md](FD_PLANNER.md)**. Main entry points: `ui/fd_planner_screen.py`, `ui/widgets/family_money_tree.py`, `engines/family_workbook.py`, `engines/official_bank_rates.py`, `engines/family_fd_engine.py`.
+
+The remaining rebuild state in §0.1–§0.3 is retained from the earlier handoff. Re-measure the current database before relying on its counts or financial totals.
+
 
 **Authorisation model (from the owner):** the agent may drive the real mouse and keyboard on its own
 (`pyautogui` scripts) — the owner never needs to type anything or wait. Code changes and DB/schema changes
@@ -36,8 +57,7 @@ are allowed when necessary. The only hard rule left from earlier sessions: **do 
 
 Taxable income measured on this DB is **₹96,056** (not the old ₹2,54,784): the owner-approved
 Commission/Professional-Fees recategorisation lived in the deleted DB and the backfill is deliberately not applied.
-`tools/test_prediction_engine.py` and `tests/test_chart_db_agreement.py` still hard-code the old baseline numbers —
-**re-baseline them from measured output** (see §7) rather than loosening them.
+`tools/test_prediction_engine.py` still needs its historical baseline reviewed from measured output (see §7). `tests/test_chart_db_agreement.py` now verifies current read-only SQL totals against the engine and reconciles flagged transfers separately; it no longer embeds a past copy of the owner's totals.
 
 Master password = `master:` line of `data\PersonalData\Pranav\password.txt`; read with
 `tools/real_ui_tests/rebuild_common.py:read_secret("master"|"ais_tis"|"equitas")`. Never print/log/hardcode.
@@ -283,7 +303,7 @@ can only come from the tax documents. That is correct behaviour, not a bug.
 ## 5. How to test — read this before writing any test
 
 ### 5.1 The environment
-- Repo `D:\Pranav\app`, branch `main`. Always run from the repo root.
+- Repo `B:\Study\App\App`, branch `main`. Always run from the repo root and keep changes on main as requested.
 - Python: `.venv\Scripts\python.exe`. PySide6 6.11.2.
 - Windows, display scaling **125%** (`devicePixelRatio == 1.25`). Never hardcode
   1.25; read it live.
@@ -434,14 +454,13 @@ collection of matplotlib/Qt objects). `tools/run_full_tests.py` runs each
 # specific files, and pass extra pytest flags after --:
 .venv\Scripts\python.exe tools/run_full_tests.py tests/test_kpi_tile.py -- -v
 ```
-Current baseline: **35 PASS, 2 CRASH** (`test_chart_relocation.py`,
-`test_money_label.py`) — both pre-existing, both an interpreter-teardown
-segfault that happens *before* pytest's own summary line is written (all
-their own assertions pass — the log shows `...` / `[100%]` then nothing). The
-tool's classifier reports these as `CRASH` rather than `PASS (crashed after
-summary)` because it can't find a summary line at all in this specific crash
-timing; read the log in `%TEMP%\finmgr_test_logs\` to confirm it's this
-known-benign case before treating a CRASH as a regression.
+The former 35-PASS/2-CRASH baseline is historical. On 26 October the
+QApplication-lifetime issues in `test_chart_relocation.py` and
+`test_money_label.py` were corrected; both passed in the 22-test chart/currency
+group. This does not establish a clean whole-suite baseline: the latest
+single-process run was incomplete and showed two errors. Preserve failures
+as findings and use per-file logs when resuming testing; do not classify a
+native crash as a pass solely because assertion dots were printed.
 
 `test_dashboard_lazy.py`'s two previously-stale-failing tests (nav-button
 count, sidebar-collapse-width) are now fixed and pass.
@@ -452,10 +471,10 @@ count, sidebar-collapse-width) are now fixed and pass.
 
 ## 6. Architecture you need to know
 
-### Navigation (10 screens, `ui/dashboard_screen.py`)
+### Navigation (11 screens, `ui/dashboard_screen.py`)
 `0` Overview · `1` Accounts · `2` Transactions · `3` Income & Expectations ·
 `4` Fixed Deposits · `5` Statement Import · `6` Tax Documents · `7` Tax ·
-`8` **Income Prediction** · `9` Settings
+`8` **Income Prediction** · `9` Settings · `10` **FD Planner**
 
 Adding a screen means edits in several places, and missing any one fails
 silently: `_NAV_ITEMS` (its second element is the screen key, used both for
@@ -509,8 +528,7 @@ Engine hazards it works around — **do not undo these**:
   ₹50,000 — read them.
 
 ### Threading — do not revert
-`Loader.run(parent, fn, message, on_done=, on_error=)` is the ONLY correct way to
-run slow work. It marshals callbacks to the GUI thread via a `_GuiRelay`
+`Loader.run(parent, fn, message, on_done=, on_error=)` is the standard shared helper for slow work. The full-page FD Planner uses its own QObject/QThread worker with explicit queued GUI callbacks and a close guard so calculations do not open a modal overlay; keep the same GUI-thread safety rule. The shared loader marshals callbacks via a `_GuiRelay`
 QObject with an explicit `QueuedConnection` — a plain Python callable has no
 thread affinity, so without this Qt invokes `on_done` on the *worker* thread,
 and constructing a `QMessageBox` there **deadlocks the process** (window "Not
@@ -529,7 +547,7 @@ QSS string itself.
 
 **Accent system (added 2026-09-23).** Every screen has a colour identity via
 `Theme.SCREEN_ACCENT_FILL`/`SCREEN_ACCENT_TINT` dicts (keyed by screen name,
-defined per-theme in all 4 `ui/theme/theme_*.py` files — same 10 keys in
+defined per-theme in all 4 `ui/theme/theme_*.py` files — same 11 keys in
 every file). `Theme.accent(name)` resolves either a screen key or a semantic
 name (`"primary"`, `"success"`, `"danger"`, `"warning"`, `"info"`, `"teal"`,
 `"purple"`, `"pink"` — see `ui.theme.components.ACCENT_TOKENS`) to a hex
@@ -560,9 +578,7 @@ chart and table it owns, or a live theme switch leaves it visually stale.
 ## 7. PENDING — start here
 
 ### Pending after the 2026-09-29 rebuild
-0. **Real-DB data repair for Equitas FDs** (§0.3) and re-baseline `tools/test_prediction_engine.py` /
-   `tests/test_chart_db_agreement.py` from measured output (taxable ≈ ₹96,056 without the backfill; do NOT loosen
-   the CRITICAL GUARD). Then run `tools/rebuild_verify.py --engines` / `--tempdb`.
+0. **Historical real-DB repair/re-baselining:** first verify whether the Equitas repair in §0.3 is still needed. Review `tools/test_prediction_engine.py` from newly measured output without weakening its CRITICAL GUARD. The pytest chart agreement now uses current SQL totals; do not reintroduce historical monetary constants. Re-run `tools/rebuild_verify.py --engines` / `--tempdb` only as appropriate to the current data and requested scope.
 0b. **Phase 3 walkthrough**: the per-screen `rebuild_p3_*.py` scripts exist and the R-mode runs pass (REBUILD_PLAN.md §4.3);
    the S-mode scripts still need a re-run on a scratch DB, and `11_hard_refresh` has not been run.
 0c. Remaining report-only findings / owner decisions (full list: REBUILD_PLAN.md §6): the device-fingerprint lockout,
@@ -599,13 +615,7 @@ chart and table it owns, or a live theme switch leaves it visually stale.
    in the target theme is fully clean — 0 offenders across all 10 screens
    (Pass A of that same test). Fixing charts + the 4 missing pages is a
    further design-system pass, not a quick patch.
-5. **`tools/run_full_tests.py`'s crash classifier has a gap** (§5.5): a
-   process that crashes *before* pytest's own summary line prints (rather
-   than after) is reported as `CRASH` with "(no summary found)" instead of
-   the more accurate "PASS (crashed after summary)" — currently affects
-   `test_chart_relocation.py`/`test_money_label.py`. Not urgent (the log
-   still shows the truth if you read it), but worth tightening if this
-   pattern recurs on other files.
+5. **Resume test diagnostics from the current checkpoint (§0.0 / §5.5).** The chart-relocation and MoneyLabel QApplication fixtures were repaired and their combined group passed. The latest monolithic run still showed two errors and was stopped without a final summary. Re-run the affected files through `tools/run_full_tests.py` and inspect logs. A native exit without a summary remains a finding; do not automatically promote it to a pass.
 
 ### Known, accepted limitations (not bugs to fix blindly)
 6. **The Transactions screen has no pagination** — loads the entire FY
