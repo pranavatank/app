@@ -97,16 +97,23 @@ def _eligible_candidates(banks: list[dict], tenure_key: str, is_senior: bool,
             continue
         if not include_small_finance and bank.get("bank_type") == SMALL_FINANCE_BANK:
             continue
+        if is_senior and bank.get("senior_extra") is None:
+            continue  # A premium range cannot establish an exact senior quote.
         senior_extra = (bank.get("senior_extra") or 0) if is_senior else 0
         candidates.append((round(base_rate + senior_extra, 2), bank))
-    return sorted(candidates, key=lambda candidate: (-candidate[0], candidate[1]["bank_name"]))
+    unique = {}
+    for rate, bank in candidates:
+        key = normalize_bank_key(bank["bank_name"])
+        if key not in unique or rate > unique[key][0]:
+            unique[key] = (rate, bank)
+    return sorted(unique.values(), key=lambda candidate: (-candidate[0], candidate[1]["bank_name"]))
 
 
 def suggest_household_allocation(amount: float, banks: list[dict], tenure_key: str, depositors: list[dict], *,
                                  per_bank_limit: float = DICGC_INSURANCE_LIMIT, max_banks: int = 5,
                                  min_per_bank: float = 10_000, include_small_finance: bool = True,
                                  count_interest_in_limit: bool = True, excluded_banks=()) -> dict:
-    """Greedily place the amount across depositors' FDs, keeping each depositor within the insurance limit per bank."""
+    """Optimize a fixed-tenure simulation with minimum tickets and a bank-count limit."""
     months = TENURE_MONTHS[tenure_key]
     excluded = set(excluded_banks)
     candidates = []
@@ -115,45 +122,38 @@ def suggest_household_allocation(amount: float, banks: list[dict], tenure_key: s
             candidates.append((rate, d_index, bank))
     candidates.sort(key=lambda candidate: (-candidate[0], candidate[1], candidate[2]["bank_name"]))
 
-    used = [0] * len(depositors)
-    remaining = float(max(amount, 0))
-    rows = []
+    from engines.fd_allocation_solver import solve_fixed_allocation
+    caps = []
     skipped_full = []
     for rate, d_index, bank in candidates:
-        if remaining <= 0:
-            break
-        if used[d_index] >= max_banks:
+        existing = depositors[d_index]["exposure"].get(normalize_bank_key(bank["bank_name"]), {})
+        cap = max_principal_within_limit(per_bank_limit - existing.get("total", 0), rate, months, count_interest_in_limit)
+        cap = math.floor(cap / _ALLOCATION_STEP) * _ALLOCATION_STEP
+        caps.append(cap)
+        if cap < min_per_bank:
+            name = bank["bank_name"]
+            skipped_full.append(name if len(depositors) == 1 else f"{name} ({depositors[d_index]['name']})")
+    investments = solve_fixed_allocation(amount, candidates, caps, min_per_bank, max_banks,
+                                         depositors, months, _ALLOCATION_STEP, calculate_fd_maturity, normalize_bank_key)
+    rows = []
+    for (rate, d_index, bank), invest in zip(candidates, investments):
+        if invest <= 0:
             continue
         depositor = depositors[d_index]
-        name = bank["bank_name"]
-        existing = depositor["exposure"].get(normalize_bank_key(name), {})
+        existing = depositor["exposure"].get(normalize_bank_key(bank["bank_name"]), {})
         existing_total = existing.get("total", 0.0)
-        cap = max_principal_within_limit(per_bank_limit - existing_total, rate, months, count_interest_in_limit)
-        cap = math.floor(cap / _ALLOCATION_STEP) * _ALLOCATION_STEP
-        if cap < min_per_bank:
-            skipped_full.append(name if len(depositors) == 1 else f"{name} ({depositor['name']})")
-            continue
-
-        invest = min(cap, remaining)
         maturity = calculate_fd_maturity(invest, rate, months, "Quarterly")
         insured_after = existing_total + (maturity if count_interest_in_limit else invest)
         tds_threshold = FD_TDS_THRESHOLD_SENIOR if depositor["is_senior"] else FD_TDS_THRESHOLD
         tds_risk = invest * rate / 100 + existing.get("annual_fd_interest", 0.0) > tds_threshold
         rows.append({
-            "bank_name": name,
-            "bank_type": bank.get("bank_type"),
-            "rate": rate,
-            "amount": round(invest, 2),
-            "interest": round(maturity - invest, 2),
-            "maturity_value": maturity,
-            "existing_amount": round(existing_total, 2),
-            "insured_total_after": round(insured_after, 2),
-            "fully_insured": insured_after <= per_bank_limit + 1,
-            "tds_risk": tds_risk,
+            "bank_name": bank["bank_name"], "bank_type": bank.get("bank_type"), "rate": rate,
+            "amount": round(invest, 2), "interest": round(maturity-invest, 2), "maturity_value": maturity,
+            "existing_amount": round(existing_total, 2), "insured_total_after": round(insured_after, 2),
+            "fully_insured": insured_after <= per_bank_limit + .01, "tds_risk": tds_risk,
             "person_name": depositor["name"],
         })
-        used[d_index] += 1
-        remaining -= invest
+    remaining = max(0, amount - sum(row["amount"] for row in rows))
 
     allocated = sum(row["amount"] for row in rows)
     total_interest = sum(row["interest"] for row in rows)
@@ -183,7 +183,7 @@ def suggest_fd_allocation(amount: float, banks: list[dict], tenure_key: str, *,
                           per_bank_limit: float = DICGC_INSURANCE_LIMIT, max_banks: int = 5,
                           min_per_bank: float = 10_000, include_small_finance: bool = True,
                           count_interest_in_limit: bool = True, excluded_banks=()) -> dict:
-    """Greedily place the amount in the highest-rate banks, capped so each bank stays within the insurance limit."""
+    """Optimize the fixed-tenure comparison within the insurance limit."""
     return suggest_household_allocation(
         amount, banks, tenure_key, [{"name": "", "is_senior": is_senior, "exposure": exposure or {}}],
         per_bank_limit=per_bank_limit, max_banks=max_banks, min_per_bank=min_per_bank,

@@ -21,3 +21,8 @@ pywin32>=306
 pygetwindow>=0.0.9
 mss>=9.0.1
 pywinauto>=0.6.9
+
+# FD planning: HiGHS mixed-integer solver and official-page parsing
+scipy>=1.11,<2
+beautifulsoup4>=4.12,<5
+truststore>=0.10,<1

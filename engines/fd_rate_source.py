@@ -5,7 +5,8 @@ import json
 import os
 import re
 import urllib.request
-from datetime import date, datetime
+from datetime import date, datetime, timezone
+import math
 from html.parser import HTMLParser
 
 import config
@@ -77,8 +78,11 @@ def set_rates_source_url(url: str) -> None:
 
 
 def _parse_rate(text: str) -> float | None:
-    match = re.search(r"\d+(?:\.\d+)?", text)
-    return float(match.group()) if match else None
+    match = re.fullmatch(r"\s*(\d+(?:\.\d+)?)\s*%?\s*(?:p\.?a\.?)?\s*", text, re.I)
+    if not match:
+        return None
+    value = float(match[1])
+    return value if math.isfinite(value) and 0 <= value <= 20 else None
 
 
 class _TableParser(HTMLParser):
@@ -178,7 +182,7 @@ def _banks_from_rows(rows: list[list[str]], columns: dict) -> list[dict]:
             "rate_1y": rate_1y,
             "rate_3y": rate_3y,
             "rate_5y": rate_5y,
-            "senior_extra": _parse_rate(_cell(row, columns["senior"])) or 0.0,
+            "senior_extra": _parse_rate(_cell(row, columns["senior"])),
         })
     return banks
 
@@ -232,8 +236,9 @@ def fetch_rates(url: str | None = None, timeout: int = 20) -> dict:
 
     snapshot = {
         "source_url": url,
-        "as_of": extract_as_of_date(html) or date.today().isoformat(),
-        "fetched_at": datetime.now().replace(microsecond=0).isoformat(),
+        "as_of": extract_as_of_date(html),  # Page metadata, never proof of a bank rate
+        "date_kind": "page_modified",
+        "fetched_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
         "is_bundled": False,
         "banks": parse_rates_html(html),
     }
@@ -244,6 +249,7 @@ def fetch_rates(url: str | None = None, timeout: int = 20) -> dict:
 def is_stale(snapshot: dict, today: date | None = None) -> bool:
     try:
         as_of = date.fromisoformat(snapshot["as_of"])
-        return ((today or date.today()) - as_of).days > RATES_STALE_AFTER_DAYS
+        age = ((today or date.today()) - as_of).days
+        return age < 0 or age > RATES_STALE_AFTER_DAYS
     except (KeyError, TypeError, ValueError):
         return True

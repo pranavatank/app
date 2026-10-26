@@ -805,7 +805,15 @@ class FixedDepositsScreen(QWidget):
 
     def _on_open_planner(self):
         """Open the FD planner to compare current rates and split savings across banks."""
-        from ui.dialogs.fd_planner_dialog import FDPlannerDialog
-        FDPlannerDialog(self, person_id=session.selected_person_id).exec()
+        if self.parent_window and hasattr(self.parent_window, "_navigate"):
+            from ui.dashboard_screen import _NAV_ITEMS
+            index = next(i for i, (_, key) in enumerate(_NAV_ITEMS) if key == "fd_planner")
+            self.parent_window._navigate(index)
+            return
+        from ui.fd_planner_screen import FDPlannerScreen
+        self._planner_window = FDPlannerScreen()
+        self._planner_window.setWindowTitle("Family FD planner")
+        self._planner_window.resize(1280, 860)
+        self._planner_window.show()
 
 

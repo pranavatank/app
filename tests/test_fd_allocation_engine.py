@@ -253,3 +253,12 @@ def test_coverage_report_flags_banks_by_limit_usage(monkeypatch):
     ]
     assert rows[2]["headroom"] == 0
     assert rows[2]["used_pct"] == 104.0
+
+
+def test_legacy_max_bank_constraint_does_not_greedily_choose_tiny_high_rate_bucket():
+    banks=[dict(bank_name="High",rate_1y=9,senior_extra=0,bank_type="Bank"),
+           dict(bank_name="Large",rate_1y=8,senior_extra=0,bank_type="Bank")]
+    result=suggest_fd_allocation(400000,banks,"rate_1y",max_banks=1,
+                                exposure={"high":{"total":480000,"annual_fd_interest":0}})
+    assert [r['bank_name'] for r in result['rows']]==["Large"]
+    assert result['allocated']==400000

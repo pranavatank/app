@@ -47,6 +47,7 @@ _NAV_ITEMS = [
     ("Tax",                   "tax"),
     ("Income Prediction",     "income_prediction"),
     ("Settings",              "settings"),
+    ("FD Planner",            "fd_planner"),
 ]
 
 
@@ -596,6 +597,10 @@ class DashboardScreen(QMainWindow):
             from ui.settings_screen import SettingsScreen
             self.settings_page = SettingsScreen(self)
             return self.settings_page
+        elif index == 10:  # Full-page family planner
+            from ui.fd_planner_screen import FDPlannerScreen
+            self.planner_page = FDPlannerScreen(self)
+            return self.planner_page
         else:
             raise ValueError(f"Unknown screen index: {index}")
 
@@ -1026,6 +1031,7 @@ class DashboardScreen(QMainWindow):
             lambda: self.tax_page.refresh() if hasattr(self, 'tax_page') else None,
             lambda: self.prediction_page.refresh() if hasattr(self, 'prediction_page') else None,
             lambda: self.settings_page.refresh() if hasattr(self, 'settings_page') else None,
+            lambda: self.planner_page.refresh() if hasattr(self, 'planner_page') else None,
         ]
         if 0 <= idx < len(pages):
             try:
@@ -1099,6 +1105,10 @@ class DashboardScreen(QMainWindow):
             self.close()
 
     def closeEvent(self, event):
+        if getattr(getattr(self, "planner_page", None), "_busy", False):
+            QMessageBox.information(self, "FD Planner", "Please wait for the current rate refresh or plan calculation to finish.")
+            event.ignore()
+            return
         if not self._confirm_unsaved_transactions("close the app"):
             event.ignore()
             return

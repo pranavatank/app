@@ -58,6 +58,7 @@ _R: dict[str, tuple] = {
     "reconciliation":   ("mdi6.scale-balance",          "default", "⚖"),
     "reports":          ("mdi6.chart-areaspline",       "default", "\U0001F4CA"),
     "settings":         ("mdi6.cog-outline",            "default", "⚙"),
+    "fd_planner":       ("mdi6.sitemap",                "default", "FD"),
 
     # -- CRUD actions --------------------------------------------------------------
     "add":              ("mdi6.plus-circle",            "success", "➕"),

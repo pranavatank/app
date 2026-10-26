@@ -115,6 +115,7 @@ SCREEN_ACCENT_FILL        = {
     "transactions": "#B45309",
     "income": "#B91C1C",
     "fixed_deposits": "#A21CAF",
+    "fd_planner": "#A21CAF",
     "statement_import": "#0E7490",
     "ais_tis": "#BE185D",
     "tax": "#C2410C",

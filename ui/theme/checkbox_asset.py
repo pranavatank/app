@@ -37,12 +37,15 @@ def _generate() -> None:
     pm = QPixmap(size, size)
     pm.fill(Qt.GlobalColor.transparent)
     p = QPainter(pm)
-    p.setRenderHint(QPainter.RenderHint.Antialiasing)
-    pen = QPen(QColor("#FFFFFF"))
-    pen.setWidth(2)
-    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-    p.setPen(pen)
-    p.drawPolyline(QPoint(3, 7), QPoint(6, 10), QPoint(11, 3))
-    p.end()
+    try:
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        pen = QPen(QColor("#FFFFFF"))
+        pen.setWidth(2)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        p.setPen(pen)
+        p.drawPolyline([QPoint(3, 7), QPoint(6, 10), QPoint(11, 3)])
+    finally:
+        # A failed render must release the device before QPixmap destruction.
+        p.end()
     pm.save(_ASSET_PATH, "PNG")

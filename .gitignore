@@ -13,6 +13,7 @@ data/old logo.png
 
 # Owner's real financial documents - never track (see REBUILD_PLAN T001)
 data/PersonalData/
+data/data/
 
 # Backup files
 backups/*.db
@@ -58,3 +59,9 @@ dist/
 
 # Real UI test screenshots (generated evidence, not source)
 tools/real_ui_tests/screenshots/
+
+# Locally checked public rates expire; refresh rather than bundle as current
+data/family_bank_rates.json
+
+data/fd_rates_cache.json
+data/fd_verified_rates.json

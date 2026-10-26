@@ -3,16 +3,23 @@ Test that relocated charts render successfully on their new screens.
 """
 import os
 import sys
+import pytest
+from PySide6.QtCore import QCoreApplication,QEvent
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-def test_transactions_charts():
-    """Verify Monthly and Categories charts exist on TransactionsScreen."""
-    from PySide6.QtWidgets import QApplication
-    os.environ["QT_QPA_PLATFORM"] = "offscreen"
-    app = QApplication.instance() or QApplication([])
+@pytest.fixture(autouse=True)
+def close_test_screens(qapp):
+    yield
+    for screen in qapp.topLevelWidgets():
+        screen.close()
+        screen.deleteLater()
+    QCoreApplication.sendPostedEvents(None,QEvent.Type.DeferredDelete)
 
+
+def test_transactions_charts(qapp):
+    """Verify Monthly and Categories charts exist on TransactionsScreen."""
     from ui.transactions_screen import TransactionsScreen
     screen = TransactionsScreen()
 
@@ -23,12 +30,8 @@ def test_transactions_charts():
     print("[PASS] Transactions charts present")
 
 
-def test_accounts_bank_chart():
+def test_accounts_bank_chart(qapp):
     """Verify bank_chart was intentionally removed from AccountsScreen (F322)."""
-    from PySide6.QtWidgets import QApplication
-    os.environ["QT_QPA_PLATFORM"] = "offscreen"
-    app = QApplication.instance() or QApplication([])
-
     from ui.accounts_screen import AccountsScreen
     screen = AccountsScreen()
 
@@ -37,22 +40,11 @@ def test_accounts_bank_chart():
     print("[PASS] Accounts bank chart correctly removed")
 
 
-def test_fixed_deposits_interest_chart():
+def test_fixed_deposits_interest_chart(qapp):
     """Verify Interest Trend chart exists on FixedDepositsScreen."""
-    from PySide6.QtWidgets import QApplication
-    os.environ["QT_QPA_PLATFORM"] = "offscreen"
-    app = QApplication.instance() or QApplication([])
-
     from ui.fixed_deposits_screen import FixedDepositsScreen
     screen = FixedDepositsScreen()
 
     assert hasattr(screen, 'interest_chart'), "FixedDepositsScreen missing interest_chart"
     assert screen.interest_chart is not None, "interest_chart is None"
     print("[PASS] Fixed Deposits interest chart present")
-
-
-if __name__ == "__main__":
-    test_transactions_charts()
-    test_accounts_bank_chart()
-    test_fixed_deposits_interest_chart()
-    print("\n[OK] All chart relocation tests passed!")

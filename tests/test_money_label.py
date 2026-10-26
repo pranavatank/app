@@ -68,6 +68,7 @@ class TestFormatInr:
         assert format_inr(1256000) == "₹12,56,000"  # 12.56 lakhs
 
 
+@pytest.mark.usefixtures("qapp")
 class TestMoneyLabelWidget:
     """Test cases for the MoneyLabel widget."""
 

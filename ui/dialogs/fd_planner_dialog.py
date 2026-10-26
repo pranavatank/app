@@ -111,7 +111,7 @@ class FDPlannerDialog(QDialog):
         layout.addWidget(title)
 
         subtitle = QLabel(
-            "Compare current FD rates and split your savings across banks so each bank stays within the DICGC insurance limit."
+            "Use the main FD Planner page for official-rate family allocations. Compare & Simulate explores unverified comparison rates and does not check source ownership or income."
         )
         subtitle.setProperty("textrole", "muted-sm")
         subtitle.setWordWrap(True)
@@ -155,7 +155,7 @@ class FDPlannerDialog(QDialog):
 
         scroll.setWidget(body)
         self.tabs = QTabWidget()
-        self.tabs.addTab(scroll, "Split Savings")
+        self.tabs.addTab(scroll, "Compare & Simulate")
         self.coverage_tab = CoverageTab()
         self.tabs.addTab(self.coverage_tab, "My Coverage")
         self.options_tab = InvestmentOptionsTab()
@@ -291,14 +291,14 @@ class FDPlannerDialog(QDialog):
             row.addWidget(check)
 
         row.addStretch()
-        self.btn_suggest = Theme.btn("Suggest Split", "primary", height=Theme.HEIGHT_MD, min_width=150)
+        self.btn_suggest = Theme.btn("Simulate Split", "primary", height=Theme.HEIGHT_MD, min_width=150)
         self.btn_suggest.clicked.connect(self._on_suggest)
         row.addWidget(self.btn_suggest)
         return row
 
     def _build_results_table(self, layout: QVBoxLayout) -> None:
         header = QHBoxLayout()
-        results_title = QLabel("Suggested split")
+        results_title = QLabel("Illustrative split — unverified comparison rates")
         results_title.setProperty("textrole", "title-sm")
         header.addWidget(results_title)
         header.addStretch()
@@ -402,7 +402,7 @@ class FDPlannerDialog(QDialog):
         host = urlparse(source_url).netloc or source_url
         parts = [
             f"Source: {host}",
-            f"Rates as of {format_display_date(snapshot.get('as_of'))}",
+            f"Page / snapshot date {format_display_date(snapshot.get('as_of'))} (not bank verification)",
             f"Fetched {format_display_date((snapshot.get('fetched_at') or '')[:10])}",
         ]
         if snapshot.get("is_bundled"):
@@ -429,7 +429,7 @@ class FDPlannerDialog(QDialog):
     def _on_rates_fetched(self, snapshot: dict) -> None:
         self._snapshot = snapshot
         self._populate_rates()
-        show_success(f"Loaded current rates for {len(snapshot['banks'])} banks")
+        show_success(f"Loaded comparison rates for {len(snapshot['banks'])} banks — bank confirmation still required")
 
     def _on_rates_error(self, err) -> None:
         show_warning(f"Couldn't fetch FD rates ({err}). Showing the last saved rates.", duration_ms=6000)
@@ -506,7 +506,7 @@ class FDPlannerDialog(QDialog):
         matures_on = format_display_date((date.today() + relativedelta(months=result["tenure_months"])).isoformat())
         self.results_table.setRowCount(len(rows))
         for row_index, row in enumerate(rows):
-            form_name = FD_TDS_FORM_NAME_SENIOR if senior_by_name.get(row["person_name"]) else FD_TDS_FORM_NAME
+            form_name = "Form 121" if int(get_current_financial_year()[:4]) >= 2026 else (FD_TDS_FORM_NAME_SENIOR if senior_by_name.get(row["person_name"]) else FD_TDS_FORM_NAME)
             self._set_result_row(row_index, row, form_name, matures_on)
 
         self.kpi_invested.set_value(result["allocated"])
@@ -543,8 +543,7 @@ class FDPlannerDialog(QDialog):
             messages.append(
                 f"{format_inr(result['unallocated'])} could not be placed without crossing the "
                 f"{format_inr(result['per_bank_limit'])} insured limit at the selected banks. "
-                "Raise Max banks, tick more banks, or invest it in another family member's name — "
-                "each depositor gets separate cover."
+                "Review bank limits, verified rate coverage and liquidity. Ownership and tax-clubbing rules must be checked before any transfer between family members."
             )
             option = best_overflow_option(result["tenure_months"], is_senior, result["unallocated"])
             if option:
@@ -567,7 +566,7 @@ class FDPlannerDialog(QDialog):
             lines.append("\t".join(self.results_table.item(row, c).text() for c in visible))
         result = self._last_result
         lines.append(
-            f"Total: {format_inr(result['allocated'])} at {result['weighted_rate']:.2f}% → "
+            f"Simulation only — confirm rates, ownership, tax and reserves. Total: {format_inr(result['allocated'])} at {result['weighted_rate']:.2f}% → "
             f"{format_inr(result['total_interest'])} interest"
         )
         QApplication.clipboard().setText("\n".join(lines))

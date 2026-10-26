@@ -6,8 +6,8 @@ from engines.interest_engine import calculate_fd_maturity
 
 SCHEMES_PERIOD = "Oct–Dec 2026"
 SCHEMES_VALID_UNTIL = "2026-12-31"
-INDIA_POST_RATES_URL = "https://www.indiapost.gov.in/Financial/Pages/Content/Post-Office-Saving-Schemes.aspx"
-RBI_FRSB_URL = "https://www.rbi.org.in/scripts/BS_PressReleaseDisplay.aspx?prid=63065"
+INDIA_POST_RATES_URL = "https://www.indiapost.gov.in/banking-services/savings"
+RBI_FRSB_URL = "https://www.rbi.org.in/scripts/NotificationUser.aspx?Id=11924"
 ELIGIBLE_ALL = "Everyone"
 ELIGIBLE_SENIOR = "Senior citizens (60+)"
 ELIGIBLE_GIRL_CHILD = "Girl child under 10"
@@ -77,7 +77,16 @@ def project_option(option: dict, amount: float) -> dict:
     max_amount = option["max_amount"]
     invested = min(amount, max_amount) if max_amount is not None else amount
 
-    if option["payout"]:
+    if option["name"].startswith("Post Office Time Deposit"):
+        # Interest is compounded quarterly within each year and paid annually;
+        # paid-out interest does not continue compounding in the TD account.
+        annual_payout = calculate_fd_maturity(invested, option["rate"], 12, "Quarterly") - invested
+        interest = annual_payout * option["tenure_months"] / 12
+        maturity_value = invested + interest  # Total receipts, including annual payouts
+    elif option["name"] == "Kisan Vikas Patra (KVP)":
+        maturity_value = invested * 2
+        interest = invested
+    elif option["payout"]:
         interest = invested * option["rate"] / 100 * option["tenure_months"] / 12
         maturity_value = invested + interest
     else:
@@ -90,6 +99,7 @@ def project_option(option: dict, amount: float) -> dict:
         "interest": round(interest, 2),
         "maturity_value": round(maturity_value, 2),
         "capped": max_amount is not None and amount > max_amount,
+        "variable_rate_scenario": option["name"] in ("Public Provident Fund (PPF)", "Sukanya Samriddhi Yojana (SSY)", "RBI Floating Rate Savings Bond"),
     }
 
 

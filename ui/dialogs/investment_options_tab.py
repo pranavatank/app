@@ -25,8 +25,9 @@ def _right_aligned_item(text: str) -> QTableWidgetItem:
 
 def _info_text() -> str:
     text = (
-        f"Government-backed rates for the {SCHEMES_PERIOD} quarter. These are guaranteed by the "
-        f"Government of India, so the {format_inr(DICGC_INSURANCE_LIMIT)} bank-insurance cap does not apply."
+        f"Reference rates for {SCHEMES_PERIOD}; confirm current rates and eligibility with the issuer. "
+        "PPF, SSY and floating-rate bond projections assume today's rate continues; future returns can change. "
+        f"Government-backed schemes do not use the {format_inr(DICGC_INSURANCE_LIMIT)} DICGC bank cover."
     )
     if schemes_outdated():
         text += f" These rates were set for {SCHEMES_PERIOD} — check the official page for the current quarter."
@@ -34,7 +35,7 @@ def _info_text() -> str:
 
 
 class InvestmentOptionsTab(QWidget):
-    COLUMNS = ["Scheme", "Rate %", "Lock-in", "Who Can Invest", "Max", "Tax", "You'd Invest", "Interest Earned"]
+    COLUMNS = ["Scheme", "Rate %", "Lock-in", "Who Can Invest", "Max", "Tax", "You'd Invest", "Projected Interest"]
     RIGHT_ALIGNED_COLUMNS = {1, 6, 7}
     STRETCH_COLUMNS = {5}
 
@@ -62,8 +63,8 @@ class InvestmentOptionsTab(QWidget):
         layout.addWidget(self.details_lbl)
 
         footnote = QLabel(
-            "Market-linked options such as liquid or arbitrage mutual funds and Treasury Bills "
-            "(through RBI Retail Direct) can also hold surplus cash, but their returns are not fixed or guaranteed."
+            "Treasury Bills through RBI Retail Direct have auction-determined yields; selling before maturity can change your return. "
+            "Liquid and arbitrage mutual funds have market and liquidity risk. Scheme limits also include your existing holdings."
         )
         footnote.setProperty("textrole", "muted-sm")
         footnote.setWordWrap(True)

@@ -62,7 +62,7 @@ def test_parse_rates_html_reads_rate_table():
     assert suryoday["rate_5y"] == 8.25
     assert suryoday["senior_extra"] == 0.15
     assert suryoday["bank_type"] == SMALL_FINANCE_BANK
-    assert bandhan["senior_extra"] == 0.50
+    assert bandhan["senior_extra"] is None
     assert bandhan["bank_type"] == COMMERCIAL_BANK
 
 
@@ -75,7 +75,7 @@ def test_parse_rates_html_without_rate_table_raises():
     ("8.25%", 8.25),
     ("7.10 p.a.", 7.10),
     ("—", None),
-    ("0.25-0.50", 0.25),
+    ("0.25-0.50", None),
 ])
 def test_parse_rate(text, expected):
     assert _parse_rate(text) == expected
@@ -160,3 +160,21 @@ def test_is_stale_after_window_is_true():
 
 def test_is_stale_invalid_as_of_is_true():
     assert is_stale({"as_of": "bad"}) is True
+
+
+def test_page_date_is_not_invented_when_aggregator_has_no_date(monkeypatch,tmp_path):
+    import config
+    import engines.fd_rate_source as source
+    monkeypatch.setattr(config,'DATA_DIR',str(tmp_path))
+    html=b'<table><tr><th>Bank</th><th>1 year</th></tr><tr><td>A</td><td>7.5</td></tr></table>'
+    class Response:
+        class headers:
+            @staticmethod
+            def get_content_charset():return 'utf-8'
+        def read(self):return html
+        def __enter__(self):return self
+        def __exit__(self,*args):pass
+    monkeypatch.setattr(source.urllib.request,'urlopen',lambda *args,**kwargs:Response())
+    snapshot=source.fetch_rates('https://comparison.example/rates')
+    assert snapshot['as_of'] is None
+    assert source.is_stale(snapshot)
