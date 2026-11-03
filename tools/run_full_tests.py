@@ -42,16 +42,17 @@ def parse_summary_line(log_content: str) -> str | None:
 
 
 def classify_result(returncode: int, summary_line: str | None) -> str:
-    """Classify test result based on returncode and summary line."""
+    """Classify test result from pytest's process exit code.
+
+    A summary is useful diagnostics, but it cannot turn an abnormal process
+    exit (including a native crash after the summary) into a passing run.
+    """
     if returncode == 0:
         return "PASS"
     if returncode == 5:
         return "NO TESTS"
     if returncode == 1:
         return "FAIL"
-
-    if summary_line and "failed" not in summary_line.lower() and "error" not in summary_line.lower():
-        return f"PASS (crashed after summary, rc={returncode})"
     return "CRASH"
 
 
@@ -98,6 +99,7 @@ def main() -> int:
         log_path = os.path.join(log_dir, basename + ".log")
 
         start_time = time.perf_counter()
+        print(f"Running {basename}...", flush=True)
 
         try:
             with open(log_path, "w", encoding="utf-8") as log_fh:
@@ -117,6 +119,7 @@ def main() -> int:
                     timeout=120
                 )
                 returncode = result.returncode
+                log_fh.write(f"\n[run_full_tests] process exit code: {returncode}\n")
         except subprocess.TimeoutExpired:
             elapsed = time.perf_counter() - start_time
             results[basename] = ("TIMEOUT", None, elapsed)
@@ -155,10 +158,7 @@ def main() -> int:
 
     print(f"Logs: {log_dir}")
 
-    all_pass = all(
-        status in ("PASS", "NO TESTS") or status.startswith("PASS (crashed")
-        for status, _, _ in results.values()
-    )
+    all_pass = all(status in ("PASS", "NO TESTS") for status, _, _ in results.values())
 
     return 0 if all_pass else 1
 

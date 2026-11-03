@@ -4,7 +4,7 @@
 you should not need to read source files to understand what this project is, what
 state it is in, what is pending, or how to test it.
 
-**Last updated:** 2026-10-26 (family FD Planner checkpoint; current testing limits below). Earlier rebuild figures are historical snapshots, not a new audit of the live database.
+**Last updated:** 2026-11-04 (isolated-test diagnostics; feature and bank-rate records below remain the 26 October checkpoint). Earlier rebuild figures are historical snapshots, not a new audit of the live database.
 **Read order:** this guide for the product and the testing rules, then **`tools/real_ui_tests/REBUILD_PLAN.md`** — the
 runbook with current test state, how to run every script, open decisions and next steps. The runbook supersedes §0.2 and
 §0.3 below where they differ.
@@ -18,7 +18,7 @@ past mistakes — not a changelog. Full history is in git log / commit messages.
 
 ### 0.0 Current FD Planner checkpoint — 2026-10-26
 
-**Checkout:** `B:\Study\App\App`, branch **main**. The owner requires changes directly on main; see `AGENTS.md`. Implementation checkpoint: **`2738be5`** (`feat: add full-page family FD planning with official bank rates`). No push was requested. The owner asked to commit the current work before continuing; do not resume further repairs automatically.
+**Checkout:** `B:\Study\App\App`, branch **main**. The owner requires changes directly on main; see `AGENTS.md`. Implementation checkpoint: **`2738be5`** (`feat: add full-page family FD planning with official bank rates`). No push was requested. Work stopped after the requested checkpoint commit; the subsequently requested test diagnostics are recorded in §0.0a.
 
 **Current feature:** restart the app and open **FD Planner** in the sidebar, or use the button on Fixed Deposits. It is a full page, not the superseded optimizer modal. The main inputs are cash to keep available and the planning horizon. The animated tree expands family → person → bank account → FD tenure/ready cash. Extra bank accounts are grouped until clicked. Privacy, pause animation, pan and zoom are supported.
 
@@ -30,9 +30,19 @@ past mistakes — not a changelog. Full history is in git log / commit messages.
 
 **Cleanup:** the duplicate optimized-dialog tab, first optimizer, manual-rate workflow, manual-rate example and generated comparison cache were removed. Shared calculations live in `engines/fd_planner_math.py`; quote metadata live in `engines/fd_rates.py`. Original comparison/coverage/other-options components remain for compatibility. All four themes now include the `fd_planner` navigation accent. Private-data ignore rules cover both `data/PersonalData/` and `data/data/`.
 
-**Verification and limits:** the new family engine, page, workbook, official-rate, quote-metadata and financial-math test files passed individually. The repaired chart/relocation/currency group passed **22 tests** together. Those repairs use a shared QApplication and current read-only SQL totals, including flagged transfers in other categories; they do not change ledger classifications or data. The old hard-coded tool guard in `tools/test_prediction_engine.py` was not changed. An earlier 194-test selection passed before cleanup; that is not a claim that the current whole suite is green. The subsequent monolithic suite displayed two error markers and did not complete; it was stopped at the owner's request. Diagnose those errors on the next testing pass. Use the documented per-file runner below and run real-window checks separately. Offscreen renders and unit tests are not a substitute for real mouse/keyboard verification of the new page.
+**Verification recorded on 26 October:** the new family engine, page, workbook, official-rate, quote-metadata and financial-math test files passed individually. The repaired chart/relocation/currency group passed **22 tests** together. Those repairs use a shared QApplication and current read-only SQL totals, including flagged transfers in other categories; they do not change ledger classifications or data. The old hard-coded tool guard in `tools/test_prediction_engine.py` was not changed. An earlier 194-test selection passed before cleanup. The subsequent monolithic suite displayed two error markers and did not complete; it was stopped at the owner's request. Current isolated-suite results are in §0.0a. Use the documented per-file runner below and run real-window checks separately. Offscreen renders and unit tests are not a substitute for real mouse/keyboard verification of the new page.
 
 Current implementation details and source limitations: **[FD_PLANNER.md](FD_PLANNER.md)**. Main entry points: `ui/fd_planner_screen.py`, `ui/widgets/family_money_tree.py`, `engines/family_workbook.py`, `engines/official_bank_rates.py`, `engines/family_fd_engine.py`.
+
+### 0.0a Isolated-test checkpoint — 2026-11-04
+
+**Measured results:** the initial 52-file isolated baseline produced **536 passed, 43 skipped**. After the runner repair and its 20 new regression tests, the final run produced **556 passed, 43 skipped across 53 files**. Every final child log records process exit code **0**; there were no crashes or timeouts. The historical monolithic-run error markers were not reproduced in isolation; their original cause remains unknown.
+
+**Runner repair:** `tools/run_full_tests.py` previously accepted a native crash after a clean pytest summary as a pass. Abnormal process exits now remain `CRASH` and make the aggregate exit nonzero. Passing summaries remain diagnostic information. Logs retain each completed child's numeric exit code, and progress is printed before each file. `tests/test_run_full_tests.py` covers signed/unsigned Windows crash codes, mixed results, timeouts and launch errors with mocked subprocesses; its 20 tests also passed separately.
+
+**Coverage limits:** the 43 skips comprise 25 in `test_real_documents.py`, 10 in `test_statement_package.py`, one in `test_form26as_parser.py`, two in `test_statement_import_flow.py` and five in `test_excel_table_parity.py`. Several document tests still target the absent legacy `data/PersonalData/Pranav/` tree while private sources are under `data/data/`; these skips do not verify the current documents. This pass did not run real-window mouse/keyboard flows, refresh live bank rates, change financial classifications or perform the Equitas data repair.
+
+**Evidence and data safety:** per-file logs are retained under the gitignored `tools/real_ui_tests/screenshots/plan_build_20261104/` directory in `baseline/`, `runner_verified/` and `suite_verified/`; the latter also contains `runner-summary.txt`. Before/after SHA-256 comparisons matched for all 15 protected files, including the live database, theme preferences and private source documents. Diagnostic runs preserved the Git index; the owner subsequently authorized committing the completed changes.
 
 The remaining rebuild state in §0.1–§0.3 is retained from the earlier handoff. Re-measure the current database before relying on its counts or financial totals.
 
@@ -456,11 +466,10 @@ collection of matplotlib/Qt objects). `tools/run_full_tests.py` runs each
 ```
 The former 35-PASS/2-CRASH baseline is historical. On 26 October the
 QApplication-lifetime issues in `test_chart_relocation.py` and
-`test_money_label.py` were corrected; both passed in the 22-test chart/currency
-group. This does not establish a clean whole-suite baseline: the latest
-single-process run was incomplete and showed two errors. Preserve failures
-as findings and use per-file logs when resuming testing; do not classify a
-native crash as a pass solely because assertion dots were printed.
+`test_money_label.py` were corrected. The 4 November isolated-suite results
+and remaining skips are recorded in §0.0a; they do not establish that the
+fragile single-process suite is safe. The runner retains per-file exit codes
+and fails on a native crash even when pytest printed a passing summary.
 
 `test_dashboard_lazy.py`'s two previously-stale-failing tests (nav-button
 count, sidebar-collapse-width) are now fixed and pass.
@@ -510,8 +519,8 @@ current-FY daily rate if any realised this FY, else prior-FY daily rate, else
 zero) — not a hardcoded 0.0 anymore. Returns
 `{total, realised, full_year, per_bank, is_estimated}`.
 
-**Test hazard:** `tests/conftest.py` repoints `config.DB_PATH` to an empty temp DB
-for every test. A test that must see real data has to point it back at
+**Test hazard:** `tests/conftest.py` repoints `config.DB_PATH` to a seeded temporary DB
+once per test session (once per file with the isolated runner). A test that must see real data has to point it back at
 `data/financial.db` (see `tests/test_chart_db_agreement.py`), and a screen that
 starts its own async `load_data()` must have it patched out or it overwrites the
 data under test.
@@ -615,7 +624,7 @@ chart and table it owns, or a live theme switch leaves it visually stale.
    in the target theme is fully clean — 0 offenders across all 10 screens
    (Pass A of that same test). Fixing charts + the 4 missing pages is a
    further design-system pass, not a quick patch.
-5. **Resume test diagnostics from the current checkpoint (§0.0 / §5.5).** The chart-relocation and MoneyLabel QApplication fixtures were repaired and their combined group passed. The latest monolithic run still showed two errors and was stopped without a final summary. Re-run the affected files through `tools/run_full_tests.py` and inspect logs. A native exit without a summary remains a finding; do not automatically promote it to a pass.
+5. **Extend test coverage from the 4 November checkpoint (§0.0a / §5.5).** The isolated suite completed with 556 passed and 43 skipped; the historical monolithic errors were not reproduced. Review legacy document-fixture paths and the other skipped flows, then run the pending real-window checks separately. Continue using `tools/run_full_tests.py` and inspect per-file logs; a native crash remains a failure even after a passing summary.
 
 ### Known, accepted limitations (not bugs to fix blindly)
 6. **The Transactions screen has no pagination** — loads the entire FY
