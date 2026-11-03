@@ -1,0 +1,7 @@
+interface:
+  display_name: "Plan Then Build"
+  short_description: "Plan, delegate parallel builds, and verify"
+  default_prompt: "Use $plan-then-build for high-level planning, parallel lower-tier implementation, and independent high-level verification."
+
+policy:
+  allow_implicit_invocation: true
