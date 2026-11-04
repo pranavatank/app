@@ -5,12 +5,13 @@ then reads back and verifies the stored data.
 
 Usage:
   .venv\Scripts\python.exe tools/taxdoc_import.py [--person-id 1]
-      [--dir data/PersonalData/Pranav] [--financial-year 2025-26]
-      [--password-file data/PersonalData/Pranav/password.txt] [--dry-run]
+      [--dir data/data/Pranav] [--financial-year 2025-26]
+      [--password-file data/data/Pranav/Password.txt] [--dry-run]
 """
 
 import sys
 import os
+import re
 import argparse
 from pathlib import Path
 
@@ -23,6 +24,7 @@ for _s in (sys.stdout, sys.stderr):
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
+from tools.private_sources import get_personal_data_dir
 
 from engines.taxdocs.form26as import parse_form26as_pdf
 from engines.taxdocs.ais import parse_ais_pdf
@@ -54,8 +56,8 @@ EXPECTED = {
 def read_ais_tis_password(password_file: str) -> str | None:
     """Read AIS/TIS password from a file.
 
-    Scans lines for one whose lowercased text contains both "ais" and "tis"
-    and a ":", returns the text after the last ":", stripped.
+    Matches an AIS/TIS, AIS, or TIS label before the first colon and returns
+    the remaining value, stripped.
     Returns None if file is absent or no line matches.
     """
     if not os.path.exists(password_file):
@@ -64,10 +66,11 @@ def read_ais_tis_password(password_file: str) -> str | None:
     try:
         with open(password_file, "r", encoding="utf-8") as f:
             for line in f:
-                line_lower = line.lower()
-                if "ais" in line_lower and "tis" in line_lower and ":" in line:
-                    # Return text after last colon
-                    return line.split(":")[-1].strip()
+                label, separator, _value = line.partition(":")
+                normalized_label = re.sub(r"[^a-z]", "", label.lower())
+                if separator and normalized_label in {"ais", "tis", "aistis", "aistispwd", "aistispassword", "aisandtis"}:
+                    # The label ends at the first colon; passwords may contain more.
+                    return _value.strip()
     except Exception:
         pass
 
@@ -77,8 +80,8 @@ def read_ais_tis_password(password_file: str) -> str | None:
 def read_equitas_password(password_file: str) -> str | None:
     """Read Equitas statement password from a file.
 
-    Scans lines for one whose lowercased text contains "equitas"
-    and a ":", returns the text after the last ":", stripped.
+    Matches an Equitas label before the first colon and returns the remaining
+    value, stripped.
     Returns None if file is absent or no line matches.
     """
     if not os.path.exists(password_file):
@@ -87,10 +90,11 @@ def read_equitas_password(password_file: str) -> str | None:
     try:
         with open(password_file, "r", encoding="utf-8") as f:
             for line in f:
-                line_lower = line.lower()
-                if "equitas" in line_lower and ":" in line:
-                    # Return text after last colon
-                    return line.split(":")[-1].strip()
+                label, separator, value = line.partition(":")
+                normalized_label = re.sub(r"[^a-z]", "", label.lower())
+                if separator and normalized_label in {"equitas", "equitaspassword", "equitasstatementpassword"}:
+                    # The label ends at the first colon; passwords may contain more.
+                    return value.strip()
     except Exception:
         pass
 
@@ -319,8 +323,8 @@ def main() -> int:
     parser.add_argument(
         "--dir",
         type=str,
-        default="data/PersonalData/Pranav",
-        help="Directory containing PDF files (default: data/PersonalData/Pranav)",
+        default=str(get_personal_data_dir()),
+        help="Directory containing PDF files (default: detected private source directory)",
     )
     parser.add_argument(
         "--financial-year",
@@ -331,7 +335,7 @@ def main() -> int:
     parser.add_argument(
         "--password-file",
         type=str,
-        default="data/PersonalData/Pranav/password.txt",
+        default=str(get_personal_data_dir() / "Password.txt"),
         help="Path to file containing AIS/TIS password",
     )
     parser.add_argument(

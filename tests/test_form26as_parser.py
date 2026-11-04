@@ -599,18 +599,19 @@ class TestEdgeCases:
 
 import os
 from pathlib import Path
+from tools.private_sources import get_personal_data_dir
 
-FIXTURE_DIR = Path(__file__).resolve().parent.parent / "data" / "PersonalData" / "Pranav"
+FIXTURE_DIR = get_personal_data_dir()
 
 pytestmark_fixture_dependent = pytest.mark.skipif(
     not FIXTURE_DIR.is_dir(),
-    reason="owner's document fixtures not present (data/PersonalData/) — see REBUILD_PLAN T004",
+    reason="owner's document fixtures not present (data/data/Pranav or legacy data/PersonalData/Pranav) — see REBUILD_PLAN T004",
 )
 
 
 @pytest.mark.skipif(
     not FIXTURE_DIR.is_dir(),
-    reason="owner's document fixtures not present (data/PersonalData/)",
+    reason="owner's document fixtures not present (data/data/Pranav or legacy data/PersonalData/Pranav)",
 )
 class TestFormWithFixture:
     """Tests that require the actual Form 26AS PDF fixture."""

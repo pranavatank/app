@@ -23,15 +23,16 @@ import pytest
 from engines.pdf_extractor import extract_pdf_text
 from engines.statement import parse_statement_pdf
 from engines.statement.validate import direction_errors, extract_control_totals, reconcile_totals
+from tools.private_sources import get_personal_data_dir
 
 
 # ── Fixtures and module skip ──────────────────────────────────────────────────
 
-FIXTURE_DIR = Path(__file__).resolve().parent.parent / "data" / "PersonalData" / "Pranav"
+FIXTURE_DIR = get_personal_data_dir()
 
 pytestmark = pytest.mark.skipif(
     not FIXTURE_DIR.is_dir(),
-    reason="owner's document fixtures not present (data/PersonalData/) — see REBUILD_PLAN T004",
+    reason="owner's document fixtures not present (data/data/Pranav or legacy data/PersonalData/Pranav) — see REBUILD_PLAN T004",
 )
 
 
@@ -40,8 +41,8 @@ def _password(label_substring: str) -> str:
     Return password for a given label substring.
 
     Check env vars first (PFM_AIS_TIS_PASSWORD, PFM_EQUITAS_PASSWORD),
-    else parse password.txt for a line whose label contains substring (case-insensitive).
-    Skip the test if password.txt missing and env var not set.
+    else parse Password.txt for a line whose label contains substring (case-insensitive).
+    Skip the test if Password.txt is missing and env var not set.
     """
     # Build a map of expected env vars for common labels
     env_map = {
@@ -56,23 +57,25 @@ def _password(label_substring: str) -> str:
             if val:
                 return val
 
-    # Fall back to password.txt
-    password_file = FIXTURE_DIR / "password.txt"
+    # Fall back to the private password file.
+    password_file = FIXTURE_DIR / "Password.txt"
     if not password_file.exists():
         pytest.skip(
-            f"password.txt not found and env vars not set (check {', '.join(env_map.values())})"
+            f"Password.txt not found and env vars not set (check {', '.join(env_map.values())})"
         )
 
     text = password_file.read_text()
+    label_aliases = {"ais/tis", "ais", "tis"} if label_substring.lower() == "ais/tis" else set()
     for line in text.splitlines():
         line = line.strip()
         if not line or ":" not in line:
             continue
         label, password = line.split(":", 1)
-        if label_substring.lower() in label.lower():
+        normalized_label = label.strip().lower()
+        if label_substring.lower() in normalized_label or normalized_label in label_aliases:
             return password.strip()
 
-    pytest.skip(f"password label '{label_substring}' not found in password.txt")
+    pytest.skip(f"password label '{label_substring}' not found in Password.txt")
 
 
 # ── Cached PDF parsing (module scope) ─────────────────────────────────────────

@@ -16,8 +16,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from engines.taxdocs.form26as import parse_form26as_pdf
 from engines.taxdocs.ais import parse_ais_pdf
 from engines.taxdocs.tis import parse_tis_pdf
-from config import DB_PATH, DATA_DIR
+from config import DB_PATH
 from tools.taxdoc_import import read_ais_tis_password
+from tools.private_sources import get_personal_data_dir
 
 
 def get_db_connection():
@@ -37,13 +38,13 @@ def get_ais_tis_password():
         return password
 
     # Check password file
-    password_file = Path(DATA_DIR) / "PersonalData" / "Pranav" / "password.txt"
+    password_file = get_personal_data_dir() / "Password.txt"
     return read_ais_tis_password(str(password_file))
 
 
 def fetch_26as_data():
     """Parse 26AS and return structured data."""
-    pdf_path = Path(DATA_DIR) / "PersonalData" / "Pranav" / "26AS.pdf"
+    pdf_path = get_personal_data_dir() / "26AS.pdf"
     if not pdf_path.exists():
         print(f"ERROR: 26AS file not found at {pdf_path}")
         return None
@@ -58,7 +59,7 @@ def fetch_26as_data():
 
 def fetch_ais_data():
     """Parse AIS with password and return data."""
-    pdf_path = Path(DATA_DIR) / "PersonalData" / "Pranav" / "AIS.pdf"
+    pdf_path = get_personal_data_dir() / "AIS.pdf"
     if not pdf_path.exists():
         return None, "File not found"
 
@@ -75,7 +76,7 @@ def fetch_ais_data():
 
 def fetch_tis_data():
     """Parse TIS with password and return data."""
-    pdf_path = Path(DATA_DIR) / "PersonalData" / "Pranav" / "TIS.pdf"
+    pdf_path = get_personal_data_dir() / "TIS.pdf"
     if not pdf_path.exists():
         return None, "File not found"
 

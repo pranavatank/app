@@ -28,6 +28,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from engines.statement import parse_statement_pdf
 from engines.statement.validate import confidence, balance_walk, normalise_order
 from engines.statement_parser import parse_statement_with_debug
+from tools.private_sources import get_personal_data_dir
 
 
 STATEMENTS = [
@@ -36,7 +37,7 @@ STATEMENTS = [
     ("Ujjivan - Pranav.pdf", "Ujjivan"),
 ]
 
-STATEMENT_DIR = "data/PersonalData/Pranav/Statement"
+STATEMENT_DIR = get_personal_data_dir() / "Statement"
 
 
 def count_non_null(transactions, field):
@@ -119,7 +120,7 @@ def main():
     print("=" * 100 + "\n")
 
     for filename, label in STATEMENTS:
-        file_path = os.path.join(STATEMENT_DIR, filename)
+        file_path = STATEMENT_DIR / filename
         if not os.path.exists(file_path):
             print(f"SKIP {label}: File not found\n")
             continue

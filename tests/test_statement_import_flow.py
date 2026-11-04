@@ -24,6 +24,7 @@ from ui.dashboard_screen import DashboardScreen, _NAV_ITEMS
 from ui.statement_import_screen_modern import StatementImportScreen
 from models.person import get_all_persons
 from models.bank_account import add_account, delete_account, get_accounts_for_person
+from tools.private_sources import get_personal_data_dir
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -129,7 +130,7 @@ class TestStatementImportFlow:
         assert screen.btn_next.isEnabled(), "Parse button should be enabled after selecting person and account"
 
         # Find the Jana test statement file
-        fixture_dir = Path(__file__).resolve().parent.parent / "data" / "PersonalData" / "Pranav" / "Statement"
+        fixture_dir = get_personal_data_dir() / "Statement"
         jana_file = fixture_dir / "Jana - Pranav.pdf"
 
         if not jana_file.exists():
