@@ -5,7 +5,7 @@ This guards against data loss in the statement parsing pipeline.
 CRITICAL: These tests MUST pass before any changes to engines/statement/.
 
 Expected baseline:
-  Equitas: 38 rows
+  Equitas: 39 rows (including the debit previously split by PDF row grouping)
   IDFC: 376 rows, debit 480013.35, credit 467264.82
   Jana: 65 rows
   Ujjivan: 27 rows
@@ -124,7 +124,7 @@ class TestStatementRowCounts:
     """
 
     @pytest.mark.parametrize("bank_name,expected_rows", [
-        ("Equitas", 38),
+        ("Equitas", 39),
         ("IDFC", 376),
         ("Jana", 65),
         ("Ujjivan", 27),

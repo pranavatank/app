@@ -5,7 +5,7 @@ engines/statement/rows.py — Cluster words into visual rows by coordinate
 
 def cluster_into_rows(words: list[dict], tolerance: int = 3) -> list[list[dict]]:
     """
-    Cluster words into visual rows by rounding their top coordinate.
+    Cluster words whose top coordinates are within a visual row's tolerance.
 
     Args:
         words: List of word dicts with 'top', 'x0', 'x1', 'text', 'bottom'
@@ -17,17 +17,18 @@ def cluster_into_rows(words: list[dict], tolerance: int = 3) -> list[list[dict]]
     if not words:
         return []
 
-    # Group by rounded top coordinate
-    row_dict = {}
-    for word in words:
-        row_key = round(word["top"] / tolerance)
-        if row_key not in row_dict:
-            row_dict[row_key] = []
-        row_dict[row_key].append(word)
+    if tolerance < 0:
+        raise ValueError("row tolerance must be nonnegative")
 
-    # Sort each row by x0 (left to right) and return as list of rows
-    rows = [sorted(row_words, key=lambda w: w["x0"]) for row_words in row_dict.values()]
-
-    # Sort rows by their row_key (top to bottom)
-    sorted_row_keys = sorted(row_dict.keys())
-    return [row_dict[key] for key in sorted_row_keys]
+    # A fixed rounding grid can split words just 0.2 pixels apart when they
+    # straddle a bucket boundary. Anchor each group at its topmost word instead.
+    # Keeping that anchor fixed also prevents a chain of nearby words from
+    # merging distinct lines into one row.
+    rows = []
+    row_top = None
+    for word in sorted(words, key=lambda item: (item["top"], item["x0"])):
+        if row_top is None or word["top"] - row_top > tolerance:
+            rows.append([])
+            row_top = word["top"]
+        rows[-1].append(word)
+    return [sorted(row, key=lambda word: word["x0"]) for row in rows]
