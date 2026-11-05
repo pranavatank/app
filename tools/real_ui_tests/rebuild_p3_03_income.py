@@ -1,12 +1,12 @@
 r"""tools/real_ui_tests/rebuild_p3_03_income.py — Phase 3.03 Income & Expectations UI test
 
-R-mode: Validates income screen navigation, expectations ledger table rowCount vs DB,
-FD TDS threshold status table, waterfall standard deduction presence while Salary
-expectations exist, and H15 projection key tracking.
+R-mode: Validates income screen navigation, expectation ledger rows, and the FD TDS
+threshold status table.
 
 S-mode: Cycles through income types and frequencies adding expectations, links/unlinks
-transactions, tests auto-match, edit/delete, and verifies tax screen behavior with and
-without expectations.
+transactions, tests auto-match, edit/delete, checks H15 projection tracking, and
+verifies Salary expectations do not change the saved TaxProfile-based standard
+deduction.
 """
 import sys
 from pathlib import Path
@@ -122,11 +122,26 @@ def run_s(p):
         _check_auto_match(p, page, person_id)
         _check_delete(p, page, target_id)
 
-    _check_std_ded(p, "without Salary", lambda value: value in (None, 0))
+    saved_profile_deduction = _check_std_ded(p, "before Salary expectations")
+    # Estimating can create a zero-valued TaxProfile on a fresh rebuild.
+    profile_salary_before = _saved_profile_salary(p, person_id)
+    if profile_salary_before is not None and profile_salary_before > 0:
+        p.checks.check("saved Salary TaxProfile produces a standard deduction",
+                       saved_profile_deduction is not None and saved_profile_deduction < 0,
+                       f"salary_income={profile_salary_before}; deduction={saved_profile_deduction}")
+    else:
+        p.checks.check("no saved salary produces no standard deduction",
+                       saved_profile_deduction in (None, 0),
+                       f"salary_income={profile_salary_before}; deduction={saved_profile_deduction}")
 
     page = p.nav("Income & Expectations")
     _add_expectations(p, page, person_id, account_id, ["Salary"], frequencies)
-    _check_std_ded(p, "with Salary", lambda value: value is not None and value < 0)
+    profile_salary_after = _saved_profile_salary(p, person_id)
+    p.checks.check("Salary expectations leave saved TaxProfile unchanged",
+                   profile_salary_after == profile_salary_before,
+                   f"before={profile_salary_before}; after={profile_salary_after}")
+    _check_std_ded(p, "after Salary expectations",
+                   lambda value: value == saved_profile_deduction)
 
     # Check prediction summary for H15 (projected_total) and ledger vs SQL
     try:
@@ -461,8 +476,17 @@ def _check_delete(p, page, expectation_id):
         p.checks.check("delete income expectation", False, repr(e))
 
 
-def _check_std_ded(p, label, is_expected):
-    """Run the Tax estimate on App Actual Data and check the waterfall standard deduction."""
+def _saved_profile_salary(p, person_id):
+    """Return the selected person's saved salary for the test FY, if present."""
+    result = p.sql(
+        "SELECT salary_income FROM TaxProfile WHERE person_id=? AND financial_year=?",
+        (person_id, FY),
+    )
+    return result[0][0] if result else None
+
+
+def _check_std_ded(p, label, is_expected=None):
+    """Run Tax on App Actual Data and return the saved-profile deduction shown."""
     try:
         tax_page = p.nav("Tax")
         p.harness.settle(2.0)
@@ -480,11 +504,14 @@ def _check_std_ded(p, label, is_expected):
             raise RuntimeError("waterfall_std_ded attribute not found on tax_page")
 
         std_ded_val = tax_page.waterfall_std_ded.value
-        p.checks.check(f"waterfall_std_ded {label}", is_expected(std_ded_val), f"value={std_ded_val}")
+        if is_expected is not None:
+            p.checks.check(f"waterfall_std_ded {label}", is_expected(std_ded_val), f"value={std_ded_val}")
         p.observe(f"S03.waterfall_std_ded.{label}", f"Value: {std_ded_val}")
+        return std_ded_val
 
     except Exception as e:
         p.checks.check(f"tax screen std_ded {label}", False, repr(e))
+        return None
     finally:
         _dismiss_modals()
 

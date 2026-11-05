@@ -15,57 +15,77 @@ import json
 import hashlib
 import sqlite3
 import subprocess
+import re
+from datetime import datetime, timezone
 from pathlib import Path
 from collections import defaultdict
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+from tools.private_sources import get_personal_data_dir
 
 REBUILD_DIR = Path(__file__).resolve().parent / "screenshots" / "rebuild"
 REBUILD_DIR.mkdir(parents=True, exist_ok=True)
 BASE = Path(__file__).resolve().parent.parent.parent
 REAL_DB = BASE / "data" / "financial.db"
-PERSONAL_DATA_DIR = BASE / "data" / "PersonalData"
+PERSONAL_DATA_DIR = get_personal_data_dir()
 P0_HASHES_FILE = REBUILD_DIR / "P0_personaldata_hashes.json"
 PROGRESS_FILE = REBUILD_DIR / "PROGRESS.md"
 FINDINGS_FILE = REBUILD_DIR / "FINDINGS.md"
 OUTPUT_FILE = REBUILD_DIR / "P5_collected.md"
 
 
-def compute_personaldata_sha256():
-    """Compute SHA-256 of all files under data\\PersonalData recursively."""
+def compute_personaldata_sha256(baseline):
+    """Hash P0's exact files and inventory its source directory, excluding secrets."""
     result = {}
-    if not PERSONAL_DATA_DIR.exists():
-        return result
+    errors = []
+    candidates = set(baseline)
+    if not PERSONAL_DATA_DIR.is_dir():
+        errors.append("P0 source directory is missing or inaccessible")
+    else:
+        def walk_error(error):
+            errors.append(f"Source inventory failed ({type(error).__name__})")
 
-    for filepath in sorted(PERSONAL_DATA_DIR.rglob("*")):
-        if filepath.is_file():
-            try:
-                with open(filepath, "rb") as f:
-                    sha = hashlib.sha256(f.read()).hexdigest()
-                rel_path = filepath.relative_to(BASE)
-                result[str(rel_path)] = sha
-            except Exception as e:
-                print(f"WARNING: cannot hash {filepath}: {e}")
+        for directory, _, filenames in os.walk(PERSONAL_DATA_DIR, onerror=walk_error):
+            for filename in filenames:
+                if filename.casefold() != "password.txt":
+                    candidates.add(str((Path(directory) / filename).relative_to(BASE)))
 
-    return result
+    source_root = PERSONAL_DATA_DIR.resolve()
+    for rel_path in sorted(candidates):
+        filepath = (BASE / rel_path).resolve()
+        if filepath.name.casefold() == "password.txt" or not filepath.is_relative_to(source_root):
+            errors.append(f"Baseline source path is outside the P0 document scope: {rel_path}")
+            continue
+        try:
+            result[rel_path] = hashlib.sha256(filepath.read_bytes()).hexdigest()
+        except OSError as error:
+            errors.append(f"Cannot hash source {rel_path} ({type(error).__name__})")
+    return result, errors
 
 
 def load_p0_hashes():
     """Load P0_personaldata_hashes.json."""
-    if not P0_HASHES_FILE.exists():
-        return {}
     try:
         with open(P0_HASHES_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+            baseline = json.load(f)
     except Exception as e:
-        print(f"WARNING: cannot load P0 hashes: {e}")
-        return {}
+        raise ValueError(f"P0 hashes unavailable ({type(e).__name__})") from None
+    if not isinstance(baseline, dict) or not baseline or any(
+        not isinstance(path, str) or not isinstance(digest, str)
+        or not re.fullmatch(r"[0-9a-f]{64}", digest)
+        for path, digest in baseline.items()
+    ):
+        raise ValueError("P0 hash baseline is empty or invalid")
+    return baseline
 
 
 def compare_personaldata_integrity():
     """Compare current PersonalData hashes with P0 baseline."""
-    current = compute_personaldata_sha256()
-    baseline = load_p0_hashes()
+    try:
+        baseline = load_p0_hashes()
+    except ValueError as error:
+        return {"added": [], "removed": [], "changed": [], "matches": False, "errors": [str(error)]}
+    current, errors = compute_personaldata_sha256(baseline)
 
     added = set(current.keys()) - set(baseline.keys())
     removed = set(baseline.keys()) - set(current.keys())
@@ -78,7 +98,8 @@ def compare_personaldata_integrity():
         "added": sorted(added),
         "removed": sorted(removed),
         "changed": sorted(changed),
-        "matches": len(added) == 0 and len(removed) == 0 and len(changed) == 0,
+        "matches": not errors and not added and not removed and not changed,
+        "errors": errors,
     }
 
 
@@ -114,18 +135,38 @@ def fingerprint_real_db():
 def compare_fingerprints(fp_before, fp_after, allowed=()):
     """Compare two fingerprints and return list of changed tables."""
     changed = []
-    for table in fp_before.keys():
-        if table not in fp_after:
-            continue
-        if fp_before[table]["count"] != fp_after[table]["count"] or fp_before[table]["sha256"] != fp_after[table]["sha256"]:
-            if table not in allowed:
-                changed.append(table)
+    for table in sorted(set(fp_before) | set(fp_after)):
+        if table not in allowed and (
+            table not in fp_before or table not in fp_after
+            or fp_before[table].get("count") != fp_after[table].get("count")
+            or fp_before[table].get("sha256") != fp_after[table].get("sha256")
+        ):
+            changed.append(table)
     return changed
 
 
 def load_p3_results():
-    """Glob P3_*_*.json and aggregate results."""
-    p3_files = sorted(REBUILD_DIR.glob("P3_*_*.json"))
+    """Aggregate only results written since this successful P0 baseline."""
+    p3_files = []
+    excluded = []
+    errors = []
+    source_dates = {}
+    try:
+        load_p0_hashes()
+        baseline_time = P0_HASHES_FILE.stat().st_mtime_ns
+    except (ValueError, OSError) as error:
+        baseline_time = None
+        errors.append(f"Cannot establish current P3 run boundary ({type(error).__name__})")
+    for path in sorted(REBUILD_DIR.glob("P3_*_*.json")):
+        try:
+            modified = path.stat()
+            if baseline_time is None or modified.st_mtime_ns < baseline_time:
+                excluded.append(path.name)
+                continue
+            p3_files.append(path)
+            source_dates[path.name] = datetime.fromtimestamp(modified.st_mtime, timezone.utc).isoformat()
+        except OSError as error:
+            errors.append(f"Cannot inspect P3 result {path.name} ({type(error).__name__})")
 
     all_fails = []
     all_a11y = []
@@ -136,9 +177,14 @@ def load_p3_results():
         try:
             with open(p3_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
+            results = data.get("results") if isinstance(data, dict) else None
+            if (not isinstance(results, list) or not results
+                    or any(not isinstance(item, dict) or not isinstance(item.get("ok"), bool)
+                           for item in results)):
+                raise ValueError("results must be a nonempty list of objects with boolean ok fields")
 
             # Collect FAILs
-            for result in data.get("results", []):
+            for result in results:
                 if not result.get("ok"):
                     all_fails.append({
                         "file": p3_file.name,
@@ -174,7 +220,7 @@ def load_p3_results():
                 })
 
         except Exception as e:
-            print(f"WARNING: cannot load {p3_file}: {e}")
+            errors.append(f"Cannot load P3 result {p3_file.name} ({type(e).__name__})")
 
     return {
         "p3_files": [f.name for f in p3_files],
@@ -182,6 +228,9 @@ def load_p3_results():
         "a11y": all_a11y,
         "observations": dict(all_obs),
         "watchdog": all_watchdog,
+        "excluded_older_files": excluded,
+        "source_dates_utc": source_dates,
+        "errors": errors,
     }
 
 
@@ -213,12 +262,14 @@ def check_git_status():
     """Run git status --porcelain and filter for data/, backups/ and .db* paths."""
     try:
         result = subprocess.run(
-            ["git", "status", "--porcelain"],
+            ["git", "-c", f"safe.directory={BASE.as_posix()}", "status", "--porcelain"],
             cwd=str(BASE),
             capture_output=True,
             text=True,
             timeout=10,
         )
+        if result.returncode:
+            return [f"ERROR: git status failed (exit {result.returncode})"]
         lines = result.stdout.split("\n")
         filtered = []
         for line in lines:
@@ -226,8 +277,7 @@ def check_git_status():
                 filtered.append(line)
         return filtered
     except Exception as e:
-        print(f"WARNING: cannot run git status: {e}")
-        return []
+        return [f"ERROR: cannot run git status ({type(e).__name__})"]
 
 
 def read_theme_prefs_bytes():
@@ -274,11 +324,22 @@ def main():
 
     print("Reading theme_prefs.json...")
     prefs_bytes = read_theme_prefs_bytes()
+    comparison_errors = []
 
     # Build output markdown
     output = []
     output.append("# Phase 5: Collected Data\n")
+    output.append(f"**Collected at (UTC):** {datetime.now(timezone.utc).isoformat()}\n")
     output.append(f"**Collected:** {len(p3_data['p3_files'])} P3 result files\n")
+    output.append("**P3 run boundary:** successful P0 hash baseline modification time; older results excluded.\n")
+    if not p3_data["p3_files"]:
+        output.append("**P3 coverage unavailable:** no current-run P3 result files; this is not a completed screen audit.\n")
+    for filename, modified in p3_data["source_dates_utc"].items():
+        output.append(f"- Current P3 source: {filename} (modified UTC {modified})\n")
+    for filename in p3_data["excluded_older_files"]:
+        output.append(f"- Excluded older P3 source: {filename}\n")
+    for error in p3_data["errors"]:
+        output.append(f"- **P3 collection failure:** {error}\n")
 
     # Summary stats
     output.append("## Summary\n")
@@ -298,7 +359,7 @@ def main():
         for fail in p3_data['fails']:
             output.append(f"| {fail['file']} | {fail['screen']} | {fail['env']} | {fail['name']} | {fail['detail'][:50]} |\n")
     else:
-        output.append("*(no failures)*\n")
+        output.append("*(no failures recorded in the current-run files collected; missing coverage remains unverified)*\n")
 
     # P3 Accessibility
     output.append("\n## Accessibility Issues (P3)\n")
@@ -326,7 +387,7 @@ def main():
         output.append("| File | Title | Detail |\n")
         output.append("|------|-------|--------|\n")
         for wd in p3_data['watchdog']:
-            output.append(f"| {wd['file']} | {wd['title']} | {wd['detail'][:40]} |\n")
+            output.append(f"| {wd['file']} | {wd['title']} | {wd['text'][:40]} |\n")
     else:
         output.append("*(no watchdog events)*\n")
 
@@ -359,6 +420,9 @@ def main():
 
     output.append("\n### PersonalData Hashes\n")
     output.append(f"- **Matches P0:** {integrity['matches']}\n")
+    output.append("- **Scope:** exact P0 source files and the same personal document directory; password files excluded.\n")
+    for error in integrity["errors"]:
+        output.append(f"- **Integrity failure:** {error}\n")
     if integrity['added']:
         output.append(f"- **Added:** {', '.join(integrity['added'][:3])}")
         if len(integrity['added']) > 3:
@@ -395,25 +459,33 @@ def main():
                 try:
                     with open(baseline_file, "r", encoding="utf-8") as f:
                         fp_baseline = json.load(f)
-                    changed = []
-                    for table in fp_baseline.keys():
-                        if table not in fp_now:
-                            continue
-                        if fp_baseline[table]["count"] != fp_now[table]["count"]:
-                            changed.append(f"{table} ({fp_baseline[table]['count']} → {fp_now[table]['count']})")
+                    if not isinstance(fp_baseline, dict) or not fp_baseline or any(
+                        not isinstance(table, str) or not isinstance(value, dict)
+                        or not isinstance(value.get("count"), int) or value["count"] < 0
+                        or not isinstance(value.get("sha256"), str)
+                        or not re.fullmatch(r"[0-9a-f]{64}", value["sha256"])
+                        for table, value in fp_baseline.items()
+                    ):
+                        raise ValueError("invalid fingerprint structure")
+                    changed = compare_fingerprints(fp_baseline, fp_now)
 
                     if changed:
+                        comparison_errors.append("Fingerprint differs from baseline")
                         output.append(f"- **Changed tables (vs {args.baseline}):**\n")
                         for change in changed:
                             output.append(f"  - {change}\n")
                     else:
                         output.append(f"- **No changes vs {args.baseline}**\n")
                 except Exception as e:
-                    output.append(f"- **Baseline comparison failed:** {e}\n")
+                    comparison_errors.append(f"Fingerprint baseline comparison failed ({type(e).__name__})")
+                    output.append(f"- **Baseline comparison failed:** {type(e).__name__}\n")
             else:
                 output.append(f"- **Baseline not found:** FP_{args.baseline}.json\n")
+                comparison_errors.append("Fingerprint baseline not found")
     else:
         output.append("- **Status:** failed to fingerprint (DB may not exist)\n")
+        if args.baseline:
+            comparison_errors.append("Real DB fingerprint unavailable")
 
     output.append("\n### Theme Prefs\n")
     if prefs_bytes:
@@ -429,15 +501,20 @@ def main():
                     if prefs_bytes == baseline_bytes:
                         output.append(f"- **Match:** yes (vs {args.prefs_baseline})\n")
                     else:
+                        comparison_errors.append("Theme preferences differ from baseline")
                         output.append(f"- **Match:** no (vs {args.prefs_baseline})\n")
                         output.append(f"  - Baseline: {len(baseline_bytes)} bytes\n")
                         output.append(f"  - Current: {len(prefs_bytes)} bytes\n")
                 except Exception as e:
-                    output.append(f"- **Baseline comparison failed:** {e}\n")
+                    comparison_errors.append(f"Theme preference baseline comparison failed ({type(e).__name__})")
+                    output.append(f"- **Baseline comparison failed:** {type(e).__name__}\n")
             else:
                 output.append(f"- **Baseline not found:** theme_prefs_{args.prefs_baseline}.json\n")
+                comparison_errors.append("Theme preference baseline not found")
     else:
         output.append("- **Status:** file not found\n")
+        if args.prefs_baseline:
+            comparison_errors.append("Current theme preferences unavailable")
 
     output.append("\n---\n")
     output.append("*End of P5 collected data.*\n")
@@ -449,7 +526,11 @@ def main():
     print(f"\nOutput written to {OUTPUT_FILE}")
     print(f"File size: {OUTPUT_FILE.stat().st_size} bytes")
 
-    return 0
+    return int(
+        not integrity["matches"] or bool(p3_data["errors"]) or bool(p3_data["fails"])
+        or not p3_data["p3_files"] or any(line.startswith("ERROR:") for line in git_status)
+        or bool(comparison_errors) or (args.baseline and fp_now is None)
+    )
 
 
 if __name__ == "__main__":

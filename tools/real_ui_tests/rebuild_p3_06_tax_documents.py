@@ -5,6 +5,7 @@ Tests tax document import with R-mode reconciliation checking and S-mode AIS imp
 Usage: python rebuild_p3_06_tax_documents.py --env R|S
 """
 import sys
+import json
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
@@ -15,9 +16,10 @@ from tools.real_ui_tests.rebuild_common import (
     label_scan, parse_inr, read_secret, wait_until, set_fy,
 )
 from tools.real_ui_test_harness import RealUIHarness, find_by_accessible_name
+from tools.private_sources import get_personal_data_dir
 
 
-PDATA = Path(__file__).resolve().parent.parent.parent / "data" / "PersonalData" / "Pranav"
+PDATA = get_personal_data_dir()
 
 
 def run_r(p):
@@ -155,6 +157,8 @@ def run_s(p):
 
     ais_secret = read_secret("ais_tis")
     p.log.log("Read AIS/TIS password")
+    previous_imports = p.sql("SELECT import_id FROM AISTISImport WHERE source_type='AIS' AND person_id=1")
+    previous_ids = {row[0] for row in previous_imports}
 
     def trigger():
         os_click_widget(p.harness, tax_page.zone_ais, wait=1.5)
@@ -172,20 +176,19 @@ def run_s(p):
     p.harness.settle(2.0)
 
     latest_row = p.sql(
-        "SELECT financial_year FROM AISTISImport WHERE source_type='AIS' AND person_id=1 ORDER BY import_id DESC LIMIT 1"
+        "SELECT financial_year, import_id FROM AISTISImport WHERE source_type='AIS' AND person_id=1 ORDER BY import_id DESC LIMIT 1"
     )
     if latest_row:
         fy = latest_row[0][0]
+        p.checks.check("AIS import persisted a fresh row", latest_row[0][1] not in previous_ids,
+                       f"import_id={latest_row[0][1]}; previous_ids={sorted(previous_ids)}")
         p.log.log(f"Latest AIS financial_year from DB: {fy}")
         p.observe("H3 import_fy", f"AIS financial_year: {fy}")
 
-        is_2025_26 = fy == "2025-26"
-        is_2026_27 = fy == "2026-27"
-        p.checks.check("ais_fy is 2025-26 or 2026-27", is_2025_26 or is_2026_27, f"got {fy}")
-        if is_2025_26:
-            p.log.log("AIS FY is 2025-26 (expected when app imports in 2026-27 session)")
-        elif is_2026_27:
-            p.log.log("AIS FY is 2026-27")
+        seed_path = Path(__file__).parent / "screenshots" / "rebuild" / "P0_expectations.json"
+        expected_fy = json.loads(seed_path.read_text(encoding="utf-8"))["ais"]["financial_year"]
+        p.checks.check("ais_fy matches source document", fy == expected_fy,
+                       f"expected {expected_fy}, got {fy}; selected FY is 2026-27")
     else:
         p.checks.check("ais_import record exists", False, "no AISTISImport row for AIS")
 

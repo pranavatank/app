@@ -1,8 +1,9 @@
 r"""tools/real_ui_tests/rebuild_p2_2_banks.py — Phase 2.2 Banks.
 
-Precondition: Bank = 0. If Bank = 4 and all rows match, skip.
+Precondition: Bank = 0. If all expected rows already exist and match, skip.
 """
 import sys
+import json
 import sqlite3
 import faulthandler
 from pathlib import Path
@@ -11,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from tools.real_ui_tests.rebuild_common import (
     bootstrap_app, adopt_window, os_click, os_type,
     login_to_dashboard, set_fy, snapshot_db, append_progress,
-    redacting_logger, nav_click, prearm, wait_until,
+    redacting_logger, nav_click, prearm, wait_until, run_logged,
 )
 from tools.real_ui_test_harness import RealUIHarness, find_by_accessible_name, find_dialog_by_title
 
@@ -24,6 +25,7 @@ BANKS = [
     ("IDFC FIRST", "IDFC FIRST Bank", None),
     ("Ujjivan", "Ujjivan Small Finance Bank", "DELU05703F"),
     ("Equitas", "Equitas Small Finance Bank", "CHEV00751C"),
+    ("Unity", "Unity Small Finance Bank", None),
 ]
 
 
@@ -33,22 +35,28 @@ def main():
     from PySide6.QtTest import QTest
     from PySide6.QtWidgets import QDialog
 
+    seed = json.loads((RUIH_DIR / "P0_expectations.json").read_text(encoding="utf-8"))
+    expected_statement_names = set(seed["statements"])
+    bank_rows = [row for row in BANKS if row[0] in expected_statement_names]
+    if any(name not in {row[0] for row in BANKS} for name in expected_statement_names):
+        raise RuntimeError("P0 seed contains a statement bank with no configured bank metadata")
+
     conn = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
     n_bank = conn.execute("SELECT COUNT(*) FROM Bank").fetchone()[0]
     conn.close()
 
-    if n_bank == 4:
+    if n_bank == len(bank_rows):
         conn = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
         rows = conn.execute("SELECT bank_name, nickname, tan_code FROM Bank ORDER BY bank_id").fetchall()
         conn.close()
-        expected = {(name, nick) for nick, name, tan in BANKS}
+        expected = {(name, nick) for nick, name, tan in bank_rows}
         got = {(r[0], r[1]) for r in rows}
-        log.log(f"Bank already = 4: {rows}")
+        log.log(f"Bank already = {len(bank_rows)}: {rows}")
         if got == expected:
             log.log("Fields match — skipping entry, will verify + snapshot")
             skip_entry = True
         else:
-            log.log(f"STOP: Bank=4 but rows do not match. expected={expected} got={got}")
+            log.log(f"STOP: bank count={len(rows)} but rows do not match. expected={expected} got={got}")
             sys.exit(1)
     elif n_bank == 0:
         skip_entry = False
@@ -100,7 +108,7 @@ def main():
         log.log(f"banks_table.rowCount() after cancel = {n_after_cancel} (expect 0)")
         assert n_after_cancel == 0
 
-        for nickname, bank_name, tan in BANKS:
+        for nickname, bank_name, tan in bank_rows:
             state = {}
 
             def fill(nickname=nickname, bank_name=bank_name, tan=tan, state=state):
@@ -129,8 +137,8 @@ def main():
     rows = conn.execute("SELECT bank_name, nickname, tan_code FROM Bank ORDER BY bank_id").fetchall()
     conn.close()
     log.log(f"Bank rows: {rows}")
-    assert len(rows) == 4
-    expected = [(name, nick, tan) for nick, name, tan in BANKS]
+    assert len(rows) == len(bank_rows)
+    expected = [(name, nick, tan) for nick, name, tan in bank_rows]
     got = [(r[0], r[1], r[2]) for r in rows]
     log.log(f"expected={expected}")
     log.log(f"got={got}")
@@ -138,9 +146,9 @@ def main():
 
     snap = snapshot_db("P2_2")
     log.log(f"snapshot: {snap}")
-    append_progress(f"P2.2 banks complete. 4 banks: {[n for n,_,_ in BANKS]}. snapshot={snap}")
+    append_progress(f"P2.2 banks complete. {len(bank_rows)} banks: {[n for n,_,_ in bank_rows]}. snapshot={snap}")
     log.log("P2.2 DONE")
 
 
 if __name__ == "__main__":
-    main()
+    run_logged(main, "P2_2_banks_crash")

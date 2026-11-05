@@ -42,8 +42,12 @@ from PySide6.QtWidgets import QApplication, QDialog, QMessageBox, QAbstractSpinB
 
 from tools.real_ui_test_harness import RealUIHarness, find_by_accessible_name, find_dialog_by_title
 
-PDATA = BASE / "data" / "PersonalData" / "Pranav"
-PWFILE = PDATA / "password.txt"
+from tools.private_sources import get_personal_data_dir
+
+PDATA = get_personal_data_dir()
+PWFILE = PDATA / "Password.txt"
+if not PWFILE.exists():
+    PWFILE = PDATA / "password.txt"
 RUIH_DIR = BASE / "tools" / "real_ui_tests" / "screenshots" / "rebuild"
 RUIH_DIR.mkdir(parents=True, exist_ok=True)
 BACKUPS = BASE / "backups"
@@ -58,24 +62,53 @@ _modal_handlers_active = 0
 # --------------------------------------------------------------------- secrets --
 
 def read_secret(kind: str) -> str:
-    """kind: 'master', 'ais_tis', 'equitas'. Reads password.txt at runtime.
-    Never prints/logs the value. Raises if not found."""
-    if not PWFILE.exists():
-        raise RuntimeError(f"password file not found: {PWFILE}")
+    """Read one labeled secret at runtime without logging its value."""
     prefix_map = {
-        "master": ("master",),
-        "ais_tis": ("ais", "tis"),
-        "equitas": ("equitas",),
+        "master": {"master", "masterpassword"},
+        "ais_tis": {"ais", "tis", "aistis", "aistispwd", "aistispassword", "aisandtis"},
+        "equitas": {"equitas", "equitaspassword", "equitasstatementpassword"},
     }
-    needles = prefix_map[kind]
-    with open(PWFILE, "r", encoding="utf-8") as f:
-        for line in f:
-            low = line.lower()
-            if all(n in low for n in needles) and ":" in line:
-                val = line.split(":", 1)[-1].strip()
-                if val:
+    if kind not in prefix_map:
+        raise ValueError(f"unknown secret kind: {kind!r}")
+    if kind == "master":
+        # An explicitly configured file takes precedence over the ignored local
+        # credential file. Neither path is ever reported with its contents.
+        external_file = os.environ.get("FINMGR_MASTER_PASSWORD_FILE")
+        if external_file:
+            try:
+                val = Path(external_file).read_text(encoding="utf-8").strip()
+            except Exception:
+                raise RuntimeError("could not read FINMGR_MASTER_PASSWORD_FILE") from None
+            if not val:
+                raise RuntimeError("FINMGR_MASTER_PASSWORD_FILE is empty")
+            _SECRET_PATTERNS.append(val)
+            return val
+        local_file = RUIH_DIR / "credentials.local.json"
+        if local_file.exists():
+            try:
+                local = json.loads(local_file.read_text(encoding="utf-8"))
+                val = local.get("master") if isinstance(local, dict) else None
+                if isinstance(val, str) and val.strip():
+                    val = val.strip()
                     _SECRET_PATTERNS.append(val)
                     return val
+            except Exception:
+                raise RuntimeError("invalid local master credential file") from None
+    if not PWFILE.exists():
+        raise RuntimeError(f"password file not found: {PWFILE}")
+    needles = prefix_map[kind]
+    try:
+        lines = PWFILE.read_text(encoding="utf-8").splitlines()
+    except Exception:
+        raise RuntimeError(f"could not read password file: {PWFILE}") from None
+    for line in lines:
+        label, separator, raw_value = line.partition(":")
+        normalized_label = re.sub(r"[^a-z]", "", label.lower())
+        if separator and normalized_label in needles:
+            val = raw_value.strip()
+            if val:
+                _SECRET_PATTERNS.append(val)
+                return val
     raise RuntimeError(f"no '{kind}' line found in {PWFILE}")
 
 
@@ -215,14 +248,8 @@ def os_click(harness: RealUIHarness, root, accessible_name, wait=0.8, double=Fal
     # couple of seconds; retry the guard briefly before failing for real.
     blocker = _verify_click_target(widget, center, px, py)
     if blocker is not None:
-        # FINDING (Medium): ui/widgets/toast.py's ToastContainer and
-        # toast_utils.init_toast_container() both call
-        # setAttribute(WA_TransparentForMouseEvents, False) despite a comment
-        # claiming click-through ("Allow mouse events to pass through") --
-        # False means OPAQUE to mouse hit-testing, so the container (sized to
-        # the full content area) blocks every OS-level click anywhere in the
-        # window for as long as a toast is alive (default duration_ms=4000 +
-        # fade_out). Retry budget below is sized to comfortably outlast that.
+        # Wait briefly for transient overlays to clear, then require the
+        # widget to be the actual OS hit-test target before clicking.
         for _ in range(16):
             harness.settle(0.5)
             blocker = _verify_click_target(widget, center, px, py)

@@ -24,12 +24,13 @@ from tools.real_ui_tests.rebuild_common import (
     redacting_logger, nav_click, wait_until, native_file_dialog,
     read_secret, db_ro, answer_password_dialog, run_logged,
 )
+from tools.private_sources import get_personal_data_dir
 from tools.real_ui_test_harness import RealUIHarness, find_by_accessible_name
 
 faulthandler.dump_traceback_later(900, exit=True)
 log = redacting_logger("P2_5_7_taxdocs")
 RUIH_DIR = Path(__file__).resolve().parent / "screenshots" / "rebuild"
-PDATA = Path(__file__).resolve().parent.parent.parent / "data" / "PersonalData" / "Pranav"
+PDATA = get_personal_data_dir()
 
 
 def table_count(table):
@@ -47,13 +48,8 @@ def main():
     n_26as_rec = table_count("Form26ASRecord")
     log.log(f"pre-run: Form26ASImport={n_26as} Form26ASRecord={n_26as_rec} AISTISImport={n_aistis}")
 
-    if n_26as == 1 and n_aistis == 2:
-        log.log("Form26ASImport=1 and AISTISImport=2 already; SKIP entire P2.5-2.7")
-        append_progress("P2.5-2.7 tax documents: already complete (skip). "
-                         f"Form26ASImport={n_26as} Form26ASRecord={n_26as_rec} AISTISImport={n_aistis}")
-        log.log("P2.5-2.7 DONE (skip)")
-        return
-    if not (n_26as == 0 and n_aistis == 0):
+    already_imported = n_26as == 1 and n_aistis == 2
+    if not already_imported and not (n_26as == 0 and n_aistis == 0):
         log.log(f"STOP: unexpected partial state Form26ASImport={n_26as} AISTISImport={n_aistis} "
                  "(neither 0/0 nor 1/2)")
         sys.exit(1)
@@ -63,6 +59,11 @@ def main():
     dashboard = login_to_dashboard(harness)
     set_fy(harness, dashboard, "2025-26")
     log.log("logged in, FY set to 2025-26")
+
+    if already_imported:
+        log.log("Tax imports already exist; checking every persisted invariant before accepting resume")
+        verify_imports(seed)
+        return
 
     nav_click(harness, dashboard, "Tax Documents")
     tax_page = dashboard.tax_documents_page
@@ -131,7 +132,11 @@ def main():
         fd_rowcount = tax_page.fd_table.rowCount()
         log.log(f"UI: fd_table.rowCount()={fd_rowcount}")
 
-    # --- Verify independent SQL (not trusting the app's own success toasts) ---
+    verify_imports(seed)
+
+
+def verify_imports(seed):
+    """Check persisted imports on both fresh and resumed runs."""
     conn = db_ro()
 
     # Form26ASImport: exactly 1 row with correct values
@@ -171,16 +176,22 @@ def main():
     """).fetchall()
 
     assert len(ais_tis_rows) == 2, f"AISTISImport count {len(ais_tis_rows)} != 2"
+    assert {row[0] for row in ais_tis_rows} == {"AIS", "TIS"}, "expected one AIS and one TIS import"
     log.log(f"AISTISImport count={len(ais_tis_rows)}")
     for source_type, fy, fd_int, savings_int, div_inc, tds_ded in ais_tis_rows:
         log.log(f"AISTISImport {source_type}: fy={fy} fd_interest={fd_int} savings_interest={savings_int} dividend={div_inc} tds={tds_ded}")
-        if fy != "2025-26":
-            log.log("FINDING(High): AIS/TIS FY regression")
+        expected = seed[source_type.lower()]
+        assert fy == expected["financial_year"], f"{source_type} FY differs from source document"
+        for field, actual in (("fd_interest", fd_int), ("savings_interest", savings_int), ("dividend", div_inc)):
+            assert abs((actual or 0) - expected[field]) <= 0.005, f"{source_type} {field} differs from source document"
+        if "tds" in expected:
+            assert abs((tds_ded or 0) - expected["tds"]) <= 0.005, f"{source_type} TDS differs from source document"
 
     # Check saved AIS/TIS password
     person_row = conn.execute(
         "SELECT ais_tis_password_enc IS NOT NULL FROM Person WHERE person_id=1"
     ).fetchone()
+    assert person_row and person_row[0], "AIS/TIS password was not saved on the person"
     if person_row:
         has_pwd_enc = person_row[0]
         log.log(f"Person.ais_tis_password_enc IS NOT NULL: {bool(has_pwd_enc)}")
@@ -190,6 +201,7 @@ def main():
             pwd = get_ais_tis_password(1, session.aes_key)
             pwd_matches = pwd == read_secret("ais_tis")
             log.log(f"get_ais_tis_password(1) matches stored: {pwd_matches}")
+            assert pwd_matches, "saved AIS/TIS password does not decrypt correctly"
 
     conn.close()
 

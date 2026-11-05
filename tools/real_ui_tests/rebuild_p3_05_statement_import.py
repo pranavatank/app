@@ -21,13 +21,14 @@ from tools.real_ui_tests.rebuild_common import (
     os_click, os_click_widget, os_type, os_type_widget, native_file_dialog,
     answer_modal_dialog, wait_until, toast_texts,
 )
+from tools.private_sources import get_personal_data_dir
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QDialog, QDialogButtonBox, QInputDialog, QAbstractSpinBox,
 )
 import openpyxl
 
 
-PDATA = Path(__file__).resolve().parent.parent.parent / "data" / "PersonalData" / "Pranav"
+PDATA = get_personal_data_dir()
 STATEMENT_DIR = PDATA / "Statement"
 RUIH_DIR = Path(__file__).resolve().parent / "screenshots" / "rebuild"
 EXPECTATIONS_PATH = RUIH_DIR / "P0_expectations.json"

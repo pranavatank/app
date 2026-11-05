@@ -8,9 +8,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from tools.real_ui_tests.rebuild_p3_common import P3Run, main_wrapper
+from tools.real_ui_tests.rebuild_p3_common import P3Run, main_wrapper, _get_nav
 from tools.real_ui_tests.rebuild_common import os_click, read_secret
 from PySide6.QtWidgets import QApplication
+from shiboken6 import isValid
 
 
 def run_r(p):
@@ -18,16 +19,27 @@ def run_r(p):
         p.log.log("Exiting: FINMGR_SCRATCH is set in R-mode")
         sys.exit(2)
 
-    nav_labels = [
-        "Overview", "Accounts", "Transactions", "Income & Expectations",
-        "Fixed Deposits", "Statement Import", "Tax Documents", "Tax",
-        "Income Prediction", "Settings"
-    ]
+    nav_labels = list(_get_nav())
 
     p.nav("Settings")
     p.harness.settle(0.5)
 
+    # Keep before-state references before clicking: the refresh rebuilds the
+    # dashboard synchronously inside the button handler, and old Qt wrappers
+    # may be deleted as part of that rebuild.
+    from core import session as session_module
+    old_stack = p.dashboard.stack
+    old_title = p.dashboard.page_title_lbl
+    old_session = session_module.session
+    old_set_fy = session_module.Session.set_financial_year
+    selected_fy_before = old_session.selected_fy
+    key_present_before = old_session.aes_key is not None
+    key_fingerprint_before = old_session.aes_key
+    p.observe("P3.11_R_aes_key_present_before", str(key_present_before))
+    p.observe("P3.11_R_selected_fy_before", str(selected_fy_before))
+
     try:
+        p.wait_for_page_jobs("before Hard Refresh")
         os_click(p.harness, p.dashboard, "Hard Refresh", wait=0.5)
     except Exception:
         p.checks.check("hard refresh button found", False, "click failed")
@@ -35,48 +47,38 @@ def run_r(p):
 
     p.harness.settle(3.0)
 
-    secret = read_secret('master')
+    # Module reload resets the helper's redaction registry. Re-register the
+    # master secret for any later diagnostics; never retain or log its value.
+    read_secret("master")
 
-    from core import session
-    old_stack = p.dashboard.stack
-    old_title = p.dashboard.page_title_lbl
+    import importlib
+    current_session_module = importlib.import_module("core.session")
+    current_session = current_session_module.session
+    p.checks.check("hard refresh reloaded core.session implementation",
+                   current_session_module.Session.set_financial_year is not old_set_fy)
 
-    aes_key_before = None
-    if hasattr(session, 'session') and hasattr(session.session, 'aes_key'):
-        aes_key_before = session.session.aes_key
+    dashboard_widgets = [w for w in QApplication.instance().topLevelWidgets()
+                         if hasattr(w, '_screen_pages')]
+    if dashboard_widgets:
+        refreshed_dashboard = dashboard_widgets[0]
+        p.dashboard = refreshed_dashboard
+        p.harness.window = refreshed_dashboard
+        p.checks.check("hard refresh dashboard reference updated", refreshed_dashboard is not None)
+        p.checks.check("hard refresh rebuilds stack", refreshed_dashboard.stack is not old_stack)
+        p.checks.check("hard refresh clears screen errors", refreshed_dashboard._screen_errors == {})
+        # Deleted Qt wrappers are expected after rebuilding. Check validity
+        # before touching the old title; if it remains alive, verify it hid.
+        old_title_valid = isValid(old_title)
+        p.checks.check("hard refresh disposes old page title", not old_title_valid or not old_title.isVisible())
+    else:
+        p.checks.check("hard refresh dashboard reference updated", False, "no dashboard found")
 
-    selected_fy_before = None
-    if hasattr(session, 'session') and hasattr(session.session, 'selected_fy'):
-        selected_fy_before = session.session.selected_fy
-
-    p.observe("P3.11_R_aes_key", str(aes_key_before is None))
-    p.observe("P3.11_R_selected_fy", str(selected_fy_before))
-
-    try:
-        dashboard_widgets = [w for w in QApplication.instance().topLevelWidgets()
-                             if hasattr(w, '_screen_pages')]
-        if dashboard_widgets:
-            p.dashboard = dashboard_widgets[0]
-            p.harness.window = p.dashboard
-            ok_reference = p.dashboard is not None
-            p.checks.check("hard refresh dashboard reference updated", ok_reference)
-            ok_stack = p.dashboard.stack is not old_stack
-            p.checks.check("hard refresh rebuilds stack", ok_stack)
-            ok_errors = p.dashboard._screen_errors == {}
-            p.checks.check("hard refresh clears screen errors", ok_errors)
-            ok_title_hidden = not old_title.isVisible()
-            p.checks.check("hard refresh resets page title visibility", ok_title_hidden)
-        else:
-            p.checks.check("hard refresh dashboard reference updated", False, "no dashboard found")
-    except Exception as e:
-        p.checks.check("hard refresh dashboard update", False, str(e))
-
-    aes_key_after = None
-    if hasattr(session, 'session') and hasattr(session.session, 'aes_key'):
-        aes_key_after = session.session.aes_key
-    ok_aes_after = aes_key_after is not None
-    p.checks.check("hard refresh keeps session key", ok_aes_after,
-                  f"aes_key is None: {aes_key_after is None}")
+    key_present_after = current_session.aes_key is not None
+    key_equal_after = current_session.aes_key == key_fingerprint_before
+    p.checks.check("hard refresh preserves session key", key_present_before and key_present_after and key_equal_after,
+                  f"present before={key_present_before}, after={key_present_after}; value_equal={key_equal_after}")
+    p.checks.check("hard refresh retains selected FY", current_session.selected_fy == selected_fy_before,
+                   f"before={selected_fy_before}, after={current_session.selected_fy}")
 
     for label in nav_labels:
         try:

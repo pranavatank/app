@@ -1,159 +1,166 @@
-r"""tools/real_ui_tests/rebuild_p2_8_fd_origin.py — Phase 2.8 FD origin
-confirmation. Read-only: explains every FixedDeposit row by its source.
-Checks expected vs actual FD-opening transaction matching.
-"""
+﻿"""Read-only FD provenance checks for a fresh statement rebuild."""
 import sys
-import re
+from collections import Counter
+from decimal import Decimal
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
-from tools.real_ui_tests.rebuild_common import db_ro, redacting_logger, append_progress
-
-log = redacting_logger("P2_8_fd_origin")
+from tools.real_ui_tests.rebuild_preflight import finite_money
 
 
-def mask_digits_6_plus(text):
-    """Mask digit runs of 6+ characters to show only last 4."""
-    return re.sub(r'\d{6,}', lambda m: '*' * (len(m.group(0)) - 4) + m.group(0)[-4:], text)
+def _redemption_kind(txn):
+    """The event kinds accepted by apply_statement_redemption_event."""
+    if txn.get("transaction_type") != "Income":
+        return None
+    text = (txn.get("description") or "").upper()
+    if not any(term in text for term in (
+        "AUTO REDEEM", "FD CR", "PAT CR", "REDEMPTION", "REDEEMED", "MATURITY", "MATURED",
+    )):
+        return None
+    return "interest" if "INT AUTO REDEEM" in text and "PRINC AND INT AUTO REDEEM" not in text else "principal"
+
+
+def validate_fd_provenance(transactions, fds, is_opening, extract_reference):
+    """Return counts and discrepancies without touching a database or GUI.
+
+    Callers supply the production opening detector and redemption-reference
+    extractor. Unknown opening dates stay unknown for redemption placeholders.
+    """
+    txns = {txn["transaction_id"]: txn for txn in transactions}
+    expected = {tid for tid, txn in txns.items() if is_opening(txn)}
+    opening_links = Counter()
+    source_links = Counter()
+    failures = []
+    counts = {"opening": 0, "redemption_only": 0}
+
+    def money_equal(left, right):
+        return abs(left - right) <= Decimal("0.01")
+
+    def reference(txn):
+        return extract_reference(txn.get("description") or "", txn.get("reference_no"))
+
+    def same_reference(left, right):
+        # Production matches both a numbered FD and its base number.
+        return (left or "").split("/")[0].strip().upper() == (right or "").split("/")[0].strip().upper()
+
+    for fd in fds:
+        fd_id = fd["fd_id"]
+        source_id = fd.get("source_transaction_id")
+        if source_id is not None:
+            source_links[source_id] += 1
+        source = txns.get(source_id)
+        try:
+            if source is None:
+                raise ValueError("source transaction is missing")
+            for field in ("account_id", "person_id"):
+                if fd.get(field) != source.get(field):
+                    raise ValueError(f"source {field} differs")
+            principal = finite_money(fd.get("principal_amount"), "principal")
+            if principal < 0:
+                raise ValueError("principal is negative")
+
+            if fd.get("start_date") is not None:
+                counts["opening"] += 1
+                if source_id not in expected:
+                    raise ValueError("dated FD source is not an opening debit")
+                opening_links[source_id] += 1
+                if fd["start_date"] != source.get("transaction_date"):
+                    raise ValueError("opening date differs")
+                if not money_equal(principal, finite_money(source.get("amount"), "opening amount")):
+                    raise ValueError("opening principal differs")
+                continue
+
+            # A missing opening date never excuses an invalid opening link.
+            counts["redemption_only"] += 1
+            if source_id in expected or _redemption_kind(source) is None:
+                raise ValueError("undated FD source is not a redemption credit")
+            if fd.get("status") != "Matured":
+                raise ValueError("redemption-only FD is not Matured")
+            linked = txns.get(fd.get("linked_transaction_id"))
+            if linked is None or _redemption_kind(linked) is None:
+                raise ValueError("redemption credit link is missing or invalid")
+            for txn in (source, linked):
+                if any(fd.get(key) != txn.get(key) for key in ("account_id", "person_id")):
+                    raise ValueError("redemption credit owner differs")
+                if not same_reference(fd.get("fd_reference_no"), reference(txn)):
+                    raise ValueError("redemption reference differs")
+                if finite_money(txn.get("amount"), "redemption amount") < 0:
+                    raise ValueError("redemption amount is negative")
+            if fd.get("maturity_date") != source.get("transaction_date"):
+                raise ValueError("redemption maturity date differs from first source credit")
+
+            interest = finite_money(fd.get("actual_interest_amount") or 0, "actual interest")
+            if interest < 0:
+                raise ValueError("actual interest is negative")
+            linked_amount = finite_money(linked.get("amount"), "linked credit amount")
+            if _redemption_kind(linked) == "interest":
+                if source_id != linked["transaction_id"] or principal != 0 or not money_equal(interest, linked_amount):
+                    raise ValueError("interest-only placeholder amounts differ")
+            else:
+                if not (money_equal(linked_amount, principal) or money_equal(linked_amount, principal + interest)):
+                    raise ValueError("redemption principal differs from linked credit")
+                source_amount = finite_money(source.get("amount"), "source credit amount")
+                if _redemption_kind(source) == "principal" and not (
+                    money_equal(source_amount, principal) or money_equal(source_amount, principal + interest)
+                ):
+                    raise ValueError("redemption principal differs from source credit")
+                # Interest can be a separate credit (including the first source)
+                # or the excess in a later combined principal/interest credit.
+                if interest:
+                    separate = any(
+                        _redemption_kind(txn) == "interest"
+                        and all(fd.get(key) == txn.get(key) for key in ("account_id", "person_id"))
+                        and bool(reference(txn))
+                        and same_reference(fd.get("fd_reference_no"), reference(txn))
+                        and money_equal(interest, finite_money(txn.get("amount"), "interest credit amount"))
+                        for txn in transactions
+                    )
+                    combined = linked_amount > principal and money_equal(linked_amount - principal, interest)
+                    if not (separate or combined):
+                        raise ValueError("actual interest has no matching redemption credit")
+        except ValueError as exc:
+            failures.append(f"fd_id={fd_id}: {exc}")
+
+    missing = expected - opening_links.keys()
+    if missing:
+        failures.append(f"missing opening FD source links: {sorted(missing)}")
+    for source_id, count in source_links.items():
+        if count > 1:
+            failures.append(f"duplicate FD source transaction link: {source_id}")
+    return counts, failures
 
 
 def main():
-    # Create a minimal QApplication to avoid issues with importing ui code
     from PySide6.QtWidgets import QApplication
-    app = QApplication.instance() or QApplication([])
-
-    # Import the actual _TransactionImportWorker to use its regex-based FD detection
     from ui.statement_import_screen_modern import _TransactionImportWorker
+    from models.fixed_deposit import _extract_actual_fd_no
+    from tools.real_ui_tests.rebuild_common import db_ro, redacting_logger, append_progress
 
-    # Create an instance with empty/None arguments to access _is_fd_opening_transaction
+    app = QApplication.instance() or QApplication([])
     worker = _TransactionImportWorker(None, None, [], [], '', '', '', [])
-
+    log = redacting_logger("P2_8_fd_origin")
     conn = db_ro()
+    try:
+        def records(table):
+            cursor = conn.execute(f"SELECT * FROM {table}")
+            columns = [col[0] for col in cursor.description]
+            return [dict(zip(columns, row)) for row in cursor.fetchall()]
 
-    # 1. Log FD status summary
-    fd_status_query = "SELECT account_id, status, COUNT(*) FROM FixedDeposit GROUP BY account_id, status"
-    fd_status_rows = conn.execute(fd_status_query).fetchall()
-    log.log("FixedDeposit status summary:")
-    if fd_status_rows:
-        for account_id, status, cnt in fd_status_rows:
-            log.log(f"  account_id={account_id} status={status} count={cnt}")
-    else:
-        log.log("  (no FixedDeposit rows)")
-
-    # Get all account_ids from Transactions
-    txn_account_ids = set()
-    rows = conn.execute("SELECT DISTINCT account_id FROM Transactions ORDER BY account_id").fetchall()
-    for (acc_id,) in rows:
-        txn_account_ids.add(acc_id)
-    log.log(f"Accounts with Transactions: {sorted(txn_account_ids)}")
-
-    # 2. For each account: compute expected vs actual FD-opening transaction ids
-    results = {}
-    for account_id in sorted(txn_account_ids):
-        # Get transaction data for this account
-        txn_rows = conn.execute(
-            "SELECT transaction_id, transaction_type, category, description, amount FROM Transactions WHERE account_id=?",
-            (account_id,)
-        ).fetchall()
-
-        txn_cols = ["transaction_id", "transaction_type", "category", "description", "amount"]
-
-        # Compute expected FD-opening transaction ids using the actual worker method
-        expected_ids = set()
-        for txn in txn_rows:
-            txn_dict = dict(zip(txn_cols, txn))
-            if worker._is_fd_opening_transaction(txn_dict):
-                expected_ids.add(txn_dict["transaction_id"])
-
-        # 3. Get actual FD-opening transaction ids (from FixedDeposit.source_transaction_id)
-        actual_rows = conn.execute(
-            "SELECT source_transaction_id FROM FixedDeposit WHERE account_id=? AND source_transaction_id IS NOT NULL AND start_date IS NOT NULL",
-            (account_id,)
-        ).fetchall()
-        actual_ids = set(row[0] for row in actual_rows)
-
-        expected_n = len(expected_ids)
-        actual_n = len(actual_ids)
-        set_equal = expected_ids == actual_ids
-
-        results[account_id] = {
-            "expected_n": expected_n,
-            "actual_n": actual_n,
-            "set_equal": set_equal,
-            "expected_ids": expected_ids,
-            "actual_ids": actual_ids,
-        }
-
-        # 4. Log per account
-        status_str = "OK" if set_equal else "PRE-FIX IMPORT or FINDING"
-        log.log(f"account_id={account_id}: expected={expected_n}, actual={actual_n}, match={set_equal} [{status_str}]")
-
-    # 5. For each FD with a source transaction: verify data matches
-    fd_cols_query = "SELECT * FROM FixedDeposit LIMIT 1"
-    cols = [d[0] for d in conn.execute(fd_cols_query).description]
-
-    fds = conn.execute(
-        "SELECT * FROM FixedDeposit WHERE source_transaction_id IS NOT NULL"
-    ).fetchall()
-
-    if fds:
-        log.log("FixedDeposit rows with source_transaction_id:")
-        for fd_row in fds:
-            fd_dict = dict(zip(cols, fd_row))
-            fd_id = fd_dict.get("fd_id")
-            source_txn_id = fd_dict.get("source_transaction_id")
-            account_id = fd_dict.get("account_id")
-            principal = fd_dict.get("principal_amount")
-            start_date = fd_dict.get("start_date")
-            status = fd_dict.get("status")
-            fd_ref_no = fd_dict.get("fd_reference_no")
-
-            # Mask fd_reference_no to last 4 digits
-            fd_ref_masked = mask_digits_6_plus(str(fd_ref_no)) if fd_ref_no else "None"
-
-            # Join to Transactions
-            txn_data = conn.execute(
-                "SELECT amount, transaction_date, account_id FROM Transactions WHERE transaction_id=?",
-                (source_txn_id,)
-            ).fetchone()
-
-            if txn_data:
-                txn_amount, txn_date, txn_account_id = txn_data
-                amt_match = (float(txn_amount) == float(principal))
-                date_match = (str(txn_date) == str(start_date))
-                acct_match = (txn_account_id == account_id)
-
-                log.log(f"  FD fd_id={fd_id}: ref={fd_ref_masked} status={status} "
-                       f"amount_match={amt_match} date_match={date_match} account_match={acct_match}")
-            else:
-                log.log(f"  FD fd_id={fd_id}: ref={fd_ref_masked} status={status} "
-                       f"ERROR: source_transaction_id {source_txn_id} not found in Transactions")
-
-    # 6. List FDs with NULL source_transaction_id
-    null_source_fds = conn.execute(
-        "SELECT fd_id, status, linked_transaction_id FROM FixedDeposit WHERE source_transaction_id IS NULL"
-    ).fetchall()
-
-    if null_source_fds:
-        log.log("FixedDeposit rows with NULL source_transaction_id:")
-        for fd_id, status, linked_txn_id in null_source_fds:
-            log.log(f"  FD fd_id={fd_id}: status={status} linked_transaction_id={linked_txn_id}")
-    else:
-        log.log("No FixedDeposit rows with NULL source_transaction_id")
-
-    conn.close()
-
-    # Summary to PROGRESS.md
-    summary_lines = []
-    for account_id in sorted(results.keys()):
-        r = results[account_id]
-        status = "OK" if r["set_equal"] else "PRE-FIX"
-        summary_lines.append(f"account_id={account_id}: expected={r['expected_n']}, actual={r['actual_n']} [{status}]")
-
-    summary_text = "; ".join(summary_lines) if summary_lines else "no accounts with Transactions"
-    append_progress(f"P2.8 FD origin: {summary_text}")
+        counts, failures = validate_fd_provenance(
+            records("Transactions"), records("FixedDeposit"),
+            worker._is_fd_opening_transaction, _extract_actual_fd_no,
+        )
+    finally:
+        conn.close()
+    log.log(f"FD provenance counts: opening={counts['opening']}, redemption_only={counts['redemption_only']}")
+    if failures:
+        for failure in failures:
+            log.log(f"FAIL: {failure}")
+        raise AssertionError(f"FD origin verification failed with {len(failures)} discrepancy(s)")
+    append_progress(f"P2.8 FD origin: opening={counts['opening']}, redemption_only={counts['redemption_only']} [OK]")
     log.log("P2.8 DONE")
 
 
 if __name__ == "__main__":
-    main()
+    from tools.real_ui_tests.rebuild_common import run_logged
+    run_logged(main, "P2_8_fd_origin_crash")

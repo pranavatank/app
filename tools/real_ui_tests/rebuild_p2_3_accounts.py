@@ -1,10 +1,7 @@
 r"""tools/real_ui_tests/rebuild_p2_3_accounts.py — Phase 2.3 Accounts.
 
-Precondition: BankAccount = 0. If it is 4 and all rows match, skip.
-At script start, verify BankFDConvention = 4 (seeded for existing banks at
-initialise_database()); if it is 0, record a finding (do not block on it —
-it is a documented pre-existing plan-acknowledged gap when banks are added
-mid-session rather than at process start).
+Precondition: BankAccount = 0. If all expected account rows already exist, skip.
+After bootstrap, verify that each configured bank has its FD convention row.
 """
 import sys
 import json
@@ -16,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from tools.real_ui_tests.rebuild_common import (
     bootstrap_app, adopt_window, os_click, os_type,
     login_to_dashboard, set_fy, snapshot_db, append_progress,
-    redacting_logger, nav_click, prearm, wait_until,
+    redacting_logger, nav_click, prearm, wait_until, run_logged,
 )
 from tools.real_ui_test_harness import RealUIHarness, find_by_accessible_name, find_dialog_by_title
 
@@ -24,7 +21,7 @@ faulthandler.dump_traceback_later(900, exit=True)
 log = redacting_logger("P2_3_accounts")
 RUIH_DIR = Path(__file__).resolve().parent / "screenshots" / "rebuild"
 
-ORDER = ["Jana", "IDFC FIRST", "Ujjivan", "Equitas"]
+ALL_ORDER = ["Jana", "IDFC FIRST", "Ujjivan", "Equitas", "Unity"]
 
 
 def main():
@@ -36,9 +33,13 @@ def main():
     seed = json.loads((RUIH_DIR / "P0_expectations.json").read_text(encoding="utf-8"))
     person_seed = json.loads((RUIH_DIR / "P0_person_seed.json").read_text(encoding="utf-8"))
     holder_name = person_seed["full_name"]
+    statement_names = set(seed["statements"])
+    order = [bank for bank in ALL_ORDER if bank in statement_names]
+    if statement_names != set(order):
+        raise RuntimeError("P0 seed contains a statement bank with no configured account order")
 
     accounts_spec = []
-    for bank in ORDER:
+    for bank in order:
         s = seed["statements"][bank]
         accounts_spec.append({
             "bank": bank,
@@ -54,13 +55,13 @@ def main():
     conn.close()
     log.log(f"BankFDConvention (pre-bootstrap check) = {n_bankconv}")
 
-    if n_acct == 4:
+    if n_acct == len(order):
         conn = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
         rows = conn.execute(
             "SELECT account_id, person_id, bank_name, account_type, opening_balance, interest_rate FROM BankAccount ORDER BY account_id"
         ).fetchall()
         conn.close()
-        log.log(f"BankAccount already = 4: {rows}")
+        log.log(f"BankAccount already = {len(order)}: {rows}")
         skip_entry = True
     elif n_acct == 0:
         skip_entry = False
@@ -74,12 +75,10 @@ def main():
     conn = sqlite3.connect(f"file:{DB_PATH2}?mode=ro", uri=True)
     n_bankconv_after = conn.execute("SELECT COUNT(*) FROM BankFDConvention").fetchone()[0]
     conn.close()
-    log.log(f"BankFDConvention after fresh bootstrap_app() (re-runs initialise_database()) = {n_bankconv_after} "
-            f"(expect 4; if this differs from the pre-bootstrap value of {n_bankconv}, that demonstrates the "
-            f"finding: banks added mid-session via the UI do NOT get seeded into BankFDConvention until the "
-            f"next process start / initialise_database() call)")
-    if n_bankconv_after != 4:
-        log.log("FINDING (Medium): BankFDConvention did not reach 4 even after a fresh initialise_database() call.")
+    log.log(f"BankFDConvention after bootstrap_app() = {n_bankconv_after} (expected {len(order)})")
+    assert n_bankconv_after == len(order), (
+        f"BankFDConvention count {n_bankconv_after} != expected {len(order)}"
+    )
 
     harness = RealUIHarness(screenshot_dir=str(RUIH_DIR))
     dashboard = login_to_dashboard(harness)
@@ -183,7 +182,7 @@ def main():
         "SELECT account_id, person_id, bank_name, account_type, opening_balance, interest_rate FROM BankAccount ORDER BY account_id"
     ).fetchall()
     log.log(f"BankAccount rows: {rows}")
-    assert len(rows) == 4
+    assert len(rows) == len(order)
     for r, spec in zip(rows, accounts_spec):
         account_id, person_id, bank_name, account_type, opening_balance, interest_rate = r
         assert person_id == 1
@@ -192,18 +191,19 @@ def main():
         log.log(f"account_id={account_id} bank={bank_name!r} opening_balance={opening_balance} interest_rate={interest_rate} OK")
 
     n_bank_final = conn.execute("SELECT COUNT(*) FROM Bank").fetchone()[0]
-    log.log(f"Bank count after account creation = {n_bank_final} (expect still 4, no duplicates from get_or_create_bank)")
-    assert n_bank_final == 4
+    log.log(f"Bank count after account creation = {n_bank_final} (expect still {len(order)}, no duplicates from get_or_create_bank)")
+    assert n_bank_final == len(order)
 
     n_holders = conn.execute("SELECT COUNT(*) FROM AccountHolder").fetchone()[0]
-    log.log(f"AccountHolder rows = {n_holders} (expect 4)")
+    log.log(f"AccountHolder rows = {n_holders} (expect {len(order)})")
+    assert n_holders == len(order)
     conn.close()
 
     snap = snapshot_db("P2_3")
     log.log(f"snapshot: {snap}")
-    append_progress(f"P2.3 accounts complete. 4 accounts created. snapshot={snap}")
+    append_progress(f"P2.3 accounts complete. {len(order)} accounts created. snapshot={snap}")
     log.log("P2.3 DONE")
 
 
 if __name__ == "__main__":
-    main()
+    run_logged(main, "P2_3_accounts_crash")

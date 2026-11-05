@@ -25,19 +25,29 @@ from tools.real_ui_tests.rebuild_common import (
     redacting_logger, nav_click, prearm, wait_until, assert_foreground,
     run_logged, answer_password_dialog,
 )
+from tools.private_sources import get_personal_data_dir
 from tools.real_ui_test_harness import RealUIHarness, find_by_accessible_name, find_dialog_by_title
 
 faulthandler.dump_traceback_later(900, exit=True)
 RUIH_DIR = Path(__file__).resolve().parent / "screenshots" / "rebuild"
-STATEMENT_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "PersonalData" / "Pranav" / "Statement"
+STATEMENT_DIR = get_personal_data_dir() / "Statement"
 FILE_TYPER = Path(__file__).resolve().parent / "os_file_dialog_typer.py"
 
-BANK_ORDER = ["Jana", "IDFC FIRST", "Ujjivan", "Equitas"]
+ALL_BANK_ORDER = ["Jana", "IDFC FIRST", "Ujjivan", "Equitas", "Unity"]
+
+
+def available_banks():
+    seed_path = RUIH_DIR / "P0_expectations.json"
+    seed = json.loads(seed_path.read_text(encoding="utf-8"))
+    names = set(seed["statements"])
+    if names != names.intersection(ALL_BANK_ORDER):
+        raise RuntimeError("P0 seed contains a statement bank with no configured import choice")
+    return [bank for bank in ALL_BANK_ORDER if bank in names]
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--bank", required=True, choices=BANK_ORDER)
+    ap.add_argument("--bank", required=True, choices=available_banks())
     args = ap.parse_args()
     bank = args.bank
 

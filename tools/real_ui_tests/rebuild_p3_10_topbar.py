@@ -8,7 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from tools.real_ui_tests.rebuild_p3_common import P3Run, main_wrapper
+from tools.real_ui_tests.rebuild_p3_common import P3Run, main_wrapper, _get_nav
 from tools.real_ui_tests.rebuild_common import (
     os_select_combo, answer_message_box, answer_password_dialog,
     login_to_dashboard, os_click_widget, os_type, adopt_window, os_click
@@ -18,11 +18,9 @@ from tools.real_ui_tests.rebuild_common import (
 def run_r(p):
     dashboard = p.dashboard
 
-    nav_labels = [
-        "Overview", "Accounts", "Transactions", "Income & Expectations",
-        "Fixed Deposits", "Statement Import", "Tax Documents", "Tax",
-        "Income Prediction", "Settings"
-    ]
+    # Derive the walkthrough from the production navigation so new pages are
+    # included automatically (currently FD Planner is the eleventh page).
+    nav_labels = list(_get_nav())
 
     for label in nav_labels:
         page = p.nav(label)
@@ -155,6 +153,7 @@ def run_r(p):
     p.checks.check("Sidebar restored to original state", ok_restored)
 
     from PySide6.QtWidgets import QMessageBox
+    p.wait_for_page_jobs("before logout flow")
     msg_answer = answer_message_box(p.harness, p.app, QMessageBox.StandardButton.No, expect_title="Logout")
     p.app.processEvents()
     time.sleep(0.1)

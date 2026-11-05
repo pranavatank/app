@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from tools.real_ui_tests.rebuild_common import (
     bootstrap_app, adopt_window, os_click, os_type, os_select_combo,
     login_to_dashboard, set_fy, snapshot_db, db_ro, append_progress,
-    redacting_logger, nav_click, prearm, wait_until,
+    redacting_logger, nav_click, prearm, wait_until, run_logged,
 )
 from tools.real_ui_test_harness import RealUIHarness, find_by_accessible_name, find_dialog_by_title
 
@@ -143,4 +143,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    run_logged(main, "P2_1_person_crash")

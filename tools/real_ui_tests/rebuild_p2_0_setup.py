@@ -11,7 +11,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from tools.real_ui_tests.rebuild_common import (
     bootstrap_app, read_secret, adopt_window, os_click, os_type,
-    login_to_dashboard, snapshot_db, db_ro, append_progress, redacting_logger,
+    login_to_dashboard, snapshot_db, db_ro, append_progress, redacting_logger, run_logged,
 )
 from tools.real_ui_test_harness import RealUIHarness
 
@@ -93,28 +93,9 @@ def main():
             app.processEvents()
             time.sleep(0.2)
         if login_screen is None:
-            log.log("FINDING (Critical): setup.login did not become visible within 10s after "
-                     "'Create account'. Root cause confirmed by direct inspection: "
-                     "ui/setup_screen.py:_on_setup calls show_success()/show_warning() "
-                     "(ui/widgets/toast_utils.py) BEFORE any DashboardScreen has ever been "
-                     "constructed in this process, so the module-level _toast_container is "
-                     "still None and show_toast() raises RuntimeError — which aborts the rest "
-                     "of _on_setup (creating/showing self.login, self.close()) even though the "
-                     "DB write (setup_master_password) already completed. A real first-time "
-                     "user clicking 'Create account' would see the app appear to hang on the "
-                     "setup screen after account creation succeeds, with no visible transition "
-                     "to login, and would have to restart the app to reach LoginScreen.")
-            from core.auth import is_first_run as _ifr
-            log.log(f"Confirming DB write nonetheless succeeded: is_first_run() now = {_ifr()}")
-            assert not _ifr(), "setup_master_password did not persist despite the exception"
-            log.log("Working around the bug for this rebuild run: launching a fresh LoginScreen "
-                     "directly (equivalent to a real user restarting main.py), which is the only "
-                     "way a real user could proceed past this bug.")
-            from ui.login_screen import LoginScreen
-            login_screen = harness.launch(lambda: LoginScreen(), title="RUIH_LOGIN", maximized=False)
-            adopt_window(login_screen)
+            raise RuntimeError("login screen did not become visible after first-run setup")
         else:
-            log.log("setup.login is visible — setup succeeded without hitting the toast bug this time")
+            log.log("setup.login is visible")
 
         dashboard = login_to_dashboard(harness, master_pw=master_pw, login_screen=login_screen)
         log.log("login_to_dashboard succeeded, dashboard adopted")
@@ -157,7 +138,9 @@ def main():
     n_stack = dashboard.stack.count()
     person_items = [dashboard.person_combo.itemText(i) for i in range(dashboard.person_combo.count())]
     log.log(f"nav_buttons={n_nav} stack.count()={n_stack} person_combo={person_items}")
-    assert n_nav == 10 and n_stack == 10
+    from ui.dashboard_screen import _NAV_ITEMS
+    expected_nav_count = len(_NAV_ITEMS)
+    assert n_nav == expected_nav_count and n_stack == expected_nav_count
     assert person_items == ["All Persons"]
 
     snap = snapshot_db("P2_0")
@@ -175,4 +158,4 @@ def _has_cols(conn, table):
 
 
 if __name__ == "__main__":
-    main()
+    run_logged(main, "P2_0_setup_crash")

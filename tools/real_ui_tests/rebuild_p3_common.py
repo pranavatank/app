@@ -21,7 +21,7 @@ from tools.real_ui_tests.rebuild_common import (
     fingerprint_real_db, diff_fingerprints, require_scratch,
     append_progress, read_theme_prefs, restore_theme_prefs,
     Checks, run_logged, redacting_logger, close_all_windows,
-    start_modal_watchdog, REAL_DB_PATH, RUIH_DIR,
+    start_modal_watchdog, REAL_DB_PATH, RUIH_DIR, wait_until,
 )
 from tools.real_ui_test_harness import RealUIHarness
 
@@ -122,6 +122,11 @@ class P3Run:
             raise LookupError(f"nav label not found: {label!r}, available: {nav_labels}")
         idx = nav_labels.index(label)
 
+        current_idx = self.dashboard.stack.currentIndex()
+        if current_idx != idx:
+            current_label = nav_labels[current_idx] if 0 <= current_idx < len(nav_labels) else str(current_idx)
+            self.wait_for_page_jobs(f"navigation away from {current_label}")
+
         nav_click(self.harness, self.dashboard, label)
         self.harness.settle(2.5)
 
@@ -142,6 +147,85 @@ class P3Run:
             # May need to trigger lazy load; in normal nav flow it should be loaded
             page = self.dashboard._get_screen_page(idx)
         return page
+
+    def _active_page_jobs(self):
+        """Return live page widgets with an in-flight background job."""
+        if self.dashboard is None:
+            return []
+        pages = getattr(self.dashboard, "_screen_pages", {}).values()
+        return [page for page in pages if page is not None and getattr(page, "_busy", False)]
+
+    def wait_for_page_jobs(self, reason, timeout=180):
+        """Pump the GUI event loop until page jobs settle; never destroy a live thread.
+
+        If a job exceeds the soft timeout, persist a failing result and terminate
+        this isolated walkthrough process. Closing the dashboard here would
+        leave Qt to destroy an active QThread, which can abort the whole run.
+        """
+        initial = self._active_page_jobs()
+        if not initial:
+            return True
+
+        settled = wait_until(self.harness, lambda: not self._active_page_jobs(),
+                             timeout=timeout, interval=0.25)
+        if settled:
+            return True
+
+        active_names = [type(page).__name__ for page in self._active_page_jobs()]
+        detail = f"{reason}; active page jobs={active_names}; soft timeout={timeout}s"
+        self.checks.check("page background jobs settled", False, detail)
+        self.log.log("FATAL: " + detail + "; preserving artifacts and exiting isolated process")
+        try:
+            self._persist_timeout_evidence(reason)
+        except BaseException as exc:
+            # Keep the nonzero process boundary even if artifact persistence
+            # itself fails; never fall through to finish()/window teardown.
+            self.log.log(f"timeout evidence persistence failed: {exc!r}")
+        try:
+            sys.stdout.flush()
+            sys.stderr.flush()
+        finally:
+            try:
+                self.log.close()
+            except Exception:
+                pass
+            # The parent runner owns this process. Do not close windows or
+            # destroy QThreads; process isolation is the safe timeout boundary.
+            os._exit(2)
+
+    def _persist_timeout_evidence(self, reason):
+        """Write the failed run evidence without tearing down the active worker."""
+        faulthandler.cancel_dump_traceback_later()
+        try:
+            restore_theme_prefs(self.prefs_bytes)
+        except Exception as exc:
+            self.log.log(f"timeout preference restoration failed: {exc!r}")
+
+        if self.env == "R" and self.fp_before is not None:
+            try:
+                real_path = Path(config.DB_PATH).resolve()
+                fp_after = fingerprint_real_db(str(real_path))
+                changed = diff_fingerprints(self.fp_before, fp_after, allowed=R_ALLOWED)
+                self.checks.check("real DB fingerprint unchanged (R)", not changed,
+                                  f"changed tables: {changed}" if changed else "")
+            except Exception as exc:
+                self.checks.check("real DB fingerprint checked after timeout", False, repr(exc))
+
+        if self.watchdog and self.watchdog.failures:
+            for fail in self.watchdog.failures:
+                self.checks.check(f"watchdog {fail['title']}", False, detail=str(fail))
+        results_path = RUIH_DIR / f"P3_{self.nn}_{self.screen}_{self.env}.json"
+        extra = {
+            "screen": self.screen,
+            "env": self.env,
+            "timeout": {"reason": reason, "active_jobs": [type(page).__name__ for page in self._active_page_jobs()]},
+            "watchdog": self.watchdog.failures if self.watchdog else [],
+            "observations": self.observations,
+        }
+        self.checks.finish(str(results_path), extra=extra)
+        total = len(self.checks.results)
+        passed = sum(1 for result in self.checks.results if result["ok"])
+        append_progress(f"P3.{self.nn} {self.screen} {self.env}: TIMEOUT {passed}/{total} (worker active)")
 
     def a11y(self, control, located_by):
         """Record accessibility observation: control locator."""
@@ -164,6 +248,7 @@ class P3Run:
 
     def finish(self):
         """Teardown: close windows, restore prefs, verify DB unchanged (R-mode), save results."""
+        self.wait_for_page_jobs("P3 run teardown")
         faulthandler.cancel_dump_traceback_later()
         try:
             close_all_windows()

@@ -1,671 +1,110 @@
-# Project Handoff & Testing Guide
-
-**Read this file first and read it fully. It is written to be sufficient on its own** —
-you should not need to read source files to understand what this project is, what
-state it is in, what is pending, or how to test it.
-
-**Last updated:** 2026-11-04 (isolated-test diagnostics; feature and bank-rate records below remain the 26 October checkpoint). Earlier rebuild figures are historical snapshots, not a new audit of the live database.
-**Read order:** this guide for the product and the testing rules, then **`tools/real_ui_tests/REBUILD_PLAN.md`** — the
-runbook with current test state, how to run every script, open decisions and next steps. The runbook supersedes §0.2 and
-§0.3 below where they differ.
-**Audience:** an AI agent (or human) picking this project up with zero prior context.
-This guide keeps only what is pending and what you need to know to avoid repeating
-past mistakes — not a changelog. Full history is in git log / commit messages.
-
----
-
-## 0. CURRENT STATE — family FD Planner committed; earlier rebuild follow-ups retained below
-
-### 0.0 Current FD Planner checkpoint — 2026-10-26
-
-**Checkout:** `B:\Study\App\App`, branch **main**. The owner requires changes directly on main; see `AGENTS.md`. Implementation checkpoint: **`2738be5`** (`feat: add full-page family FD planning with official bank rates`). No push was requested. Work stopped after the requested checkpoint commit; the subsequently requested test diagnostics are recorded in §0.0a.
-
-**Current feature:** restart the app and open **FD Planner** in the sidebar, or use the button on Fixed Deposits. It is a full page, not the superseded optimizer modal. The main inputs are cash to keep available and the planning horizon. The animated tree expands family → person → bank account → FD tenure/ready cash. Extra bank accounts are grouped until clicked. Privacy, pause animation, pan and zoom are supported.
-
-**Data and planning:** the default workbook is `data/data/Data 26-27.xlsx`, read without modification. Workbook savings/FD/salary data are supplemented by app people, complete FD records and unmatched income expectations. Overlapping salary months and matched expectations are not counted twice. Family transfers are allowed as a planning pool; ownership/clubbing and HUF taxation remain conditional. General-customer rates are used for everyone. Future income and FD maturities are displayed separately and are not spent today. Missing balances or FD terms stay explicitly incomplete; tax estimates remain provisional.
-
-**Rates checked on 26 October:** official publications were obtained for Jana, Ujjivan, Unity, HDFC, SBI and IDFC FIRST. Equitas, AU and BOI requests were blocked/failed; YES Bank and RNSB did not provide an unambiguous table through their adapters. These banks remain visibly unavailable. Unity's savings bands are displayed, but their calculation basis is unverified and excluded from optimization. Never substitute a comparison-site snapshot or an old PDF as a confirmed current quote. The local cache expires after 24 hours; refresh it before use. Neither the cache nor private financial documents are committed.
-
-**Optimizer:** the family model currently uses fixed FY 2025-26/2026-27 ordinary new-regime tax parameters and assumes continuity in later years; it does not yet read editable `TaxParams`/`TaxSlabConfig`. Reviewing that integration is pending, and no declaration eligibility is certified. `engines/family_fd_engine.py` jointly chooses FD principal, tenure, recipient account and retained savings, subject to reserves, bank concentration, modeled insurance and annual income/interest limits. Large models obtain an audited feasible seed, then search all allowed tenure days with HiGHS. A time-limited result is labelled best found with a search gap, not a proven optimum. The last actual-workbook audit preserved the reserve, reconciled available cash, left the workbook hash unchanged and reported a 4.13% gap. This is a recorded scenario, not a promise for later rate/data changes.
-
-**Cleanup:** the duplicate optimized-dialog tab, first optimizer, manual-rate workflow, manual-rate example and generated comparison cache were removed. Shared calculations live in `engines/fd_planner_math.py`; quote metadata live in `engines/fd_rates.py`. Original comparison/coverage/other-options components remain for compatibility. All four themes now include the `fd_planner` navigation accent. Private-data ignore rules cover both `data/PersonalData/` and `data/data/`.
-
-**Verification recorded on 26 October:** the new family engine, page, workbook, official-rate, quote-metadata and financial-math test files passed individually. The repaired chart/relocation/currency group passed **22 tests** together. Those repairs use a shared QApplication and current read-only SQL totals, including flagged transfers in other categories; they do not change ledger classifications or data. The old hard-coded tool guard in `tools/test_prediction_engine.py` was not changed. An earlier 194-test selection passed before cleanup. The subsequent monolithic suite displayed two error markers and did not complete; it was stopped at the owner's request. Current isolated-suite results are in §0.0a. Use the documented per-file runner below and run real-window checks separately. Offscreen renders and unit tests are not a substitute for real mouse/keyboard verification of the new page.
-
-Current implementation details and source limitations: **[FD_PLANNER.md](FD_PLANNER.md)**. Main entry points: `ui/fd_planner_screen.py`, `ui/widgets/family_money_tree.py`, `engines/family_workbook.py`, `engines/official_bank_rates.py`, `engines/family_fd_engine.py`.
-
-### 0.0a Isolated-test checkpoint — 2026-11-04
-
-**Measured results:** the initial 52-file isolated baseline produced **536 passed, 43 skipped**. After the runner repair and its 20 new regression tests, the final run produced **556 passed, 43 skipped across 53 files**. Every final child log records process exit code **0**; there were no crashes or timeouts. The historical monolithic-run error markers were not reproduced in isolation; their original cause remains unknown.
-
-**Runner repair:** `tools/run_full_tests.py` previously accepted a native crash after a clean pytest summary as a pass. Abnormal process exits now remain `CRASH` and make the aggregate exit nonzero. Passing summaries remain diagnostic information. Logs retain each completed child's numeric exit code, and progress is printed before each file. `tests/test_run_full_tests.py` covers signed/unsigned Windows crash codes, mixed results, timeouts and launch errors with mocked subprocesses; its 20 tests also passed separately.
-
-**Coverage limits:** the 43 skips comprise 25 in `test_real_documents.py`, 10 in `test_statement_package.py`, one in `test_form26as_parser.py`, two in `test_statement_import_flow.py` and five in `test_excel_table_parity.py`. Several document tests still target the absent legacy `data/PersonalData/Pranav/` tree while private sources are under `data/data/`; these skips do not verify the current documents. This pass did not run real-window mouse/keyboard flows, refresh live bank rates, change financial classifications or perform the Equitas data repair.
-
-**Evidence and data safety:** per-file logs are retained under the gitignored `tools/real_ui_tests/screenshots/plan_build_20261104/` directory in `baseline/`, `runner_verified/` and `suite_verified/`; the latter also contains `runner-summary.txt`. Before/after SHA-256 comparisons matched for all 15 protected files, including the live database, theme preferences and private source documents. Diagnostic runs preserved the Git index; the owner subsequently authorized committing the completed changes.
-
-The remaining rebuild state in §0.1–§0.3 is retained from the earlier handoff. Re-measure the current database before relying on its counts or financial totals.
-
-
-**Authorisation model (from the owner):** the agent may drive the real mouse and keyboard on its own
-(`pyautogui` scripts) — the owner never needs to type anything or wait. Code changes and DB/schema changes
-are allowed when necessary. The only hard rule left from earlier sessions: **do not run
-`tools/backfill_transactions.py`** (the fresh-import pipeline is being tested exactly as production runs it).
-
-### 0.1 Verified state of `data/financial.db` (rebuilt 2026-09-29 through the real UI)
-
-| table | count | detail |
-|---|---|---|
-| Person | 1 | "Pranav", DOB 2004-03-08, PAN from the real 26AS |
-| Bank / BankAccount | 4 / 4 | Jana, IDFC FIRST, Ujjivan, Equitas (Small Finance Bank legal names), one Savings account each |
-| Transactions | **506** | 65 / 376 / 27 / 38, every `balance_after` matches the parsed statement |
-| StatementImportLog | 4 | all `Success` |
-| FixedDeposit | 23 | Jana 14 `Pending Details`; Equitas 9 `Matured` (see §0.3-B: 5 of these are WRONG until the redemption-matching repair) |
-| Form26ASImport / Record | 1 / 158 | FY 2025-26, total TDS 13,367.00 |
-| AISTISImport | 2 | AIS + TIS, **both FY 2025-26** (import order 26AS → AIS → TIS keeps the FY correct) |
-| AccountHolder | 4 | present after restart; see §0.3 (A2 fix creates them at add time) |
-
-Taxable income measured on this DB is **₹96,056** (not the old ₹2,54,784): the owner-approved
-Commission/Professional-Fees recategorisation lived in the deleted DB and the backfill is deliberately not applied.
-`tools/test_prediction_engine.py` still needs its historical baseline reviewed from measured output (see §7). `tests/test_chart_db_agreement.py` now verifies current read-only SQL totals against the engine and reconciles flagged transfers separately; it no longer embeds a past copy of the owner's totals.
-
-Master password = `master:` line of `data\PersonalData\Pranav\password.txt`; read with
-`tools/real_ui_tests/rebuild_common.py:read_secret("master"|"ais_tis"|"equitas")`. Never print/log/hardcode.
-
-### 0.2 How the rebuild was run (repeatable)
-
-All in `tools/real_ui_tests/`, run **one at a time, nothing else running** (no other heavy CPU either — a parallel
-Opus/pytest run once starved the UI and made a dialog appear "not found"). Log to a file, never `| tail`.
-```
-# reset (explicit literal paths only; never wildcards): delete data\financial.db, -wal, -shm, -journal
-rebuild_p2_0_setup.py  →  rebuild_p2_1_person.py  →  rebuild_p2_2_banks.py  →  rebuild_p2_3_accounts.py
-rebuild_p2_4_statement.py --bank "Jana"|"IDFC FIRST"|"Ujjivan"|"Equitas"   (in that order)
-rebuild_p2_5_7_taxdocs.py   (26AS → AIS → TIS in ONE screen instance)
-rebuild_p2_8_fd_origin.py   (read-only: compares expected FD-opening ids with FixedDeposit.source_transaction_id)
-```
-Each step is idempotent, snapshots to `backups\rebuild_<UTC>_<tag>.db`, appends to
-`screenshots\rebuild\PROGRESS.md`. `rebuild_common.py` provides: `os_click`/`os_type`/`os_select_combo`/`os_set_date`,
-`prearm(app, cb)` (now **polls until a modal dialog is active** before running `cb`), `answer_password_dialog(...)`
-(in-process modal answerer, no secret on any command line), `run_logged(main, name)` (logs uncaught tracebacks),
-`set_fy` (retries 3×), `snapshot_db`, `fingerprint_real_db`, `diff_fingerprints`, `read/restore_theme_prefs`, `Checks`,
-`require_scratch`. `run_on_scratch.py [--fresh] <script>` runs a mutating script against a scratch copy
-(`backups\phase3_scratch.db`) and aborts (exit 3) if the real DB or real `theme_prefs.json` changed.
-
-### 0.3 Bugs found and fixed in this effort (all committed; `git log`)
-
-Fixed and verified:
-1. **First-run hang.** `SetupScreen._on_setup` used toasts, which raise `RuntimeError` before any `DashboardScreen`
-   exists → the login screen never appeared. Now uses an inline `LoginErrorLabel`. Verified in the real UI.
-2. **FD-opening detection.** The production import worker used a weak substring rule → **0 FDs created** for Jana/Equitas.
-   The regex detector (formerly dead code on the screen class) now lives in `_TransactionImportWorker`; two patterns that
-   matched ordinary debits (`\d+ FD`, `TD/\d+`) were removed. Real result: Jana 14, IDFC 0, Ujjivan 0, Equitas 5.
-3. `add_bank` did not seed `BankFDConvention`; `delete_bank` hit an FK IntegrityError once a convention row existed.
-4. `ThemeManager._write_pref` dropped `sidebar_open` (now read-merge-write, tolerant of a corrupt file).
-5. Toast container was opaque to mouse events (`WA_TransparentForMouseEvents` now True) — earlier session.
-6. Test tooling: `prearm` fired before the click (dialog never filled), password passed on a command line, no crash
-   logging, AIS/TIS password-dialog race, `tools/real_ui_tests/password_dialog_typer.py` removed.
-7. Later fixes (see `git log`): FD redemption matching (`_extract_actual_fd_no` now accepts `"<digits> /1"`; redemptions
-   naming a *different* numeric FD no longer mark unrelated FDs Matured), `add_account` creates the primary
-   `AccountHolder`, the import screen really blocks an import that fails balance validation (`_import_blocked`),
-   dashboard `_on_refresh_all` now has 10 aligned entries + `IncomePredictionScreen.refresh()`, Overview income/expense
-   tiles honour the account filter and the bar chart skips internal transfers, `INCOME_CATEGORIES` gained Commission
-   Income / Professional Fees, transaction add/edit/move/delete recalculates account balances, AIS/TIS handlers use
-   `session.selected_person_id or 1`, `core/backup_manager.create_backup` is WAL-safe.
-
-8. **2026-10 batch (found by the Phase 3 walkthrough and review; all committed):** account details panel buttons were
-   unreachable (layout rebuilt on every update); Indian digit grouping on every screen (`session.mask` -> `format_inr`);
-   Tax Documents showed the full TDS as "Refund Due"; FY2025-26 capital-gains rates (20% / 12.5% above ₹1.25L — changes saved
-   tax figures); failed-import rollback now removes redemption-created FDs; import savings interest runs once per FY after
-   the balance recalculation; `change_password` rolls back on error; Shift Dates / Split Row PySide6 keyword bug; bulk edit
-   overwrote untouched fields; Excel column mapping was ignored; income-expectation Edit/Delete read the wrong column;
-   Income dialog defaulted to FY 2020-21; recurring-expectation edit lost its month; FD maturity rounds up per the audit doc.
-   The `core/auth.py` device check is temporarily commented out locally for testing and is NOT committed (REBUILD_PLAN.md D1).
-
-**Still to do on the real DB (data repair, not code):** the pre-fix import wrongly matched Equitas FDs 15–19 as Matured
-and created placeholder FDs 20–23 with `start_date` NULL. Repair = reset the Equitas account and re-import it with the fixed
-matching: `run_on_scratch.py --fresh rebuild_p2_4_reset_account.py --bank Equitas --expect-count 38`, then
-`run_on_scratch.py rebuild_p2_4_statement.py --bank Equitas` (rehearsal), verify Pending=5 (900000) / Matured=9
-(850000, interest 91,590), then apply to the real DB with `rebuild_p2_4_reset_account.py --real --confirm-account-id 4`.
-
-### 0.4 Environment/tooling lessons (each cost real time)
-- **Process enumeration from the agent's shell is unreliable** (guide earlier: `Get-CimInstance` returned 0 while the app
-  was visibly running). Cross-check with log mtimes and DB state.
-- **A screenshot is not proof; a script's own PASS is not proof** — verify with independent read-only SQL.
-- **Never run two real-UI processes, or a real-UI process plus heavy CPU work, at once.**
-- **Never chain real-UI scripts blindly with `&&`/`for` and no failure check** — one failing step let the loop continue.
-- `answer_password_dialog` / `prearm` must run *inside* the modal's nested event loop via a polling `QTimer`; a
-  `singleShot(0)` fires before the click that opens the dialog.
-- Parallel Haiku test runs can hit `run_full_tests.py`'s 120 s per-file timeout on `test_screen_render.py`
-  (takes ~110 s alone) — re-run it alone.
-- The auto-mode classifier refused an unprompted `restore_database` over the live DB; deleting the DB files was
-  explicitly requested by the owner, so it is done by explicit literal path.
-- Schema has **21** tables (older docs said 22).
-
----
-
-## 1. What this app is
-
-A **personal financial manager** for one real user (Pranav). Offline-first, local
-SQLite, PySide6 desktop UI on Windows.
-
-Its purpose is not bookkeeping. It is **tax planning**: predict this financial
-year's taxable income early enough to *act* — to stay under the ₹12,00,000 rebate
-limit and to prevent TDS from being deducted at source.
-
-### The single most important concept in this codebase
-
-There are **two kinds of data and they must never be conflated**:
-
-| | **OUR DATA** | **ITR-SIDE DATA** |
-|---|---|---|
-| What | Bank statements, Fixed Deposits, Income Expectations | 26AS, AIS, TIS |
-| Source | The user's own records, imported by this app | The Income Tax department |
-| Mutable? | Yes — this is our model of reality | **No. Extract and accept.** |
-| Purpose | **PREDICT** the current FY so the user can act | **COMPARE** against our prediction |
-
-**Our predicted figure being LOWER than AIS is EXPECTED, not a bug.** Most FD
-interest is credited *inside the FD* and never appears as a savings-account
-transaction, so our statement-derived data legitimately under-reports.
-In any comparison UI the words **"gap", "mismatch" and "error" must not appear.**
-Use neutral framing: *"Our data under-reports this bank."*
-
-The owner's own words: *"our fd data and statement data and our expectation data
-is our data which will help us to predict these current year income so i can
-prevent tds deductions and keep in 12L limit. but 26AS, AIS and TIS are real data
-coming from ITR side, we can not change it."*
-
----
-
-## 2. THE TRAP THAT WILL BITE YOU — read before touching income figures
-
-The `Transactions` table books **₹64,95,682** as Income for FY 2025-26.
-**Most of it is not taxable income.**
-
-- You **must** classify by the `category` column, not by a naive
-  `SUM(amount) WHERE transaction_type='Income'` (that reports ₹64.9L against a
-  ₹12L limit and makes any prediction screen worse than useless).
-- `category IN TAXABLE_INCOME_CATEGORIES` (`engines/prediction_engine.py`) is
-  taxable: `FD Interest`, `Savings Interest`, `Commission Income`,
-  `Professional Fees`, `Salary`. Everything else counts as non-taxable UNLESS
-  `is_internal_transfer=1` is also false and the category is unrecognized
-  (then it's `unclassified`, not counted either way).
-- `is_internal_transfer` is now populated (3 rows currently) and is used
-  alongside category in `realised_income_to_date` — but it's a *small, very
-  conservative* flag (see §3), not a general-purpose filter. Most non-taxable
-  rows are non-taxable by category (`Other Income`, `FD Maturity`), not by
-  this flag.
-- **Currently taxable: ₹2,54,784** (FY 2025-26, as of 2026-03-31). This is a
-  real, owner-approved figure, not the original ₹95,591 — see §3 for what
-  changed and why, before assuming any number you see elsewhere is stale.
-
-`tools/test_prediction_engine.py` has a permanent CRITICAL GUARD assertion
-(`non_taxable > 5_000_000` and `taxable < 500_000`) that exists purely to
-catch a "summed everything as taxable" regression. **Do not weaken it** — but
-also don't be surprised the threshold isn't ₹200,000 anymore; it was
-deliberately raised to sit above the current legitimate taxable figure. If a
-future income recategorisation pushes taxable income close to ₹500,000
-legitimately, raise the threshold again (with the same reasoning), don't just
-delete the guard.
-
----
-
-## 3. OLD baseline (the DB that was deleted 2026-09-29) — for comparison only; current state is §0.1
-
-`data/financial.db` is **REAL USER DATA**, not a fixture. It is gitignored
-(`.gitignore:2` → `data/*.db`). Back it up before any writing operation — see
-§5.2 rule 3 and the `tools/delete_account.py` / `tools/backfill_transactions.py`
-pattern (dry-run first, `core.database.backup_database()`, verify counts).
-
-| table | rows | note |
-|---|---|---|
-| Person | 1 | person_id 1, PAN and DOB set |
-| BankAccount | 4 | `38` Jana, `39` IDFC FIRST, `40` Ujjivan, `41` Equitas. `Test Bank` (account_id 1, leftover junk) was deleted — do not expect it to exist |
-| Transactions | 506 | imported from the 4 real statements; categories backfilled |
-| FixedDeposit | 19 | **all 19 are `Pending Details`** — no rate, no maturity. Every FD projection is an estimate at the 7.5% default (`DEFAULT_FD_RATE`). **Entering the real rates is the highest-value accuracy improvement available** — the bulk-entry dialog exists (Fixed Deposits screen, "Enter Real Rates") but needs the user's real rates/tenures |
-| IncomeExpectation | 0 | never populated |
-| Form26ASImport / Form26ASRecord | 1 / 158 | FY 2025-26, total TDS ₹13,367 |
-| AISTISImport | 2 | AIS + TIS imported (`tools/taxdoc_import.py` or the Tax Documents screen) |
-| Bank | 0 | |
-
-### Income classification is not fully clean — know this before trusting any total
-`TAXABLE_INCOME_CATEGORIES` now includes `Commission Income`, `Professional
-Fees`, `Salary` (added when real income sources — Kevision Systems, Lotus
-Investment, Enlightvision, Prasad M — were found misclassified as non-taxable
-`Other Income` and recategorised, owner-approved). **Not exhaustively
-reviewed**: ~₹22.2L of "Other Income" (27 Jana rows described only as
-`"Transaction"`, unidentifiable from the description alone) and ~₹17.4L of
-family NEFT/UPI credits are still sitting under non-taxable `Other Income`,
-unreviewed. If you're asked to improve income-classification accuracy, this
-is where the remaining value is — but changing it changes the user's real tax
-figures, so confirm with the owner first, the way the Commission/Professional
-Fees/Salary reclassification was confirmed.
-
-`LOTUSINVESTM ENT` (note: literal stray space mid-word in the source bank
-statement text) — if you ever grep for "LOTUSINVESTMENT" or "LOTUS
-INVESTMENT" and get zero matches, that's why; strip whitespace before
-matching, or match `LOTUSINVESTM.?ENT`.
-
-### `is_internal_transfer` — deliberately conservative, read before extending it
-Populated via `find_internal_transfers()` in `models/transaction.py`. A
-candidate debit/credit pair is accepted only if it is the *unique* match for
-that amount within a ±2-day window, **counted across every account, not just
-cross-account candidates** — an early version excluded same-account rows from
-the ambiguity count and produced a real false positive (a cheque paid to a
-third party got linked to a gift from the user's mother, because it looked
-"unique" once same-account candidates were wrongly excluded). If you touch
-this function, re-verify against a fresh DB diff (see §9), not just the
-function's own reported pair count.
-
----
-
-## 4. The real documents
-
-All under `data/PersonalData/Pranav/` — **gitignored** (`.gitignore:15`). Never
-commit them, never print the PAN or a full account number into a committed file.
-
-| file | state | extraction |
-|---|---|---|
-| `Statement/Jana - Pranav.pdf` | plain | 65 txns, confidence 1.000 |
-| `Statement/IDFC.pdf` | plain | 376 txns, confidence 1.000 |
-| `Statement/Ujjivan - Pranav.pdf` | plain | 27 txns, confidence 1.000 |
-| `Statement/Equitas.pdf` | **encrypted** | 38 txns |
-| `26AS.pdf` | plain | 86 Part-I + 72 Part-II records |
-| `AIS.pdf`, `TIS.pdf` | **encrypted** | see below |
-
-**Passwords are already on disk** at `data/PersonalData/Pranav/password.txt`
-(gitignored): one line for AIS/TIS, one for Equitas. The PAN is also inside the
-26AS. Read them at runtime (`read_ais_tis_password` in `tools/taxdoc_import.py`, or
-`$AIS_TIS_PASSWORD`). **Do not ask the user for these. Do not hardcode or write them
-into any committed file, including this guide.** (Old passwords were previously
-committed in earlier docs/tests and remain in git history — if you ever need to
-know which files, `git log -p` on `tools/tax_reconcile.py` and
-`tools/pipeline_import.py` will show; rotate them if it matters.)
-
-### Verified ground truth — 26AS
-Measured from the raw PDF, independently of the parser:
-- 6 deductor summary rows; **211 line items** (194A ×206, 194JB ×4, 194JA ×1)
-- flags: 177 normal, **25 `B` + 9 `G` reversals** (negative — must be netted)
-- **Net TDS ₹13,367.00**, net gross ₹3,50,458
-- Per deductor: Enlightvision ₹1,05,069/₹10,508 · Jana ₹2,859/₹2,859 ·
-  Equitas ₹19,397/₹0 · Jana 15G/H ₹90,745/₹0 · Equitas 15G/H ₹53,311/₹0 ·
-  Ujjivan 15G/H ₹79,077/₹0
-- 194A = bank interest. **194JB/194JA = professional fees, NOT interest.**
-
-### Verified — AIS / TIS (they agree with each other)
-Dividend ₹2,655 · Savings interest ₹46,183 · **FD interest ₹2,56,642** ·
-total interest ₹3,02,825 · business receipts ₹1,05,069 · AIS TDS ₹12,073.
-
-### The interest comparison (this is the expected shape, not a defect)
-| bank | 26AS 194A incl Part-II | our transactions |
-|---|---|---|
-| Equitas | ₹54,816 | ₹92,257 |
-| Jana | ₹34,469 | ₹4,001 |
-| **Ujjivan** | **₹79,077** | **₹0** |
-| IDFC | — | ₹244 |
-
-Ujjivan showing ₹0 on our side is the clearest illustration of §1: its
-interest is credited inside FDs and never lands in a statement row.
-**TDS never appears in transactions at all** — it is deducted before credit, so it
-can only come from the tax documents. That is correct behaviour, not a bug.
-
----
-
-## 5. How to test — read this before writing any test
-
-### 5.1 The environment
-- Repo `B:\Study\App\App`, branch `main`. Always run from the repo root and keep changes on main as requested.
-- Python: `.venv\Scripts\python.exe`. PySide6 6.11.2.
-- Windows, display scaling **125%** (`devicePixelRatio == 1.25`). Never hardcode
-  1.25; read it live.
-
-### 5.2 Non-negotiable rules
-1. **UTF-8 stdout.** A rupee sign kills a cp1252 Windows console mid-run. Every
-   script must start with:
-   ```python
-   for _s in (sys.stdout, sys.stderr):
-       try: _s.reconfigure(encoding="utf-8", errors="replace")
-       except Exception: pass
-   ```
-2. **Never pipe a long run through `| tail`** — the pipe buffers everything and you
-   see nothing until it exits. Redirect to a file and read the file.
-3. **Real DB safety.** Back up (`core.database.backup_database()`, WAL-safe —
-   `shutil.copy2` is NOT safe on a WAL-mode DB) before any write. Any test that
-   creates rows must delete them in an always-runs (`finally`) path. Prefix
-   test rows `RUIH_`.
-4. **Never commit** `data/PersonalData/**` or `data/financial.db` or anything
-   under `backups/` (check `.gitignore` covers `.db`, `.db-shm` AND
-   `.db-wal` — a WAL sidecar file was once nearly committed because the
-   gitignore only listed `.db`).
-5. **Report real output.** A failure is a finding. Fabricating a pass wastes
-   more time than the bug does. **A test's own self-reported pass/fail is not
-   proof — verify against the actual DB/disk state independently, every
-   time** (see §9; this is not a hypothetical, it caught a real bug).
-
-### 5.3 Real-UI testing (the harness)
-`tools/real_ui_test_harness.py` → `RealUIHarness`. Launches a **real, visible,
-maximized** window. Never `QT_QPA_PLATFORM=offscreen` for UI behaviour tests.
-
-API: `launch(factory, maximized=True)`, `click(root, "Accessible Name")`,
-`type_into(...)`, `key(...)`, `find(root, name)`, `find_dialog(cls, title, timeout)`,
-`scroll_into_view(w)`, `settle(sec)`, `shot(name)`, `to_physical(pt)`,
-`click_via_os(w)`, `click_at_via_os(widget, local_point, double=False)`,
-`find_via_uia(...)`. `double_click()` uses `pyautogui`, not `QTest.mouseDClick`
-(see gotcha F).
-
-**Hard-won gotchas — each cost hours:**
-- **§A DPI.** Qt geometry is logical px; `pyautogui` is physical px. Multiply by
-  `devicePixelRatio` or clicks land up-and-left. `to_physical()` does it.
-- **§B Window off-screen.** A fixed `resize(1600,900)` becomes 2000×1125 physical
-  at 125% and hangs off a 1920×1080 screen; Qt still returns valid coordinates.
-  **Launch maximized.**
-- **§C Focus stealing.** Windows silently refuses `SetForegroundWindow` for
-  script-launched windows. The harness forces it via pywin32 and warns — **heed
-  the warning.**
-- **§D Scroll.** `mapToGlobal()` returns coordinates for widgets scrolled out of
-  view. Clicking hits whatever is actually there. The harness calls
-  `ensureWidgetVisible()` first.
-- **§E Repaint lag.** Script-driven `processEvents()` lags the compositor by
-  1-2s. **A screenshot alone is never proof** — always cross-check widget state
-  (`label.text()`, `.isChecked()`, a DB query).
-- **§F `QTest.mouseDClick` does not fire `doubleClicked`** at all, on any platform.
-  Use `pyautogui.doubleClick()` or the keyboard equivalent, and say which.
-- **§G Modal `.exec()` blocks `QTest.mouseClick`.** The click call sits on the
-  stack inside the modal's nested event loop. **Pre-arm
-  `QTimer.singleShot(0, cb)` BEFORE clicking anything that opens a modal.**
-  `PersonDialog`, `BankDialog`, `AccountDialog`, `TransactionDialog` are all
-  `.exec()`-modal.
-- **§H Blind coordinate clicks misclick.** Prefer accessible-name lookup + QTest
-  over OS coordinates; `click_via_os()` is the opt-in escape hatch.
-- **§I PySide6 `findChildren()` takes ONE type**, not a tuple. PyQt6 allowed the
-  tuple form.
-- **§J A screen/test that inserts rows into a specific FY must also set
-  `dashboard.fy_combo` to that FY** before checking table state — the
-  Transactions screen filters by `session.selected_fy`, which defaults to the
-  *current* FY, not whatever FY your test data is in. Rows will silently not
-  appear otherwise, and every downstream assertion cascades into wrong
-  failures that look unrelated to the real cause.
-- **§K `backup_database()` in `core/database.py` returns `None` on success**
-  (no return statement) — checking `if backup_path:` on its return value
-  always looks like failure. Check `os.path.exists(dest)` /
-  `os.path.getsize(dest) > 0` instead.
-
-- **§L `prearm` must wait for the modal.** A `QTimer.singleShot(0)` callback runs *before* the OS click that opens the
-  dialog and blocks the loop while searching for it; the click then opens an unfilled dialog. `prearm` now polls
-  `QApplication.activeModalWidget()`; `answer_password_dialog` does the same for `PasswordDialog`.
-- **§M Never pass a secret as a subprocess argument** (visible in any process listing). Answer password dialogs in-process.
-- **§N Wrap every script `main()` in `run_logged`** — uncaught exceptions otherwise go to stderr only and a run "fails silently".
-- **§O Verify the FY combo after every change** (`session.selected_fy`); `set_fy` retries but always assert.
-
-### 5.4 Testing colour / theme problems
-**Grep cannot find them.** A file can be grep-clean of hex literals and still
-render wrong. The cause is *when* a widget is built, not what the source says.
-
-**Method that works:** render the widget offscreen/onscreen, sample pixels
-(`np.frombuffer(img.constBits(), ...)` — PySide6's `constBits()` returns a
-memoryview, the old PyQt `ptr.setsize(img.byteCount())` pattern doesn't
-apply), count how many are bright (luminance > 216).
-
-**Known false positive:** `ThemeCard` (Settings screen) intentionally paints a
-fixed preview of its *own* theme's colours regardless of the active theme —
-a bright Aurora preview card under a dark theme is correct, not a bug.
-Exclude `type(w).__name__ == "ThemeCard"` from any brightness-offender scan.
-
-### 5.5 What to run
-
-```
-# engine assertions (52, read-only, ~15s) - never run while something else
-# writes the real DB; a throwaway FD row makes the FD-count checks fail
-.venv\Scripts\python.exe tools/test_prediction_engine.py
-
-# charts vs direct DB aggregates (reads data/financial.db read-only)
-.venv\Scripts\python.exe -m pytest tests/test_chart_db_agreement.py -q
-
-# import 26AS/AIS/TIS into the DB (backs up first; --dry-run writes nothing;
-# password comes from $AIS_TIS_PASSWORD or the gitignored password file)
-.venv\Scripts\python.exe tools/taxdoc_import.py --dry-run
-
-# statement extraction quality, modern vs legacy parser
-.venv\Scripts\python.exe tools/extraction_audit.py
-
-# 26AS per-record extraction + reconciliation
-.venv\Scripts\python.exe tools/taxdoc_audit.py data/PersonalData/Pranav/26AS.pdf
-
-# 26AS vs bank transactions, bank by bank
-.venv\Scripts\python.exe tools/tax_reconcile.py
-
-# real-window UI flows — ONE AT A TIME, each takes over the screen
-.venv\Scripts\python.exe tools/real_ui_tests/test_add_person_flow.py
-.venv\Scripts\python.exe tools/real_ui_tests/test_add_bank_flow.py
-.venv\Scripts\python.exe tools/real_ui_tests/test_add_account_flow.py
-.venv\Scripts\python.exe tools/real_ui_tests/test_statement_import_flow.py
-.venv\Scripts\python.exe tools/real_ui_tests/test_tax_documents_flow.py
-.venv\Scripts\python.exe tools/real_ui_tests/test_button_size_audit.py
-.venv\Scripts\python.exe tools/real_ui_tests/test_excel_table_interactions.py   # writes RUIH_ rows, always cleans up
-.venv\Scripts\python.exe tools/real_ui_tests/test_dark_theme_sweep.py          # read-only
-.venv\Scripts\python.exe tools/real_ui_tests/test_transactions_scale.py        # read-only
-
-# pytest (statement package)
-.venv\Scripts\python.exe -m pytest tests/test_statement_package.py -q
-
-# account deletion (fixes cascade, requires --expect-name match; --dry-run first)
-.venv\Scripts\python.exe tools/delete_account.py --account-id <id> --expect-name "<bank_name>" --dry-run
-
-# income recategorisation + internal-transfer detection (--dry-run first)
-.venv\Scripts\python.exe tools/backfill_transactions.py --dry-run --person-id 1
+# FD Planner and real-data testing handoff
+
+**Updated:** 2026-11-05. Read this guide, then `tools/real_ui_tests/REBUILD_PLAN.md` before continuing the rebuild.
+This is a concise handoff for a fresh agent; old investigation history belongs in Git and ignored run logs.
+
+## Product and data model
+
+This is an offline-first PySide6 personal finance app backed by local SQLite. It helps the owner predict current-year
+income early enough to plan around tax and TDS. The FD Planner is a full dashboard page opened from the sidebar or
+Fixed Deposits page. It groups a planning tree by family, person, bank account, FD tenure, and ready cash; the user can
+pause, pan, zoom, and use privacy mode. See [`FD_PLANNER.md`](FD_PLANNER.md) for implementation detail.
+
+Keep the two data purposes distinct:
+
+| App-owned records | ITR-side records |
+|---|---|
+| Statements, FDs, and income expectations describe the owner's model and support prediction. | 26AS, AIS, and TIS come from the Income Tax Department and are accepted as reported; use them for comparison. |
+
+Statement-derived income can be lower than AIS because FD interest may stay in the deposit and never appear in a
+savings statement. Describe that plainly as under-reporting in our inputs; do not call it an error or silently alter
+ITR-side values. For taxable-income totals use `TAXABLE_INCOME_CATEGORIES` in `engines/prediction_engine.py`, not all
+transactions with `transaction_type='Income'`. FD maturity principal and transfers are not automatically taxable.
+
+## FD Planner behavior and limits
+
+- Main code: `ui/fd_planner_screen.py`, `ui/widgets/family_money_tree.py`, `engines/family_workbook.py`,
+  `engines/official_bank_rates.py`, `engines/family_fd_engine.py`, and `engines/fd_planner_math.py`.
+- It reads the current workbook at `data/data/Data 26-27.xlsx`. Statement and tax PDFs are under
+  `data/data/Pranav/`, with `data/PersonalData/Pranav/` as the tools' legacy fallback. All private sources are read-only.
+- Bank quotes are fetched from official bank publications and cached locally for 24 hours. Missing or ambiguous rates
+  must remain unavailable; never replace them with a comparison-site rate or an old quote. Unity savings bands have an
+  unverified calculation basis and are excluded from optimization.
+- The optimizer uses general-customer rates and the fixed ordinary new-regime parameters currently supported by the
+  family model. It does not yet consume editable `TaxParams`/`TaxSlabConfig`; future tax years assume continuity.
+  Family pooling, ownership, and HUF treatment are conditional. No declaration eligibility or tax result is certified.
+- Reserve cash, bank concentration, modeled insurance, annual income/interest limits, and retained cash constrain the
+  plan. Future income and FD maturities are shown separately from spendable cash today. Missing balances or FD terms
+  remain visibly incomplete. A timed-out solve is best found with a gap, not a proven optimum.
+- The 26-Oct actual-workbook audit found a 4.13% search gap and preserved the reserve; treat it as a historical
+  scenario, not a current guarantee. Refresh rates and remeasure before relying on any plan.
+
+## Rebuild facts and source expectations
+
+The authorized fresh rebuild uses four statement PDFs, then 26AS, AIS, and TIS through their separate import flows.
+Verified corrected parser counts are Jana 65, IDFC FIRST 376, Ujjivan 27, Equitas 39 (507 total). The row-grouping
+repair recovered an omitted INR 100,000 Equitas debit. Two blank Ujjivan balances derive zero between printed anchors.
+26AS has 158 records and net TDS INR 13,367 for FY 2025-26 / AY 2026-27. AIS/TIS identify FY 2025-26; both report
+dividends 2,655, savings interest 46,183, FD interest 256,642, and business receipts 105,069; AIS TDS is 12,073.
+AIS JSON and the two Form16A PDFs are not imported by the existing PDF flow. DOB is 2004-03-08.
+
+Equitas source has 5 detected FD openings totaling INR 500,000. The historical redemption expectation was
+9 matured placeholders with principal INR 850,000 and interest INR 91,590; remeasure it after import. Unity's
+seven-row mini-statement has no opening or running balances, so it is deferred and must
+not be imported into the ledger until reliable balances are available.
+
+**Paused after the completed Jana import, at the owner's request (2026-11-05).** Setup, person, four banks/accounts,
+65 Jana transactions and 14 FDs are verified; other statements and all tax imports are pending. Do not reset again.
+Independent SQL/source reconciliation passed, all 13 private source hashes match, and theme preferences are restored.
+Resume at IDFC FIRST using the runbook. A verified pre-reset SQLite backup exists at
+`tools/real_ui_tests/screenshots/rebuild/before_fresh_backup.json`, referring to
+`backups/rebuild_20261104T132227Z_before_fresh.db`. All 13 private-file hashes are recorded in ignored
+`tools/real_ui_tests/screenshots/rebuild/source_hashes_before.json`; `theme_prefs.original` preserves the prior theme
+preferences. Keep private files unchanged and verify hashes after the rebuild.
+
+## Safety and working rules
+
+- Work on `main` in this checkout. Preserve staged and unrelated changes. The owner authorized commits of completed
+  batches; the coordinating agent owns staging and commits.
+- Never run `tools/backfill_transactions.py`. Do not redesign schema, authentication policy, or tax policy as part of
+  this rebuild. Do not modify source documents, `theme_prefs.original`, or the verified backup.
+- Before resetting, confirm the recorded backup exists and is readable; only the explicitly named database files and
+  sidecars may be removed. Never use wildcards. Rebuild steps and all mutating UI walkthroughs must be sequential.
+- Real-UI scripts use the real mouse and keyboard. Do not run another UI process or heavy test workload alongside
+  them. Check each exit code and independently inspect SQL/fingerprints; screenshots and script PASS lines alone are
+  insufficient.
+- R mode must not change the real DB. S mode must use
+  `tools/real_ui_tests/run_on_scratch.py --fresh ... --env S`. Never pass `--real` or point a scratch test at the live DB.
+- Secrets come from `FINMGR_MASTER_PASSWORD_FILE` when configured, then ignored `credentials.local.json`, then source
+  labels through `rebuild_common.read_secret`. Never print, log, hardcode, or put credentials on a command line.
+- Keep screenshots and logs under ignored `tools/real_ui_tests/screenshots/`. Do not commit `data/`, `backups/`, DB
+  files, or screenshots. Keep `pyautogui.FAILSAFE` enabled.
+
+## Useful commands and sources
+
+Run from the repo root in PowerShell, one command at a time. The venv is `.venv\Scripts\python.exe`.
+
+```powershell
+# Read-only document preflight (required before reset)
+.venv\Scripts\python.exe tools\real_ui_tests\rebuild_p0_expectations.py --defer-unity
+
+# Focused tests: run individually to isolate Qt/native failures
+.venv\Scripts\python.exe -m pytest tests\test_private_sources.py -q
+.venv\Scripts\python.exe -m pytest tests\test_taxdoc_passwords.py -q
+.venv\Scripts\python.exe -m pytest tests\test_rebuild_preflight.py -q
+.venv\Scripts\python.exe -m pytest tests\test_rebuild_fd_provenance.py -q
+.venv\Scripts\python.exe -m pytest tests\test_rebuild_collection.py -q
+
+# Independent DB checks; use after rebuild or against a named backup as appropriate
+.venv\Scripts\python.exe tools\rebuild_verify.py --engines --tempdb
+.venv\Scripts\python.exe tools\rebuild_verify.py --fingerprint --out before_p3
 ```
 
-**Full-suite `pytest tests -q` is fragile on this Windows/Qt/matplotlib
-stack — use `tools/run_full_tests.py` instead.** Running all of `tests/` in
-one process segfaults partway through (access violation during garbage
-collection of matplotlib/Qt objects). `tools/run_full_tests.py` runs each
-`tests/test_*.py` file in its own subprocess for real isolation:
-```
-.venv\Scripts\python.exe tools/run_full_tests.py
-# specific files, and pass extra pytest flags after --:
-.venv\Scripts\python.exe tools/run_full_tests.py tests/test_kpi_tile.py -- -v
-```
-The former 35-PASS/2-CRASH baseline is historical. On 26 October the
-QApplication-lifetime issues in `test_chart_relocation.py` and
-`test_money_label.py` were corrected. The 4 November isolated-suite results
-and remaining skips are recorded in §0.0a; they do not establish that the
-fragile single-process suite is safe. The runner retains per-file exit codes
-and fails on a native crash even when pytest printed a passing summary.
+The source resolver is `tools/private_sources.py`. Preflight and ledger/year validation are in
+`tools/real_ui_tests/rebuild_preflight.py`; P0 parses expected source facts without importing into the DB. Rebuild
+helpers are in `rebuild_common.py`, per-screen checks in `rebuild_p3_common.py`, and scratch isolation in
+`run_on_scratch.py`. The runbook is authoritative for exact sequence and current pending status.
 
-`test_dashboard_lazy.py`'s two previously-stale-failing tests (nav-button
-count, sidebar-collapse-width) are now fixed and pass.
-
-**Two real-UI tests can never run concurrently** — they fight over screen focus.
-
----
-
-## 6. Architecture you need to know
-
-### Navigation (11 screens, `ui/dashboard_screen.py`)
-`0` Overview · `1` Accounts · `2` Transactions · `3` Income & Expectations ·
-`4` Fixed Deposits · `5` Statement Import · `6` Tax Documents · `7` Tax ·
-`8` **Income Prediction** · `9` Settings · `10` **FD Planner**
-
-Adding a screen means edits in several places, and missing any one fails
-silently: `_NAV_ITEMS` (its second element is the screen key, used both for
-nav routing and as the key into `Theme.SCREEN_ACCENT_FILL`/`SCREEN_ACCENT_TINT`
-— add a matching entry to those dicts in **all 4** theme files, not just one),
-the lazy page builder, `ui/icons.py`'s icon registry, and
-`self._screen_pages` (consumed by `_refresh_shared_widgets`). There is no
-`screen_key_map` anymore — nav buttons carry their screen key directly via
-`setProperty("screen", ...)`.
-
-### Two statement parsers exist
-- **Modern** — `from engines.statement import parse_statement_pdf`. Confidence
-  1.000 on all statements. **This is what the UI uses.**
-- **Legacy** — `engines.statement_parser.parse_statement_with_debug`. Still
-  present; do not wire it back in — its confidence scores are wrong because it
-  never calls `normalise_order()`, so transactions come out
-  reverse-chronological and a naive balance walk fails.
-
-### Prediction engine — `engines/prediction_engine.py`
-Pure calculation, no Qt imports, no DB writes, plain dicts, every money figure
-carries `is_estimated`. Single UI entry point:
-`get_prediction_summary(person_id, financial_year=None, as_of=None)` →
-keys `financial_year, as_of, realised_income, projected_fd_interest,
-projected_savings_interest, expected_income, fy_income, tds_risk, timeline,
-advisory, itr_actuals, comparison`. `build_strategies()` (declaration 15G/15H,
-redistribution, new bank, defer maturity, headroom, data quality) surfaces in
-`build_advisory()` as `strategies` + `context`. `engines/taxdocs/persist.py`
-maps parsed 26AS/AIS/TIS onto `models/form26as.py` / `models/ais_tis_import.py`.
-
-`project_savings_interest(person_id, financial_year, as_of=None)` projects
-unrealised interest per-account from statement-coverage-end to FY-end (basis:
-current-FY daily rate if any realised this FY, else prior-FY daily rate, else
-zero) — not a hardcoded 0.0 anymore. Returns
-`{total, realised, full_year, per_bank, is_estimated}`.
-
-**Test hazard:** `tests/conftest.py` repoints `config.DB_PATH` to a seeded temporary DB
-once per test session (once per file with the isolated runner). A test that must see real data has to point it back at
-`data/financial.db` (see `tests/test_chart_db_agreement.py`), and a screen that
-starts its own async `load_data()` must have it patched out or it overwrites the
-data under test.
-
-Engine hazards it works around — **do not undo these**:
-- `interest_engine.fd_interest_for_fy()` **raises TypeError on a NULL
-  maturity_date**, i.e. on all 19 of the remaining FDs. Use
-  `fd_interest_accrued_to()` on a *synthesised copy*.
-- `interest_engine.fd_tds_threshold_status()` reads `FDInterestRecord`, which
-  is now empty (its only rows lived on the deleted Test Bank). Do not rely on
-  it having data.
-- `_get_tax_params()` / `_get_tax_slabs()` are the **only** accessors for
-  TaxParams/TaxSlabConfig. Private by necessity. Never hardcode ₹12,00,000 or
-  ₹50,000 — read them.
-
-### Threading — do not revert
-`Loader.run(parent, fn, message, on_done=, on_error=)` is the standard shared helper for slow work. The full-page FD Planner uses its own QObject/QThread worker with explicit queued GUI callbacks and a close guard so calculations do not open a modal overlay; keep the same GUI-thread safety rule. The shared loader marshals callbacks via a `_GuiRelay`
-QObject with an explicit `QueuedConnection` — a plain Python callable has no
-thread affinity, so without this Qt invokes `on_done` on the *worker* thread,
-and constructing a `QMessageBox` there **deadlocks the process** (window "Not
-Responding", no exception, no visible dialog). **Never open a dialog from a
-worker thread.**
-
-### Theme
-All colour via `Theme` tokens (`ui/theme/theme.py`). **No raw hex outside
-`ui/theme/`.** Four themes: Aurora, Slate (light), Nova, Midnight Pro (dark).
-
-`Theme.btn()` height is snapped to `HEIGHT_SM/MD/LG` (28/36/44) and baked into
-the button's own QSS (`min-height`/`max-height`), not left to
-`setFixedHeight()` alone — Qt's stylesheet re-application overrides
-`setFixedHeight`/`setMaximumWidth` on repolish, so geometry must live in the
-QSS string itself.
-
-**Accent system (added 2026-09-23).** Every screen has a colour identity via
-`Theme.SCREEN_ACCENT_FILL`/`SCREEN_ACCENT_TINT` dicts (keyed by screen name,
-defined per-theme in all 4 `ui/theme/theme_*.py` files — same 11 keys in
-every file). `Theme.accent(name)` resolves either a screen key or a semantic
-name (`"primary"`, `"success"`, `"danger"`, `"warning"`, `"info"`, `"teal"`,
-`"purple"`, `"pink"` — see `ui.theme.components.ACCENT_TOKENS`) to a hex
-colour; `Theme.screen_accent(key)`/`screen_accent_fill(key)` resolve just the
-tint/fill pair. `KpiTile`, `SummaryPanel`, `CollapsibleSection`, `EmptyState`
-all take an `accent=` kwarg and style themselves via QSS
-`[accent="name"]`/`[screen="name"]` dynamic-property selectors (not inline
-`setStyleSheet` calls) — so a live theme switch just needs the property
-re-evaluated, not the widget rebuilt. Each also has a `refresh_theme()`
-method; `DashboardScreen._refresh_shared_widgets()` walks every built page
-and calls it on every instance of those 4 classes. **Two gotchas that will
-bite you if you add new colour code:** (1) Qt reads an 8-digit hex string as
-`#AARRGGBB` (alpha first), not `#RRGGBBAA` — a `f"{color}2E"` pattern
-intending "add alpha" silently produces a wrong colour instead of erroring;
-use `ui.theme.components.rgba(hex, alpha)` instead. (2) `border-radius: 999px`
-does NOT clip a non-square/non-circular widget into a circle in Qt's QSS —
-verified by direct offscreen render; use one of the real radius tokens
-(`RADIUS_CONTROL`/`RADIUS_CARD`/`RADIUS_MODAL`/`RADIUS_PILL`) or a literal
-that's actually been checked to look right at that widget's size.
-
-**Any screen holding charts MUST define `refresh_theme()`** covering every
-chart and table it owns, or a live theme switch leaves it visually stale.
-**Charts and 4 full pages (`import_page`, `tax_documents_page`, `tax_page`,
-`settings_page`) still don't** — see §7 pending item.
-
----
-
-## 7. PENDING — start here
-
-### Pending after the 2026-09-29 rebuild
-0. **Historical real-DB repair/re-baselining:** first verify whether the Equitas repair in §0.3 is still needed. Review `tools/test_prediction_engine.py` from newly measured output without weakening its CRITICAL GUARD. The pytest chart agreement now uses current SQL totals; do not reintroduce historical monetary constants. Re-run `tools/rebuild_verify.py --engines` / `--tempdb` only as appropriate to the current data and requested scope.
-0b. **Phase 3 walkthrough**: the per-screen `rebuild_p3_*.py` scripts exist and the R-mode runs pass (REBUILD_PLAN.md §4.3);
-   the S-mode scripts still need a re-run on a scratch DB, and `11_hard_refresh` has not been run.
-0c. Remaining report-only findings / owner decisions (full list: REBUILD_PLAN.md §6): the device-fingerprint lockout,
-   H5 privacy reveal is dead code, H14 rollback of updates to pre-existing FDs, H15 `project_fy_income` ignores expectations
-   (possible FD-interest double count), H18 Overview "Income (FY)" is a gross figure, TDS-risk uses projection only,
-   Tax Documents screen never reloads persisted 26AS/AIS/TIS and saves to person 1 for "All persons", Link Transfers
-   confirm defaults to Yes, tax-law gaps for a CA. (H9, H12 and the `format_inr` "₹-0" case are fixed.)
-
-### High value
-1. **Enter the real FD rates.** The bulk-entry dialog exists (Fixed Deposits
-   screen, "Enter Real Rates") but has not been used on real data: all 19
-   remaining FDs are `Pending Details`, every projection is an estimate at
-   the 7.5% default. **Needs the user's real rates and tenures.** After
-   entering them, re-baseline `tools/test_prediction_engine.py`'s FD
-   expectations (`estimated_fd_count`, `known_fd_count`, FD interest `total`
-   — currently 19 / 0 / ₹80,291.00) from measured output, not loosened.
-2. **Strategy quality.** Redistribution never fires today because no bank has
-   spare room; `build_strategies` uses the 7.5% default for principal maths
-   until real rates exist (depends on item 1).
-3. **~₹22.2L + ~₹17.4L of "Other Income" is still unclassified/non-taxable and
-   unreviewed** — see §3 "Income classification is not fully clean". Confirm
-   with the owner before recategorising any of it, the way the earlier
-   reclassification was confirmed.
-4. **Live theme switching is still incomplete, though better than before.**
-   `KpiTile`/`SummaryPanel`/`CollapsibleSection` headers/`EmptyState` now
-   re-theme correctly on a live switch (via `_refresh_shared_widgets()`) —
-   Overview screen went from 3 brightness offenders to 0. What's still
-   unthemed on a live switch: **charts** (`ChartWidget` bakes its facecolor
-   at construction — matplotlib figure, not QSS-drivable the same way) and
-   **4 full pages that have no `refresh_theme()` at all**:
-   `import_page`, `tax_documents_page`, `tax_page`, `settings_page` (check
-   with `has_refresh_theme=False` lines printed by
-   `tools/real_ui_tests/test_dark_theme_sweep.py`). Building a window fresh
-   in the target theme is fully clean — 0 offenders across all 10 screens
-   (Pass A of that same test). Fixing charts + the 4 missing pages is a
-   further design-system pass, not a quick patch.
-5. **Extend test coverage from the 4 November checkpoint (§0.0a / §5.5).** The isolated suite completed with 556 passed and 43 skipped; the historical monolithic errors were not reproduced. Review legacy document-fixture paths and the other skipped flows, then run the pending real-window checks separately. Continue using `tools/run_full_tests.py` and inspect per-file logs; a native crash remains a failure even after a passing summary.
-
-### Known, accepted limitations (not bugs to fix blindly)
-6. **The Transactions screen has no pagination** — loads the entire FY
-   (505+ rows) at once. Fine today; revisit if per-FY row counts grow much
-   larger.
-7. **`Test Bank` (account_id 1) is gone.** If you see references to it in old
-   documents/plans, they're stale — don't try to "fix" an account that no
-   longer exists.
-
----
-
-## 8. How to work on this project
-
-**A test's or agent's own self-reported pass/fail is not proof — verify
-independently, every time.** This bit hard this session: a real-UI test's
-delete-selected step deleted 2 real transactions instead of only its own
-`RUIH_`-prefixed test rows, and the test's own final report still claimed a
-clean run with a wrong "before" count that silently absorbed the loss. It was
-only caught by diffing the live DB's row-id set against a timestamped backup
-taken minutes earlier. If you write or run anything that deletes/modifies
-real rows by id, **diff the actual id set against a backup afterwards** — do
-not trust a printed count alone. Restoring lost rows needs the user's
-explicit approval and their exact original field values from a backup; ask
-before writing them back.
-
-**Grep-clean does not mean correct.** Visual/theme bugs depend on *when* a
-widget is constructed, not what the source says. Render and measure (§5.4).
-
-**Measure before diagnosing.** Confidently-diagnosed bugs have turned out
-wrong before (an "off by one row" bug was actually reverse-chronological
-ordering from a different parser entirely). Reproduce with real numbers
-before changing code.
-
-**Use `faulthandler.dump_traceback_later(N, exit=True)`** to find hangs with
-no exception and no visible dialog (this is how a worker-thread deadlock was
-once located).
-
-**Never run two real-UI tests at once** — they fight over screen focus.
-
-**When Haiku sub-agents implement something, re-verify their claims yourself**
-against real command output before trusting a "done"/"all passed" report —
-several real bugs this session (a false transfer-pairing match, a broken
-LOTUS-INVESTMENT category match, the data-loss incident above) were only
-caught this way, not from the implementer's own self-check.
+The P5 collector requires current P3 files with nonempty boolean-result lists and compares fingerprint row counts and
+hashes across the full table set. A requested baseline that is missing, invalid, or mismatched fails collection.
+Review policy: Sol medium for planning and review; Luna medium for implementation, with a focused collection test.
