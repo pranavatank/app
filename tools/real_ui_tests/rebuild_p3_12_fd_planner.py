@@ -10,8 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from PySide6.QtCore import QPoint
-from PySide6.QtWidgets import QPushButton
+from PySide6.QtWidgets import QApplication, QPushButton
 from tools.real_ui_test_harness import pyautogui
 
 from tools.real_ui_tests.rebuild_p3_common import P3Run, main_wrapper
@@ -33,9 +32,40 @@ def _nodes(tree, kind):
 def _click_node(p, tree, node):
     # QGraphicsItems are not QWidget children, so click their actual visible
     # position in the view using the harness's OS-level coordinate helper.
+    # Account groups can sit below the clipped viewport, so bring the item
+    # into view before translating its scene position to screen coordinates.
+    p.harness.scroll_into_view(tree.viewport())
+    tree.ensureVisible(node)
+    # ensureVisible may leave a node at the viewport edge, where the planner's
+    # detail label can overlap it. Center it so the OS hit target is unobscured.
+    tree.centerOn(node)
+    p.harness.settle(0.3)
     scene_point = node.mapToScene(node.boundingRect().center())
     viewport_point = tree.mapFromScene(scene_point)
-    p.harness.click_at_via_os(tree.viewport(), QPoint(viewport_point), wait=0.5)
+    if not tree.viewport().visibleRegion().contains(viewport_point):
+        raise AssertionError(f"tree node center is outside visible viewport: {viewport_point}")
+    global_point = tree.viewport().mapToGlobal(viewport_point)
+    hit_item = tree.itemAt(viewport_point)
+    hit_record = getattr(hit_item, "record", {})
+    hit_widget = QApplication.widgetAt(global_point)
+    if hit_widget is None or not (hit_widget is tree.viewport() or tree.viewport().isAncestorOf(hit_widget)):
+        raise AssertionError(f"tree node OS hit target is obscured by {type(hit_widget).__name__ if hit_widget else None}")
+    print("tree-click-before",
+          f"target={node.record.get('kind')}",
+          f"hit={hit_record.get('kind')}",
+          f"widget={type(hit_widget).__name__}",
+          f"show_all={tree._show_all}",
+          f"accounts={len(_nodes(tree, 'account'))}")
+    selected_kinds = []
+    tree.nodeSelected.connect(lambda record: selected_kinds.append(record.get("kind")))
+    px, py = p.harness.to_physical(global_point)
+    pyautogui.moveTo(px, py, duration=0.15)
+    pyautogui.click()
+    p.harness.settle(0.5)
+    print("tree-click-after",
+          f"selected_kinds={selected_kinds}",
+          f"show_all={tree._show_all}",
+          f"accounts={len(_nodes(tree, 'account'))}")
 
 
 def _select_tab(p, page, index):
@@ -138,6 +168,9 @@ def run_r(p):
                        len(_nodes(page.tree, "account")) > visible_before)
     else:
         p.observe("tree grouped accounts", "no grouped accounts in the selected person's view")
+
+    if p.part == "tree":
+        return
 
     # Read the visible official-rate coverage. A bank without a current,
     # usable FD quote remains unavailable and is never counted as covered.

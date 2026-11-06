@@ -272,6 +272,9 @@ def os_click(harness: RealUIHarness, root, accessible_name, wait=0.8, double=Fal
 def os_click_widget(harness: RealUIHarness, widget, wait=0.8, double=False):
     """Same as os_click() but takes an already-resolved widget (e.g. one found
     by a property lookup rather than accessibleName())."""
+    # Capture this while the C++ widget is alive: a successful click may close
+    # its owning panel and destroy the button before the post-click log runs.
+    widget_repr = repr(widget)
     harness.scroll_into_view(widget)
     if not widget.isVisible() or not widget.isEnabled():
         raise RuntimeError(f"widget not clickable: {widget!r} visible={widget.isVisible()} enabled={widget.isEnabled()}")
@@ -286,14 +289,14 @@ def os_click_widget(harness: RealUIHarness, widget, wait=0.8, double=False):
             if blocker is None:
                 break
         if blocker is not None:
-            raise RuntimeError(f"widgetAt/WindowFromPoint guard failed for {widget!r} at {center}: blocked by {blocker}")
+            raise RuntimeError(f"widgetAt/WindowFromPoint guard failed for {widget_repr} at {center}: blocked by {blocker}")
     pyautogui.moveTo(px, py, duration=0.2)
     if double:
         pyautogui.doubleClick()
     else:
         pyautogui.click()
     harness.settle(wait)
-    print(f"os_click_widget({widget!r}) logical=({center.x()},{center.y()}) physical=({px},{py})")
+    print(f"os_click_widget({widget_repr}) logical=({center.x()},{center.y()}) physical=({px},{py})")
     return widget
 
 

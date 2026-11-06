@@ -50,8 +50,15 @@ def run_r(p):
             p.checks.check("05_detail_panel_shows_account_info", bank_in_detail,
                           f"labels: {labels[:3]}")
 
-            p.a11y("detail panel close", "no close button")
-            p.observe("06_detail_panel_closes", "Close button not reachable under detail_panel after update_account")
+            # The close control is a plain-text QAbstractButton owned by the
+            # AccountDetailsPanel footer (it has no accessible name), so find
+            # it by its displayed label and exercise the real OS click path.
+            close_button = find_button(page.detail_panel, "Close")
+            p.a11y("detail panel close", "Close button located by displayed label")
+            os_click_widget(p.harness, close_button, wait=0.6)
+            p.checks.check("06_detail_panel_closes",
+                          page.detail_frame.maximumWidth() == 0,
+                          f"detail_frame.maximumWidth()={page.detail_frame.maximumWidth()}")
 
 
 def run_s(p):

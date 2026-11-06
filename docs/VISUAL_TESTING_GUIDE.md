@@ -62,8 +62,11 @@ FY 2025-26, with expected amounts. The saved tax-document password decrypts succ
 passed with zero failures, verifying all 507 strict transaction row multisets plus accounts and tax records. See
 ignored `tools/real_ui_tests/screenshots/rebuild/postflight_20261106.out` and `postflight.json`. Integrity is `ok`,
 foreign-key violations are 0, and all 13 private-file hashes match. Latest snapshot:
-`backups/rebuild_20261106T101846Z_P2_5_7.db`. Do not reset. No P3 UI walkthroughs have run; continue with P3.10 topbar
-in R mode, then follow the runbook's R/S sequence.
+`backups/rebuild_20261106T101846Z_P2_5_7.db`. Do not reset. All eleven completed P3 read-only reports pass 283/283
+recorded assertions; the runbook lists counts and paths. This records R-mode coverage only, not the mutating flows.
+The P3.12 final run passed 38 checks, including the focused clipped-target case (group 4 to 6), actual plan/result,
+and unchanged database fingerprint. Next is S00 on a fresh scratch copy; continue the S-mode walkthroughs sequentially,
+with P3.11 hard refresh last.
 
 ## Safety and working rules
 

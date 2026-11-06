@@ -12,7 +12,7 @@ log or independent measurement exists.
 | P0 document preflight | **Passed, exit 0.** `screenshots/rebuild/P0_repair_20261105.out`. Fixed PDF row grouping recovers one Equitas debit; Ujjivan blank balances reconcile between printed anchors. |
 | Focused checks | Private sources 3, password readers 7, preflight 46, FD provenance 34, PDF rows 5, real statement package 10, P5 collection 22 passed. Collection log: `screenshots/rebuild/collection_verified.out`. Other logs: `resume_focused/`, `password_review_verified.out`, `row_repair_verified/`. |
 | Tax imports and postflight | 26AS, AIS, TIS, and `rebuild_postflight.py` passed; zero postflight failures. |
-| Phase 3 | No P3 walkthroughs have run. Start with P3.10 topbar in R mode, then follow the R/S sequence below. |
+| Phase 3 | Eleven R-mode JSON reports pass (283/283 assertions). Start S-mode with P3.00 on a fresh scratch copy; run remaining S walkthroughs sequentially and P3.11 hard refresh last. |
 | Unity seven-row mini statement | Explicitly deferred; no opening/running balances. |
 | S03 income contract and S06 FY behavior | Harness repaired and source-reviewed; GUI verification pending. |
 | Hard refresh | Pending. Reproduce suspected session-key loss; keep key/FY preservation assertions. |
@@ -37,10 +37,27 @@ read-only `rebuild_postflight.py` audit exited 0 with zero failures, verifying a
 multisets, accounts, and tax records; see `screenshots/rebuild/postflight_20261106.out` and `postflight.json`.
 Do not reset or repeat completed imports.
 
-No P3 UI walkthroughs have run. Begin with P3.10 topbar in R mode, then run the remaining walkthroughs sequentially
-in the order listed under Phase 3. Run R checks against the live data and S checks through the fresh scratch runner.
-After P3, perform the fingerprint comparison and P5 collection. The collector's focused tests passed (22); the
-master is retained in ignored `screenshots/rebuild/credentials.local.json`.
+Eleven R-mode reports pass all 283 recorded assertions. The accounts run includes the verified actual OS close assertion;
+the destroyed-widget helper log was fixed. P3.12 passed 38 checks, including the clipped-target case (group 4 to 6),
+actual plan/result, and unchanged database fingerprint. The family-tree unit check passes (1), recorded in
+`screenshots/rebuild/tree_interaction_verified_20261106.out`. These reports cover read-only checks only, not all
+mutating flows. Next run P3.00 S through a fresh scratch copy; continue remaining S walkthroughs sequentially and leave
+P3.11 hard refresh until last. After P3, perform the fingerprint comparison and P5 collection. The collector's focused
+tests passed (22); the master is retained in ignored `screenshots/rebuild/credentials.local.json`.
+
+| R-mode report | Result | JSON |
+|---|---:|---|
+| P3.10 topbar | 80/80 | `screenshots/rebuild/P3_10_topbar_R.json` |
+| P3.00 overview | 48/48 | `screenshots/rebuild/P3_00_overview_R.json` |
+| P3.01 accounts | 10/10 | `screenshots/rebuild/P3_01_accounts_R.json` |
+| P3.02 transactions | 13/13 | `screenshots/rebuild/P3_02_transactions_R.json` |
+| P3.03 income | 9/9 | `screenshots/rebuild/P3_03_income_R.json` |
+| P3.04 fixed deposits | 7/7 | `screenshots/rebuild/P3_04_fixed_deposits_R.json` |
+| P3.06 tax documents | 10/10 | `screenshots/rebuild/P3_06_tax_documents_R.json` |
+| P3.07 tax | 12/12 | `screenshots/rebuild/P3_07_Tax_R.json` |
+| P3.08 income prediction | 30/30 | `screenshots/rebuild/P3_08_Income Prediction_R.json` |
+| P3.09 settings | 26/26 | `screenshots/rebuild/P3_09_Settings_R.json` |
+| P3.12 FD Planner | 38/38 | `screenshots/rebuild/P3_12_FD Planner_R.json`; log `screenshots/rebuild/P3_12_R_final_20261106.out` |
 
 ## Fixed inputs and acceptance facts
 
