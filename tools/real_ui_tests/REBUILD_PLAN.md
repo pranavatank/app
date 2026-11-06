@@ -1,6 +1,6 @@
 # Fresh rebuild and real-UI runbook
 
-**Updated:** 2026-11-05. Read `docs/VISUAL_TESTING_GUIDE.md` first for product purpose, FD Planner limits, expected source
+**Updated:** 2026-11-06. Read `docs/VISUAL_TESTING_GUIDE.md` first for product purpose, FD Planner limits, expected source
 figures, and safety rules. This file is the current execution checklist. Do not rely on prior run claims unless a matching
 log or independent measurement exists.
 
@@ -8,10 +8,11 @@ log or independent measurement exists.
 
 | Work | Status |
 |---|---|
-| Live `data/financial.db` | **Paused at owner's request after Jana.** Setup, person, four banks/accounts, and Jana import passed (exit 0). Do not reset again. |
+| Live `data/financial.db` | Full P2 rebuild and independent postflight passed. Do not reset again. |
 | P0 document preflight | **Passed, exit 0.** `screenshots/rebuild/P0_repair_20261105.out`. Fixed PDF row grouping recovers one Equitas debit; Ujjivan blank balances reconcile between printed anchors. |
 | Focused checks | Private sources 3, password readers 7, preflight 46, FD provenance 34, PDF rows 5, real statement package 10, P5 collection 22 passed. Collection log: `screenshots/rebuild/collection_verified.out`. Other logs: `resume_focused/`, `password_review_verified.out`, `row_repair_verified/`. |
-| Remaining imports | IDFC FIRST, Ujjivan, Equitas, then 26AS/AIS/TIS are pending. All Phase 3 runs remain pending. |
+| Tax imports and postflight | 26AS, AIS, TIS, and `rebuild_postflight.py` passed; zero postflight failures. |
+| Phase 3 | No P3 walkthroughs have run. Start with P3.10 topbar in R mode, then follow the R/S sequence below. |
 | Unity seven-row mini statement | Explicitly deferred; no opening/running balances. |
 | S03 income contract and S06 FY behavior | Harness repaired and source-reviewed; GUI verification pending. |
 | Hard refresh | Pending. Reproduce suspected session-key loss; keep key/FY preservation assertions. |
@@ -20,27 +21,25 @@ P0 and the reviewed parser repair passed before deletion. Run logs, screenshots,
 `tools/real_ui_tests/screenshots/` tree. Preserve any existing contents. Before starting, inspect `git status --short` and
 leave unrelated or staged work untouched.
 
-### Exact pause checkpoint and next command
+### Completed rebuild milestone
 
-Independent audit `screenshots/rebuild/checkpoint_20261105.json` passed: Person 1, Bank 4, BankAccount 4,
-AccountHolder 4, BankFDConvention 4, Transactions 65, FixedDeposit 14, StatementImportLog 1, tax imports 0.
-Every Jana date/type/amount/balance matches the freshly parsed source; closing balance is INR 1,506.80.
-All 14 FD opening links validate. SQLite integrity is `ok`, foreign-key violations 0, all 13 private hashes match,
-and original theme preferences were restored. Each completed GUI log is `screenshots/rebuild/P2_*_20261105.out`.
-Latest rebuilt snapshot: `backups/rebuild_20261104T192018Z_P2_4_Jana.db` (filename uses UTC).
+The ignored audit `screenshots/rebuild/banks_checkpoint_20261106.json` passed for all four statements: Jana 65,
+IDFC FIRST 376, Ujjivan 27, Equitas 39 (507 total). Every date/type/amount/balance matches its source and each
+account's closing balance matches. FD provenance passed for 19 openings and 9 redemptions. The 28 FDs are Jana:
+14 Pending Details / INR 1,300,000; Equitas: 5 Pending Details / INR 500,000 and 9 Matured / INR 850,000 principal /
+INR 91,590 interest. SQLite integrity is `ok`, foreign-key violations are 0, and all 13 private hashes are unchanged.
+The P2.4 logs are `screenshots/rebuild/P2_4_*20261106.out`; P2.8 log is
+`screenshots/rebuild/P2_8_banks_20261106.out`. Latest snapshot:
+`backups/rebuild_20261106T101846Z_P2_5_7.db` (UTC filename). The P2.5_7 tax import log,
+`screenshots/rebuild/P2_taxdocs_20261106.out`, exited 0: 26AS has 158 FY 2025-26 records with INR 13,367 net TDS;
+AIS and TIS both identify FY 2025-26 and match expected amounts. The saved password decrypts successfully. The full
+read-only `rebuild_postflight.py` audit exited 0 with zero failures, verifying all 507 strict transaction row
+multisets, accounts, and tax records; see `screenshots/rebuild/postflight_20261106.out` and `postflight.json`.
+Do not reset or repeat completed imports.
 
-On resume, check this checkpoint, source hashes, and absence of another app process. **Do not delete the DB or
-repeat setup.** Continue with the next command, then Ujjivan, Equitas, tax documents, and P2.8 in order:
-
-```powershell
-$env:QT_QPA_PLATFORM='windows'
-$env:PYTHONUTF8='1'
-.venv\Scripts\python.exe -u tools\real_ui_tests\rebuild_p2_4_statement.py --bank "IDFC FIRST" *> tools\real_ui_tests\screenshots\rebuild\P2_4_IDFC_resume.out
-```
-
-Full `rebuild_postflight.py` is prepared for all four statements and tax imports; it intentionally cannot pass this
-partial checkpoint. It and the revised P3 scripts have not been run end to end. The full isolated suite and final
-P5 collection after the remaining imports and UI runs are pending. The collector's focused tests passed (22); the
+No P3 UI walkthroughs have run. Begin with P3.10 topbar in R mode, then run the remaining walkthroughs sequentially
+in the order listed under Phase 3. Run R checks against the live data and S checks through the fresh scratch runner.
+After P3, perform the fingerprint comparison and P5 collection. The collector's focused tests passed (22); the
 master is retained in ignored `screenshots/rebuild/credentials.local.json`.
 
 ## Fixed inputs and acceptance facts
@@ -89,7 +88,7 @@ reconcile, 26AS year fields match, master credential is available, and the Unity
 reset if any check fails. Confirm the backup and hash manifest before deleting the four literal DB/sidecar paths.
 The first 2026-11-05 attempt failed; the repaired run passed. Row/preflight/package checks then passed 61 tests with child exit 0.
 
-Full sequence for reference follows; setup through Jana is **already complete**. Resume at IDFC FIRST:
+Historical P2 build sequence (completed; do not rerun):
 
 ```text
 rebuild_p2_0_setup.py
@@ -104,12 +103,8 @@ rebuild_p2_5_7_taxdocs.py
 rebuild_p2_8_fd_origin.py
 ```
 
-The P2.5_7 script imports 26AS, AIS, and TIS. P2 steps create snapshots and update ignored progress records. After P2.8, check
-transaction counts, account balances, tax-document rows, FD `source_transaction_id` provenance, and SQLite integrity
-independently. Save a post-build fingerprint. Compare all 13 protected-file hashes with the prepared manifest and
-restore the prior theme preferences if a script changed them.
-Run `.venv\Scripts\python.exe tools\real_ui_tests\rebuild_postflight.py` after all imports; it is a read-only
-row-by-row ledger/tax audit. FD provenance remains the P2.8 check.
+P2 steps created snapshots and updated ignored progress records. The completed imports and P2.8 provenance are covered
+by the milestone audit above; postflight passed with zero failures.
 
 ## Phase 3: UI walkthrough
 
@@ -129,7 +124,7 @@ their supported environments and parts:
 
 | Script | What to inspect |
 |---|---|
-| `rebuild_p3_10_topbar.py` | navigation, person/account/FY selectors, logout/relogin |
+| `rebuild_p3_10_topbar.py` | Run first in R mode: navigation, person/account/FY selectors, logout/relogin |
 | `rebuild_p3_00_overview.py` | KPI and chart values vs SQL, account filter, privacy mode |
 | `rebuild_p3_01_accounts.py` | account cards/details; S add, edit, validation, delete |
 | `rebuild_p3_02_transactions.py` | filters, sort, transfer linking; S add/edit/move/delete |

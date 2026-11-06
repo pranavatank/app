@@ -1,6 +1,6 @@
 # FD Planner and real-data testing handoff
 
-**Updated:** 2026-11-05. Read this guide, then `tools/real_ui_tests/REBUILD_PLAN.md` before continuing the rebuild.
+**Updated:** 2026-11-06. Read this guide, then `tools/real_ui_tests/REBUILD_PLAN.md` before continuing the rebuild.
 This is a concise handoff for a fresh agent; old investigation history belongs in Git and ignored run logs.
 
 ## Product and data model
@@ -53,14 +53,17 @@ Equitas source has 5 detected FD openings totaling INR 500,000. The historical r
 seven-row mini-statement has no opening or running balances, so it is deferred and must
 not be imported into the ledger until reliable balances are available.
 
-**Paused after the completed Jana import, at the owner's request (2026-11-05).** Setup, person, four banks/accounts,
-65 Jana transactions and 14 FDs are verified; other statements and all tax imports are pending. Do not reset again.
-Independent SQL/source reconciliation passed, all 13 private source hashes match, and theme preferences are restored.
-Resume at IDFC FIRST using the runbook. A verified pre-reset SQLite backup exists at
-`tools/real_ui_tests/screenshots/rebuild/before_fresh_backup.json`, referring to
-`backups/rebuild_20261104T132227Z_before_fresh.db`. All 13 private-file hashes are recorded in ignored
-`tools/real_ui_tests/screenshots/rebuild/source_hashes_before.json`; `theme_prefs.original` preserves the prior theme
-preferences. Keep private files unchanged and verify hashes after the rebuild.
+**Updated 2026-11-06.** The full rebuild is complete. The ignored bank checkpoint records every source row's date,
+type, amount, and balance matching across Jana (65), IDFC FIRST (376), Ujjivan (27), and Equitas (39), with account
+closing balances matching. All 19 FD openings and 9 redemption records pass provenance checks. The 28 FDs are: Jana
+14 Pending Details / INR 1,300,000; Equitas 5 Pending Details / INR 500,000 and 9 Matured / INR 850,000 principal /
+INR 91,590 interest. 26AS imported 158 FY 2025-26 records with INR 13,367 net TDS; AIS and TIS imported, both for
+FY 2025-26, with expected amounts. The saved tax-document password decrypts successfully. `rebuild_postflight.py`
+passed with zero failures, verifying all 507 strict transaction row multisets plus accounts and tax records. See
+ignored `tools/real_ui_tests/screenshots/rebuild/postflight_20261106.out` and `postflight.json`. Integrity is `ok`,
+foreign-key violations are 0, and all 13 private-file hashes match. Latest snapshot:
+`backups/rebuild_20261106T101846Z_P2_5_7.db`. Do not reset. No P3 UI walkthroughs have run; continue with P3.10 topbar
+in R mode, then follow the runbook's R/S sequence.
 
 ## Safety and working rules
 
