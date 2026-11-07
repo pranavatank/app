@@ -3,8 +3,9 @@ ui/dialogs/transaction_dialog.py — Add/edit dialog for transactions.
 """
 
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QFormLayout, QComboBox, QLineEdit,
-    QDateEdit, QDoubleSpinBox, QTextEdit, QDialogButtonBox
+    QApplication, QDialog, QVBoxLayout, QFormLayout, QComboBox, QLineEdit,
+    QDateEdit, QDoubleSpinBox, QTextEdit, QDialogButtonBox, QScrollArea,
+    QFrame, QWidget
 )
 from PySide6.QtCore import Qt, QDate
 
@@ -28,6 +29,7 @@ class TransactionDialog(QDialog):
         self.setMinimumWidth(500)
         self.setModal(True)
         self._build_ui()
+        self._fit_form_to_available_screen()
         if existing: self._prefill(existing)
 
     def _build_ui(self):
@@ -35,7 +37,8 @@ class TransactionDialog(QDialog):
         layout.setSpacing(16)
         layout.setContentsMargins(28, 24, 28, 20)
 
-        form = QFormLayout()
+        form_widget = QWidget(self)
+        form = QFormLayout(form_widget)
         form.setSpacing(12)
         form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
 
@@ -101,13 +104,34 @@ class TransactionDialog(QDialog):
         self.desc_edit.setPlaceholderText("Optional description / notes …")
         form.addRow("Description", self.desc_edit)
 
-        layout.addLayout(form)
+        self.form_scroll_area = QScrollArea(self)
+        self.form_scroll_area.setObjectName("transactionFormScrollArea")
+        self.form_scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        self.form_scroll_area.setWidgetResizable(True)
+        self.form_scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.form_scroll_area.setWidget(form_widget)
+        layout.addWidget(self.form_scroll_area, stretch=1)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        self.button_box = buttons
         buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Save" if self._existing else "Add")
         buttons.accepted.connect(self._on_accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+
+    def _fit_form_to_available_screen(self, available_height=None):
+        """Keep the action buttons on screen and scroll the form on short displays."""
+        if available_height is None:
+            screen = self.screen() or QApplication.primaryScreen()
+            available_height = screen.availableGeometry().height() if screen else 720
+
+        margins = self.layout().contentsMargins()
+        footer_height = self.button_box.sizeHint().height()
+        # Leave room for the dialog frame/title bar in addition to its content.
+        frame_title_reserve = 48
+        fixed_height = margins.top() + margins.bottom() + self.layout().spacing() + footer_height + frame_title_reserve
+        self.form_scroll_area.setMaximumHeight(max(120, available_height - fixed_height))
+        self.adjustSize()
 
     def _populate_accounts(self):
         self.cmb_account.clear()
