@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from tools.real_ui_tests.rebuild_p3_common import P3Run, main_wrapper
 from tools.real_ui_tests.rebuild_common import (
-    os_click, os_click_widget, os_type, os_type_widget, native_file_dialog,
+    os_click, os_click_widget, os_select_combo, os_type, os_type_widget, native_file_dialog,
     answer_modal_dialog, wait_until, toast_texts,
 )
 from tools.private_sources import get_personal_data_dir
@@ -422,8 +422,28 @@ def run_part_d(p, nav_page):
         p.checks.check("part_d map columns button visible", nav_page.map_columns_btn.isVisible(), "")
         if nav_page.map_columns_btn.isVisible():
             from ui.dialogs.column_mapping_dialog import ColumnMappingDialog
+            selected_mapping = {}
+            mapping_account = {"id": None}
 
             def mapping_fill_fn(dlg):
+                mapping_account["id"] = dlg.account_id
+                # Explicitly choose each source column through the native
+                # combo popup. The synthetic workbook has a stable header row.
+                for key, source_name in (
+                    ("date_col", "Date"),
+                    ("desc_col", "Description"),
+                    ("debit_col", "Debit"),
+                    ("credit_col", "Credit"),
+                    ("balance_col", "Balance"),
+                ):
+                    combo = dlg._combos[key]
+                    os_select_combo(p.harness, combo, source_name)
+                    p.checks.check(
+                        f"part_d {key} selected",
+                        combo.currentText() == source_name,
+                        f"got {combo.currentText()!r}, expected {source_name!r}",
+                    )
+                    selected_mapping[key] = combo.currentText()
                 os_click(p.harness, dlg, "Save column mapping", wait=0.5)
 
             mapping_prearm = answer_modal_dialog(p.harness, p.app, ColumnMappingDialog, "Map Columns", mapping_fill_fn)
@@ -431,10 +451,36 @@ def run_part_d(p, nav_page):
             p.harness.settle(1.0)
             p.checks.check("part_d column mapping saved", _prearm_ok(mapping_prearm),
                            str(mapping_prearm.info))
+            p.checks.check(
+                "part_d persisted mapping has required columns",
+                all(selected_mapping.get(k) == v for k, v in (
+                    ("date_col", "Date"), ("desc_col", "Description"),
+                    ("debit_col", "Debit"), ("credit_col", "Credit"),
+                    ("balance_col", "Balance"),
+                )),
+                str(selected_mapping),
+            )
+            if mapping_account["id"]:
+                from core.settings import get_setting
+                persisted = get_setting(f"column_mapping:{mapping_account['id']}", {})
+                p.checks.check(
+                    "part_d mapping persisted to settings",
+                    all(persisted.get(k) == v for k, v in selected_mapping.items()),
+                    str(persisted),
+                )
 
         if _parse_to_preview(p, nav_page, "part_d excel preview loaded"):
             n_excel = nav_page.preview_table.rowCount()
             p.checks.check("part_d excel row count is 3", n_excel == 3, f"got {n_excel}")
+            if n_excel == 3:
+                preview = _snapshot_preview(nav_page)
+                p.checks.check(
+                    "part_d excel preview matches synthetic rows",
+                    [row.get("description") for row in preview] == [
+                        "RUIH_PAYMENT", "RUIH_DEPOSIT", "RUIH_TRANSFER"
+                    ],
+                    str([row.get("description") for row in preview]),
+                )
             os_click(p.harness, nav_page, "Back button", wait=1.0)
     finally:
         if xlsx_path.exists():

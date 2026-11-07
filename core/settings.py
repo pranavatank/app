@@ -1,12 +1,12 @@
 """core/settings.py — Simple JSON-backed settings helper."""
 import json
 import os
-from threading import Lock
+from threading import RLock
 from typing import Any
 
 from config import DATA_DIR
 
-_LOCK = Lock()
+_LOCK = RLock()
 _PATH = os.path.join(DATA_DIR, "settings.json")
 _DEFAULTS = {
     "scheduled_backups_enabled": True,
@@ -16,7 +16,7 @@ _DEFAULTS = {
 
 
 def _ensure_dir():
-    os.makedirs(DATA_DIR, exist_ok=True)
+    os.makedirs(os.path.dirname(_PATH), exist_ok=True)
 
 
 def load_settings() -> dict:

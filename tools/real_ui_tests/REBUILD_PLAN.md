@@ -12,9 +12,12 @@ log or independent measurement exists.
 | P0 document preflight | **Passed, exit 0.** `screenshots/rebuild/P0_repair_20261105.out`. Fixed PDF row grouping recovers one Equitas debit; Ujjivan blank balances reconcile between printed anchors. |
 | Focused checks | Private sources 3, password readers 7, preflight 46, FD provenance 34, PDF rows 5, real statement package 10, P5 collection 22 passed. Collection log: `screenshots/rebuild/collection_verified.out`. Other logs: `resume_focused/`, `password_review_verified.out`, `row_repair_verified/`. |
 | Tax imports and postflight | 26AS, AIS, TIS, and `rebuild_postflight.py` passed; zero postflight failures. |
-| Phase 3 | Eleven R-mode JSON reports pass (283/283 assertions). P3.00 S passed on fresh scratch; report `P3_00_overview_S.json`. P3.01 Accounts S passed 26/26 on scratch; see `P3_01_accounts_S.json` and `P3_01_accounts_S_passcheck_20261107.out`. Independent integrity checks passed and confirmed live IDs 4/507/28 and scratch IDs 5/507/28 (accounts/transactions/FDs). Three click-point tests passed. P3.02 Transactions S passed 41/41 on fresh scratch; see `P3_02_transactions_S.json` and `P3_02_transactions_S_final_20261107.out`. Product commit `249691a` adds a short-screen scrollable form with visible footer; geometry tests passed 2/2. Its date entry still required a non-OS `setDate()` fallback, so physical date-entry coverage remains incomplete. P3.03 is next, then run P3.04/05/06/07/09 S sequentially, with P3.11 hard refresh last. Full suite and P5 remain pending. |
+| Phase 3 | Eleven R-mode reports pass (283/283 assertions). S00 Overview passed; S01 Accounts passed 26/26; S02 Transactions passed 41/41. S03 Income full run passed 55/57, including all 35 add-matrix cases; edit-footer reachability and missing unlinked income transaction were the only failures. Dialog geometry passes 2/2; focused S03 edit/link/unlink/delete remains pending alongside a date-picker bugfix, with no focused-run pass recorded. S04 Fixed Deposits passed 19/19; see `P3_04_fixed_deposits_S.json` and `P3_04_fixed_deposits_S_verified_20261107.out`. Independent checks confirmed original FD/transaction IDs 28/507 restored exactly after scratch and integrity `ok`. S05 Statement Import passed 53/53, exit 0, in `P3_05_statement_import_S_settingsfix_20261107.out`; the settings merge/deadlock regression passed 1 test, and the runner's real-settings hash/existence guard passed. S06 FY behavior is next/in progress. S13 People/DOB test is an unverified draft. Continue remaining screens as coordinated; P3.11 hard refresh last. Full suite and P5 remain pending. |
 | Unity seven-row mini statement | Explicitly deferred; no opening/running balances. |
-| S03 income contract and S06 FY behavior | Harness repaired and source-reviewed; GUI verification pending. |
+| S03 focused dialogs | Pending: date-picker bugfix, then run edit/link/unlink/delete on fresh scratch. No focused-run pass recorded. |
+| S05 Statement Import | **Passed 53/53, exit 0.** `P3_05_statement_import_S_settingsfix_20261107.out`; settings regression 1 passed; real-settings hash/existence guard passed. |
+| S06 FY behavior | Next/in progress; GUI verification pending. |
+| S13 People/DOB | Draft test added; unverified. |
 | Hard refresh | Pending. Reproduce suspected session-key loss; keep key/FY preservation assertions. |
 
 P0 and the reviewed parser repair passed before deletion. Run logs, screenshots, expectation files, fingerprints, and progress records live under the ignored
@@ -42,19 +45,26 @@ assertion; the destroyed-widget helper log was fixed. P3.12 passed 38 checks, in
 4 to 6), actual plan/result, and unchanged database fingerprint. The family-tree unit check passes (1), recorded in
 `screenshots/rebuild/tree_interaction_verified_20261106.out`. These reports cover read-only checks only.
 
-P3.00 S passed on a fresh scratch copy: `screenshots/rebuild/P3_00_overview_S_verified_20261106.out` and
-`screenshots/rebuild/P3_00_overview_S.json`. The wide checkbox center was not clickable; shared helpers now click the
-indicator center and assert UI/session/auth state explicitly. Three click-point tests passed in
-`tests/test_real_ui_click_points.py`. P3.01 Accounts S passed 26/26 checks on scratch; see
-`screenshots/rebuild/P3_01_accounts_S_passcheck_20261107.out` and `screenshots/rebuild/P3_01_accounts_S.json`.
-Independent checks confirmed live IDs 4/507/28 and scratch IDs 5/507/28 for accounts/transactions/FDs, with integrity
-`ok`. P3.02 Transactions S passed 41/41 checks on fresh scratch; see
-`screenshots/rebuild/P3_02_transactions_S_final_20261107.out` and `screenshots/rebuild/P3_02_transactions_S.json`.
-Product commit `249691a` makes the form scroll on short screens while keeping its footer visible; its geometry tests
-passed 2/2. Date entry still required the logged non-OS `setDate()` fallback, so physical date-entry coverage remains
-incomplete. Run P3.03 next, then P3.04, P3.05, P3.06, P3.07, and P3.09 S sequentially. Leave P3.11 hard refresh
-last. Full suite and P5 collection remain pending; the collector's
-focused tests passed (22), and the master is retained in ignored `screenshots/rebuild/credentials.local.json`.
+P3.00 S passed on fresh scratch; its report is `P3_00_overview_S.json`. The wide checkbox now uses the indicator
+center and guarded OS hit-testing; three click-point tests passed. P3.01 Accounts passed 26/26 and P3.02 Transactions
+passed 41/41. The transaction dialog short-screen geometry tests passed 2/2; its DOB/date coverage still records a
+non-OS `setDate()` fallback. P3.03 Income full S passed 55/57, including all 35 add-matrix cases. The only failures
+were Save footer below the desktop and no unlinked income transaction available. A date-picker bugfix is pending before
+the focused edit/link/unlink/delete run; no focused-run pass is recorded. Income dialog geometry now passes
+2/2 after making the form/link panel scrollable and keeping Save/Cancel fixed; focused edit/link/unlink/delete is
+pending. P3.04 Fixed Deposits passed 19/19 (`P3_04_fixed_deposits_S_verified_20261107.out`). Independent checks
+confirmed original FD/transaction IDs 28/507 restored exactly and integrity `ok`. S05 Statement Import passed 53/53
+with exit 0 (`P3_05_statement_import_S_settingsfix_20261107.out`). The settings merge/deadlock regression passed 1
+focused test, and the scratch runner's real-settings hash/existence guard passed. S06 FY behavior is next/in progress.
+P3.13 People/DOB is an unverified draft. Run focused S03 only after its date-picker bugfix; no focused-run pass is
+recorded. Continue remaining S checks sequentially and leave P3.11 hard refresh last. Full suite and P5 collection
+remain pending.
+
+Focused S03 income dialogs (fresh scratch, after date-picker bugfix):
+
+```powershell
+.venv\Scripts\python.exe tools\real_ui_tests\run_on_scratch.py --fresh tools\real_ui_tests\rebuild_p3_03_income.py --env S --part dialogs *> tools\real_ui_tests\screenshots\rebuild\P3_03_income_dialogs_S.out
+```
 
 | R-mode report | Result | JSON |
 |---|---:|---|

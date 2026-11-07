@@ -64,16 +64,19 @@ ignored `tools/real_ui_tests/screenshots/rebuild/postflight_20261106.out` and `p
 foreign-key violations are 0, and all 13 private-file hashes match. Latest snapshot:
 `backups/rebuild_20261106T101846Z_P2_5_7.db`. Do not reset. All eleven completed P3 read-only reports pass 283/283
 recorded assertions; the runbook lists counts and paths. This records R-mode coverage only, not the mutating flows.
-The P3.12 final run passed 38 checks, including the focused clipped-target case (group 4 to 6), actual plan/result,
-and unchanged database fingerprint. S00 passed on a fresh scratch copy; its S report is `P3_00_overview_S.json`.
-S01 Accounts passed 26/26 checks on scratch (`P3_01_accounts_S.json` and
-`P3_01_accounts_S_passcheck_20261107.out`). Independent checks confirmed live IDs 4/507/28 and scratch IDs 5/507/28
-for accounts/transactions/FDs, with database integrity `ok`; three click-point tests passed. S02 is next/in progress,
-S02 Transactions passed 41/41 checks on fresh scratch (`P3_02_transactions_S.json` and
-`P3_02_transactions_S_final_20261107.out`). Product commit `249691a` keeps the transaction dialog footer visible on
-short screens with a scrollable form; its geometry tests passed 2/2. The date field still required the recorded
-non-OS `setDate()` fallback, so physical date-entry coverage remains incomplete. S03 is next. Continue S03, S04, S05,
-S06, S07, and S09 sequentially, with P3.11 hard refresh last; the full suite and P5 collection remain pending.
+The P3.12 final run passed 38 checks, including the clipped-target case and unchanged database fingerprint. S00
+Overview passed on fresh scratch; S01 Accounts passed 26/26; S02 Transactions passed 41/41. S03 Income's full run
+passed 55/57 checks, including its 35-case add matrix; the two failures were edit-footer reachability and no available
+unlinked income transaction. The Income Expectation dialog now scrolls its content while keeping the action footer
+visible; geometry checks passed 2/2. Focused S03 edit/link/unlink/delete remains pending until the date-picker bugfix;
+no focused-run pass is recorded. S04 Fixed Deposits
+passed 19/19 (`P3_04_fixed_deposits_S.json`, `P3_04_fixed_deposits_S_verified_20261107.out`). Independent checks
+confirmed live FD/transaction IDs 28/507, exact ID sets restored after scratch, and integrity `ok`. S05 Statement
+Import passed 53/53 with exit 0 (`P3_05_statement_import_S_settingsfix_20261107.out`); the settings
+merge/deadlock regression passed 1 focused test, and the scratch runner's real-settings hash/existence guard passed.
+S06 FY behavior is next/in progress. S13 People/DOB coverage is a draft and remains unverified. Run focused S03 only
+after its date-picker bugfix. Continue remaining S checks sequentially, with P3.11 hard refresh last; full suite and P5
+collection remain pending.
 
 ## Safety and working rules
 

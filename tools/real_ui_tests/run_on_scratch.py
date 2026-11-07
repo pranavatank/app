@@ -4,6 +4,7 @@ Usage: python run_on_scratch.py [--fresh] [--from <db path>] <script> [args...]
 
 Scratch DB = BASE/"backups"/"phase3_scratch.db"
 Scratch theme prefs = tools/real_ui_tests/screenshots/rebuild/scratch_theme_prefs.json
+Scratch app settings = tools/real_ui_tests/screenshots/rebuild/scratch_settings.json
 
 If --fresh or scratch DB is missing: copy the real DB (verified by integrity_check
 and per-table counts), copy real theme_prefs.json bytes if present.
@@ -12,7 +13,7 @@ Patches config.DB_PATH, core.database.DB_PATH, core.backup_manager.DB_PATH to
 the scratch DB, and core.session._CONFIG_FILE / ui.theme.theme_manager._CONFIG_FILE
 to the scratch prefs, BEFORE importing any app module.
 
-Runs the script and verifies the real DB/theme_prefs were not modified.
+Runs the script and verifies the real DB/theme_prefs/settings were not modified.
 """
 import os
 import sys
@@ -32,6 +33,8 @@ from tools.real_ui_tests.rebuild_common import (
 SCRATCH_DB = BACKUPS / "phase3_scratch.db"
 SCRATCH_THEME_PREFS = RUIH_DIR / "scratch_theme_prefs.json"
 REAL_THEME_PREFS = BASE / "data" / "theme_prefs.json"
+REAL_SETTINGS = BASE / "data" / "settings.json"
+SCRATCH_SETTINGS = RUIH_DIR / "scratch_settings.json"
 
 
 def copy_db_with_sqlite_backup_api(src_path, dest_path):
@@ -136,11 +139,21 @@ def main():
     fp_before_theme = None
     if REAL_THEME_PREFS.exists():
         fp_before_theme = hashlib.sha256(REAL_THEME_PREFS.read_bytes()).hexdigest()
+    fp_before_settings = hashlib.sha256(REAL_SETTINGS.read_bytes()).hexdigest() if REAL_SETTINGS.exists() else None
+
+    # Column mappings and other app preferences must never be written to the
+    # user's settings file by a scratch UI run.
+    if fresh or not SCRATCH_SETTINGS.exists():
+        if REAL_SETTINGS.exists():
+            SCRATCH_SETTINGS.write_bytes(REAL_SETTINGS.read_bytes())
+        else:
+            SCRATCH_SETTINGS.unlink(missing_ok=True)
 
     import config
     import core.database
     import core.backup_manager
     import core.session
+    import core.settings
     import ui.theme.theme_manager as tm
 
     config.DB_PATH = str(SCRATCH_DB)
@@ -151,11 +164,13 @@ def main():
     core.session._CONFIG_FILE = str(SCRATCH_THEME_PREFS)
     tm._CONFIG_DIR = str(SCRATCH_THEME_PREFS.parent)
     tm._CONFIG_FILE = str(SCRATCH_THEME_PREFS)
+    core.settings._PATH = str(SCRATCH_SETTINGS)
 
     resolved_db = Path(config.DB_PATH).resolve()
     assert resolved_db != REAL_DB_PATH.resolve(), f"DB patch failed: {resolved_db} == {REAL_DB_PATH.resolve()}"
     resolved_config = Path(core.session._CONFIG_FILE).resolve()
     assert resolved_config != REAL_THEME_PREFS.resolve(), f"CONFIG_FILE patch failed: {resolved_config} == {REAL_THEME_PREFS.resolve()}"
+    assert Path(core.settings._PATH).resolve() != REAL_SETTINGS.resolve(), "settings path patch failed"
     print(f"Config patched to scratch DB: {config.DB_PATH}")
 
     exit_code = 0
@@ -173,6 +188,7 @@ def main():
         fp_after_theme = None
         if REAL_THEME_PREFS.exists():
             fp_after_theme = hashlib.sha256(REAL_THEME_PREFS.read_bytes()).hexdigest()
+        fp_after_settings = hashlib.sha256(REAL_SETTINGS.read_bytes()).hexdigest() if REAL_SETTINGS.exists() else None
 
         changed_tables = diff_fingerprints(fp_before_db, fp_after_db)
         if changed_tables:
@@ -181,6 +197,10 @@ def main():
 
         if fp_before_theme != fp_after_theme:
             print(f"STOP: real theme_prefs.json changed")
+            sys.exit(3)
+
+        if fp_before_settings != fp_after_settings:
+            print("STOP: real settings.json changed")
             sys.exit(3)
 
         if exception_to_raise:
