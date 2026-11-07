@@ -12,7 +12,7 @@ log or independent measurement exists.
 | P0 document preflight | **Passed, exit 0.** `screenshots/rebuild/P0_repair_20261105.out`. Fixed PDF row grouping recovers one Equitas debit; Ujjivan blank balances reconcile between printed anchors. |
 | Focused checks | Private sources 3, password readers 7, preflight 46, FD provenance 34, PDF rows 5, real statement package 10, P5 collection 22 passed. Collection log: `screenshots/rebuild/collection_verified.out`. Other logs: `resume_focused/`, `password_review_verified.out`, `row_repair_verified/`. |
 | Tax imports and postflight | 26AS, AIS, TIS, and `rebuild_postflight.py` passed; zero postflight failures. |
-| Phase 3 | Eleven R-mode JSON reports pass (283/283 assertions). P3.00 S passed on fresh scratch; report `P3_00_overview_S.json`. P3.01 Accounts S passed 26/26 on scratch; see `P3_01_accounts_S.json` and `P3_01_accounts_S_passcheck_20261107.out`. Independent integrity checks passed and confirmed live IDs 4/507/28 and scratch IDs 5/507/28 (accounts/transactions/FDs). Three click-point tests passed. P3.02 S is in progress and unverified: Add/Edit dialog Save control at y=727 was below the desktop and the guarded OS click was blocked. Date entry also fell back to direct `setDate()` after OS entry failed. Repair is in progress; then run P3.03/04/05/06/07/09 S sequentially, with P3.11 hard refresh last. Full suite and P5 remain pending. |
+| Phase 3 | Eleven R-mode JSON reports pass (283/283 assertions). P3.00 S passed on fresh scratch; report `P3_00_overview_S.json`. P3.01 Accounts S passed 26/26 on scratch; see `P3_01_accounts_S.json` and `P3_01_accounts_S_passcheck_20261107.out`. Independent integrity checks passed and confirmed live IDs 4/507/28 and scratch IDs 5/507/28 (accounts/transactions/FDs). Three click-point tests passed. P3.02 Transactions S passed 41/41 on fresh scratch; see `P3_02_transactions_S.json` and `P3_02_transactions_S_final_20261107.out`. Product commit `249691a` adds a short-screen scrollable form with visible footer; geometry tests passed 2/2. Its date entry still required a non-OS `setDate()` fallback, so physical date-entry coverage remains incomplete. P3.03 is next, then run P3.04/05/06/07/09 S sequentially, with P3.11 hard refresh last. Full suite and P5 remain pending. |
 | Unity seven-row mini statement | Explicitly deferred; no opening/running balances. |
 | S03 income contract and S06 FY behavior | Harness repaired and source-reviewed; GUI verification pending. |
 | Hard refresh | Pending. Reproduce suspected session-key loss; keep key/FY preservation assertions. |
@@ -48,10 +48,12 @@ indicator center and assert UI/session/auth state explicitly. Three click-point 
 `tests/test_real_ui_click_points.py`. P3.01 Accounts S passed 26/26 checks on scratch; see
 `screenshots/rebuild/P3_01_accounts_S_passcheck_20261107.out` and `screenshots/rebuild/P3_01_accounts_S.json`.
 Independent checks confirmed live IDs 4/507/28 and scratch IDs 5/507/28 for accounts/transactions/FDs, with integrity
-`ok`. P3.02 S is in progress and unverified: Add/Edit dialog Save at y=727 was below the desktop and the guarded OS
-click was blocked. Date entry also required the logged non-OS `setDate()` fallback. Repair is in progress. After it
-completes, run P3.03, P3.04, P3.05, P3.06, P3.07, and P3.09 S sequentially. Leave P3.11 hard refresh last. Full
-suite and P5 collection remain pending; the collector's
+`ok`. P3.02 Transactions S passed 41/41 checks on fresh scratch; see
+`screenshots/rebuild/P3_02_transactions_S_final_20261107.out` and `screenshots/rebuild/P3_02_transactions_S.json`.
+Product commit `249691a` makes the form scroll on short screens while keeping its footer visible; its geometry tests
+passed 2/2. Date entry still required the logged non-OS `setDate()` fallback, so physical date-entry coverage remains
+incomplete. Run P3.03 next, then P3.04, P3.05, P3.06, P3.07, and P3.09 S sequentially. Leave P3.11 hard refresh
+last. Full suite and P5 collection remain pending; the collector's
 focused tests passed (22), and the master is retained in ignored `screenshots/rebuild/credentials.local.json`.
 
 | R-mode report | Result | JSON |

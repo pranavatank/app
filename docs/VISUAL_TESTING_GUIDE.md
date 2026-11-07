@@ -69,9 +69,11 @@ and unchanged database fingerprint. S00 passed on a fresh scratch copy; its S re
 S01 Accounts passed 26/26 checks on scratch (`P3_01_accounts_S.json` and
 `P3_01_accounts_S_passcheck_20261107.out`). Independent checks confirmed live IDs 4/507/28 and scratch IDs 5/507/28
 for accounts/transactions/FDs, with database integrity `ok`; three click-point tests passed. S02 is next/in progress,
-with no verified S-mode result yet. Its Add/Edit dialog Save control was below the desktop at y=727, so the guarded
-OS click was blocked; repair is in progress. Continue S02, S03, S04, S05, S06, S07, and S09 sequentially, with P3.11 hard
-refresh last; the full suite and P5 collection remain pending.
+S02 Transactions passed 41/41 checks on fresh scratch (`P3_02_transactions_S.json` and
+`P3_02_transactions_S_final_20261107.out`). Product commit `249691a` keeps the transaction dialog footer visible on
+short screens with a scrollable form; its geometry tests passed 2/2. The date field still required the recorded
+non-OS `setDate()` fallback, so physical date-entry coverage remains incomplete. S03 is next. Continue S03, S04, S05,
+S06, S07, and S09 sequentially, with P3.11 hard refresh last; the full suite and P5 collection remain pending.
 
 ## Safety and working rules
 

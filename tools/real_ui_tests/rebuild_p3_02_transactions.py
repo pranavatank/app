@@ -10,10 +10,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from tools.real_ui_tests.rebuild_p3_common import P3Run, main_wrapper
+from tools.real_ui_tests.rebuild_p3_common import P3Run, main_wrapper, wait_until
 from tools.real_ui_tests.rebuild_common import (
     os_click_widget, os_type_widget, os_select_combo, os_set_date, answer_modal_dialog,
-    answer_message_box, find_button, toast_texts,
+    answer_message_box, find_button, toast_texts, _verify_click_target,
 )
 from PySide6.QtWidgets import QDialogButtonBox, QMessageBox
 from PySide6.QtCore import QDate, Qt
@@ -228,16 +228,32 @@ def run_s(p):
 
     page = p.nav("Transactions")
 
+    def callback_ok(state, name):
+        completed = wait_until(p.harness, lambda: state.done, timeout=15)
+        error = state.info.get("error") or (repr(state.error) if state.error else None)
+        ok = completed and error is None
+        p.checks.check(f"{name} callback completed", ok,
+                       f"done={state.done}; error={error}")
+        return ok
+
     persons = get_all_persons()
     accounts = get_all_accounts()
     person_id = persons[0]["person_id"] if persons else 1
-    account_id = accounts[0]["account_id"] if accounts else 1
+    person_accounts = [a for a in accounts if a["person_id"] == person_id]
+    if not persons or not person_accounts:
+        p.checks.check("transaction fixture person/account available", False,
+                       f"persons={len(persons)} accounts for person={len(person_accounts)}")
+        return
+    account_id = person_accounts[0]["account_id"]
 
     def fill_add_transaction(dlg):
         os_select_combo(p.harness, dlg.cmb_person, persons[0]["full_name"])
         p.harness.settle(0.3)
         os_select_combo(p.harness, dlg.cmb_account,
-                       f"{accounts[0].get('bank_display_name', accounts[0]['bank_name'])} ({accounts[0]['account_type']})")
+                       f"{person_accounts[0].get('bank_display_name', person_accounts[0]['bank_name'])} "
+                       f"({person_accounts[0]['account_type']})")
+        if dlg.cmb_account.currentData() != account_id:
+            raise RuntimeError(f"initial fixture account mismatch: expected {account_id}, got {dlg.cmb_account.currentData()}")
         os_set_date(p.harness, dlg.date_edit, QDate(2025, 6, 15))
         os_select_combo(p.harness, dlg.cmb_type, "Income")
         p.harness.settle(0.3)
@@ -251,14 +267,60 @@ def run_s(p):
     os_click_widget(p.harness, page.btn_add, wait=2.0)
     p.harness.settle(1.0)
 
-    p.checks.check("10_add_transaction_dialog", state.info.get("error") is None,
+    add_dialog_ok = callback_ok(state, "add transaction dialog")
+    p.checks.check("10_add_transaction_dialog", add_dialog_ok,
                    detail=state.info.get("error", ""))
 
     result = p.sql(
-        "SELECT COUNT(*) as cnt FROM Transactions WHERE description = 'RUIH_add_transaction'"
+        "SELECT transaction_id, account_id FROM Transactions WHERE description = 'RUIH_add_transaction'"
     )
-    added_count = result[0][0] if result else 0
-    p.checks.check("11_transaction_added_to_db", added_count > 0, f"count={added_count}")
+    added_fixture = result[0] if len(result) == 1 else None
+    p.checks.check("11_transaction_added_to_db", added_fixture is not None,
+                   f"exact fixture rows={len(result)}")
+
+    def add_ui_fixture(description, fixture_account_id):
+        """Create a uniquely named transaction through the real Add dialog."""
+        person = next((item for item in persons if item["person_id"] == person_id), None)
+        fixture_account = next(
+            (item for item in accounts if item["account_id"] == fixture_account_id), None
+        )
+        if person is None or fixture_account is None:
+            raise LookupError(f"person/account unavailable for fixture {description}")
+        account_label = (
+            f"{fixture_account.get('bank_display_name', fixture_account['bank_name'])} "
+            f"({fixture_account['account_type']})"
+        )
+
+        def fill_fixture(dlg):
+            os_select_combo(p.harness, dlg.cmb_person, person["full_name"])
+            os_select_combo(p.harness, dlg.cmb_account, account_label)
+            if dlg.cmb_account.currentData() != fixture_account_id:
+                raise RuntimeError(
+                    f"fixture account mismatch: expected {fixture_account_id}, "
+                    f"got {dlg.cmb_account.currentData()}"
+                )
+            os_set_date(p.harness, dlg.date_edit, QDate(2025, 6, 15))
+            os_select_combo(p.harness, dlg.cmb_type, "Income")
+            os_select_combo(p.harness, dlg.cmb_category, "Salary")
+            os_type_widget(p.harness, dlg.amount_spin, "234.56")
+            os_type_widget(p.harness, dlg.desc_edit, description)
+            btn_box = dlg.findChild(QDialogButtonBox)
+            os_click_widget(p.harness, btn_box.button(QDialogButtonBox.StandardButton.Ok), wait=0.8)
+
+        prearm = answer_modal_dialog(p.harness, p.app, TransactionDialog, "Add Transaction", fill_fixture)
+        os_click_widget(p.harness, page.btn_add, wait=1.5)
+        p.harness.settle(0.5)
+        if not callback_ok(prearm, f"{description} add dialog"):
+            raise RuntimeError(f"add dialog callback failed for {description}")
+        inserted = p.sql(
+            "SELECT transaction_id, account_id FROM Transactions WHERE description = ?",
+            (description,),
+        )
+        if len(inserted) != 1 or inserted[0][1] != fixture_account_id:
+            raise RuntimeError(
+                f"fixture {description} SQL mismatch: rows={inserted}, expected account={fixture_account_id}"
+            )
+        return inserted[0][0]
 
     try:
         result = p.sql(
@@ -279,7 +341,7 @@ def run_s(p):
             os_click_widget(p.harness, page.btn_edit)
             p.harness.settle(1.0)
 
-            if state.info.get("error") is None:
+            if callback_ok(state, "edit transaction dialog"):
                 result_after = p.sql(
                     "SELECT category, mode FROM Transactions WHERE transaction_id = ?",
                     (edit_id,)
@@ -300,29 +362,27 @@ def run_s(p):
         p.checks.check("12_category_preserved", False, repr(e))
 
     try:
-        result = p.sql("SELECT account_id, current_balance FROM BankAccount LIMIT 2")
-        if len(result) >= 2:
-            source_id, source_opening_bal = result[0][0], result[0][1]
-            target_id, target_opening_bal = result[1][0], result[1][1]
-
-            move_result = p.sql(
-                "SELECT transaction_id FROM Transactions WHERE account_id = ? AND description LIKE 'RUIH_%' LIMIT 1",
-                (source_id,)
+        if added_fixture:
+            move_id, source_id = added_fixture
+            source_person = next((a["person_id"] for a in accounts if a["account_id"] == source_id), None)
+            target_account = next(
+                (a for a in person_accounts if a["person_id"] == source_person and a["account_id"] != source_id),
+                None,
             )
-
-            if move_result:
-                move_id = move_result[0][0]
+            if target_account is not None:
+                target_id = target_account["account_id"]
                 p.observe("transaction_move_test", f"moving transaction {move_id} from account {source_id} to {target_id}")
 
                 def fill_move_transaction(dlg):
-                    target_account_text = next(
-                        (f"{a.get('bank_display_name', a['bank_name'])} ({a['account_type']})"
-                         for a in accounts if a["account_id"] == target_id),
-                        None
+                    target_account_text = (
+                        f"{target_account.get('bank_display_name', target_account['bank_name'])} "
+                        f"({target_account['account_type']})"
                     )
-                    if target_account_text:
-                        os_select_combo(p.harness, dlg.cmb_account, target_account_text)
-                        p.harness.settle(0.3)
+                    os_select_combo(p.harness, dlg.cmb_account, target_account_text)
+                    if dlg.cmb_account.currentData() != target_id:
+                        raise RuntimeError(
+                            f"move target mismatch: expected {target_id}, got {dlg.cmb_account.currentData()}"
+                        )
                     btn_box = dlg.findChild(QDialogButtonBox)
                     os_click_widget(p.harness, btn_box.button(QDialogButtonBox.StandardButton.Ok), wait=0.8)
 
@@ -331,7 +391,7 @@ def run_s(p):
                 os_click_widget(p.harness, page.btn_edit)
                 p.harness.settle(1.0)
 
-                if state.info.get("error") is None:
+                if callback_ok(state, "move transaction dialog"):
                     result_after = p.sql(
                         "SELECT account_id FROM Transactions WHERE transaction_id = ?",
                         (move_id,)
@@ -339,17 +399,6 @@ def run_s(p):
                     if result_after and result_after[0][0] == target_id:
                         result_txn = p.sql("SELECT amount FROM Transactions WHERE transaction_id = ?", (move_id,))
                         if result_txn:
-                            txn_amount = result_txn[0][0]
-                            result_src_sum = p.sql(
-                                "SELECT SUM(amount) FROM Transactions WHERE account_id = ? AND transaction_id <= ?",
-                                (source_id, move_id)
-                            )
-                            src_sum = result_src_sum[0][0] if result_src_sum and result_src_sum[0][0] else 0
-                            result_tgt_sum = p.sql(
-                                "SELECT SUM(amount) FROM Transactions WHERE account_id = ? AND transaction_id <= ?",
-                                (target_id, move_id)
-                            )
-                            tgt_sum = result_tgt_sum[0][0] if result_tgt_sum and result_tgt_sum[0][0] else 0
                             p.checks.check("13_move_to_account", True, "transaction moved to target account")
                         else:
                             p.checks.check("13_move_to_account", False, "could not query transaction amount")
@@ -358,70 +407,113 @@ def run_s(p):
                 else:
                     p.checks.check("13_move_to_account", False, state.info.get("error"))
             else:
-                p.checks.check("13_move_to_account", False, "no RUIH_ transaction in source account")
+                p.checks.check("13_move_to_account", False, "no second account for fixture person")
         else:
-            p.checks.check("13_move_to_account", False, "insufficient accounts")
+            p.checks.check("13_move_to_account", False, "new RUIH_add_transaction fixture missing/ambiguous")
     except Exception as e:
         p.checks.check("13_move_to_account", False, repr(e))
 
     try:
-        result = p.sql("SELECT transaction_id FROM Transactions WHERE description LIKE 'RUIH_%' LIMIT 1")
-        if result:
-            delete_id = result[0][0]
+        delete_id = add_ui_fixture("RUIH_single_delete", account_id)
+        select_row_by_id(page, p, delete_id)
+        ans = answer_message_box(p.harness, p.app, QMessageBox.StandardButton.Yes, expect_title="Confirm Delete")
+        os_click_widget(p.harness, page.btn_delete, wait=0.8)
+        p.harness.settle(1.0)
+        callback_ok(ans, "single delete confirmation")
 
-            select_row_by_id(page, p, delete_id)
-            ans = answer_message_box(p.harness, p.app, QMessageBox.StandardButton.Yes, expect_title="Confirm Delete")
-            os_click_widget(p.harness, page.btn_delete, wait=0.8)
-            p.harness.settle(1.0)
-
-            after_result = p.sql(
-                "SELECT COUNT(*) as cnt FROM Transactions WHERE transaction_id = ?",
-                (delete_id,)
-            )
-            after_count = after_result[0][0] if after_result else 0
-            p.checks.check("14_single_delete_removes_row", after_count == 0,
-                          f"transaction still exists: {after_count > 0}")
-        else:
-            p.checks.check("14_single_delete_removes_row", False, "no RUIH_ transaction found")
+        after_result = p.sql(
+            "SELECT COUNT(*) as cnt FROM Transactions WHERE transaction_id = ?",
+            (delete_id,)
+        )
+        after_count = after_result[0][0] if after_result else 0
+        p.checks.check("14_single_delete_removes_row", after_count == 0,
+                      f"transaction still exists: {after_count > 0}")
     except Exception as e:
         p.checks.check("14_single_delete_removes_row", False, repr(e))
 
     try:
         import pyautogui
-        result = p.sql("SELECT transaction_id FROM Transactions WHERE description LIKE 'RUIH_%' ORDER BY transaction_id DESC LIMIT 2")
-        if len(result) >= 2:
-            id1, id2 = result[0][0], result[1][0]
+        multi_ids = [
+            add_ui_fixture("RUIH_multi_delete_1", account_id),
+            add_ui_fixture("RUIH_multi_delete_2", account_id),
+        ]
 
-            table = page.table
-            table.clearSelection()
-
+        table = page.table
+        table.clearSelection()
+        checked_ids = []
+        selected_ids = []
+        for index, transaction_id in enumerate(multi_ids):
+            selected_row = None
             for row in range(table.rowCount()):
-                _COL_ID = 11
-                item = table.item(row, _COL_ID)
-                if item and item.text():
-                    try:
-                        row_id = int(item.text())
-                        if row_id in (id1, id2):
-                            checkbox = table.cellWidget(row, 0)
-                            if checkbox:
-                                p.harness.click_at_via_os(table.viewport(), table.visualItemRect(checkbox).center())
-                    except (ValueError, AttributeError):
-                        pass
+                item = table.item(row, 11)
+                if item and item.text() == str(transaction_id):
+                    selected_row = row
+                    break
+            if selected_row is None:
+                raise LookupError(f"fixture transaction {transaction_id} is missing from the table")
+            target_item = table.item(selected_row, 1)
+            if target_item is None:
+                raise LookupError(f"selectable cell missing for fixture transaction {transaction_id}")
+            table.scrollToItem(target_item)
+            p.harness.settle(0.3)
+            item_rect = table.visualItemRect(target_item)
+            if item_rect.isEmpty() or not table.viewport().rect().intersects(item_rect):
+                raise RuntimeError(
+                    f"fixture transaction {transaction_id} is outside the visible table viewport: {item_rect}"
+                )
+            click_point = item_rect.center()
+            if not table.viewport().rect().contains(click_point):
+                raise RuntimeError(f"fixture transaction {transaction_id} click point is outside the viewport")
+            hit_item = table.itemAt(click_point)
+            if hit_item is None or hit_item.row() != selected_row:
+                raise RuntimeError(
+                    f"fixture transaction {transaction_id} click point resolves to the wrong table row"
+                )
+            global_point = table.viewport().mapToGlobal(click_point)
+            px, py = p.harness.to_physical(global_point)
+            blocker = _verify_click_target(table.viewport(), global_point, px, py)
+            if blocker is not None:
+                raise RuntimeError(
+                    f"fixture transaction {transaction_id} OS click target blocked by {blocker}"
+                )
+            if index:
+                pyautogui.keyDown("ctrl")
+            try:
+                p.harness.click_at_via_os(
+                    table.viewport(), click_point, wait=0.3
+                )
+            finally:
+                if index:
+                    pyautogui.keyUp("ctrl")
+            if not any(item.row() == selected_row for item in table.selectedItems()):
+                raise RuntimeError(f"fixture transaction {transaction_id} did not become selected")
+            selected_ids.append(transaction_id)
 
-            table.setFocus()
-            ans = answer_message_box(p.harness, p.app, QMessageBox.StandardButton.Yes, expect_title="Confirm Delete")
-            pyautogui.press("delete")
-            p.harness.settle(1.0)
-
-            after_result = p.sql(
-                "SELECT COUNT(*) as cnt FROM Transactions WHERE transaction_id IN (?, ?)",
-                (id1, id2)
+        selected_row_ids = {
+            int(table.item(row, 11).text())
+            for row in {item.row() for item in table.selectedItems()}
+            if table.item(row, 11) is not None and table.item(row, 11).text().isdigit()
+        }
+        p.checks.check("multi-delete fixture rows selected", set(selected_ids) == selected_row_ids,
+                       f"selected fixture ids={selected_ids}; selected rows={sorted(selected_row_ids)}")
+        if set(selected_ids) != selected_row_ids:
+            raise RuntimeError(
+                f"aborting multi-delete: selected transaction ids {sorted(selected_row_ids)} "
+                f"do not match fixture ids {sorted(selected_ids)}"
             )
-            after_count = after_result[0][0] if after_result else 0
-            p.checks.check("15_multi_delete_removes_rows", after_count == 0,
-                          f"some transactions still exist: {after_count}")
-        else:
-            p.checks.check("15_multi_delete_removes_rows", False, "insufficient RUIH_ transactions")
+        table.setFocus()
+        ans = answer_message_box(p.harness, p.app, QMessageBox.StandardButton.Yes, expect_title="Confirm Delete")
+        pyautogui.press("delete")
+        p.harness.settle(1.0)
+        callback_ok(ans, "multi delete confirmation")
+
+        after_result = p.sql(
+            "SELECT COUNT(*) as cnt FROM Transactions WHERE transaction_id IN (?, ?)",
+            tuple(multi_ids)
+        )
+        after_count = after_result[0][0] if after_result else 0
+        p.checks.check("15_multi_delete_removes_rows", after_count == 0,
+                      f"some transactions still exist: {after_count}")
     except Exception as e:
         p.checks.check("15_multi_delete_removes_rows", False, repr(e))
 
@@ -430,11 +522,20 @@ def run_s(p):
         table = page.table
 
         if table.rowCount() > 0:
-            result = p.sql("SELECT description FROM Transactions ORDER BY RANDOM() LIMIT 1")
-            original_desc = result[0][0] if result else None
-
             row = 0
             _COL_DESC = 6
+            _COL_ID = 11
+            id_item = table.item(row, _COL_ID)
+            if id_item is None or not id_item.text():
+                raise LookupError("transaction ID missing from row selected for unsaved-discard test")
+            edited_transaction_id = int(id_item.text())
+            original_result = p.sql(
+                "SELECT description FROM Transactions WHERE transaction_id = ?",
+                (edited_transaction_id,),
+            )
+            if not original_result:
+                raise LookupError(f"transaction {edited_transaction_id} missing from database")
+            original_desc = original_result[0][0]
             desc_rect = table.visualItemRect(table.item(row, _COL_DESC))
             p.harness.click_at_via_os(table.viewport(), desc_rect.center(), wait=0.2)
             p.harness.settle(0.2)
@@ -455,13 +556,19 @@ def run_s(p):
                 ans = answer_message_box(p.harness, p.app, QMessageBox.StandardButton.Discard, expect_title="Unsaved Changes")
                 p.nav("Overview")
                 p.harness.settle(1.0)
+                callback_completed = callback_ok(ans, "unsaved navigation discard")
 
                 dirty_after_discard = page._dirty
-                result_after = p.sql("SELECT description FROM Transactions ORDER BY RANDOM() LIMIT 1")
+                result_after = p.sql(
+                    "SELECT description FROM Transactions WHERE transaction_id = ?",
+                    (edited_transaction_id,),
+                )
                 desc_after = result_after[0][0] if result_after else None
 
-                p.checks.check("17_unsaved_changes_discarded", not dirty_after_discard and desc_after == original_desc,
-                              "dirty flag should be False and DB unchanged after discard")
+                p.checks.check("17_unsaved_changes_discarded",
+                              callback_completed and not dirty_after_discard and desc_after == original_desc,
+                              f"dirty={dirty_after_discard}; transaction={edited_transaction_id}; "
+                              f"description before={original_desc!r}, after={desc_after!r}")
 
                 page_nav = p.nav("Transactions")
                 if table.rowCount() > 0:
@@ -481,6 +588,7 @@ def run_s(p):
                     ans2 = answer_message_box(p.harness, p.app, QMessageBox.StandardButton.Save, expect_title="Unsaved Changes")
                     p.nav("Overview")
                     p.harness.settle(1.0)
+                    callback_ok(ans2, "unsaved navigation save")
 
                     result_saved = p.sql("SELECT description FROM Transactions WHERE description LIKE 'RUIH_saved_test'")
                     p.checks.check("18_unsaved_changes_saved", len(result_saved) > 0,
@@ -506,6 +614,7 @@ def run_s(p):
                     ans3 = answer_message_box(p.harness, p.app, QMessageBox.StandardButton.Yes, expect_title="Discard Changes")
                     os_click_widget(p.harness, page_discard.btn_discard, wait=0.8)
                     p.harness.settle(1.0)
+                    callback_ok(ans3, "discard button confirmation")
 
                     p.checks.check("19_discard_button_works", not page_discard._dirty,
                                   "dirty flag cleared by discard button")
@@ -523,11 +632,12 @@ def run_s(p):
         ans = answer_message_box(p.harness, p.app, QMessageBox.StandardButton.No, expect_title="Reprocess Internal Transfers")
         os_click_widget(p.harness, page.btn_reprocess, wait=1.5)
         p.harness.settle(1.0)
+        no_confirmation_ok = callback_ok(ans, "reprocess cancel confirmation")
 
         result_after_no = p.sql("SELECT COUNT(*) as cnt FROM Transactions WHERE is_internal_transfer = 1")
         count_after_no = result_after_no[0][0] if result_after_no else 0
 
-        p.checks.check("20_link_transfers_no_path", count_before == count_after_no,
+        p.checks.check("20_link_transfers_no_path", no_confirmation_ok and count_before == count_after_no,
                       f"count before={count_before} after={count_after_no}")
 
         result_yes_before = p.sql("SELECT transaction_id FROM Transactions WHERE is_internal_transfer = 1")
@@ -536,6 +646,7 @@ def run_s(p):
         ans2 = answer_message_box(p.harness, p.app, QMessageBox.StandardButton.Yes, expect_title="Reprocess Internal Transfers")
         os_click_widget(p.harness, page.btn_reprocess, wait=1.5)
         p.harness.settle(1.0)
+        yes_confirmation_ok = callback_ok(ans2, "reprocess accept confirmation")
 
         toasts = toast_texts() if hasattr(p, 'app') else []
         p.observe("link_transfers_yes_toast", f"toasts: {toasts}")
@@ -543,8 +654,8 @@ def run_s(p):
         result_yes_after = p.sql("SELECT transaction_id FROM Transactions WHERE is_internal_transfer = 1")
         ids_after = {r[0] for r in result_yes_after} if result_yes_after else set()
 
-        p.checks.check("21_link_transfers_yes_path", True,
-                      f"before={len(ids_before)} after={len(ids_after)} diff={ids_after - ids_before}")
+        p.checks.check("21_link_transfers_yes_path", yes_confirmation_ok,
+                      f"confirmation completed; before={len(ids_before)} after={len(ids_after)} diff={ids_after - ids_before}")
     except Exception as e:
         p.checks.check("20_link_transfers_no_path", False, repr(e))
 
