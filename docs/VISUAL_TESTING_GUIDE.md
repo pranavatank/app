@@ -65,18 +65,14 @@ foreign-key violations are 0, and all 13 private-file hashes match. Latest snaps
 `backups/rebuild_20261106T101846Z_P2_5_7.db`. Do not reset. All eleven completed P3 read-only reports pass 283/283
 recorded assertions; the runbook lists counts and paths. This records R-mode coverage only, not the mutating flows.
 The P3.12 final run passed 38 checks, including the clipped-target case and unchanged database fingerprint. S00
-Overview passed on fresh scratch; S01 Accounts passed 26/26; S02 Transactions passed 41/41. S03 Income's full run
-passed 55/57 checks, including its 35-case add matrix; the two failures were edit-footer reachability and no available
-unlinked income transaction. The Income Expectation dialog now scrolls its content while keeping the action footer
-visible; geometry checks passed 2/2. Focused S03 edit/link/unlink/delete remains pending until the date-picker bugfix;
-no focused-run pass is recorded. S04 Fixed Deposits
-passed 19/19 (`P3_04_fixed_deposits_S.json`, `P3_04_fixed_deposits_S_verified_20261107.out`). Independent checks
-confirmed live FD/transaction IDs 28/507, exact ID sets restored after scratch, and integrity `ok`. S05 Statement
-Import passed 53/53 with exit 0 (`P3_05_statement_import_S_settingsfix_20261107.out`); the settings
-merge/deadlock regression passed 1 focused test, and the scratch runner's real-settings hash/existence guard passed.
-S06 FY behavior is next/in progress. S13 People/DOB coverage is a draft and remains unverified. Run focused S03 only
-after its date-picker bugfix. Continue remaining S checks sequentially, with P3.11 hard refresh last; full suite and P5
-collection remain pending.
+Overview passed; S01 Accounts passed 26/26; S02 Transactions passed 41/41. S03 Income passed 58/58, its focused
+edit/link/unlink/delete run passed 15/15, and the picker plus geometry tests passed 3/3. S04 Fixed Deposits passed
+19/19 (`P3_04_fixed_deposits_S.json`, `P3_04_fixed_deposits_S_verified_20261107.out`). Independent checks confirmed
+live FD/transaction IDs 28/507, exact ID sets restored after scratch, and integrity `ok`. S05 Statement Import passed
+53/53 (`P3_05_statement_import_S_settingsfix_20261107.out`). For S06, a source fix is implemented and review
+approved; 24 focused tests pass (`taxdoc_year_20261107.out`). The GUI retry has not run, and the prior failure
+remains pending. S07, S09, S13 GUI coverage, P3.11 hard refresh, the full suite, and P5 remain pending; S13 is an
+unverified draft. The next single command is the fresh-scratch S06 retry in the runbook.
 
 ## Safety and working rules
 
