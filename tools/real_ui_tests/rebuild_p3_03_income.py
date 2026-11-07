@@ -17,7 +17,7 @@ from tools.real_ui_tests.rebuild_p3_common import P3Run, main_wrapper
 from tools.real_ui_tests.rebuild_common import (
     os_click, os_click_widget, os_type_widget, os_select_combo, answer_modal_dialog,
     answer_message_box, assert_foreground, find_by_accessible_name, set_fy,
-    toast_texts, wait_until, parse_inr,
+    toast_texts, wait_until, parse_inr, os_set_date,
 )
 from PySide6.QtCore import Qt, QDate
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
@@ -29,6 +29,8 @@ ID_ITEM_COLUMN = 1  # first data column; the table's checkbox column shifts data
 
 def run_r(p):
     """R-mode: read-only validation of income screen."""
+    if p.part == "dialogs":
+        raise RuntimeError("income dialog focus mode is S-only")
     page = p.nav("Income & Expectations")
 
     tables_found = {
@@ -71,6 +73,9 @@ def run_r(p):
 
 def run_s(p):
     """S-mode: add expectations, link transactions, test matching and tax impacts."""
+    if p.part == "dialogs":
+        _run_dialog_focus(p)
+        return
     page = p.nav("Income & Expectations")
     p.observe("S03.nav", "Navigated to Income & Expectations")
 
@@ -393,7 +398,7 @@ def _check_edit(p, page, expectation_id):
         p.checks.check("edit income expectation", False, repr(e))
 
 
-def _check_link_and_unlink(p, page, expectation_id):
+def _check_link_and_unlink(p, page, expectation_id, expected_transaction_id=None):
     """Link then unlink the expectation from its Edit dialog, verifying the DB after each."""
     try:
         def linked_transaction_id():
@@ -402,11 +407,49 @@ def _check_link_and_unlink(p, page, expectation_id):
 
         def fill_link_transaction(link_dlg):
             _prepare_dialog(p, link_dlg)
-            if link_dlg.table.rowCount() == 0:
-                raise RuntimeError("no unlinked income transactions available to link")
-            link_dlg.table.setCurrentCell(0, 0)
-            link_dlg.table.selectRow(0)
+            if expected_transaction_id is None:
+                if link_dlg.table.rowCount() == 0:
+                    raise RuntimeError("no unlinked income transactions available to link")
+                target_row = 0
+            else:
+                target_row = next((row for row in range(link_dlg.table.rowCount())
+                                   if link_dlg.table.item(row, 0) is not None and
+                                   link_dlg.table.item(row, 0).data(Qt.ItemDataRole.UserRole) == expected_transaction_id), None)
+                if target_row is None:
+                    visible_ids = [link_dlg.table.item(row, 0).data(Qt.ItemDataRole.UserRole)
+                                   for row in range(link_dlg.table.rowCount()) if link_dlg.table.item(row, 0)]
+                    raise RuntimeError(
+                        f"fixture transaction {expected_transaction_id} missing from link picker; "
+                        f"visible transaction IDs={visible_ids}"
+                    )
+                hidden_id = link_dlg.table.item(target_row, 4)
+                if hidden_id is None or int(hidden_id.text()) != expected_transaction_id:
+                    raise RuntimeError(f"link picker hidden ID mismatch for fixture row {target_row}: {hidden_id.text() if hidden_id else None}")
+            item = link_dlg.table.item(target_row, 0)
+            link_dlg.table.scrollToItem(item)
             p.harness.settle(0.3)
+            rect = link_dlg.table.visualItemRect(item)
+            if not rect.isValid() or rect.isEmpty() or not link_dlg.table.viewport().rect().contains(rect.center()):
+                raise RuntimeError(f"target transaction row is not visible: row={target_row}, rect={rect}")
+            import pyautogui
+            from tools.real_ui_tests.rebuild_common import _verify_click_target
+            local = link_dlg.table.viewport().mapTo(link_dlg.table, rect.center())
+            point = link_dlg.table.mapToGlobal(local)
+            px, py = p.harness.to_physical(point)
+            assert_foreground(link_dlg)
+            blocker = _verify_click_target(link_dlg.table.viewport(), point, px, py)
+            if blocker is not None:
+                raise RuntimeError(f"transaction row click blocked: {blocker}")
+            pyautogui.click(px, py)
+            p.harness.settle(0.3)
+            if link_dlg.table.currentRow() != target_row:
+                raise RuntimeError(f"transaction row selection failed: wanted={target_row}, got={link_dlg.table.currentRow()}")
+            if expected_transaction_id is not None:
+                selected_user_item = link_dlg.table.item(link_dlg.table.currentRow(), 0)
+                selected_hidden_id = link_dlg.table.item(link_dlg.table.currentRow(), 4)
+                if (selected_user_item is None or selected_user_item.data(Qt.ItemDataRole.UserRole) != expected_transaction_id
+                        or selected_hidden_id is None or int(selected_hidden_id.text()) != expected_transaction_id):
+                    raise RuntimeError(f"selected transaction ID mismatch: expected={expected_transaction_id}")
             os_click(p.harness, link_dlg, "Link selected transaction", wait=0.5)
 
         def fill_edit_for_link(edit_dlg):
@@ -424,7 +467,13 @@ def _check_link_and_unlink(p, page, expectation_id):
             os_click(p.harness, edit_dlg, "Cancel income expectation dialog", wait=0.5)
 
         _run_in_edit_dialog(p, page, expectation_id, fill_edit_for_link)
-        p.checks.check("link sets actual_transaction_id", linked_transaction_id() is not None, f"expectation_id={expectation_id}")
+        linked_id = linked_transaction_id()
+        if expected_transaction_id is None:
+            link_ok = linked_id is not None
+        else:
+            link_ok = linked_id == expected_transaction_id
+        p.checks.check("link sets expected actual_transaction_id", link_ok,
+                       f"expectation_id={expectation_id}; expected={expected_transaction_id}; actual={linked_id}")
 
         _run_in_edit_dialog(p, page, expectation_id, fill_edit_for_unlink)
         p.checks.check("unlink clears actual_transaction_id", linked_transaction_id() is None, f"expectation_id={expectation_id}")
@@ -476,6 +525,126 @@ def _check_delete(p, page, expectation_id):
         p.checks.check("delete income expectation", False, repr(e))
 
 
+def _run_dialog_focus(p):
+    """Small S-only reproduction for edit/footer and exact transaction linking."""
+    if p.env != "S":
+        raise RuntimeError("income dialog focus mode is S-only")
+    from ui.dialogs.income_expectation_dialog import IncomeExpectationDialog
+    from ui.dialogs.transaction_dialog import TransactionDialog
+    from models.person import get_all_persons
+    from models.bank_account import get_all_accounts
+    from PySide6.QtWidgets import QDialogButtonBox
+    import uuid
+
+    fixture = p.sql(
+        "SELECT p.person_id, p.full_name, a.account_id FROM Person p "
+        "JOIN BankAccount a ON a.person_id=p.person_id ORDER BY p.person_id, a.account_id LIMIT 1"
+    )
+    if not fixture:
+        raise RuntimeError("dialog focus requires an existing person/account fixture")
+    person_id, _person_name, account_id = fixture[0]
+    suffix = uuid.uuid4().hex[:12].upper()
+    note = f"RUIH_FOCUS_EXPECTATION_{suffix}"
+    description = f"RUIH_FOCUS_INCOME_TXN_{suffix}"
+    if p.sql("SELECT expectation_id FROM IncomeExpectation WHERE notes=?", (note,)):
+        raise RuntimeError("unique focused expectation note already exists")
+    if p.sql("SELECT transaction_id FROM Transactions WHERE description=?", (description,)):
+        raise RuntimeError("unique focused transaction description already exists")
+
+    income_page = p.nav("Income & Expectations")
+
+    def fill_expectation(dlg):
+        _prepare_dialog(p, dlg)
+        _select_by_data(dlg.person_combo, person_id)
+        _select_by_data(dlg.account_combo, account_id)
+        os_select_combo(p.harness, dlg.income_type_combo, "Other")
+        os_type_widget(p.harness, dlg.amount_spin, "54321", retries=2)
+        os_select_combo(p.harness, dlg.frequency_combo, "One-Time")
+        dlg.date_edit.setDate(QDate(2025, 12, 15))
+        os_select_combo(p.harness, dlg.fy_combo, FY)
+        os_type_widget(p.harness, dlg.notes_edit, note, retries=2)
+        if dlg.account_combo.currentData() != account_id or dlg.fy_combo.currentText() != FY:
+            raise RuntimeError("focused expectation account/FY selection mismatch")
+        os_click(p.harness, dlg, "Add income expectation", wait=0.8)
+        if dlg.isVisible():
+            raise RuntimeError("focused expectation dialog remained open after Add")
+
+    add_expectation = answer_modal_dialog(
+        p.harness, p.app, IncomeExpectationDialog, "Add Income Expectation", fill_expectation
+    )
+    _run_modal(p, income_page, "Add income expectation", add_expectation)
+    if not add_expectation.done or add_expectation.error or add_expectation.info.get("error"):
+        raise RuntimeError(f"focused expectation creation failed: {add_expectation.error or add_expectation.info}")
+    expectation_rows = p.sql(
+        "SELECT expectation_id, person_id, account_id, expected_amount, actual_transaction_id "
+        "FROM IncomeExpectation WHERE notes=?", (note,)
+    )
+    p.checks.check("focused expectation created exactly once",
+                   len(expectation_rows) == 1 and expectation_rows[0][1:4] == (person_id, account_id, 54321.0)
+                   and expectation_rows[0][4] is None,
+                   f"rows={expectation_rows}")
+    if len(expectation_rows) != 1:
+        raise RuntimeError(f"expected one focused expectation, got {expectation_rows}")
+    expectation_id = expectation_rows[0][0]
+
+    # Create a matching unlinked income transaction through the actual Add Transaction dialog.
+    txn_page = p.nav("Transactions")
+    persons = get_all_persons()
+    accounts = get_all_accounts()
+    person = next((row for row in persons if row["person_id"] == person_id), None)
+    account = next((row for row in accounts if row["account_id"] == account_id), None)
+    if person is None or account is None:
+        raise RuntimeError(f"fixture person/account unavailable: person={person_id}, account={account_id}")
+    account_label = f"{account.get('bank_display_name') or account['bank_name']} ({account['account_type']})"
+
+    def fill_transaction(dlg):
+        _prepare_dialog(p, dlg)
+        os_select_combo(p.harness, dlg.cmb_person, person["full_name"])
+        os_select_combo(p.harness, dlg.cmb_account, account_label)
+        if dlg.cmb_account.currentData() != account_id:
+            raise RuntimeError(f"focused transaction account mismatch: {dlg.cmb_account.currentData()}")
+        os_set_date(p.harness, dlg.date_edit, QDate(2025, 6, 15))
+        os_select_combo(p.harness, dlg.cmb_type, "Income")
+        os_select_combo(p.harness, dlg.cmb_category, "Salary")
+        os_type_widget(p.harness, dlg.amount_spin, "54321", retries=2)
+        os_type_widget(p.harness, dlg.desc_edit, description, retries=2)
+        box = dlg.findChild(QDialogButtonBox)
+        if box is None:
+            raise RuntimeError("Transaction dialog Save/Add footer missing")
+        os_click_widget(p.harness, box.button(QDialogButtonBox.StandardButton.Ok), wait=0.8)
+        if dlg.isVisible():
+            raise RuntimeError("focused transaction dialog remained open after Add")
+
+    add_transaction = answer_modal_dialog(
+        p.harness, p.app, TransactionDialog, "Add Transaction", fill_transaction
+    )
+    try:
+        os_click_widget(p.harness, txn_page.btn_add, wait=0.8)
+        if not wait_until(p.harness, lambda: add_transaction.done, timeout=15):
+            raise RuntimeError("focused Add Transaction dialog did not open")
+    finally:
+        _disarm(add_transaction)
+        _dismiss_modals()
+    if not add_transaction.done or add_transaction.error or add_transaction.info.get("error"):
+        raise RuntimeError(f"focused transaction creation failed: {add_transaction.error or add_transaction.info}")
+    txn_core = p.sql(
+        "SELECT transaction_id, person_id, account_id, transaction_type, amount "
+        "FROM Transactions WHERE description=?", (description,)
+    )
+    p.checks.check("focused transaction created exactly once",
+                   len(txn_core) == 1 and txn_core[0][1:] == (person_id, account_id, "Income", 54321.0),
+                   f"rows={txn_core}")
+    if len(txn_core) != 1:
+        raise RuntimeError(f"expected one focused transaction, got {txn_core}")
+    transaction_id = txn_core[0][0]
+    p.observe("income_dialog_focus_ids", f"expectation={expectation_id}; transaction={transaction_id}")
+
+    page = p.nav("Income & Expectations")
+    _check_edit(p, page, expectation_id)
+    _check_link_and_unlink(p, page, expectation_id, expected_transaction_id=transaction_id)
+    _check_delete(p, page, expectation_id)
+
+
 def _saved_profile_salary(p, person_id):
     """Return the selected person's saved salary for the test FY, if present."""
     result = p.sql(
@@ -517,4 +686,7 @@ def _check_std_ded(p, label, is_expected=None):
 
 
 if __name__ == "__main__":
-    main_wrapper("03", "income", run_r, run_s)
+    focus_mode = ("--part" in sys.argv and
+                  sys.argv.index("--part") + 1 < len(sys.argv) and
+                  sys.argv[sys.argv.index("--part") + 1] == "dialogs")
+    main_wrapper("03", "income_dialogs" if focus_mode else "income", run_r, run_s)

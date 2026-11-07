@@ -4,7 +4,8 @@ ui/dialogs/income_expectation_dialog.py — Income expectation CRUD and transact
 
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QComboBox,
-    QFormLayout, QDateEdit, QDoubleSpinBox, QTextEdit, QMessageBox, QFrame, QSpinBox
+    QFormLayout, QDateEdit, QDoubleSpinBox, QTextEdit, QMessageBox, QFrame, QSpinBox,
+    QApplication, QScrollArea, QWidget
 )
 from PySide6.QtCore import Qt, QDate
 from PySide6.QtGui import QFont, QColor
@@ -57,6 +58,7 @@ class IncomeExpectationDialog(QDialog):
         self.setWindowTitle("Edit Income Expectation" if existing else "Add Income Expectation")
         self.setMinimumWidth(500)
         self._build_ui()
+        self._fit_content_to_available_screen()
         self._load_data()
 
     def _build_ui(self):
@@ -65,8 +67,17 @@ class IncomeExpectationDialog(QDialog):
         layout.setSpacing(16)
         layout.setContentsMargins(28, 24, 28, 20)
 
+        # Form and optional transaction link panel scroll together; action buttons
+        # stay in a fixed footer so Save/Cancel remain reachable on short displays.
+        content = QWidget(self)
+        self.content_widget = content
+        self.content_layout = QVBoxLayout(content)
+        self.content_layout.setContentsMargins(0, 0, 0, 0)
+        self.content_layout.setSpacing(16)
+
         # Form fields
         form = QFormLayout()
+        self.form_layout = form
         form.setSpacing(12)
         form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
 
@@ -158,28 +169,36 @@ class IncomeExpectationDialog(QDialog):
         self.notes_edit.setAccessibleName("Notes")
         form.addRow("Notes:", self.notes_edit)
 
-        layout.addLayout(form)
+        self.content_layout.addLayout(form)
 
         # Linking section (only show if editing)
         if self.existing:
-            layout.addSpacing(6)
+            self.content_layout.addSpacing(6)
             div = QFrame()
             div.setFrameShape(QFrame.Shape.HLine)
             div.setStyleSheet(f"color: {Theme.BORDER};")
-            layout.addWidget(div)
-            layout.addSpacing(6)
+            self.content_layout.addWidget(div)
+            self.content_layout.addSpacing(6)
 
             # Link info panel
             self.link_panel = self._build_link_panel()
-            layout.addWidget(self.link_panel)
+            self.content_layout.addWidget(self.link_panel)
 
-        layout.addStretch()
+        self.content_layout.addStretch()
+
+        self.form_scroll_area = QScrollArea(self)
+        self.form_scroll_area.setObjectName("incomeExpectationFormScrollArea")
+        self.form_scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        self.form_scroll_area.setWidgetResizable(True)
+        self.form_scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.form_scroll_area.setWidget(content)
+        layout.addWidget(self.form_scroll_area, stretch=1)
 
         # Divider
-        div = QFrame()
-        div.setFrameShape(QFrame.Shape.HLine)
-        div.setStyleSheet(f"color: {Theme.BORDER};")
-        layout.addWidget(div)
+        self.footer_divider = QFrame()
+        self.footer_divider.setFrameShape(QFrame.Shape.HLine)
+        self.footer_divider.setStyleSheet(f"color: {Theme.BORDER};")
+        layout.addWidget(self.footer_divider)
 
         # Buttons
         btns = QHBoxLayout()
@@ -195,15 +214,39 @@ class IncomeExpectationDialog(QDialog):
         btn_save.clicked.connect(self._on_save)
         btns.addWidget(btn_save)
         layout.addLayout(btns)
+        self.button_layout = btns
 
         self.setTabOrder(self.person_combo, self.account_combo)
         self.setTabOrder(self.account_combo, self.income_type_combo)
         self.setTabOrder(self.income_type_combo, self.amount_spin)
         self.setTabOrder(self.amount_spin, self.frequency_combo)
 
+    def _fit_content_to_available_screen(self, available_height=None):
+        """Reserve screen space for the window frame and fixed action footer."""
+        if available_height is None:
+            screen = self.screen() or QApplication.primaryScreen()
+            available_height = screen.availableGeometry().height() if screen else 720
+        margins = self.layout().contentsMargins()
+        from PySide6.QtWidgets import QStyle
+        scrollbar_width = self.style().pixelMetric(QStyle.PixelMetric.PM_ScrollBarExtent)
+        content_width = max(self.content_layout.sizeHint().width(), self.form_layout.sizeHint().width())
+        required_width = (content_width + margins.left() + margins.right() + scrollbar_width + 8)
+        # Keep enough room for the widest lower form row even while the vertical
+        # scrollbar is visible. A 500 px outer dialog left the Notes editor
+        # clipped by roughly 20 px on 1280x720 test displays.
+        self.setMinimumWidth(max(540, required_width))
+        footer_height = max(self.button_layout.sizeHint().height(), 48)
+        frame_title_reserve = 48
+        fixed_height = (margins.top() + margins.bottom() +
+                        2 * self.layout().spacing() + self.footer_divider.sizeHint().height() +
+                        footer_height + frame_title_reserve)
+        self.form_scroll_area.setMaximumHeight(max(120, available_height - fixed_height))
+        self.adjustSize()
+
     def _build_link_panel(self) -> QFrame:
         """Build the transaction linking panel for editing."""
         panel = QFrame()
+        panel.setObjectName("LinkPanel")
         panel.setStyleSheet(f"""
             QFrame {{
                 background-color: {Theme.SUCCESS_LIGHT};
@@ -300,15 +343,16 @@ class IncomeExpectationDialog(QDialog):
                 # Refresh the link panel
                 self.existing["actual_transaction_id"] = txn_id
                 # Rebuild link panel (remove old one first)
-                layout = self.layout()
+                layout = self.content_layout
                 for i in range(layout.count()):
                     widget = layout.itemAt(i).widget()
                     if widget and widget.objectName() == "LinkPanel":
                         layout.removeWidget(widget)
                         widget.deleteLater()
+                        break
                 self.link_panel = self._build_link_panel()
-                # Re-insert at correct position (after divider, before next divider)
-                layout.insertWidget(layout.count() - 3, self.link_panel)
+                # Keep the rebuilt panel inside the scrollable content.
+                layout.insertWidget(layout.count() - 1, self.link_panel)
 
     def _on_unlink_transaction(self):
         """Unlink transaction with confirmation."""
@@ -323,14 +367,15 @@ class IncomeExpectationDialog(QDialog):
             unlink_actual_transaction(self.existing["expectation_id"])
             self.existing["actual_transaction_id"] = None
             # Rebuild link panel
-            layout = self.layout()
+            layout = self.content_layout
             for i in range(layout.count()):
                 widget = layout.itemAt(i).widget()
                 if widget == self.link_panel:
                     layout.removeWidget(widget)
                     widget.deleteLater()
+                    break
             self.link_panel = self._build_link_panel()
-            layout.insertWidget(layout.count() - 3, self.link_panel)
+            layout.insertWidget(layout.count() - 1, self.link_panel)
 
     def _load_data(self):
         """Load existing data if editing."""
@@ -556,9 +601,12 @@ class LinkActualDialog(QDialog):
                     txn_date_str = txn.get("transaction_date")
                     try:
                         txn_date = datetime.strptime(txn_date_str, "%Y-%m-%d").date()
-                        if not (fy_start.date() <= txn_date <= fy_end.date()):
+                        # fy_date_range returns datetime.date values (not datetimes).
+                        # Calling .date() here raised AttributeError and the broad
+                        # handler below silently removed every FY candidate.
+                        if not (fy_start <= txn_date <= fy_end):
                             continue
-                    except (ValueError, AttributeError):
+                    except (ValueError, TypeError, AttributeError):
                         continue
 
                 row_data = [
