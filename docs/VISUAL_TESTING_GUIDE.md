@@ -70,9 +70,24 @@ edit/link/unlink/delete run passed 15/15, and the picker plus geometry tests pas
 19/19 (`P3_04_fixed_deposits_S.json`, `P3_04_fixed_deposits_S_verified_20261107.out`). Independent checks confirmed
 live FD/transaction IDs 28/507, exact ID sets restored after scratch, and integrity `ok`. S05 Statement Import passed
 53/53 (`P3_05_statement_import_S_settingsfix_20261107.out`). For S06, a source fix is implemented and review
-approved; 24 focused tests pass (`taxdoc_year_20261107.out`). The GUI retry has not run, and the prior failure
-remains pending. S07, S09, S13 GUI coverage, P3.11 hard refresh, the full suite, and P5 remain pending; S13 is an
-unverified draft. The next single command is the fresh-scratch S06 retry in the runbook.
+approved; 24 focused tests pass (`taxdoc_year_20261107.out`). The next single command is the fresh-scratch S06 retry
+in the runbook. S07/S09, S13 GUI coverage, P3.11 hard refresh, the full suite, and P5 remain pending; S13 is an
+unverified draft.
+
+**Nov 7 UX work — completed.** Toast tests passed 13/13 (`notifications_final_20261107.out`) and focus tests passed
+9/9 (`ux_finish_20261107/test_theme_qss.py.log`). Broader theme checks passed 26/26 (`ux_theme_checks_20261107.out`).
+Native Windows checks passed for Aurora and Nova: timer expiry, worker-thread delivery, click-through outside the
+toast, and modal handoff (`ux_native_integration_20261107.out`). Final Aurora/Nova Windows previews also verify
+wrapping of the full short danger message at a 38px viewport without a scrollbar. Accepted previews are
+`ux_notifications_aurora_final.png`, `ux_notifications_nova_final.png`, and `ux_modal_*_final.png` under
+`tools/real_ui_tests/screenshots/rebuild/`. Toasts use FIFO queues, natural height, 3/5/7-second durations, hover pause,
+and survive modal handoff. Simple acknowledgement message boxes use toasts; confirmations and TOTP remain modal.
+Focus uses rounded outer borders without an inner native rectangle and remains keyboard accessible, including a
+distinct focused-selected-tab state in light and dark themes. Independent final review approved the repaired queue;
+there are no outstanding UX blockers. This completion is specific to the UX work and does not change the remaining
+rebuild coverage listed above. Final audit confirmed all 13 private source hashes unchanged, theme preferences
+byte-identical, and AST parsing passed for all 11 changed Python files. The live database fingerprint matched before
+and after UX work (`ux_complete_compare_20261107.out`).
 
 ## Safety and working rules
 

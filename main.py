@@ -128,6 +128,11 @@ def launch_app():
     # subcontrol overrides (QSpinBox/QComboBox arrows, stepper dots, etc.),
     # which is why those icons render blank/inconsistent under some themes.
     app.setStyle("Fusion")
+    # Suppress Fusion's square PE_FrameFocusRect; the app QSS draws each
+    # control's rounded outer focus border. The proxy wraps Fusion, preserving
+    # control metrics and keyboard focus/activation across live theme changes.
+    from ui.theme.focus_style import install_focus_ring_style
+    install_focus_ring_style(app)
     app.aboutToQuit.connect(_unload_local_ai_model)
     install_copyable_error_dialogs()
     app.setApplicationName(APP_NAME)

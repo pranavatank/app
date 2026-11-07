@@ -280,8 +280,9 @@ class LoginScreen(QWidget):
         self.pwd_input.setFocus()
 
     def _show_error(self, msg: str):
-        self.error_label.setText(msg)
-        self.error_label.show()
+        from ui.widgets.toast_utils import show_danger
+        self.error_label.hide()
+        show_danger(msg, title="Login failed", parent=self)
 
     def _center_on_screen(self):
         from PySide6.QtGui import QGuiApplication

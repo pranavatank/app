@@ -174,6 +174,8 @@ class ThemeManager:
             from ui.theme.theme import Theme
             app = QApplication.instance()
             if app:
+                from .focus_style import install_focus_ring_style
+                install_focus_ring_style(app)
                 app.setStyleSheet(Theme.get_stylesheet())
         except Exception:
             import traceback

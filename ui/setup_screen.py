@@ -189,15 +189,18 @@ class SetupScreen(QWidget):
         self.error_label.hide()
         totp_uri = setup_master_password(pwd, self.totp_check.isChecked())
         if totp_uri:
-            QMessageBox.information(self, "TOTP Enabled", f"Scan this URI in Google Authenticator:\n\n{totp_uri}")
+            # The enrollment URI must remain visible while it is scanned.
+            dialog = QMessageBox(QMessageBox.Icon.Information, "TOTP Enabled", f"Scan this URI in Google Authenticator:\n\n{totp_uri}", QMessageBox.StandardButton.Ok, self)
+            dialog.exec()
         from ui.login_screen import LoginScreen
         self.login = LoginScreen()
         self.login.show()
         self.close()
 
     def _show_error(self, msg: str):
-        self.error_label.setText(msg)
-        self.error_label.show()
+        from ui.widgets.toast_utils import show_danger
+        self.error_label.hide()
+        show_danger(msg, title="Setup error", parent=self)
 
     def _center_on_screen(self):
         from PySide6.QtGui import QGuiApplication

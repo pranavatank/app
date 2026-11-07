@@ -12,7 +12,7 @@ log or independent measurement exists.
 | P0 document preflight | **Passed, exit 0.** `screenshots/rebuild/P0_repair_20261105.out`. Fixed PDF row grouping recovers one Equitas debit; Ujjivan blank balances reconcile between printed anchors. |
 | Focused checks | Private sources 3, password readers 7, preflight 46, FD provenance 34, PDF rows 5, real statement package 10, P5 collection 22 passed. Collection log: `screenshots/rebuild/collection_verified.out`. Other logs: `resume_focused/`, `password_review_verified.out`, `row_repair_verified/`. |
 | Tax imports and postflight | 26AS, AIS, TIS, and `rebuild_postflight.py` passed; zero postflight failures. |
-| Phase 3 | Eleven R-mode reports pass (283/283 assertions). S00 Overview passed; S01 Accounts passed 26/26; S02 Transactions passed 41/41. S03 Income passed 58/58 (`P3_03_income_S.json`, `P3_03_income_S_final_20261107.out`); focused edit/link/unlink/delete passed 15/15 (`P3_03_income_dialogs_S_verified_20261107.out`), and picker/geometry checks passed 3/3. S04 Fixed Deposits passed 19/19; see `P3_04_fixed_deposits_S.json` and `P3_04_fixed_deposits_S_verified_20261107.out`. Independent checks confirmed original FD/transaction ID sets 28/507 restored after scratch and integrity `ok`. S05 Statement Import passed 53/53, exit 0, in `P3_05_statement_import_S_settingsfix_20261107.out`. S06 source fix is implemented and review-approved; 24 focused tests passed (`taxdoc_year_20261107.out`), but its real-GUI retry has not run and the prior failure remains pending. S07/S09 GUI, S13 GUI, P3.11 hard refresh, full suite, and P5 remain pending. S13 is an unverified draft. The user checkpoint is Nov 7; next action is one fresh-scratch S06 GUI retry. |
+| Phase 3 | Eleven R-mode reports pass (283/283 assertions). S00 Overview passed; S01 Accounts passed 26/26; S02 Transactions passed 41/41. S03 Income passed 58/58 (`P3_03_income_S.json`, `P3_03_income_S_final_20261107.out`); focused edit/link/unlink/delete passed 15/15 (`P3_03_income_dialogs_S_pickerfix_20261107.out`), and picker/geometry checks passed 3/3. S04 Fixed Deposits passed 19/19; see `P3_04_fixed_deposits_S.json` and `P3_04_fixed_deposits_S_verified_20261107.out`. Independent checks confirmed original FD/transaction ID sets 28/507 restored after scratch and integrity `ok`. S05 Statement Import passed 53/53, exit 0, in `P3_05_statement_import_S_settingsfix_20261107.out`. S06 source fix is implemented and review-approved; 24 focused tests passed (`taxdoc_year_20261107.out`), but its real-GUI retry has not run and the prior failure remains pending. S07/S09 GUI, S13 GUI, P3.11 hard refresh, full suite, and P5 remain pending. S13 is an unverified draft. UX notifications and focus completed Nov 7; see the UX checkpoint below. |
 | Unity seven-row mini statement | Explicitly deferred; no opening/running balances. |
 | S03 Income | **Passed 58/58**, plus focused dialogs 15/15 and picker/geometry tests 3/3. |
 | S04 Fixed Deposits | **Passed 19/19.** `P3_04_fixed_deposits_S_verified_20261107.out`; exact original IDs restored after scratch. |
@@ -21,6 +21,22 @@ log or independent measurement exists.
 | S07/S09 GUI | Pending. |
 | S13 People/DOB | Draft test added; unverified. |
 | Hard refresh | Pending. Reproduce suspected session-key loss; keep key/FY preservation assertions. |
+
+### Nov 7 UX checkpoint — completed
+
+Toast tests passed 13/13 (`notifications_final_20261107.out`); focus tests passed 9/9
+(`ux_finish_20261107/test_theme_qss.py.log`); broader theme checks passed 26/26
+(`ux_theme_checks_20261107.out`). Native Windows Aurora/Nova checks passed for timer expiry, worker-thread delivery,
+click-through outside the toast, and modal handoff (`ux_native_integration_20261107.out`). The final Aurora/Nova
+Windows previews verify full short danger-message wrapping at a 38px viewport with no scrollbar. Accepted previews are
+`ux_notifications_aurora_final.png`, `ux_notifications_nova_final.png`, and `ux_modal_*_final.png` under
+`screenshots/rebuild/`. Notifications use FIFO queues, natural height, 3/5/7-second durations, hover pause, and modal
+handoff. Simple acknowledgement message boxes use notifications; confirmations and TOTP remain modal. Focus uses
+rounded outer borders with no inner native rectangle and remains keyboard accessible. Independent final review
+approved the repaired queue; no UX blockers remain. This is UX-specific verification, not completion of the full
+product test plan. Final audit confirmed all 13 private source hashes unchanged, theme preferences byte-identical,
+and AST parsing passed for all 11 changed Python files. The live database fingerprint matched before and after UX
+work (`ux_complete_compare_20261107.out`).
 
 P0 and the reviewed parser repair passed before deletion. Run logs, screenshots, expectation files, fingerprints, and progress records live under the ignored
 `tools/real_ui_tests/screenshots/` tree. Preserve any existing contents. Before starting, inspect `git status --short` and
@@ -51,15 +67,14 @@ P3.00 S passed on fresh scratch; its report is `P3_00_overview_S.json`. The wide
 center and guarded OS hit-testing; three click-point tests passed. P3.01 Accounts passed 26/26 and P3.02 Transactions
 passed 41/41; transaction dialog geometry passed 2/2, with a recorded non-OS date-entry fallback. S03 Income passed
 58/58 (`P3_03_income_S_final_20261107.out`), its focused dialog flow passed 15/15
-(`P3_03_income_dialogs_S_verified_20261107.out`), and picker/geometry checks passed 3/3. S04 Fixed Deposits passed
+(`P3_03_income_dialogs_S_pickerfix_20261107.out`), and picker/geometry checks passed 3/3. S04 Fixed Deposits passed
 19/19 (`P3_04_fixed_deposits_S_verified_20261107.out`); original FD/transaction ID sets 28/507 were restored and
 integrity was `ok`. S05 Statement Import passed 53/53 (`P3_05_statement_import_S_settingsfix_20261107.out`). S06's
 source fix is implemented and review-approved; 24 focused tests passed (`taxdoc_year_20261107.out`), but its GUI retry
 has not run and the prior GUI failure remains pending. S07/S09 GUI, S13 GUI, P3.11 hard refresh, full suite, and P5
-remain pending. S13 People/DOB is an unverified draft. User checkpoint: Nov 7; next action is the fresh-scratch S06
-GUI retry below.
+ remain pending. S13 People/DOB is an unverified draft. The next command is the fresh-scratch S06 GUI retry below.
 
-Next single command — S06 tax-document GUI retry on fresh scratch:
+Next command — S06 tax-document GUI retry on fresh scratch:
 
 ```powershell
 .venv\Scripts\python.exe tools\real_ui_tests\run_on_scratch.py --fresh tools\real_ui_tests\rebuild_p3_06_tax_documents.py --env S *> tools\real_ui_tests\screenshots\rebuild\P3_06_tax_documents_S_retry_20261107.out
