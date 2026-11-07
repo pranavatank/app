@@ -253,6 +253,7 @@ def run_s(p):
     p.nav("Overview")
 
     from core import auth
+    from core.session import session
     original_privacy = auth.get_privacy_mode()
     p.observe("S01", f"original_privacy={original_privacy}")
 
@@ -261,8 +262,14 @@ def run_s(p):
     p.harness.settle(0.5)
 
     from tools.real_ui_tests.rebuild_common import os_click
+    checkbox = settings_page.privacy_checkbox
+    p.checks.check("Privacy toggle starts off",
+                   not checkbox.isChecked() and not session.privacy_mode and not auth.get_privacy_mode())
     os_click(p.harness, settings_page, "Privacy mode", wait=0.8)
     p.harness.settle(1.0)
+    enabled = checkbox.isChecked() and session.privacy_mode and auth.get_privacy_mode()
+    p.checks.check("Privacy toggle updates checkbox, session, and auth", enabled,
+                   f"checked={checkbox.isChecked()}; session={session.privacy_mode}; auth={auth.get_privacy_mode()}")
 
     p.nav("Overview")
     p.harness.settle(0.5)
@@ -284,6 +291,9 @@ def run_s(p):
     p.harness.settle(0.5)
     os_click(p.harness, settings_page, "Privacy mode", wait=0.8)
     p.harness.settle(1.0)
+    restored = not checkbox.isChecked() and not session.privacy_mode and not auth.get_privacy_mode()
+    p.checks.check("Privacy toggle restores checkbox, session, and auth", restored,
+                   f"checked={checkbox.isChecked()}; session={session.privacy_mode}; auth={auth.get_privacy_mode()}")
 
     p.nav("Overview")
     p.harness.settle(0.5)

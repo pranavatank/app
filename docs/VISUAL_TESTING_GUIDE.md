@@ -1,6 +1,6 @@
 # FD Planner and real-data testing handoff
 
-**Updated:** 2026-11-06. Read this guide, then `tools/real_ui_tests/REBUILD_PLAN.md` before continuing the rebuild.
+**Updated:** 2026-11-07. Read this guide, then `tools/real_ui_tests/REBUILD_PLAN.md` before continuing the rebuild.
 This is a concise handoff for a fresh agent; old investigation history belongs in Git and ignored run logs.
 
 ## Product and data model
@@ -53,7 +53,7 @@ Equitas source has 5 detected FD openings totaling INR 500,000. The historical r
 seven-row mini-statement has no opening or running balances, so it is deferred and must
 not be imported into the ledger until reliable balances are available.
 
-**Updated 2026-11-06.** The full rebuild is complete. The ignored bank checkpoint records every source row's date,
+**Updated 2026-11-07.** The full rebuild is complete. The ignored bank checkpoint records every source row's date,
 type, amount, and balance matching across Jana (65), IDFC FIRST (376), Ujjivan (27), and Equitas (39), with account
 closing balances matching. All 19 FD openings and 9 redemption records pass provenance checks. The 28 FDs are: Jana
 14 Pending Details / INR 1,300,000; Equitas 5 Pending Details / INR 500,000 and 9 Matured / INR 850,000 principal /
@@ -65,8 +65,13 @@ foreign-key violations are 0, and all 13 private-file hashes match. Latest snaps
 `backups/rebuild_20261106T101846Z_P2_5_7.db`. Do not reset. All eleven completed P3 read-only reports pass 283/283
 recorded assertions; the runbook lists counts and paths. This records R-mode coverage only, not the mutating flows.
 The P3.12 final run passed 38 checks, including the focused clipped-target case (group 4 to 6), actual plan/result,
-and unchanged database fingerprint. Next is S00 on a fresh scratch copy; continue the S-mode walkthroughs sequentially,
-with P3.11 hard refresh last.
+and unchanged database fingerprint. S00 passed on a fresh scratch copy; its S report is `P3_00_overview_S.json`.
+S01 Accounts passed 26/26 checks on scratch (`P3_01_accounts_S.json` and
+`P3_01_accounts_S_passcheck_20261107.out`). Independent checks confirmed live IDs 4/507/28 and scratch IDs 5/507/28
+for accounts/transactions/FDs, with database integrity `ok`; three click-point tests passed. S02 is next/in progress,
+with no verified S-mode result yet. Its Add/Edit dialog Save control was below the desktop at y=727, so the guarded
+OS click was blocked; repair is in progress. Continue S02, S03, S04, S05, S06, S07, and S09 sequentially, with P3.11 hard
+refresh last; the full suite and P5 collection remain pending.
 
 ## Safety and working rules
 

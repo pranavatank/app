@@ -1,6 +1,6 @@
 # Fresh rebuild and real-UI runbook
 
-**Updated:** 2026-11-06. Read `docs/VISUAL_TESTING_GUIDE.md` first for product purpose, FD Planner limits, expected source
+**Updated:** 2026-11-07. Read `docs/VISUAL_TESTING_GUIDE.md` first for product purpose, FD Planner limits, expected source
 figures, and safety rules. This file is the current execution checklist. Do not rely on prior run claims unless a matching
 log or independent measurement exists.
 
@@ -12,7 +12,7 @@ log or independent measurement exists.
 | P0 document preflight | **Passed, exit 0.** `screenshots/rebuild/P0_repair_20261105.out`. Fixed PDF row grouping recovers one Equitas debit; Ujjivan blank balances reconcile between printed anchors. |
 | Focused checks | Private sources 3, password readers 7, preflight 46, FD provenance 34, PDF rows 5, real statement package 10, P5 collection 22 passed. Collection log: `screenshots/rebuild/collection_verified.out`. Other logs: `resume_focused/`, `password_review_verified.out`, `row_repair_verified/`. |
 | Tax imports and postflight | 26AS, AIS, TIS, and `rebuild_postflight.py` passed; zero postflight failures. |
-| Phase 3 | Eleven R-mode JSON reports pass (283/283 assertions). Start S-mode with P3.00 on a fresh scratch copy; run remaining S walkthroughs sequentially and P3.11 hard refresh last. |
+| Phase 3 | Eleven R-mode JSON reports pass (283/283 assertions). P3.00 S passed on fresh scratch; report `P3_00_overview_S.json`. P3.01 Accounts S passed 26/26 on scratch; see `P3_01_accounts_S.json` and `P3_01_accounts_S_passcheck_20261107.out`. Independent integrity checks passed and confirmed live IDs 4/507/28 and scratch IDs 5/507/28 (accounts/transactions/FDs). Three click-point tests passed. P3.02 S is in progress and unverified: Add/Edit dialog Save control at y=727 was below the desktop and the guarded OS click was blocked. Date entry also fell back to direct `setDate()` after OS entry failed. Repair is in progress; then run P3.03/04/05/06/07/09 S sequentially, with P3.11 hard refresh last. Full suite and P5 remain pending. |
 | Unity seven-row mini statement | Explicitly deferred; no opening/running balances. |
 | S03 income contract and S06 FY behavior | Harness repaired and source-reviewed; GUI verification pending. |
 | Hard refresh | Pending. Reproduce suspected session-key loss; keep key/FY preservation assertions. |
@@ -37,13 +37,22 @@ read-only `rebuild_postflight.py` audit exited 0 with zero failures, verifying a
 multisets, accounts, and tax records; see `screenshots/rebuild/postflight_20261106.out` and `postflight.json`.
 Do not reset or repeat completed imports.
 
-Eleven R-mode reports pass all 283 recorded assertions. The accounts run includes the verified actual OS close assertion;
-the destroyed-widget helper log was fixed. P3.12 passed 38 checks, including the clipped-target case (group 4 to 6),
-actual plan/result, and unchanged database fingerprint. The family-tree unit check passes (1), recorded in
-`screenshots/rebuild/tree_interaction_verified_20261106.out`. These reports cover read-only checks only, not all
-mutating flows. Next run P3.00 S through a fresh scratch copy; continue remaining S walkthroughs sequentially and leave
-P3.11 hard refresh until last. After P3, perform the fingerprint comparison and P5 collection. The collector's focused
-tests passed (22); the master is retained in ignored `screenshots/rebuild/credentials.local.json`.
+Eleven R-mode reports pass all 283 recorded assertions. The accounts R run includes the verified actual OS close
+assertion; the destroyed-widget helper log was fixed. P3.12 passed 38 checks, including the clipped-target case (group
+4 to 6), actual plan/result, and unchanged database fingerprint. The family-tree unit check passes (1), recorded in
+`screenshots/rebuild/tree_interaction_verified_20261106.out`. These reports cover read-only checks only.
+
+P3.00 S passed on a fresh scratch copy: `screenshots/rebuild/P3_00_overview_S_verified_20261106.out` and
+`screenshots/rebuild/P3_00_overview_S.json`. The wide checkbox center was not clickable; shared helpers now click the
+indicator center and assert UI/session/auth state explicitly. Three click-point tests passed in
+`tests/test_real_ui_click_points.py`. P3.01 Accounts S passed 26/26 checks on scratch; see
+`screenshots/rebuild/P3_01_accounts_S_passcheck_20261107.out` and `screenshots/rebuild/P3_01_accounts_S.json`.
+Independent checks confirmed live IDs 4/507/28 and scratch IDs 5/507/28 for accounts/transactions/FDs, with integrity
+`ok`. P3.02 S is in progress and unverified: Add/Edit dialog Save at y=727 was below the desktop and the guarded OS
+click was blocked. Date entry also required the logged non-OS `setDate()` fallback. Repair is in progress. After it
+completes, run P3.03, P3.04, P3.05, P3.06, P3.07, and P3.09 S sequentially. Leave P3.11 hard refresh last. Full
+suite and P5 collection remain pending; the collector's
+focused tests passed (22), and the master is retained in ignored `screenshots/rebuild/credentials.local.json`.
 
 | R-mode report | Result | JSON |
 |---|---:|---|

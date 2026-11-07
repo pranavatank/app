@@ -38,7 +38,10 @@ import win32con
 import win32gui
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QDialog, QMessageBox, QAbstractSpinBox
+from PySide6.QtWidgets import (
+    QApplication, QComboBox, QDialog, QMessageBox, QAbstractSpinBox, QCheckBox,
+    QStyle, QStyleOptionButton, QStyleOptionComboBox,
+)
 
 from tools.real_ui_test_harness import RealUIHarness, find_by_accessible_name, find_dialog_by_title
 
@@ -240,7 +243,8 @@ def os_click(harness: RealUIHarness, root, accessible_name, wait=0.8, double=Fal
     if not widget.isVisible() or not widget.isEnabled():
         raise RuntimeError(f"widget not clickable: {accessible_name!r} visible={widget.isVisible()} enabled={widget.isEnabled()}")
     assert_foreground(widget.window())
-    center = widget.mapToGlobal(widget.rect().center())
+    point = _os_click_local_point(widget)
+    center = widget.mapToGlobal(point)
     px, py = harness.to_physical(center)
     # Real click delivery respects on-screen Z-order (unlike QTest, which
     # targets the widget object directly and never sees overlays). A toast
@@ -279,7 +283,8 @@ def os_click_widget(harness: RealUIHarness, widget, wait=0.8, double=False):
     if not widget.isVisible() or not widget.isEnabled():
         raise RuntimeError(f"widget not clickable: {widget!r} visible={widget.isVisible()} enabled={widget.isEnabled()}")
     assert_foreground(widget.window())
-    center = widget.mapToGlobal(widget.rect().center())
+    point = _os_click_local_point(widget)
+    center = widget.mapToGlobal(point)
     px, py = harness.to_physical(center)
     blocker = _verify_click_target(widget, center, px, py)
     if blocker is not None:
@@ -298,6 +303,25 @@ def os_click_widget(harness: RealUIHarness, widget, wait=0.8, double=False):
     harness.settle(wait)
     print(f"os_click_widget({widget_repr}) logical=({center.x()},{center.y()}) physical=({px},{py})")
     return widget
+
+
+def _os_click_local_point(widget):
+    """Return a safe OS-click point, using the visible checkbox indicator.
+
+    Wide QCheckBoxes can have substantial blank space to the right of their
+    label. Their visual hit area is the indicator/label, so the widget center
+    may not toggle them even though it lies inside their QWidget rectangle.
+    """
+    if isinstance(widget, QCheckBox):
+        option = QStyleOptionButton()
+        option.initFrom(widget)
+        option.text = widget.text()
+        indicator = widget.style().subElementRect(
+            QStyle.SubElement.SE_CheckBoxIndicator, option, widget
+        )
+        if indicator.isValid() and not indicator.isEmpty():
+            return indicator.center()
+    return widget.rect().center()
 
 
 def os_type_widget(harness: RealUIHarness, widget, text, secret=False, retries=3):
@@ -506,7 +530,11 @@ def os_select_combo(harness: RealUIHarness, combo, text):
     idx = combo.findText(text)
     if idx < 0:
         raise LookupError(f"combo has no item {text!r}; items={[combo.itemText(i) for i in range(combo.count())]}")
-    harness.click_via_os(combo, wait=0.3)
+    if combo.isEditable():
+        arrow_point = _combo_arrow_local_point(combo)
+        harness.click_at_via_os(combo, arrow_point, wait=0.3)
+    else:
+        harness.click_via_os(combo, wait=0.3)
     view = combo.view()
     view.scrollTo(combo.model().index(idx, 0))
     harness.settle(0.2)
@@ -516,6 +544,24 @@ def os_select_combo(harness: RealUIHarness, combo, text):
         raise RuntimeError(f"combo select failed: wanted {text!r} got {combo.currentText()!r}")
     print(f"os_select_combo -> {text!r}")
     return combo
+
+
+def _combo_arrow_local_point(combo):
+    """Return the style-defined arrow center that opens a combo popup."""
+    option = QStyleOptionComboBox()
+    option.initFrom(combo)
+    option.editable = combo.isEditable()
+    option.frame = combo.hasFrame()
+    option.currentText = combo.currentText()
+    arrow = combo.style().subControlRect(
+        QStyle.ComplexControl.CC_ComboBox,
+        option,
+        QStyle.SubControl.SC_ComboBoxArrow,
+        combo,
+    )
+    if arrow.isEmpty():
+        raise RuntimeError("combo style has no visible arrow subcontrol")
+    return arrow.center()
 
 
 def os_set_date(harness: RealUIHarness, dateedit, qdate):

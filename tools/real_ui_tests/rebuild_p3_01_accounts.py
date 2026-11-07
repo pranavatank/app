@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from tools.real_ui_tests.rebuild_p3_common import P3Run, main_wrapper
 from tools.real_ui_tests.rebuild_common import (
     os_click, os_click_widget, os_type, os_select_combo,
-    answer_modal_dialog, answer_message_box, find_button, toast_texts,
+    answer_modal_dialog, answer_message_box, find_button, toast_texts, wait_until,
 )
 from tools.real_ui_test_harness import find_by_accessible_name
 from PySide6.QtWidgets import QApplication, QFrame, QLabel, QMessageBox
@@ -68,6 +68,35 @@ def run_s(p):
 
     page = p.nav("Accounts")
 
+    def select_jana_bank(dlg):
+        bank_combo = find_by_accessible_name(dlg, "Bank selector")
+        idx = bank_combo.findData("Jana Small Finance Bank")
+        if idx < 0:
+            raise LookupError(
+                "Jana Small Finance Bank missing from bank selector data: "
+                f"{[(bank_combo.itemText(i), bank_combo.itemData(i)) for i in range(bank_combo.count())]}"
+            )
+        # Select the existing item by its displayed label. Typing a legal bank
+        # name into the editable combo can create a new bank entry.
+        os_select_combo(p.harness, bank_combo, bank_combo.itemText(idx))
+        if bank_combo.currentData() != "Jana Small Finance Bank":
+            raise RuntimeError(f"wrong bank selected: {bank_combo.currentData()!r}")
+
+    def run_add_dialog(fill_fn, step_name):
+        p.expected_titles.add("Add Account")
+        prearm = answer_modal_dialog(p.harness, p.app, AccountDialog, "Add Account", fill_fn)
+        try:
+            os_click(p.harness, page, "Add account", wait=2.0)
+            p.harness.settle(0.5)
+            callback_error = prearm.info.get("error") or (repr(prearm.error) if prearm.error else None)
+            completed = prearm.done and callback_error is None
+            p.checks.check(f"{step_name} dialog callback completed", completed,
+                           f"done={prearm.done}; error={callback_error}")
+            if not completed:
+                raise RuntimeError(f"{step_name} dialog callback failed: {callback_error or 'not completed'}")
+        finally:
+            p.expected_titles.discard("Add Account")
+
     def fill_add_dialog(dlg):
         person_combo = find_by_accessible_name(dlg, "Person selector")
         os_select_combo(p.harness, person_combo, "Pranav")
@@ -75,7 +104,7 @@ def run_s(p):
         bank_combo = find_by_accessible_name(dlg, "Bank selector")
         bank_options = [bank_combo.itemText(i) for i in range(bank_combo.count())]
         p.observe("bank_options", str(bank_options[:5]))
-        os_select_combo(p.harness, bank_combo, "Jana Small Finance Bank")
+        select_jana_bank(dlg)
 
         os_type(p.harness, dlg, "Account holder name", "RUIH_Holder")
 
@@ -84,9 +113,7 @@ def run_s(p):
 
         os_click(p.harness, dlg, "Save account", wait=1.0)
 
-    answer_modal_dialog(p.harness, p.app, AccountDialog, "Add Account", fill_add_dialog)
-    os_click(p.harness, page, "Add account", wait=2.0)
-    p.harness.settle(0.8)
+    run_add_dialog(fill_add_dialog, "valid add account")
 
     result = p.sql("SELECT COUNT(*) as cnt FROM BankAccount WHERE account_holder_name = 'RUIH_Holder'")
     added_count = result[0][0]
@@ -95,8 +122,7 @@ def run_s(p):
     def fill_invalid_ifsc(dlg):
         person_combo = find_by_accessible_name(dlg, "Person selector")
         os_select_combo(p.harness, person_combo, "Pranav")
-        bank_combo = find_by_accessible_name(dlg, "Bank selector")
-        os_select_combo(p.harness, bank_combo, "Jana Small Finance Bank")
+        select_jana_bank(dlg)
         os_type(p.harness, dlg, "Account holder name", "RUIH_Invalid")
         type_combo = find_by_accessible_name(dlg, "Account type")
         os_select_combo(p.harness, type_combo, "Current")
@@ -116,8 +142,7 @@ def run_s(p):
         except Exception:
             pass
 
-    answer_modal_dialog(p.harness, p.app, AccountDialog, "Add Account", fill_invalid_ifsc)
-    os_click(p.harness, page, "Add account", wait=2.0)
+    run_add_dialog(fill_invalid_ifsc, "invalid IFSC")
     p.harness.settle(1.0)
 
     toasts = toast_texts()
@@ -131,8 +156,7 @@ def run_s(p):
     def fill_invalid_micr(dlg):
         person_combo = find_by_accessible_name(dlg, "Person selector")
         os_select_combo(p.harness, person_combo, "Pranav")
-        bank_combo = find_by_accessible_name(dlg, "Bank selector")
-        os_select_combo(p.harness, bank_combo, "Jana Small Finance Bank")
+        select_jana_bank(dlg)
         os_type(p.harness, dlg, "Account holder name", "RUIH_InvalidMICR")
         type_combo = find_by_accessible_name(dlg, "Account type")
         os_select_combo(p.harness, type_combo, "Current")
@@ -152,8 +176,7 @@ def run_s(p):
         except Exception:
             pass
 
-    answer_modal_dialog(p.harness, p.app, AccountDialog, "Add Account", fill_invalid_micr)
-    os_click(p.harness, page, "Add account", wait=2.0)
+    run_add_dialog(fill_invalid_micr, "invalid MICR")
     p.harness.settle(1.0)
 
     toasts = toast_texts()
@@ -171,8 +194,7 @@ def run_s(p):
     def fill_invalid_email(dlg):
         person_combo = find_by_accessible_name(dlg, "Person selector")
         os_select_combo(p.harness, person_combo, "Pranav")
-        bank_combo = find_by_accessible_name(dlg, "Bank selector")
-        os_select_combo(p.harness, bank_combo, "Jana Small Finance Bank")
+        select_jana_bank(dlg)
         os_type(p.harness, dlg, "Account holder name", "RUIH_InvalidEmail")
         type_combo = find_by_accessible_name(dlg, "Account type")
         os_select_combo(p.harness, type_combo, "Current")
@@ -189,8 +211,7 @@ def run_s(p):
         except Exception:
             pass
 
-    answer_modal_dialog(p.harness, p.app, AccountDialog, "Add Account", fill_invalid_email)
-    os_click(p.harness, page, "Add account", wait=2.0)
+    run_add_dialog(fill_invalid_email, "invalid email")
     p.harness.settle(1.0)
 
     toasts = toast_texts()
@@ -208,8 +229,7 @@ def run_s(p):
     def fill_invalid_phone(dlg):
         person_combo = find_by_accessible_name(dlg, "Person selector")
         os_select_combo(p.harness, person_combo, "Pranav")
-        bank_combo = find_by_accessible_name(dlg, "Bank selector")
-        os_select_combo(p.harness, bank_combo, "Jana Small Finance Bank")
+        select_jana_bank(dlg)
         os_type(p.harness, dlg, "Account holder name", "RUIH_InvalidPhone")
         type_combo = find_by_accessible_name(dlg, "Account type")
         os_select_combo(p.harness, type_combo, "Current")
@@ -226,8 +246,7 @@ def run_s(p):
         except Exception:
             pass
 
-    answer_modal_dialog(p.harness, p.app, AccountDialog, "Add Account", fill_invalid_phone)
-    os_click(p.harness, page, "Add account", wait=2.0)
+    run_add_dialog(fill_invalid_phone, "invalid phone")
     p.harness.settle(1.0)
 
     toasts = toast_texts()
@@ -245,16 +264,25 @@ def run_s(p):
     def fill_invalid_tan(dlg):
         person_combo = find_by_accessible_name(dlg, "Person selector")
         os_select_combo(p.harness, person_combo, "Pranav")
-        bank_combo = find_by_accessible_name(dlg, "Bank selector")
-        os_select_combo(p.harness, bank_combo, "Jana Small Finance Bank")
+        select_jana_bank(dlg)
         os_type(p.harness, dlg, "Account holder name", "RUIH_InvalidTAN")
         type_combo = find_by_accessible_name(dlg, "Account type")
         os_select_combo(p.harness, type_combo, "Current")
 
         inner_tabs = find_by_accessible_name(dlg, "Account details tabs")
-        bank_tab_rect = inner_tabs.tabBar().tabRect(1)
-        p.harness.click_at_via_os(inner_tabs.tabBar(), bank_tab_rect.center(), wait=0.3)
-        p.harness.settle(0.3)
+        basic_tab_index = next(
+            (i for i in range(inner_tabs.count()) if inner_tabs.tabText(i) == "Basic Info"),
+            None,
+        )
+        if basic_tab_index is None:
+            raise LookupError("Basic Info tab not found")
+        if inner_tabs.currentIndex() != basic_tab_index:
+            basic_tab_rect = inner_tabs.tabBar().tabRect(basic_tab_index)
+            p.harness.click_at_via_os(inner_tabs.tabBar(), basic_tab_rect.center(), wait=0.3)
+            p.harness.settle(0.3)
+        tan_widget = find_by_accessible_name(dlg, "TAN code")
+        if not tan_widget.isVisible():
+            raise RuntimeError("TAN code field is not visible on the Basic Info tab")
         os_type(p.harness, dlg, "TAN code", "ABC")
 
         os_click(p.harness, dlg, "Save account", wait=0.5)
@@ -263,8 +291,7 @@ def run_s(p):
         except Exception:
             pass
 
-    answer_modal_dialog(p.harness, p.app, AccountDialog, "Add Account", fill_invalid_tan)
-    os_click(p.harness, page, "Add account", wait=2.0)
+    run_add_dialog(fill_invalid_tan, "invalid TAN")
     p.harness.settle(1.0)
 
     toasts = toast_texts()
@@ -279,8 +306,7 @@ def run_s(p):
     def fill_valid_ruih_account(dlg):
         person_combo = find_by_accessible_name(dlg, "Person selector")
         os_select_combo(p.harness, person_combo, "Pranav")
-        bank_combo = find_by_accessible_name(dlg, "Bank selector")
-        os_select_combo(p.harness, bank_combo, "Jana Small Finance Bank")
+        select_jana_bank(dlg)
         os_type(p.harness, dlg, "Account holder name", "RUIH")
         type_combo = find_by_accessible_name(dlg, "Account type")
         os_select_combo(p.harness, type_combo, "Current")
@@ -293,17 +319,17 @@ def run_s(p):
 
         os_click(p.harness, dlg, "Save account", wait=1.0)
 
-    answer_modal_dialog(p.harness, p.app, AccountDialog, "Add Account", fill_valid_ruih_account)
-    os_click(p.harness, page, "Add account", wait=2.0)
+    prior_ruih_ids = p.sql("SELECT account_id FROM BankAccount WHERE account_holder_name = 'RUIH'")
+    prior_ruih_ids = {row[0] for row in prior_ruih_ids}
+    run_add_dialog(fill_valid_ruih_account, "valid RUIH account")
     p.harness.settle(1.0)
 
-    result = p.sql("SELECT account_id FROM BankAccount WHERE account_holder_name = 'RUIH' LIMIT 1")
-    ruih_account_id = None
-    if result:
-        ruih_account_id = result[0][0]
+    result = p.sql("SELECT account_id FROM BankAccount WHERE account_holder_name = 'RUIH'")
+    created_ruih_ids = [row[0] for row in result if row[0] not in prior_ruih_ids]
+    ruih_account_id = created_ruih_ids[0] if len(created_ruih_ids) == 1 else None
 
     p.checks.check("17_ruih_account_created", ruih_account_id is not None,
-                   f"account_id={ruih_account_id}")
+                   f"new matching ids={created_ruih_ids}")
 
     if ruih_account_id:
         result = p.sql("SELECT ifsc_code FROM BankAccount WHERE account_id = ?", (ruih_account_id,))
@@ -315,7 +341,7 @@ def run_s(p):
     if ruih_account_id:
         try:
             p.harness.settle(0.5)
-            page.refresh()
+            page._load_accounts()
             p.harness.settle(1.0)
 
             ruih_cards = [w for w in page.container.findChildren(QFrame)
@@ -323,13 +349,18 @@ def run_s(p):
             ruih_card = None
             for card in ruih_cards:
                 labels = [l.text() for l in card.findChildren(QLabel)]
-                if any("RUIH" in str(l) for l in labels):
+                if any("IFSC: JSFB0000001" in str(l) for l in labels):
                     ruih_card = card
                     break
 
             if ruih_card:
                 os_click_widget(p.harness, ruih_card, wait=0.5)
                 p.harness.settle(0.5)
+                selected_id = (page.detail_panel.account or {}).get("account_id")
+                p.checks.check("edit target account selected", selected_id == ruih_account_id,
+                               f"expected account_id={ruih_account_id}, selected={selected_id}")
+                if selected_id != ruih_account_id:
+                    raise RuntimeError(f"edit target mismatch: {selected_id}")
 
                 def fill_edit_ifsc(dlg):
                     inner_tabs = find_by_accessible_name(dlg, "Account details tabs")
@@ -339,22 +370,28 @@ def run_s(p):
                     os_type(p.harness, dlg, "IFSC code", "JSFB0000002", retries=2)
                     os_click(p.harness, dlg, "Save account", wait=1.0)
 
-                prearm = answer_modal_dialog(p.harness, p.app, AccountDialog, "Edit Account", fill_edit_ifsc)
+                p.expected_titles.add("Edit Account")
                 try:
-                    edit_btn = find_button(page.detail_panel, "Edit")
-                    os_click_widget(p.harness, edit_btn, wait=0.5)
-                except Exception:
-                    pass
-                ok = wait_until(p.harness, lambda: prearm.done, timeout=15)
-                if not ok or prearm.error:
-                    p.checks.check("edit account IFSC", False, f"{prearm.error}")
-                else:
-                    p.harness.settle(0.5)
-                    result = p.sql("SELECT ifsc_code FROM BankAccount WHERE account_id = ?", (ruih_account_id,))
-                    if result and result[0][0] == "JSFB0000002":
-                        p.checks.check("edit account IFSC", True)
+                    prearm = answer_modal_dialog(p.harness, p.app, AccountDialog, "Edit Account", fill_edit_ifsc)
+                    try:
+                        edit_btn = find_button(page.detail_panel, "Edit")
+                        os_click_widget(p.harness, edit_btn, wait=0.5)
+                    except Exception:
+                        pass
+                    ok = wait_until(p.harness, lambda: prearm.done, timeout=15)
+                    if not ok or prearm.error:
+                        p.checks.check("edit account IFSC", False, f"{prearm.error}")
                     else:
-                        p.checks.check("edit account IFSC", False, f"ifsc={result[0][0] if result else None}")
+                        p.harness.settle(0.5)
+                        result = p.sql("SELECT ifsc_code FROM BankAccount WHERE account_id = ?", (ruih_account_id,))
+                        if result and result[0][0] == "JSFB0000002":
+                            p.checks.check("edit account IFSC", True)
+                        else:
+                            p.checks.check("edit account IFSC", False, f"ifsc={result[0][0] if result else None}")
+                finally:
+                    p.expected_titles.discard("Edit Account")
+            else:
+                p.checks.check("edit target account card found", False, "fixture IFSC JSFB0000001 card missing")
         except Exception as e:
             p.checks.check("edit account IFSC", False, repr(e))
 
@@ -362,7 +399,7 @@ def run_s(p):
     if ruih_account_id:
         try:
             p.harness.settle(0.5)
-            page.refresh()
+            page._load_accounts()
             p.harness.settle(1.0)
 
             ruih_cards = [w for w in page.container.findChildren(QFrame)
@@ -370,29 +407,40 @@ def run_s(p):
             ruih_card = None
             for card in ruih_cards:
                 labels = [l.text() for l in card.findChildren(QLabel)]
-                if any("RUIH" in str(l) for l in labels):
+                if any("IFSC: JSFB0000002" in str(l) for l in labels):
                     ruih_card = card
                     break
 
             if ruih_card:
                 os_click_widget(p.harness, ruih_card, wait=0.5)
                 p.harness.settle(0.5)
+                selected_id = (page.detail_panel.account or {}).get("account_id")
+                p.checks.check("delete target account selected", selected_id == ruih_account_id,
+                               f"expected account_id={ruih_account_id}, selected={selected_id}")
+                if selected_id != ruih_account_id:
+                    raise RuntimeError(f"delete target mismatch: {selected_id}")
 
-                prearm = answer_message_box(p.harness, p.app, QMessageBox.StandardButton.Yes,
-                    expect_title="Confirm Delete")
+                p.expected_titles.add("Confirm Delete")
                 try:
-                    delete_btn = find_button(page.detail_panel, "Delete")
-                    os_click_widget(p.harness, delete_btn, wait=0.5)
-                except Exception:
-                    pass
-                ok = wait_until(p.harness, lambda: prearm.done, timeout=15)
-                if not ok or prearm.error:
-                    p.checks.check("delete account", False, f"{prearm.error}")
-                else:
-                    p.harness.settle(1.0)
-                    result = p.sql("SELECT COUNT(*) FROM BankAccount WHERE account_id = ?", (ruih_account_id,))
-                    row_count = result[0][0] if result else 0
-                    p.checks.check("delete account", row_count == 0, f"account still exists")
+                    prearm = answer_message_box(p.harness, p.app, QMessageBox.StandardButton.Yes,
+                        expect_title="Confirm Delete")
+                    try:
+                        delete_btn = find_button(page.detail_panel, "Delete")
+                        os_click_widget(p.harness, delete_btn, wait=0.5)
+                    except Exception:
+                        pass
+                    ok = wait_until(p.harness, lambda: prearm.done, timeout=15)
+                    if not ok or prearm.error:
+                        p.checks.check("delete account", False, f"{prearm.error}")
+                    else:
+                        p.harness.settle(1.0)
+                        result = p.sql("SELECT COUNT(*) FROM BankAccount WHERE account_id = ?", (ruih_account_id,))
+                        row_count = result[0][0] if result else 0
+                        p.checks.check("delete account", row_count == 0, f"account still exists")
+                finally:
+                    p.expected_titles.discard("Confirm Delete")
+            else:
+                p.checks.check("delete target account card found", False, "fixture IFSC JSFB0000002 card missing")
         except Exception as e:
             p.checks.check("delete account", False, repr(e))
 
