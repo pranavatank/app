@@ -29,6 +29,21 @@ def financial_year_from_assessment_year(assessment_year: str | None) -> str | No
         return None
 
 
+def source_financial_year(parsed: dict) -> str:
+    """Resolve FY from source labels and reject documents with no tax period."""
+    source_fy = parsed.get("financial_year")
+    source_ay = parsed.get("assessment_year")
+    ay_fy = financial_year_from_assessment_year(source_ay)
+    if source_fy and ay_fy and source_fy != ay_fy:
+        raise ValueError(
+            f"source financial year {source_fy} conflicts with assessment year {source_ay}"
+        )
+    fy = source_fy or ay_fy
+    if not fy:
+        raise ValueError("tax document has no financial year or assessment year")
+    return fy
+
+
 def form26as_records_for_storage(parsed: dict) -> list[dict]:
     """Transform parsed Form 26AS records into storage format."""
     records = parsed.get("records", [])
@@ -150,10 +165,19 @@ def ais_tis_records_for_storage(parsed: dict) -> list[dict]:
 
 
 def persist_ais_tis(person_id: int, parsed: dict, source_type: str,
-                    financial_year: str, source_file: str = "") -> dict:
+                    financial_year: str | None = None, source_file: str = "") -> dict:
     """Store parsed AIS/TIS data."""
     if source_type not in (SOURCE_TYPE_AIS, SOURCE_TYPE_TIS):
         raise ValueError(f"source_type must be one of {SOURCE_TYPE_AIS}, {SOURCE_TYPE_TIS}")
+
+    # Source labels are authoritative. A caller-provided FY can only confirm
+    # the parsed source year; it cannot relabel the document.
+    source_fy = source_financial_year(parsed)
+    if financial_year and financial_year != source_fy:
+        raise ValueError(
+            f"requested financial year {financial_year} conflicts with source year {source_fy}"
+        )
+    financial_year = source_fy
 
     raw_json = json.dumps(parsed, default=str)
     payload = ais_tis_payload(parsed)

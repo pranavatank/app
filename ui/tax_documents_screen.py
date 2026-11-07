@@ -38,7 +38,6 @@ from engines.taxdocs.persist import (
 from engines.statement_parser import is_pdf_encrypted
 from models.fixed_deposit import get_all_fds, find_fd_by_account_no
 from models.person import get_ais_tis_password, set_ais_tis_password
-from config import get_current_financial_year
 import os
 
 
@@ -328,8 +327,7 @@ class TaxDocumentsScreen(QWidget):
 
         def parse_ais():
             parsed = parse_ais_pdf(path, password=password)
-            fy = self._itr_financial_year or session.selected_fy or get_current_financial_year()
-            info = persist_ais_tis(session.selected_person_id or 1, parsed, SOURCE_TYPE_AIS, fy,
+            info = persist_ais_tis(session.selected_person_id or 1, parsed, SOURCE_TYPE_AIS,
                                    source_file=os.path.basename(path))
             return parsed, info
 
@@ -392,8 +390,7 @@ class TaxDocumentsScreen(QWidget):
 
         def parse_tis():
             parsed = parse_tis_pdf(path, password=password)
-            fy = self._itr_financial_year or session.selected_fy or get_current_financial_year()
-            info = persist_ais_tis(session.selected_person_id or 1, parsed, SOURCE_TYPE_TIS, fy,
+            info = persist_ais_tis(session.selected_person_id or 1, parsed, SOURCE_TYPE_TIS,
                                    source_file=os.path.basename(path))
             return parsed, info
 

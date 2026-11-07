@@ -16,6 +16,7 @@ Investigation and rule will be captured in parse_ais_pdf() docstring after verif
 
 import re
 from typing import Dict, Any, List, Optional
+from engines.taxdocs.period import extract_tax_period
 
 
 def _parse_inr_amount(value: str) -> float:
@@ -78,8 +79,10 @@ def parse_ais_pdf(pdf_path: str, password: str = None) -> Dict[str, Any]:
 
     with pdfplumber.open(pdf_path, password=password) as pdf:
         all_tables = []
+        document_text = []
         for page_num in range(len(pdf.pages)):
             page = pdf.pages[page_num]
+            document_text.append(page.extract_text() or "")
             tables = page.extract_tables()
             for table in (tables or []):
                 all_tables.append({
@@ -88,6 +91,7 @@ def parse_ais_pdf(pdf_path: str, password: str = None) -> Dict[str, Any]:
                 })
 
     result = {
+        **extract_tax_period("\n".join(document_text)),
         'dividend': 0.0,
         'savings_interest': 0.0,
         'fd_interest': 0.0,
