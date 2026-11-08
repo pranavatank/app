@@ -465,6 +465,9 @@ def test_tempdb():
 
             conn = sqlite3.connect(str(test_db))
             cur = conn.cursor()
+            auth_before_corrupt = tuple(cur.execute(
+                "SELECT password_hash, password_salt FROM AuthSecurity ORDER BY auth_id LIMIT 1"
+            ).fetchone())
             enc_before = cur.execute(
                 "SELECT statement_password_enc FROM BankAccount WHERE account_id=?",
                 (account_id,)
@@ -483,33 +486,45 @@ def test_tempdb():
                     (corrupt_bytes, account_id)
                 )
                 conn.commit()
+                # Capture the deliberately corrupted starting state. The call
+                # under test must leave every cipher exactly as it found them.
+                all_cipher_before = (
+                    cur.execute("SELECT account_id, statement_password_enc FROM BankAccount ORDER BY account_id").fetchall(),
+                    cur.execute("SELECT person_id, ais_tis_password_enc FROM Person ORDER BY person_id").fetchall(),
+                )
 
                 changed_corrupt, _, key_after_corrupt = change_password("Tmp#Pass456", "Tmp#Pass789")
                 login_after_corrupt, _, verified_key_after_corrupt = verify_login("Tmp#Pass789")
-                if changed_corrupt and login_after_corrupt:
-                    current_key = verified_key_after_corrupt
-                if not changed_corrupt or not login_after_corrupt or key_after_corrupt != verified_key_after_corrupt:
-                    failures.append(
-                        "second change_password failed: "
-                        f"changed={changed_corrupt} new_login={login_after_corrupt} "
-                        f"returned_key_matches_login={key_after_corrupt == verified_key_after_corrupt}"
-                    )
+                login_current, _, verified_current_key = verify_login("Tmp#Pass456")
 
                 enc_after = cur.execute(
                     "SELECT statement_password_enc FROM BankAccount WHERE account_id=?",
                     (account_id,)
                 ).fetchone()
 
-                if enc_after:
-                    enc_after = enc_after[0]
-                    if isinstance(enc_after, str):
-                        enc_after = enc_after.encode()
-                    if not changed_corrupt:
-                        findings.append("H12 not evaluated: password change did not succeed")
-                    elif enc_after == corrupt_bytes:
-                        findings.append("H12: corrupt ciphertext remained unchanged during password change (skipped)")
-                    else:
-                        findings.append("H12: corrupt ciphertext changed during password change")
+                auth_after_corrupt = tuple(cur.execute(
+                    "SELECT password_hash, password_salt FROM AuthSecurity ORDER BY auth_id LIMIT 1"
+                ).fetchone())
+                all_cipher_after = (
+                    cur.execute("SELECT account_id, statement_password_enc FROM BankAccount ORDER BY account_id").fetchall(),
+                    cur.execute("SELECT person_id, ais_tis_password_enc FROM Person ORDER BY person_id").fetchall(),
+                )
+                rollback_ok = (
+                    not changed_corrupt and key_after_corrupt is None and not login_after_corrupt
+                    and login_current and verified_current_key == key_new
+                    and auth_after_corrupt == auth_before_corrupt
+                    and all_cipher_after == all_cipher_before
+                )
+                if rollback_ok:
+                    print("PASS tempdb.change_password_rejects_corrupt_secret observed=atomic_rejection expected=atomic_rejection")
+                    findings.append("H12 resolved: corrupt ciphertext causes password change rejection with auth and ciphertext unchanged")
+                else:
+                    failures.append(
+                        "corrupt-secret password change was not atomic: "
+                        f"changed={changed_corrupt} new_login={login_after_corrupt} current_login={login_current} "
+                        f"key_preserved={verified_current_key == key_new} auth_unchanged={auth_after_corrupt == auth_before_corrupt} "
+                        f"ciphertext_unchanged={all_cipher_after == all_cipher_before}"
+                    )
 
             conn.close()
 

@@ -7,10 +7,21 @@ from typing import Optional
 from config import BACKUP_DIR, DB_PATH
 from core.database import backup_database
 
-# Scheduler globals
-_scheduler_thread: threading.Thread | None = None
-_stop_event: threading.Event | None = None
-_current_interval_hours: float = 24.0
+# Preserve a live scheduler when this module is reloaded (for example by the
+# app's hard-refresh path). importlib.reload reuses the module dictionary, so
+# unconditional assignments here would orphan its daemon thread.
+if "_scheduler_thread" not in globals():
+    _scheduler_thread: threading.Thread | None = None
+if "_stop_event" not in globals():
+    _stop_event: threading.Event | None = None
+if "_current_interval_hours" not in globals():
+    _current_interval_hours: float = 24.0
+
+# A completed thread is no longer an active handle. Clear stale state on reload
+# while retaining the event/thread pair for any worker that is still running.
+if _scheduler_thread is not None and not _scheduler_thread.is_alive():
+    _scheduler_thread = None
+    _stop_event = None
 
 
 def _ensure_backup_dir():
@@ -38,11 +49,15 @@ def schedule_periodic_backups(interval_hours: float = 24.0) -> threading.Thread:
     global _scheduler_thread, _stop_event, _current_interval_hours
     # Stop existing scheduler if running
     stop_scheduler()
-    _stop_event = threading.Event()
-    _current_interval_hours = float(interval_hours or 24.0)
+    stop_event = threading.Event()
+    interval = float(interval_hours or 24.0)
+    _stop_event = stop_event
+    _current_interval_hours = interval
 
     def _loop():
-        while not _stop_event.wait(_current_interval_hours * 3600):
+        # Each worker owns its event and interval. A replacement schedule may
+        # update module globals while this daemon is still exiting.
+        while not stop_event.wait(interval * 3600):
             create_backup()
 
     _scheduler_thread = threading.Thread(target=_loop, daemon=True, name="BackupScheduler")

@@ -22,6 +22,7 @@ from PySide6.QtCore import QPoint
 from PySide6.QtWidgets import QMessageBox, QLineEdit, QLabel, QApplication, QDialog
 from ui.theme.theme_manager import ThemeManager
 from ui.dashboard_screen import DashboardScreen
+from ui.settings_screen import TOTPEnrollmentDialog
 from ui.manage_data_screen import ManageDataScreen
 from ui.dialogs.person_dialog import PersonDialog
 from ui.dialogs.bank_dialog import BankDialog
@@ -330,7 +331,24 @@ def _run_totp_roundtrip(p):
     settings_page = p.nav("Settings")
     p.harness.settle(0.5)
 
+    enrollment = {}
+    p.expected_titles.add("TOTP Enrollment")
+
+    def copy_and_dismiss(dialog):
+        uri = dialog.uri_input.text()
+        if uri:
+            _SECRET_PATTERNS.append(uri)
+        dialog.copy_button.click()
+        enrollment["copied"] = QApplication.clipboard().text() == uri and bool(uri)
+        dialog.close_button.click()
+
+    prearm_enrollment = answer_modal_dialog(
+        p.harness, p.app, TOTPEnrollmentDialog, "TOTP Enrollment", copy_and_dismiss
+    )
     _toggle_totp_checkbox(p, settings_page, True)
+    enrollment_ok = prearm_enrollment.done and prearm_enrollment.error is None
+    p.checks.check("settings TOTP enrollment URI remains available and copyable",
+                   enrollment_ok and enrollment.get("copied", False))
     secret = _totp_secret(p)
     if secret:
         _SECRET_PATTERNS.append(secret)
@@ -375,6 +393,7 @@ def _run_restore(p):
 
     settings_page = p.nav("Settings")
     p.harness.settle(0.5)
+    master_password = read_secret("master")
 
     prearm_restore = answer_message_box(
         p.harness, p.app,
@@ -389,6 +408,19 @@ def _run_restore(p):
     )
     p.harness.settle(2.0)
     p.checks.check("settings restore confirmed", _prearm_ok(prearm_restore), str(prearm_restore.info))
+
+    from core import session
+    wait_until(p.harness, lambda: _visible_login_screen() is not None, timeout=15)
+    login_screen = _visible_login_screen()
+    p.checks.check("settings restore clears authenticated session", not session.session.is_authenticated
+                   and session.session.aes_key is None)
+    p.checks.check("settings restore requires login", login_screen is not None)
+    if login_screen is None:
+        return
+    p.dashboard = login_to_dashboard(
+        p.harness, master_pw=master_password, login_screen=login_screen
+    )
+    p.harness.window = p.dashboard
 
     after_restore = p.sql("SELECT COUNT(*) FROM Person WHERE full_name='RUIH_test'")
     p.checks.check("settings full restore removed test person", bool(after_restore) and after_restore[0][0] == 0)

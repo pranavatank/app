@@ -623,7 +623,7 @@ def get_balance_points(account_id: int, start_date: str = None, end_date: str = 
     return [dict(r) for r in rows]
 
 
-def backfill_deposit_account_numbers() -> int:
+def backfill_deposit_account_numbers(conn=None) -> int:
     """
     Backfill deposit_account_no on existing transactions with NULL values.
     Extracts from the description field using the same logic as statement parsing.
@@ -633,7 +633,9 @@ def backfill_deposit_account_numbers() -> int:
     """
     from engines.statement.assemble import normalize_account_no
 
-    conn = get_connection()
+    owns_connection = conn is None
+    if conn is None:
+        conn = get_connection()
     try:
         # Get all transactions with NULL deposit_account_no but non-null description
         rows = conn.execute("""
@@ -660,7 +662,9 @@ def backfill_deposit_account_numbers() -> int:
                 """, (account_no, transaction_id))
                 updated += 1
 
-        conn.commit()
+        if owns_connection:
+            conn.commit()
         return updated
     finally:
-        conn.close()
+        if owns_connection:
+            conn.close()

@@ -22,7 +22,7 @@ from __future__ import annotations
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QGroupBox,
     QFormLayout, QLineEdit, QCheckBox, QFileDialog,
-    QMessageBox, QScrollArea, QFrame, QGridLayout,
+    QMessageBox, QScrollArea, QFrame, QGridLayout, QPushButton, QApplication,
     QButtonGroup, QAbstractButton, QDialog,
 )
 from PySide6.QtCore import Qt, QSize, Signal, QTimer
@@ -230,6 +230,81 @@ class ThemeCard(QAbstractButton):
 # ══════════════════════════════════════════════════════════════════════════════
 # SettingsScreen
 # ══════════════════════════════════════════════════════════════════════════════
+
+class TOTPEnrollmentDialog(QDialog):
+    """Persistent enrollment URI display with an explicit clipboard action."""
+
+    def __init__(self, provisioning_uri: str, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("TOTP Enrollment")
+        self.setModal(True)
+        self.setMinimumWidth(560)
+        layout = QVBoxLayout(self)
+        instructions = QLabel(
+            "Add this account to your authenticator app. Keep this window open "
+            "until setup is complete."
+        )
+        instructions.setWordWrap(True)
+        layout.addWidget(instructions)
+
+        self.uri_input = QLineEdit(provisioning_uri)
+        self.uri_input.setReadOnly(True)
+        self.uri_input.setAccessibleName("TOTP enrollment URI")
+        self.uri_input.setToolTip("Select and copy the enrollment URI")
+        layout.addWidget(self.uri_input)
+
+        buttons = QHBoxLayout()
+        buttons.addStretch()
+        self.copy_button = QPushButton("Copy URI")
+        self.copy_button.setAccessibleName("Copy TOTP enrollment URI")
+        self.copy_button.clicked.connect(self._copy_uri)
+        buttons.addWidget(self.copy_button)
+        self.close_button = QPushButton("Done")
+        self.close_button.setAccessibleName("Close TOTP enrollment")
+        self.close_button.clicked.connect(self.accept)
+        buttons.addWidget(self.close_button)
+        layout.addLayout(buttons)
+
+    def _copy_uri(self):
+        QApplication.clipboard().setText(self.uri_input.text())
+        self.copy_button.setText("Copied")
+
+
+class RestoreRecoveryDialog(QDialog):
+    """Keep recovery instructions visible after an incomplete database restore."""
+
+    def __init__(self, recovery_path: str, parent=None):
+        super().__init__(parent)
+        self.recovery_path = recovery_path
+        self.setWindowTitle("Restore Recovery Required")
+        self.setWindowModality(Qt.WindowModality.ApplicationModal)
+        self.setMinimumWidth(620)
+        layout = QVBoxLayout(self)
+        message = QLabel(
+            "The database restore and automatic rollback both failed. The app "
+            "has been locked to prevent use of an uncertain database. Keep the "
+            "recovery snapshot below and restore it before reopening the app."
+        )
+        message.setWordWrap(True)
+        layout.addWidget(message)
+        self.path_input = QLineEdit(recovery_path)
+        self.path_input.setReadOnly(True)
+        self.path_input.setAccessibleName("Recovery snapshot path")
+        layout.addWidget(self.path_input)
+        buttons = QHBoxLayout()
+        buttons.addStretch()
+        self.copy_button = QPushButton("Copy path")
+        self.copy_button.clicked.connect(self._copy_path)
+        buttons.addWidget(self.copy_button)
+        self.close_button = QPushButton("Close app")
+        self.close_button.clicked.connect(self.close)
+        buttons.addWidget(self.close_button)
+        layout.addLayout(buttons)
+
+    def _copy_path(self):
+        QApplication.clipboard().setText(self.path_input.text())
+        self.copy_button.setText("Copied")
+
 
 class SettingsScreen(QWidget):
 
@@ -726,7 +801,7 @@ class SettingsScreen(QWidget):
         try:
             if enabled:
                 uri = enable_totp()
-                show_success(f"Scan this URI with your authenticator app:\n\n{uri}")
+                TOTPEnrollmentDialog(uri, self).exec()
             else:
                 disable_totp()
                 show_success("2FA has been disabled.")
@@ -769,14 +844,59 @@ class SettingsScreen(QWidget):
         path, _ = QFileDialog.getOpenFileName(
             self, "Select Backup File", BACKUP_DIR, "Database Files (*.db)")
         if not path: return
+        self._restore_from_path(path)
+
+    def _restore_block_reason(self):
+        """Reject restore while any dashboard page or child thread is active."""
+        root = self.parent_window or self
+        widgets = [root, *root.findChildren(QWidget)]
+        if any(bool(getattr(widget, "_busy", False)) for widget in widgets):
+            return "Wait for the current background task to finish before restoring."
+        if any(thread.isRunning() for thread in root.findChildren(QThread)):
+            return "Wait for background work to finish before restoring."
+        return None
+
+    def _restore_from_path(self, path: str) -> bool:
+        reason = self._restore_block_reason()
+        if reason:
+            QMessageBox.warning(self, "Restore Unavailable", reason)
+            return False
         try:
             from ui.widgets.loader import Loader
-            from core.database import restore_database
+            from core.database import restore_database, RestoreRecoveryError
             with Loader(self, "Restoring backup…", subtitle="Please do not close the app"):
                 restore_database(path)
-            show_success("Database restored. Please restart the app.")
+        except RestoreRecoveryError as exc:
+            session.logout()
+            self._retire_dashboard()
+            dialog = RestoreRecoveryDialog(exc.recovery_path)
+            app = QApplication.instance()
+            if app is not None:
+                app._restore_recovery_dialog = dialog
+            dialog.show()
+            return False
         except Exception as e:
             QMessageBox.critical(self, "Restore Failed", str(e))
+            return False
+
+        # The restored auth record and encrypted fields may use a different
+        # master password and AES key. Drop the old key and stale dashboard
+        # immediately, then require authentication against the restored DB.
+        session.logout()
+        from ui.login_screen import LoginScreen
+        login = LoginScreen()
+        self._retire_dashboard()
+        app = QApplication.instance()
+        if app is not None:
+            app._restore_login_screen = login
+        login.show()
+        return True
+
+    def _retire_dashboard(self):
+        dashboard = self.parent_window
+        if dashboard is not None:
+            dashboard.hide()
+            dashboard.deleteLater()
 
     def _on_manage_persons(self):
         self._show_manage_data_screen()
