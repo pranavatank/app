@@ -11,6 +11,7 @@ No speculative optimisation; all figures carry an is_estimated flag.
 """
 
 from datetime import date, timedelta
+import re
 from dateutil.relativedelta import relativedelta
 from config import fy_date_range, get_current_financial_year, FD_TDS_FORM_NAME, FD_TDS_FORM_NAME_SENIOR
 from models.transaction import get_transactions
@@ -19,6 +20,8 @@ from models.bank_account import get_accounts_for_person
 from models.form26as import get_form26as_import
 from models.ais_tis_import import get_ais_tis_data
 from engines.interest_engine import fd_interest_accrued_to, _is_senior_citizen_in_fy
+from engines.fd_allocation_engine import normalize_bank_key
+from engines.statement.assemble import normalize_account_no, deposit_account_matches
 from engines.tax_engine import _get_tax_params
 from core.database import get_connection
 
@@ -77,32 +80,33 @@ def _synthesise_fd(fd: dict) -> dict:
     return copy
 
 
-def project_fd_interest(
+def _normalise_deposit_account(value: object) -> str | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    normalised = normalize_account_no(text) or re.sub(r"[^A-Z0-9]", "", text.upper())
+    return normalised or None
+
+
+def _deposit_accounts_match(left: object, right: object) -> bool:
+    left_text, right_text = str(left or "").strip(), str(right or "").strip()
+    if not left_text or not right_text:
+        return False
+    left_known = normalize_account_no(left_text)
+    right_known = normalize_account_no(right_text)
+    if left_known and right_known:
+        return deposit_account_matches(left_text, right_text)
+    # For formats the statement normalizer does not recognize, only exact
+    # canonical equality is safe; do not apply its prefix rule by guesswork.
+    return _normalise_deposit_account(left_text) == _normalise_deposit_account(right_text)
+
+
+def _project_fd_interest_data(
     person_id: int,
     financial_year: str,
     as_of: date | None = None
-) -> dict:
-    """
-    Per-FD and total projected interest for the FY, using synthesised FDs.
-
-    Returns:
-        {
-          "total": float,
-          "known_total": float (from FDs with actual rate/maturity),
-          "estimated_total": float,
-          "estimated_fd_count": int,
-          "known_fd_count": int,
-          "per_bank": {
-            "bank_name": {
-              "total": float,
-              "known_total": float,
-              "estimated_total": float,
-              "is_estimated": bool
-            }
-          },
-          "is_estimated": bool (True if any FD is estimated)
-        }
-    """
+) -> tuple[dict, dict[tuple[str, str], tuple[str, float]]]:
+    """Return the public FD projection plus private bank/account matching data."""
     as_of = _as_of_date(as_of)
     fy_start, fy_end = fy_date_range(financial_year)
     fds = get_all_fds(person_id=person_id)
@@ -113,6 +117,7 @@ def project_fd_interest(
     estimated_count = 0
     known_count = 0
     per_bank = {}
+    per_deposit_account: dict[tuple[str, str], tuple[str, float]] = {}
     any_estimated = False
 
     for fd in fds:
@@ -133,6 +138,16 @@ def project_fd_interest(
 
             total_interest += interest
             bank_name = fd.get("bank_name") or "Unknown"
+            bank_key = normalize_bank_key(bank_name)
+            deposit_account_raw = str(fd.get("deposit_account_no") or "").strip()
+            deposit_account = _normalise_deposit_account(deposit_account_raw)
+            if bank_key and deposit_account and deposit_account_raw:
+                key = (bank_key, deposit_account)
+                previous = per_deposit_account.get(key)
+                per_deposit_account[key] = (
+                    previous[0] if previous else deposit_account_raw,
+                    (previous[1] if previous else 0.0) + interest,
+                )
 
             if bank_name not in per_bank:
                 per_bank[bank_name] = {
@@ -158,7 +173,7 @@ def project_fd_interest(
             # Skip FDs that crash (e.g., NULL maturity_date before synthesis)
             pass
 
-    return {
+    result = {
         "total": round(total_interest, 2),
         "known_total": round(known_total, 2),
         "estimated_total": round(estimated_total, 2),
@@ -167,6 +182,58 @@ def project_fd_interest(
         "per_bank": {k: {kk: round(vv, 2) if isinstance(vv, float) else vv for kk, vv in v.items()} for k, v in per_bank.items()},
         "is_estimated": any_estimated,
     }
+    return result, per_deposit_account
+
+
+def _matched_realised_fd_interest(
+    person_id: int,
+    financial_year: str,
+    as_of: date,
+    projected_by_deposit_account: dict[tuple[str, str], tuple[str, float]],
+) -> dict[tuple[str, str], float]:
+    """Map in-FY credits to a unique projected bank/account identity."""
+    if not projected_by_deposit_account:
+        return {}
+    fy_start, fy_end = fy_date_range(financial_year)
+    cutoff = min(_as_of_date(as_of), fy_end)
+    if cutoff < fy_start:
+        return {}
+
+    credited_by_account: dict[tuple[str, str], float] = {}
+    for txn in get_transactions(person_id=person_id, financial_year=financial_year, transaction_type="Income"):
+        if txn.get("category") != "FD Interest":
+            continue
+        try:
+            if date.fromisoformat(txn["transaction_date"]) > cutoff:
+                continue
+        except (ValueError, TypeError, KeyError):
+            continue
+        transaction_account = str(txn.get("deposit_account_no") or "").strip()
+        bank_key = normalize_bank_key(txn.get("bank_name") or "")
+        candidates = [
+            key for key, (fd_account, _) in projected_by_deposit_account.items()
+            if key[0] == bank_key and _deposit_accounts_match(fd_account, transaction_account)
+        ]
+        if len(candidates) == 1:
+            amount = float(txn.get("amount") or 0.0)
+            if amount > 0:
+                key = candidates[0]
+                credited_by_account[key] = credited_by_account.get(key, 0.0) + amount
+
+    return {
+        key: min(credited, projected_by_deposit_account[key][1])
+        for key, credited in credited_by_account.items()
+    }
+
+
+def project_fd_interest(
+    person_id: int,
+    financial_year: str,
+    as_of: date | None = None
+) -> dict:
+    """Per-FD and total projected interest for the FY, using synthesised FDs."""
+    result, _ = _project_fd_interest_data(person_id, financial_year, as_of)
+    return result
 
 
 def project_savings_interest(
@@ -338,6 +405,8 @@ def realised_income_to_date(
           }
         }
     """
+    fy_start, fy_end = fy_date_range(financial_year)
+    cutoff = min(_as_of_date(as_of), fy_end)
     txns = get_transactions(person_id=person_id, financial_year=financial_year, transaction_type="Income")
 
     taxable = 0.0
@@ -346,6 +415,11 @@ def realised_income_to_date(
     by_category = {}
 
     for txn in txns:
+        try:
+            if date.fromisoformat(txn["transaction_date"]) > cutoff or cutoff < fy_start:
+                continue
+        except (ValueError, TypeError, KeyError):
+            continue
         amount = float(txn.get("amount") or 0)
         category = txn.get("category") or "Unclassified"
 
@@ -429,16 +503,22 @@ def project_fy_income(
     as_of = _as_of_date(as_of)
 
     realised = realised_income_to_date(person_id, financial_year, as_of)
-    fd_interest = project_fd_interest(person_id, financial_year, as_of)
+    fd_interest, projected_by_account = _project_fd_interest_data(person_id, financial_year, as_of)
     savings_interest = project_savings_interest(person_id, financial_year, as_of)
 
     # Tax parameters: use private helper with a brief comment
     params = _get_tax_params(financial_year)  # Private helper used to load tax config from DB
     limit = float(params.get("rebate_87a_limit") or 1200000.0)
 
+    # Only credits tied to the projected FD's deposit account are included in
+    # its full-FY estimate. Unmatched FD credits remain additive.
+    matched_fd_credits = sum(_matched_realised_fd_interest(
+        person_id, financial_year, as_of, projected_by_account
+    ).values())
+    projected_fd_remaining = max(0.0, fd_interest["total"] - matched_fd_credits)
     projected_total = (
         realised["taxable"]
-        + fd_interest["total"]
+        + projected_fd_remaining
         + savings_interest["total"]
     )
 
@@ -543,17 +623,9 @@ def income_timeline(
     fy_start, fy_end = fy_date_range(financial_year)
     start_year = int(financial_year.split("-")[0])
 
-    # Calculate total projected income to date
-    total_projected = 0.0
-    realised = realised_income_to_date(person_id, financial_year, as_of)
-    fd_interest = project_fd_interest(person_id, financial_year, as_of)
-    savings_interest = project_savings_interest(person_id, financial_year, as_of)
-
-    total_projected = (
-        realised["taxable"]
-        + fd_interest["total"]
-        + savings_interest["total"]
-    )
+    # Share the same reconciled total as the headline FY projection.
+    fy_projection = project_fy_income(person_id, financial_year, as_of)
+    total_projected = fy_projection["projected_total"]
 
     months = []
     month_num = 1
@@ -588,7 +660,7 @@ def income_timeline(
             "month_name": date(2000, month, 1).strftime("%B"),
             "monthly_projected": monthly_projected,
             "cumulative_projected": round(monthly_projected * month_num, 2),
-            "is_estimated": fd_interest["is_estimated"] or savings_interest["is_estimated"],
+            "is_estimated": fy_projection["is_estimated"],
         })
 
         month_num += 1
@@ -692,7 +764,7 @@ def compare_our_data_to_itr(person_id: int, financial_year: str,
     as_of = _as_of_date(as_of)
 
     itr = itr_actuals(person_id, financial_year)
-    fd_proj = project_fd_interest(person_id, financial_year, as_of)
+    fd_proj, projected_by_account = _project_fd_interest_data(person_id, financial_year, as_of)
     savings_proj = realised_income_to_date(person_id, financial_year, as_of)
     form26as = itr.get("form26as")
 
@@ -711,7 +783,13 @@ def compare_our_data_to_itr(person_id: int, financial_year: str,
     rows = []
 
     # FD Interest row
-    our_fd_interest = fd_proj.get("total", 0.0)
+    matched_fd_credits = sum(_matched_realised_fd_interest(
+        person_id, financial_year, as_of, projected_by_account
+    ).values())
+    realised_fd_interest = savings_proj.get("by_category", {}).get("FD Interest", 0.0)
+    our_fd_interest = realised_fd_interest + max(
+        0.0, fd_proj.get("total", 0.0) - matched_fd_credits
+    )
     itr_fd_interest = itr_data.get("fd_interest", 0.0) if itr_data else 0.0
     rows.append({
         "label": "FD Interest",

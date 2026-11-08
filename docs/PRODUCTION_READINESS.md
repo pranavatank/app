@@ -8,17 +8,21 @@
 - The later P0–P5 rebuild baseline completed: preflight, backup/reset, rebuild, GUI work, engine checks, and audit. Baseline: 69 files, 735 passed, 8 skipped. This is evidence for that baseline, not closure of the release gates below.
 - Current-tree privacy scan passed with 9 tests and 2 subtests. It covers tracked files and optional local-secret checks; it does not certify repository history. Nine historical private-source paths remain.
 - Password change atomicity: 4 focused checks passed. Evidence: [`production_password_atomicity_20261108.out`](../tools/real_ui_tests/screenshots/rebuild/production_password_atomicity_20261108.out).
-- S14 password-change and relogin portion passed 7 assertions. Restore-after-change extension remains pending.
-- Restore core: 11 checks passed; routing and foreign-key handling were reviewed and approved. Native session handoff remains pending.
+- S14 native password change, relogin, pre-change restore, and restored-secret checks passed 15/15. Evidence: [`production_password_restore_gui_20261108.out`](../tools/real_ui_tests/screenshots/rebuild/production_password_restore_gui_20261108.out).
+- Settings native GUI checks passed 36/36, including TOTP enrollment/login/disable, full restore, and people/bank management. Evidence: [`production_settings_gui_20261108.out`](../tools/real_ui_tests/screenshots/rebuild/production_settings_gui_20261108.out) and [`P3_09_Settings_S.json`](../tools/real_ui_tests/screenshots/rebuild/P3_09_Settings_S.json).
+- Restore core: 11 checks passed; routing and foreign-key handling were reviewed and approved. Native R08 and R11 passed with exit code 0 and fingerprint guards passing. Evidence: [`production_prediction_gui_20261108.out`](../tools/real_ui_tests/screenshots/rebuild/production_prediction_gui_20261108.out) and [`production_refresh_gui_20261108.out`](../tools/real_ui_tests/screenshots/rebuild/production_refresh_gui_20261108.out).
 - Scheduler: 2 checks passed and review approved.
 - Independent prediction checks: 3 passed; existing chart checks: 4 passed; income-category check: 1 passed. Bank-scoped FD matching was reviewed and approved.
+- Independent planner acceptance: 1 check passed. Evidence: [`production_planner_verified_20261108.out`](../tools/real_ui_tests/screenshots/rebuild/production_planner_verified_20261108.out).
+- Clean install succeeded with the tested package versions; `pip check` found no broken requirements. Evidence: [`production_clean_install_tested_20261108.out`](../tools/real_ui_tests/screenshots/rebuild/production_clean_install_tested_20261108.out) and [`production_clean_install_check_20261108.out`](../tools/real_ui_tests/screenshots/rebuild/production_clean_install_check_20261108.out).
+- The Settings TOTP enrollment URI is presented in a persistent dialog and remains copyable; its availability was verified in the native Settings run.
 
 ## Open release gates
 
 1. **Privacy history:** nine historical private-source paths remain. The owner confirms the repository stayed local and was not distributed. Do not rewrite history in this work or claim history is clean; distribution remains gated.
-2. **S14 extension and native handoff:** complete the restore-after-change extension and verify native session handoff on a fresh scratch copy.
-3. **Installability and settings:** the installer is downloading Qt; clean-install validation remains open. Settings UI work remains in progress; display the TOTP URI transiently.
-4. **Planner acceptance:** the integrated independent planner gate is pending. Preserve established source-data facts while gathering evidence.
-5. **Later work:** full Sol UI audit and cleanup/refactor remain scheduled after the current gates, in the owner’s requested order.
+2. **Full-suite gate:** S14 restore-after-password-change and native R08/R11 checks are complete. The isolated clean-environment full suite is running; do not treat it as passed until its result is recorded. Evidence in progress: [`production_clean_suite_20261108.out`](../tools/real_ui_tests/screenshots/rebuild/production_clean_suite_20261108.out).
+3. **Installability and settings:** clean installation and dependency consistency checks passed; native Settings checks passed. Release validation remains open pending the full suite and audits.
+4. **Planner acceptance:** the independent planner check passed. Preserve established source-data facts while completing the remaining release validation.
+5. **Remaining sequence:** complete the final suite and audits, organize files and tests, refactor, then perform the full Sol UI audit.
 
 The live database and existing source-data facts remain frozen during these gates. The rebuild runbook at [`../tools/real_ui_tests/REBUILD_PLAN.md`](../tools/real_ui_tests/REBUILD_PLAN.md) and the visual handoff at [`VISUAL_TESTING_GUIDE.md`](VISUAL_TESTING_GUIDE.md) link here for the authoritative readiness status.
