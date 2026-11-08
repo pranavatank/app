@@ -113,6 +113,18 @@ def run_s(p):
     os_select_combo(p.harness, tax_page.source_combo, "AIS/TIS Data")
     p.harness.settle(0.8)
 
+    # The salary section is collapsed by default. Expand it through the same
+    # guarded OS click path used by the rest of this harness before typing.
+    salary_section = next(
+        section for section in tax_page._section_groups
+        if getattr(section, "title_text", None) == "Salary & Pension Income"
+    )
+    if not salary_section.is_expanded():
+        os_click_widget(p.harness, salary_section._header, wait=0.5)
+    p.harness.scroll_into_view(tax_page.gross_salary)
+    if not tax_page.gross_salary.isVisible():
+        raise RuntimeError("gross salary field is not visible after expanding Salary & Pension Income")
+
     os_click_widget(p.harness, tax_page.btn_calc, wait=1.2)
     p.harness.settle(0.8)
 

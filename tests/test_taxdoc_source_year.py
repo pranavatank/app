@@ -1,6 +1,6 @@
 import pytest
 
-from engines.taxdocs.period import extract_tax_period
+from engines.taxdocs.period import extract_tax_period, extract_tax_period_from_pages
 from engines.taxdocs import persist
 
 
@@ -23,6 +23,25 @@ def test_extract_tax_period_rejects_conflicting_source_labels():
         extract_tax_period("Financial Year 2025-26; Assessment Year 2025-26")
     with pytest.raises(ValueError, match="conflicting tax document years"):
         extract_tax_period("Financial Year 2024-25; Financial Year 2025-26")
+
+
+def test_report_period_ignores_historical_labeled_years_on_detail_pages():
+    pages = [
+        "Annual Information Statement\nFinancial Year 2025-26\nAssessment Year 2026-27",
+        "Transaction history\nFinancial Year 2022-23\nFinancial Year 2023-24",
+    ]
+    assert extract_tax_period_from_pages(pages) == {
+        "financial_year": "2025-26",
+        "assessment_year": "2026-27",
+    }
+
+
+def test_report_period_still_rejects_conflicting_header_labels():
+    with pytest.raises(ValueError, match="conflicting tax document years"):
+        extract_tax_period_from_pages([
+            "Financial Year 2024-25\nFinancial Year 2025-26",
+            "Financial Year 2026-27",
+        ])
 
 
 @pytest.mark.parametrize("source_type", [persist.SOURCE_TYPE_AIS, persist.SOURCE_TYPE_TIS])

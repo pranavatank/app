@@ -40,3 +40,15 @@ def extract_tax_period(text: str) -> dict:
         ay_start = int(assessment_year.split("-")[0])
         financial_year = f"{ay_start - 1}-{str(ay_start)[-2:]}"
     return {"financial_year": financial_year, "assessment_year": assessment_year}
+
+
+def extract_tax_period_from_pages(page_texts) -> dict:
+    """Return the report period from page one, where AIS/TIS print the header.
+
+    Detail pages can contain years for historical transactions. Restricting
+    extraction to the first page avoids treating those row-level periods as
+    report labels while retaining the strict conflict checks in
+    :func:`extract_tax_period` for labels that actually share the header.
+    """
+    pages = list(page_texts or [])
+    return extract_tax_period(pages[0] if pages else "")

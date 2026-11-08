@@ -1,6 +1,6 @@
 # FD Planner and real-data testing handoff
 
-**Updated:** 2026-11-07. Read this guide, then `tools/real_ui_tests/REBUILD_PLAN.md` before continuing the rebuild.
+**Updated:** 2026-11-08. Read this guide, then `tools/real_ui_tests/REBUILD_PLAN.md` before continuing the rebuild.
 This is a concise handoff for a fresh agent; old investigation history belongs in Git and ignored run logs.
 
 ## Product and data model
@@ -69,10 +69,15 @@ Overview passed; S01 Accounts passed 26/26; S02 Transactions passed 41/41. S03 I
 edit/link/unlink/delete run passed 15/15, and the picker plus geometry tests passed 3/3. S04 Fixed Deposits passed
 19/19 (`P3_04_fixed_deposits_S.json`, `P3_04_fixed_deposits_S_verified_20261107.out`). Independent checks confirmed
 live FD/transaction IDs 28/507, exact ID sets restored after scratch, and integrity `ok`. S05 Statement Import passed
-53/53 (`P3_05_statement_import_S_settingsfix_20261107.out`). For S06, a source fix is implemented and review
-approved; 24 focused tests pass (`taxdoc_year_20261107.out`). The next single command is the fresh-scratch S06 retry
-in the runbook. S07/S09, S13 GUI coverage, P3.11 hard refresh, the full suite, and P5 remain pending; S13 is an
-unverified draft.
+53/53 (`P3_05_statement_import_S_settingsfix_20261107.out`). Nov 8 native S-mode milestones: S06 tax documents
+passed 9/9 after the header fix (`P3_06_tax_documents_S_headerfix_20261108.out`); S07 tax passed 10/10
+(`P3_07_tax_S_expanded_20261108.out`); S09 settings passed 33/33 (`P3_09_settings_S_20261108.out`). The focused
+source-year file passed 13 tests (`taxdoc_header_20261108/test_taxdoc_source_year.py.log`); the wrapper also invoked
+a nonexistent file, so this does not establish a whole-runner pass. The real AIS+TIS parser passed FY2025
+(`S06_parser_fixed_20261108.out`). The S06 regression now excludes historical body-page FY mentions using first-page
+metadata while still rejecting conflicting header years. The live DB fingerprint matched its baseline
+(`tax_milestone_compare_20261108.out`). Independent review found no blocker. Next: S13 fresh-scratch run, then R11;
+full suite and P5 remain outstanding, and S13 remains an unverified draft.
 
 **Nov 7 UX work — completed.** Toast tests passed 13/13 (`notifications_final_20261107.out`) and focus tests passed
 9/9 (`ux_finish_20261107/test_theme_qss.py.log`). Broader theme checks passed 26/26 (`ux_theme_checks_20261107.out`).

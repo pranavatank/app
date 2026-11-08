@@ -7,13 +7,15 @@ Usage: python rebuild_p3_06_tax_documents.py --env R|S
 import sys
 import json
 from pathlib import Path
+from PySide6.QtCore import QTimer
+from PySide6.QtWidgets import QApplication, QLabel, QWidget
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from tools.real_ui_tests.rebuild_p3_common import P3Run, main_wrapper
 from tools.real_ui_tests.rebuild_common import (
     os_click_widget, native_file_dialog, answer_password_dialog,
-    label_scan, parse_inr, read_secret, wait_until, set_fy,
+    label_scan, parse_inr, read_secret, wait_until, set_fy, redact,
 )
 from tools.real_ui_test_harness import RealUIHarness, find_by_accessible_name
 from tools.private_sources import get_personal_data_dir
@@ -163,16 +165,51 @@ def run_s(p):
     def trigger():
         os_click_widget(p.harness, tax_page.zone_ais, wait=1.5)
 
+    # These two dialogs are expected parts of this flow; allow the watchdog to
+    # observe them without generating noise or rejecting the native picker.
+    p.expected_titles.update({"Select File", "Enter AIS Password"})
+
+    # Observe QDialog.accepted directly so a completed helper callback cannot
+    # be mistaken for a successful password-dialog acceptance.
+    from ui.dialogs.password_dialog import PasswordDialog
+    password_acceptance = {"seen": False, "accepted": False}
+    acceptance_probe = QTimer()
+    acceptance_probe.setInterval(20)
+
+    def probe_password_dialog():
+        dlg = QApplication.activeModalWidget()
+        if (isinstance(dlg, PasswordDialog) and dlg.windowTitle() == "Enter AIS Password"
+                and not password_acceptance["seen"]):
+            password_acceptance["seen"] = True
+            dlg.accepted.connect(lambda: password_acceptance.update(accepted=True))
+
+    acceptance_probe.timeout.connect(probe_password_dialog)
+    acceptance_probe.start()
     pwd_state = answer_password_dialog(p.harness, "Enter AIS Password", ais_secret, tick_save=True)
     native_file_dialog(trigger, str(ais_path), timeout=30)
     wait_until(p.harness, lambda: pwd_state["done"], timeout=90)
+    acceptance_probe.stop()
 
     p.log.log(f"AIS password: done={pwd_state['done']} typed_ok={pwd_state.get('typed_ok')} error={pwd_state.get('error')}")
     p.checks.check("ais_password done", pwd_state["done"], "")
     p.checks.check("ais_password error", pwd_state.get("error") is None, pwd_state.get("error", ""))
+    p.checks.check("ais_password accepted", password_acceptance["accepted"],
+                   "PasswordDialog did not emit accepted" if not password_acceptance["accepted"] else "")
 
-    ok = wait_until(p.harness, lambda: tax_page.zone_ais.pdf_data is not None, timeout=180, interval=0.5)
-    p.checks.check("ais_pdf_data loaded", ok, "")
+    def ais_terminal_or_loaded():
+        return (tax_page.zone_ais.pdf_data is not None or
+                tax_page.zone_ais.title_label.text().strip().lower().startswith("error:"))
+
+    ok = wait_until(p.harness, ais_terminal_or_loaded, timeout=180, interval=0.5)
+    zone_status = redact(tax_page.zone_ais.title_label.text().strip())[:240]
+    toast_text = []
+    for card in tax_page.findChildren(QWidget, "ToastCard"):
+        labels = [label.text().strip() for label in card.findChildren(QLabel) if label.text().strip()]
+        if labels:
+            toast_text.append(redact(" | ".join(labels))[:240])
+    diagnostic = f"zone_status={zone_status!r}; toast={toast_text[:3]!r}"
+    loaded = tax_page.zone_ais.pdf_data is not None
+    p.checks.check("ais_pdf_data loaded", loaded, diagnostic if not loaded else "")
     p.harness.settle(2.0)
 
     latest_row = p.sql(
