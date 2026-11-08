@@ -1,3 +1,4 @@
+from conftest import REPO_ROOT
 """
 tests/test_terminology.py — Validate that retired terminology is not used in UI strings.
 
@@ -22,7 +23,7 @@ from pathlib import Path
 
 def find_ui_files():
     """Recursively find all .py files under ui/."""
-    ui_path = Path(__file__).parent.parent / "ui"
+    ui_path = REPO_ROOT / "ui"
     return sorted(ui_path.rglob("*.py"))
 
 
@@ -124,7 +125,7 @@ def test_no_retired_credit_debit_in_ui():
             for retired, replacement in retired_terms.items():
                 if retired in content:
                     if not has_exception(file_path, content, line_num):
-                        rel_path = file_path.relative_to(Path(__file__).parent.parent)
+                        rel_path = file_path.relative_to(REPO_ROOT)
                         failures.append(
                             f"{rel_path}:{line_num} — Found retired term '{retired}' "
                             f"(use '{replacement}' instead): {repr(content[:60])}"
@@ -147,7 +148,7 @@ def test_no_retired_family_member_in_ui():
         for line_num, content, _ in strings:
             for retired, replacement in retired_terms.items():
                 if retired in content:
-                    rel_path = file_path.relative_to(Path(__file__).parent.parent)
+                    rel_path = file_path.relative_to(REPO_ROOT)
                     failures.append(
                         f"{rel_path}:{line_num} — Found retired term '{retired}' "
                         f"(use '{replacement}' instead): {repr(content[:60])}"
@@ -164,7 +165,7 @@ def test_no_balance_after_in_ui():
         strings = extract_string_literals(file_path)
         for line_num, content, _ in strings:
             if "Balance After" in content:
-                rel_path = file_path.relative_to(Path(__file__).parent.parent)
+                rel_path = file_path.relative_to(REPO_ROOT)
                 failures.append(
                     f"{rel_path}:{line_num} — Found retired term 'Balance After' "
                     f"(use 'Balance' instead): {repr(content[:60])}"
@@ -182,7 +183,7 @@ def test_no_reprocess_data_in_ui():
         for line_num, content, _ in strings:
             # Look for the specific button label (not in comments or other contexts)
             if "Reprocess Data" in content:
-                rel_path = file_path.relative_to(Path(__file__).parent.parent)
+                rel_path = file_path.relative_to(REPO_ROOT)
                 failures.append(
                     f"{rel_path}:{line_num} — Found retired term 'Reprocess Data' "
                     f"(use 'Link Transfers' instead): {repr(content[:60])}"

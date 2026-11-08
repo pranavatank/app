@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""
+r"""
 tools/test_prediction_engine.py — Standalone test suite for prediction_engine.py
 
 Tests internal consistency of prediction_engine against real DB with fixed values.

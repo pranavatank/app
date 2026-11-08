@@ -1,3 +1,4 @@
+from conftest import REPO_ROOT
 """
 tests/test_chart_db_agreement.py — Verify charts plot what the DB aggregates say.
 
@@ -34,7 +35,7 @@ from engines.prediction_engine import (
 
 # Compute the real database path at import time (absolute path from __file__)
 REAL_DB = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    str(REPO_ROOT),
     "data",
     "financial.db"
 )

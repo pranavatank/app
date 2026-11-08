@@ -11,7 +11,8 @@ from unittest.mock import patch, MagicMock
 # Set offscreen platform before importing Qt
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'
 
-sys.path.insert(0, str(__import__('pathlib').Path(__file__).parent.parent))
+from conftest import REPO_ROOT
+sys.path.insert(0, str(REPO_ROOT))
 
 from PySide6.QtWidgets import QApplication, QWidget, QLabel
 from ui.dashboard_screen import DashboardScreen, _NAV_ITEMS

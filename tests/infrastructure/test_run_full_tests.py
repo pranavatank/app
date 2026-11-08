@@ -71,7 +71,7 @@ def test_main_reports_process_exit_and_aggregate(
     output = capsys.readouterr().out
     assert exit_code == expected_exit
     assert expected_status in output
-    log_content = (tmp_path / "logs" / "test_example.py.log").read_text(
+    log_content = (tmp_path / "logs" / "tests__test_example.py.log").read_text(
         encoding="utf-8"
     )
     assert f"[run_full_tests] process exit code: {returncode}" in log_content

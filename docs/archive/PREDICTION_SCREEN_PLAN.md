@@ -1,3 +1,5 @@
+> **ARCHIVED — historical planning document; not current instructions.**
+
 # Income Prediction Screen — Plan
 
 ## The mental model (the owner's, and the whole design rests on it)

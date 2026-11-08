@@ -1,5 +1,7 @@
 # Personal Financial Manager — Audit & Rebuild Plan
 
+> **HISTORICAL SPECIFICATION — NOT A CURRENT EXECUTION PLAN.** This document preserves the audit findings, design decisions, and calculation details from the 2026 rebuild. Its task status, reset procedures, and historical measurements may be superseded. For current readiness and safe operating instructions, use [Production Readiness](PRODUCTION_READINESS.md), the [Visual Testing Guide](VISUAL_TESTING_GUIDE.md), and the current [rebuild runbook](../tools/real_ui_tests/REBUILD_PLAN.md).
+
 **Audit date:** 3 September 2026
 **Audited against:** the owner's real data in `data/PersonalData/Pranav/`
 (`26AS.pdf`, `AIS.pdf`, `TIS.pdf`, `Data 26-27.xlsx`, and four bank statements:
@@ -28,10 +30,10 @@ and extraction layers** — the code that decides what a number *means*.
 
 Measured against the owner's real documents:
 
-> ## ▶ The executable plan is [`REBUILD_PLAN.json`](REBUILD_PLAN.json)
+> ## ▶ The archived executable plan is [`archive/REBUILD_PLAN.json`](archive/REBUILD_PLAN.json)
 >
 > **This markdown file is the reasoning. The JSON is the plan.**
-> An agent should execute `REBUILD_PLAN.json` — it merges the engine-layer findings below
+> This historical plan's executable checklist is retained at `archive/REBUILD_PLAN.json`; use the current rebuild runbook for present-day procedures.
 > with a second audit pass (4 Sep 2026) that covered the **frontend** by rendering the real
 > app offscreen under PyQt6 6.11 and screenshotting all 11 screens.
 >
@@ -1167,7 +1169,7 @@ Everything else is refinement on top of a correct core.
 
 Method: the real application was rendered offscreen under PyQt6 6.11 with a seeded
 database, all 11 screens screenshotted, and theme switching timed. Full detail and the
-executable task list are in **[`REBUILD_PLAN.json`](REBUILD_PLAN.json)**.
+historical executable task list is in **[`archive/REBUILD_PLAN.json`](archive/REBUILD_PLAN.json)**.
 
 > **Caveat on the screenshots.** The offscreen platform plugin exposed **zero font
 > families**, so Qt fell back to a capitals-only stub face. All text in the captures

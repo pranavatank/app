@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""
+r"""
 tools/extraction_audit.py - Extraction quality audit for modern vs legacy parsers.
 
 Compares both parsers on three real statements and prints a table with:

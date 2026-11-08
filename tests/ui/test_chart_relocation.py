@@ -7,7 +7,8 @@ import pytest
 from PySide6.QtCore import QCoreApplication,QEvent
 
 # Add project root to path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from conftest import REPO_ROOT
+sys.path.insert(0, str(REPO_ROOT))
 
 @pytest.fixture(autouse=True)
 def close_test_screens(qapp):

@@ -1,52 +1,31 @@
-r"""tools/run_full_tests.py — Run full pytest suite with per-file subprocess isolation.
-
-Runs each test file in its own subprocess to avoid segfaults from GUI/matplotlib
-buildup on Windows/Qt stack.
-
-Usage:
-  .venv\Scripts\python.exe tools/run_full_tests.py
-  .venv\Scripts\python.exe tools/run_full_tests.py tests/test_kpi_tile.py tests/test_theme.py
-  .venv\Scripts\python.exe tools/run_full_tests.py --log-dir /tmp/logs -- -v --tb=short
-"""
-
+"""Run pytest files in isolated subprocesses, optionally by feature."""
 import sys
-for _s in (sys.stdout, sys.stderr):
+for _stream in (sys.stdout, sys.stderr):
     try:
-        _s.reconfigure(encoding="utf-8", errors="replace")
+        _stream.reconfigure(encoding="utf-8", errors="replace")
     except Exception:
         pass
 
 import argparse
-import glob
+import json
 import os
+from pathlib import Path
 import re
 import subprocess
 import tempfile
 import time
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = Path(__file__).resolve().parent.parent
+MANIFEST = ROOT / "tests" / "feature_manifest.json"
 
 
 def parse_summary_line(log_content: str) -> str | None:
-    r"""Extract pytest summary line from log output.
-
-    Searches for pattern matching r"\d+ (passed|failed|errors?|skipped|xfailed|xpassed|deselected)[^\n]* in [\d.]+s".
-    Returns the last matching line, or None if not found.
-    """
     pattern = r"\d+ (?:passed|failed|errors?|skipped|xfailed|xpassed|deselected)[^\n]* in [\d.]+s"
     matches = list(re.finditer(pattern, log_content))
-    if matches:
-        last_match = matches[-1]
-        return log_content[last_match.start():last_match.end()]
-    return None
+    return log_content[matches[-1].start():matches[-1].end()] if matches else None
 
 
 def classify_result(returncode: int, summary_line: str | None) -> str:
-    """Classify test result from pytest's process exit code.
-
-    A summary is useful diagnostics, but it cannot turn an abnormal process
-    exit (including a native crash after the summary) into a passing run.
-    """
     if returncode == 0:
         return "PASS"
     if returncode == 5:
@@ -56,111 +35,113 @@ def classify_result(returncode: int, summary_line: str | None) -> str:
     return "CRASH"
 
 
+def load_manifest(path=MANIFEST):
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    if data.get("version") != 1 or not isinstance(data.get("features"), dict):
+        raise ValueError("Unsupported test feature manifest")
+    return data
+
+
+def discover_tests(inputs=(), features=(), manifest=None):
+    """Resolve explicit files/directories and feature names to ordered test paths."""
+    manifest = manifest or load_manifest()
+    available = manifest["features"]
+    unknown = sorted(set(features) - set(available))
+    if unknown:
+        raise ValueError("Unknown feature(s): " + ", ".join(unknown))
+    candidates = []
+    for feature in features:
+        candidates.extend(available[feature])
+    for item in inputs:
+        path = Path(item)
+        if not path.is_absolute():
+            path = ROOT / path
+        if path.is_dir():
+            found = sorted(p.relative_to(ROOT).as_posix() for p in path.rglob("test_*.py"))
+            if not found:
+                raise ValueError(f"Directory contains no test_*.py files: {item}")
+            candidates.extend(found)
+        else:
+            candidates.append(path.relative_to(ROOT).as_posix() if path.is_absolute() and path.is_relative_to(ROOT) else str(item).replace("\\", "/"))
+    if not inputs and not features:
+        candidates.extend(p.relative_to(ROOT).as_posix() for p in (ROOT / "tests").rglob("test_*.py"))
+    if not candidates:
+        raise ValueError("No tests selected. Choose a non-empty feature, test directory, or test file.")
+    # Manifest entries and discovered paths must stay within the repository.
+    resolved = []
+    seen = set()
+    for item in candidates:
+        path = (ROOT / item).resolve()
+        if not path.is_relative_to(ROOT):
+            raise ValueError(f"Test path escapes repository: {item}")
+        rel = path.relative_to(ROOT).as_posix()
+        if rel not in seen:
+            seen.add(rel)
+            resolved.append((rel, str(path)))
+    return sorted(resolved)
+
+
+def _log_name(relative_path):
+    return relative_path.replace("/", "__") + ".log"
+
+
 def main() -> int:
-    """Run pytest on each test file in a subprocess."""
-    # Manually split sys.argv on the first literal "--" to separate argparse args from pytest args
-    argv_to_parse = sys.argv[1:]
+    argv = sys.argv[1:]
     extra_args = []
+    if "--" in argv:
+        split = argv.index("--")
+        extra_args, argv = argv[split + 1:], argv[:split]
+    parser = argparse.ArgumentParser(description="Run pytest files with per-file subprocess isolation")
+    parser.add_argument("paths", nargs="*", help="Test files or directories (default: all tests recursively)")
+    parser.add_argument("--feature", action="append", default=[], help="Feature from tests/feature_manifest.json; repeatable")
+    parser.add_argument("--list", action="store_true", help="List selected test paths without running them")
+    parser.add_argument("--log-dir", default=os.path.join(tempfile.gettempdir(), "finmgr_test_logs"))
+    args = parser.parse_args(argv)
+    try:
+        test_files = discover_tests(args.paths, args.feature)
+    except (ValueError, OSError, json.JSONDecodeError) as exc:
+        parser.error(str(exc))
+    if args.list:
+        for relative, _ in test_files:
+            print(relative)
+        return 0
 
-    if "--" in argv_to_parse:
-        sep_idx = argv_to_parse.index("--")
-        extra_args = argv_to_parse[sep_idx + 1:]
-        argv_to_parse = argv_to_parse[:sep_idx]
-
-    parser = argparse.ArgumentParser(
-        description="Run pytest suite with per-file subprocess isolation"
-    )
-    parser.add_argument(
-        "files",
-        nargs="*",
-        help="Test files to run (default: all tests/test_*.py)"
-    )
-    parser.add_argument(
-        "--log-dir",
-        type=str,
-        default=os.path.join(tempfile.gettempdir(), "finmgr_test_logs"),
-        help="Directory for test logs (default: temp/finmgr_test_logs)"
-    )
-
-    args = parser.parse_args(argv_to_parse)
-
-    test_files = args.files
-    if not test_files:
-        test_files = sorted(glob.glob(os.path.join(ROOT, "tests", "test_*.py")))
-
-    log_dir = args.log_dir
-    os.makedirs(log_dir, exist_ok=True)
-
+    os.makedirs(args.log_dir, exist_ok=True)
     results = {}
-    elapsed_by_status = {}
-
-    for test_file in test_files:
-        basename = os.path.basename(test_file)
-        log_path = os.path.join(log_dir, basename + ".log")
-
-        start_time = time.perf_counter()
-        print(f"Running {basename}...", flush=True)
-
+    for relative, path in test_files:
+        log_path = os.path.join(args.log_dir, _log_name(relative))
+        started = time.perf_counter()
+        print(f"Running {relative}...", flush=True)
         try:
             with open(log_path, "w", encoding="utf-8") as log_fh:
-                env = {
-                    **os.environ,
-                    "PYTHONIOENCODING": "utf-8",
-                    "QT_QPA_PLATFORM": "offscreen",
-                }
-                verbosity_flags = {"-v", "-vv", "-vvv", "--verbose"}
-                base_flags = [] if any(f in verbosity_flags for f in extra_args) else ["-q"]
-                result = subprocess.run(
-                    [sys.executable, "-m", "pytest", test_file, *base_flags, "-p", "no:cacheprovider", *extra_args],
-                    cwd=ROOT,
-                    stdout=log_fh,
-                    stderr=subprocess.STDOUT,
-                    env=env,
-                    timeout=120
-                )
-                returncode = result.returncode
-                log_fh.write(f"\n[run_full_tests] process exit code: {returncode}\n")
+                env = {**os.environ, "PYTHONIOENCODING": "utf-8", "QT_QPA_PLATFORM": "offscreen"}
+                verbosity = {"-v", "-vv", "-vvv", "--verbose"}
+                base = [] if any(flag in verbosity for flag in extra_args) else ["-q"]
+                proc = subprocess.run([sys.executable, "-m", "pytest", path, *base, "-p", "no:cacheprovider", *extra_args], cwd=ROOT, stdout=log_fh, stderr=subprocess.STDOUT, env=env, timeout=120)
+                code = proc.returncode
+                log_fh.write(f"\n[run_full_tests] process exit code: {code}\n")
+            content = Path(log_path).read_text(encoding="utf-8", errors="replace")
+            summary = parse_summary_line(content)
+            status = classify_result(code, summary)
+            details = summary
         except subprocess.TimeoutExpired:
-            elapsed = time.perf_counter() - start_time
-            results[basename] = ("TIMEOUT", None, elapsed)
-            continue
-        except Exception as e:
-            elapsed = time.perf_counter() - start_time
-            results[basename] = ("ERROR", str(e), elapsed)
-            continue
-
-        elapsed = time.perf_counter() - start_time
-
-        try:
-            with open(log_path, "r", encoding="utf-8", errors="replace") as f:
-                log_content = f.read()
-        except Exception:
-            log_content = ""
-
-        summary_line = parse_summary_line(log_content)
-        status = classify_result(returncode, summary_line)
-        results[basename] = (status, summary_line, elapsed)
+            status, details = "TIMEOUT", None
+        except Exception as exc:
+            status, details = "ERROR", str(exc)
+        results[relative] = (status, details, time.perf_counter() - started)
 
     print()
-    for basename in sorted(results.keys()):
-        status, summary_line, elapsed = results[basename]
-        summary_display = summary_line or "(no summary found)"
-        print(f"{status:30s} {basename:45s} {summary_display}  [{elapsed:.1f}s]")
-
+    for relative in sorted(results):
+        status, summary, elapsed = results[relative]
+        print(f"{status:12s} {relative:55s} {summary or '(no summary found)'} [{elapsed:.1f}s]")
     print()
-    status_counts = {}
+    counts = {}
     for status, _, _ in results.values():
-        key = status.split("(")[0].strip()
-        status_counts[key] = status_counts.get(key, 0) + 1
-
-    for status_type in sorted(status_counts.keys()):
-        print(f"{status_type}: {status_counts[status_type]}")
-
-    print(f"Logs: {log_dir}")
-
-    all_pass = all(status in ("PASS", "NO TESTS") for status, _, _ in results.values())
-
-    return 0 if all_pass else 1
+        counts[status] = counts.get(status, 0) + 1
+    for status in sorted(counts):
+        print(f"{status}: {counts[status]}")
+    print(f"Logs: {args.log_dir}")
+    return 0 if all(status in ("PASS", "NO TESTS") for status, _, _ in results.values()) else 1
 
 
 if __name__ == "__main__":

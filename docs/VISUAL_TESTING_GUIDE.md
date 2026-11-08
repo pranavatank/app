@@ -139,12 +139,10 @@ Run from the repo root in PowerShell, one command at a time. The venv is `.venv\
 # Read-only document preflight (required before reset)
 .venv\Scripts\python.exe tools\real_ui_tests\rebuild_p0_expectations.py --defer-unity
 
-# Focused tests: run individually to isolate Qt/native failures
-.venv\Scripts\python.exe -m pytest tests\test_private_sources.py -q
-.venv\Scripts\python.exe -m pytest tests\test_taxdoc_passwords.py -q
-.venv\Scripts\python.exe -m pytest tests\test_rebuild_preflight.py -q
-.venv\Scripts\python.exe -m pytest tests\test_rebuild_fd_provenance.py -q
-.venv\Scripts\python.exe -m pytest tests\test_rebuild_collection.py -q
+# Focused headless groups: run separately to isolate failures
+.venv\Scripts\python.exe tools\run_full_tests.py --feature security
+.venv\Scripts\python.exe tools\run_full_tests.py --feature tax
+.venv\Scripts\python.exe tools\run_full_tests.py --feature rebuild
 
 # Independent DB checks; use after rebuild or against a named backup as appropriate
 .venv\Scripts\python.exe tools\rebuild_verify.py --engines --tempdb

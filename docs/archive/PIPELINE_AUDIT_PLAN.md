@@ -1,3 +1,5 @@
+> **ARCHIVED — historical planning document; not current instructions.**
+
 # Pipeline Audit Plan — extraction quality, linkage, reconciliation, charts
 
 All numbers below were MEASURED on the real documents/DB, not assumed.

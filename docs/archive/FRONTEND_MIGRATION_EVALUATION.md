@@ -1,3 +1,5 @@
+> **ARCHIVED — historical planning document; not current instructions.**
+
 # Frontend migration evaluation — PyQt6 vs. alternatives
 
 **Date:** 2026-09-12

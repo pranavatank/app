@@ -84,7 +84,7 @@ The legacy comparison and other-options tabs remain informational. Their compari
 Install `requirements.txt`, then launch `python main.py` normally. Added runtime dependencies include SciPy, Beautiful Soup and truststore.
 
 ```powershell
-.venv/Scripts/python.exe -m pytest tests/test_family_workbook.py tests/test_family_fd_engine.py tests/test_official_bank_rates.py tests/test_family_planner_screen.py -q
+.venv/Scripts/python.exe tools/run_full_tests.py --feature planning
 ```
 
 The new tests cover workbook immutability, missing versus zero balances, incomplete FD terms, pooled and individual budgets, reserves, exhaustive small-case optima, savings competing with FDs, insurance including retained cash, HUF tax, solver-timeout fallback, official source parsing, stale rates, full-page navigation, interactive tree branches, background callbacks and privacy. Tests use temporary databases and synthetic fixtures. A separate local check reconciled the actual workbook plan and verified that the workbook's hash did not change.

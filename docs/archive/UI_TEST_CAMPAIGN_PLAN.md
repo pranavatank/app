@@ -1,3 +1,5 @@
+> **ARCHIVED — historical planning document; not current instructions.**
+
 
 # Real UI Test Campaign — Execution Roadmap
 

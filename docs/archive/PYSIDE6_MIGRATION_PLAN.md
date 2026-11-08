@@ -1,3 +1,5 @@
+> **ARCHIVED — historical planning document; not current instructions.**
+
 
 # PySide6 Migration + Widget UI Redesign — Execution Roadmap
 

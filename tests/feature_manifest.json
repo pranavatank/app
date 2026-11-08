@@ -1,0 +1,215 @@
+{
+  "version": 1,
+  "features": {
+    "ui": [
+      "tests/ui/test_button_hierarchy.py",
+      "tests/ui/test_chart_db_agreement.py",
+      "tests/ui/test_chart_relocation.py",
+      "tests/ui/test_dashboard_lazy.py",
+      "tests/ui/test_excel_table_enter_key.py",
+      "tests/ui/test_excel_table_parity.py",
+      "tests/ui/test_kpi_tile.py",
+      "tests/ui/test_money_label.py",
+      "tests/ui/test_readme_shortcuts.py",
+      "tests/ui/test_real_ui_click_points.py",
+      "tests/ui/test_screen_render.py",
+      "tests/ui/test_summary_panel.py",
+      "tests/ui/test_terminology.py",
+      "tests/ui/test_theme_accents.py",
+      "tests/ui/test_theme_contrast.py",
+      "tests/ui/test_theme_qss.py",
+      "tests/ui/test_theme_radius.py",
+      "tests/ui/test_toast_notifications.py",
+      "tests/ui/test_transaction_dialog_geometry.py",
+      "tests/ui/test_ui_threading.py"
+    ],
+    "rebuild": [
+      "tests/rebuild/test_rebuild_collection.py",
+      "tests/rebuild/test_rebuild_fd_provenance.py",
+      "tests/rebuild/test_rebuild_preflight.py"
+    ],
+    "tax": [
+      "tests/tax/test_form26as_parser.py",
+      "tests/tax/test_real_documents.py",
+      "tests/tax/test_tax_baseline.py",
+      "tests/tax/test_tax_wiring.py",
+      "tests/tax/test_tax.py",
+      "tests/tax/test_taxdoc_passwords.py",
+      "tests/tax/test_taxdoc_source_year.py",
+      "tests/tax/test_taxdocs_merge.py"
+    ],
+    "backup": [
+      "tests/backup/test_backup_manager_reload.py",
+      "tests/backup/test_backup_restore_safety.py"
+    ],
+    "infrastructure": [
+      "tests/infrastructure/test_feature_manifest.py",
+      "tests/infrastructure/test_hard_refresh_modules.py",
+      "tests/infrastructure/test_run_full_tests.py",
+      "tests/infrastructure/test_session_reload.py",
+      "tests/infrastructure/test_settings_save_merge.py"
+    ],
+    "statements": [
+      "tests/statements/test_bank_profiles.py",
+      "tests/statements/test_batch_import_and_ai.py",
+      "tests/statements/test_excel_mapping.py",
+      "tests/statements/test_statement_import_block.py",
+      "tests/statements/test_statement_import_flow.py",
+      "tests/statements/test_statement_package.py",
+      "tests/statements/test_statement_parser_utils.py",
+      "tests/statements/test_statement_rows.py"
+    ],
+    "income": [
+      "tests/income/test_income_categories.py",
+      "tests/income/test_income_expectation_crud.py",
+      "tests/income/test_income_expectation_dialog_geometry.py",
+      "tests/income/test_income_expectation_link_picker.py",
+      "tests/income/test_income_expectation_matching.py",
+      "tests/income/test_interest_baseline.py",
+      "tests/income/test_interest.py",
+      "tests/income/test_savings_interest.py"
+    ],
+    "accounts": [
+      "tests/accounts/test_account_holders.py"
+    ],
+    "security": [
+      "tests/security/test_audit_repository_privacy.py",
+      "tests/security/test_encryption.py",
+      "tests/security/test_password_change_atomicity.py",
+      "tests/security/test_private_sources.py",
+      "tests/security/test_settings_security_handoffs.py"
+    ],
+    "planning": [
+      "tests/planning/test_family_fd_engine.py",
+      "tests/planning/test_family_money_tree_interactions.py",
+      "tests/planning/test_family_plan_independent_constraints.py",
+      "tests/planning/test_family_planner_screen.py",
+      "tests/planning/test_family_workbook.py",
+      "tests/planning/test_fd_allocation_engine.py",
+      "tests/planning/test_fd_categorisation.py",
+      "tests/planning/test_fd_coverage_tab.py",
+      "tests/planning/test_fd_planner_dialog.py",
+      "tests/planning/test_fd_planner_math.py",
+      "tests/planning/test_fd_rate_source.py",
+      "tests/planning/test_fd_rates.py",
+      "tests/planning/test_fd_redemption.py",
+      "tests/planning/test_investment_options_tab.py",
+      "tests/planning/test_investment_options.py",
+      "tests/planning/test_official_bank_rates.py",
+      "tests/planning/test_prediction_independent_contract.py"
+    ]
+  },
+  "source_features": {
+    "ui/statement_import_screen_modern.py": [
+      "statements"
+    ],
+    "models/bank.py": [
+      "accounts",
+      "planning"
+    ],
+    "core/encryption.py": [
+      "security",
+      "tax"
+    ],
+    "ui/settings_screen.py": [
+      "security",
+      "infrastructure"
+    ],
+    "ui/tax*.py": [
+      "tax"
+    ],
+    "tools/rebuild_*.py": [
+      "rebuild",
+      "infrastructure"
+    ],
+    "core/backup_manager.py": [
+      "backup"
+    ],
+    "engines/tax_engine.py": [
+      "tax"
+    ],
+    "ui/income*.py": [
+      "income",
+      "planning"
+    ],
+    "ui/fd_*.py": [
+      "planning"
+    ],
+    "models/account_holder.py": [
+      "accounts"
+    ],
+    "ui/accounts_screen.py": [
+      "accounts",
+      "security"
+    ],
+    "engines/taxdocs/**": [
+      "tax"
+    ],
+    "engines/fd_*.py": [
+      "planning"
+    ],
+    "core/settings.py": [
+      "security",
+      "infrastructure"
+    ],
+    "core/session.py": [
+      "infrastructure",
+      "security"
+    ],
+    "models/bank_account.py": [
+      "accounts"
+    ],
+    "core/auth.py": [
+      "security",
+      "accounts",
+      "tax"
+    ],
+    "engines/prediction_engine.py": [
+      "income",
+      "planning",
+      "statements",
+      "tax"
+    ],
+    "ui/widgets/**": [
+      "ui",
+      "planning",
+      "income"
+    ],
+    "engines/statement/schema.py": [
+      "statements"
+    ],
+    "core/database.py": [
+      "accounts",
+      "security",
+      "backup",
+      "statements",
+      "tax",
+      "planning",
+      "income",
+      "rebuild",
+      "infrastructure",
+      "ui"
+    ],
+    "config.py": [
+      "accounts",
+      "security",
+      "backup",
+      "statements",
+      "tax",
+      "planning",
+      "income",
+      "rebuild",
+      "infrastructure",
+      "ui"
+    ],
+    "engines/statement/profiles/**": [
+      "statements"
+    ],
+    "engines/statement/**": [
+      "statements"
+    ],
+    "engines/interest_engine.py": [
+      "income"
+    ]
+  }
+}

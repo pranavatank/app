@@ -94,55 +94,17 @@ On first launch, you'll be prompted to:
 
 ## 📁 Project Structure
 
-```
-Financial App/
-├── core/                    # Core functionality
-│   ├── auth.py             # Authentication & security
-│   ├── database.py         # Database initialization (plaintext SQLite)
-│   ├── encryption.py       # Field-level AES-256 encryption for credentials
-│   └── session.py          # Session management
-│
-├── models/                  # Data access layer (10 tables)
-│   ├── person.py
-│   ├── bank_account.py
-│   ├── transaction.py
-│   ├── fixed_deposit.py
-│   ├── fd_interest_record.py
-│   ├── savings_interest.py
-│   ├── tax_profile.py
-│   ├── statement_import_log.py
-│   ├── ais_tis_import.py
-│   └── auth_security.py
-│
-├── engines/                 # Business logic
-│   ├── interest_engine.py  # FD & savings interest
-│   ├── tax_engine.py       # Tax calculations
-│   ├── statement_parser.py # Statement import
-│   ├── ais_tis_parser.py   # AIS/TIS JSON parser
-│   └── balance_engine.py   # Balance calculations
-│
-├── ui/                      # User interface
-│   ├── login_screen.py
-│   ├── dashboard_screen.py
-│   ├── accounts_screen.py
-│   ├── transactions_screen.py
-│   ├── income_management_screen.py
-│   ├── fixed_deposits_screen.py
-│   ├── statement_import_screen_modern.py
-│   ├── tax_documents_screen.py
-│   ├── tax_screen.py
-│   ├── settings_screen.py
-│   └── widgets/
-│       ├── summary_panel.py
-│       ├── chart_widget.py
-│       └── toast_utils.py
-│
-├── data/                    # Database (auto-created, plaintext SQLite)
-├── backups/                 # Backup copies (plaintext)
-├── main.py                  # Application entry point
-├── config.py               # Configuration & constants
-└── requirements.txt        # Dependencies
-```
+- `main.py`, `config.py` — application startup and configuration.
+- `core/` — authentication, database, encryption, backup, and session services.
+- `models/` — persisted records and data access.
+- `engines/` — financial calculations, imports, parsers, and planning logic.
+- `ui/` — PySide6 screens, dialogs, themes, and shared widgets.
+- `tests/` — automated tests; see the [test group guide](tests/README.md).
+- `tools/` — command-line utilities and the separate native UI harness; see the [tools guide](tools/README.md).
+- `docs/` — product guides and operating documentation; start at [docs/README.md](docs/README.md).
+- `data/`, `backups/` — local data locations. The database and backups are plaintext; protect them with device or volume encryption.
+
+See [docs/REPOSITORY_STRUCTURE.md](docs/REPOSITORY_STRUCTURE.md) for the organization audit and deferred code-refactor inventory.
 
 ## 🎯 Usage Guide
 

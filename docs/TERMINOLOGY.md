@@ -61,6 +61,6 @@ This document establishes a single term for each concept in the application, ens
 
 ## Test Coverage
 
-The suite `tests/test_terminology.py` validates that retired terms do not appear in user-facing strings within `ui/**/*.py` files, with documented exceptions:
+The suite `tests/ui/test_terminology.py` validates that retired terms do not appear in user-facing strings within `ui/**/*.py` files, with documented exceptions:
 - Retired terms in `ui/tax_screen.py` matching the "Taxpayer" legal-term exception are excluded.
 - Bank statement column headers during import are excluded (raw source data).

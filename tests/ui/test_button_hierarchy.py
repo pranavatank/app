@@ -15,7 +15,8 @@ import sys
 os.environ["QT_QPA_FONTDIR"] = "C:/Windows/Fonts"
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from conftest import REPO_ROOT
+sys.path.insert(0, str(REPO_ROOT))
 
 import pytest
 from PySide6.QtWidgets import QApplication, QPushButton
