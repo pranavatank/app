@@ -3,6 +3,7 @@
 **Updated:** 2026-11-08. Read this guide, then `tools/real_ui_tests/REBUILD_PLAN.md` before continuing the rebuild.
 This is a concise handoff for a fresh agent; old investigation history belongs in Git and ignored run logs.
 For current release gates and readiness status, see [`PRODUCTION_READINESS.md`](PRODUCTION_READINESS.md).
+The final isolated suite and acceptance audits are complete; the first cleanup batch removed only the validated ignored install environment and wheel cache. Public distribution remains gated by nine private-source paths in local-only Git history. Next: file/test organization, refactor, then the full Sol UI audit.
 
 ## Product and data model
 

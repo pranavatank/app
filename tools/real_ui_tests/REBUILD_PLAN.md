@@ -4,6 +4,7 @@
 figures, and safety rules. This file is the current execution checklist. Do not rely on prior run claims unless a matching
 log or independent measurement exists.
 Current release gates and readiness status are tracked in [`docs/PRODUCTION_READINESS.md`](../../docs/PRODUCTION_READINESS.md).
+Final coding and acceptance gates are complete, including the isolated suite and hash/theme/integrity/FK audit. The first cleanup batch removed only the validated ignored install environment and wheel cache; logs and the constraints snapshot remain. Public distribution remains gated by nine private-source paths in local-only Git history; next work is file/test organization, refactor, then the full Sol UI audit.
 
 ## Current status
 
@@ -23,11 +24,11 @@ Current release gates and readiness status are tracked in [`docs/PRODUCTION_READ
 | S09 Settings | **Native S passed 33/33**, `P3_09_settings_S_20261108.out`. |
 | S13 People/DOB | **Native S passed 10/10**, `P3_13_people_S_20261108.out`; synthetic DOB add/edit values were 1994-03-08 / 1996-11-23; owner DOB 2004-03-08 independently verified unchanged. |
 | Hard refresh (R11) | **Native R passed 55/55**, `P3_11_hard_refresh_R_preserved_20261108.out`; live DB fingerprint guard unchanged. Session identity/key/FY preserved and venv modules excluded. Unit checks: session reload 1 pass; selector/module eligibility 6 passes. Sol review found no blocker. |
-| Isolated baseline suite | **69 files passed:** 735 passed, 8 skipped (`full_suite_20261108.out`). The skips are 5 explicit full-DB/session-parity placeholders, 1 legacy 26AS interface placeholder, and 2 statement-flow cases without a person fixture; native S05 import already passed 53/53. |
-| Final affected regressions | **23 passed** after the formatter change: money 16, hard-refresh selector/module 6, session reload 1 (`final_regressions_20261108.out`). This was a targeted rerun; the full 69-file suite was not rerun after that last delta. |
-| P4 engines/tempdb | **Passed, exit 0**, zero JSON failures (`P4_engine_tempdb_fixed_20261108.out`). H12's deliberately tampered ciphertext remained unchanged and was skipped as expected. |
-| P5 final audit | **Passed, exit 0:** 23 current reports, zero failures, zero watchdog issues, 6 accessibility lookup observations (not confirmed defects), 77 observations (`P5_final_20261108.out`). |
-| Final data and source audit | **Passed:** 13 private hashes, exact theme bytes, SQLite integrity/FKs, 507 transactions, 28 FDs, owner DOB unchanged, changed-file syntax (`final_audit_20261108.out`). Full DB fingerprints matched `resume_20261108_before` and `complete_20261108` (`final_compare_20261108.out`). |
+| Isolated baseline and final suite | Baseline: **69 files, 735 passed, 8 skipped** (`full_suite_20261108.out`). Final clean-environment run: **76 files, 771 passed, 8 skipped**, exit 0 (`production_clean_suite_20261108.out`). The final 8 skips are retained. |
+| Final affected regressions | **23 passed** after the formatter change (`final_regressions_20261108.out`); the complete final rerun is recorded above. |
+| P4 and final engines/tempdb | P4 passed with zero JSON failures (`P4_engine_tempdb_fixed_20261108.out`); final engines/tempdb verification exited 0 (`production_final_engines_20261108.out`). |
+| P5 final collection | **Exit 0**, collected against the `resume_20261108_before` DB/preferences baseline (`production_final_collection_20261108.out`). |
+| Final data and source audit | **Passed:** hashes, theme bytes, SQLite integrity and FKs (`production_final_audit_20261108.out`). |
 
 ### Nov 7 UX checkpoint — completed
 

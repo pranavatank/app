@@ -1,6 +1,6 @@
 ﻿# Production readiness and release gates
 
-**Status date:** 2026-11-08. The application is **not production-ready**. This page is the current release handoff; it separates completed evidence from open release gates.
+**Status date:** 2026-11-08. Current coding and acceptance gates are complete. **Public production release remains blocked** because nine historical private-source paths remain in repository history; the owner confirms the repository stayed local and was not distributed. This page is the current release handoff.
 
 ## Completed evidence
 
@@ -15,14 +15,14 @@
 - Independent prediction checks: 3 passed; existing chart checks: 4 passed; income-category check: 1 passed. Bank-scoped FD matching was reviewed and approved.
 - Independent planner acceptance: 1 check passed. Evidence: [`production_planner_verified_20261108.out`](../tools/real_ui_tests/screenshots/rebuild/production_planner_verified_20261108.out).
 - Clean install succeeded with the tested package versions; `pip check` found no broken requirements. Evidence: [`production_clean_install_tested_20261108.out`](../tools/real_ui_tests/screenshots/rebuild/production_clean_install_tested_20261108.out) and [`production_clean_install_check_20261108.out`](../tools/real_ui_tests/screenshots/rebuild/production_clean_install_check_20261108.out).
+- Final isolated clean-environment suite passed: 76 files, 771 tests passed, 8 skipped. Evidence: [`production_clean_suite_20261108.out`](../tools/real_ui_tests/screenshots/rebuild/production_clean_suite_20261108.out).
+- Final engine/tempdb verification and P5 collection exited 0. P5 used the `resume_20261108_before` database/preferences baseline. Evidence: [`production_final_engines_20261108.out`](../tools/real_ui_tests/screenshots/rebuild/production_final_engines_20261108.out) and [`production_final_collection_20261108.out`](../tools/real_ui_tests/screenshots/rebuild/production_final_collection_20261108.out).
+- Final hash, theme, SQLite integrity, and foreign-key audit passed. Evidence: [`production_final_audit_20261108.out`](../tools/real_ui_tests/screenshots/rebuild/production_final_audit_20261108.out).
 - The Settings TOTP enrollment URI is presented in a persistent dialog and remains copyable; its availability was verified in the native Settings run.
 
-## Open release gates
+## Remaining release limitation and next work
 
-1. **Privacy history:** nine historical private-source paths remain. The owner confirms the repository stayed local and was not distributed. Do not rewrite history in this work or claim history is clean; distribution remains gated.
-2. **Full-suite gate:** S14 restore-after-password-change and native R08/R11 checks are complete. The isolated clean-environment full suite is running; do not treat it as passed until its result is recorded. Evidence in progress: [`production_clean_suite_20261108.out`](../tools/real_ui_tests/screenshots/rebuild/production_clean_suite_20261108.out).
-3. **Installability and settings:** clean installation and dependency consistency checks passed; native Settings checks passed. Release validation remains open pending the full suite and audits.
-4. **Planner acceptance:** the independent planner check passed. Preserve established source-data facts while completing the remaining release validation.
-5. **Remaining sequence:** complete the final suite and audits, organize files and tests, refactor, then perform the full Sol UI audit.
+1. **History and distribution:** nine historical private-source paths remain. The repository stayed local and was not distributed. Do not rewrite history here or claim it is clean; public distribution remains gated.
+2. **Next sequence:** the first cleanup batch removed the validated ignored clean-install environment and copied wheel cache; logs and tested-constraints snapshot were preserved. Organize files and tests next, then refactor, then perform the full Sol UI audit. File/test moves remain pending. See the read-only [cleanup inventory](../tools/real_ui_tests/screenshots/rebuild/cleanup_inventory_20261108.md) for candidates and migration cautions.
 
-The live database and existing source-data facts remain frozen during these gates. The rebuild runbook at [`../tools/real_ui_tests/REBUILD_PLAN.md`](../tools/real_ui_tests/REBUILD_PLAN.md) and the visual handoff at [`VISUAL_TESTING_GUIDE.md`](VISUAL_TESTING_GUIDE.md) link here for the authoritative readiness status.
+The live database and existing source-data facts remain frozen during subsequent organization/refactor work. The rebuild runbook at [`../tools/real_ui_tests/REBUILD_PLAN.md`](../tools/real_ui_tests/REBUILD_PLAN.md) and the visual handoff at [`VISUAL_TESTING_GUIDE.md`](VISUAL_TESTING_GUIDE.md) link here for the authoritative readiness status.
