@@ -50,6 +50,40 @@ _NAV_ITEMS = [
     ("FD Planner",            "fd_planner"),
 ]
 
+_RELOADABLE_APP_PACKAGES = {"core", "models", "engines", "ui"}
+
+
+def _is_reloadable_app_module(name, module, app_root):
+    """Return whether a module is Python source owned by this application.
+
+    The virtual environment lives beneath the repository, so a simple root
+    prefix check would also reload NumPy, PySide, and other native dependencies.
+    Require both an application package name and a source path beneath that
+    package's own directory; ``config.py`` is the sole root-level module.
+    """
+    package = name.partition(".")[0]
+    if package not in _RELOADABLE_APP_PACKAGES and name != "config":
+        return False
+
+    spec = getattr(module, "__spec__", None)
+    origin = getattr(spec, "origin", None) or ""
+    if not origin.lower().endswith(".py"):
+        return False
+
+    app_root = os.path.realpath(app_root)
+    origin = os.path.realpath(origin)
+    expected_source = (
+        os.path.join(app_root, package) if package in _RELOADABLE_APP_PACKAGES
+        else os.path.join(app_root, "config.py")
+    )
+    try:
+        if package == "config":
+            return os.path.normcase(origin) == os.path.normcase(expected_source)
+        common = os.path.commonpath((expected_source, origin))
+        return os.path.normcase(common) == os.path.normcase(expected_source)
+    except ValueError:  # Different drives or otherwise incomparable paths.
+        return False
+
 
 def _format_indian_number(value: float) -> str:
     """Format a number with Indian digit grouping (2,56,642 not 256,642)."""
@@ -784,11 +818,16 @@ class DashboardScreen(QMainWindow):
         self.fy_combo.clear()
         for fy in reversed(get_all_financial_years(since_year=2020)):
             self.fy_combo.addItem(fy)
-        idx = self.fy_combo.findText(get_current_financial_year())
+        # Hard refresh rebuilds selectors, but the session's chosen year should
+        # survive when it is still one of the available financial years.
+        idx = self.fy_combo.findText(session.selected_fy)
+        if idx < 0:
+            idx = self.fy_combo.findText(get_current_financial_year())
         if idx >= 0:
             self.fy_combo.setCurrentIndex(idx)
         self.fy_combo.blockSignals(False)
-        session.set_financial_year(self.fy_combo.currentText())
+        if self.fy_combo.currentText():
+            session.set_financial_year(self.fy_combo.currentText())
         self._sync_context_selectors()
 
     def _sync_context_selectors(self):
@@ -1071,12 +1110,11 @@ class DashboardScreen(QMainWindow):
     def _on_hard_refresh(self):
         """Reload all Python modules and rebuild the dashboard in-place."""
         import importlib, sys
-        # Reload every app module (skip stdlib / site-packages)
+        # Reload only first-party Python modules. The venv is under the repo,
+        # so checking the repository path alone would reload native packages.
         app_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         for name, mod in list(sys.modules.items()):
-            spec = getattr(mod, "__spec__", None)
-            origin = getattr(spec, "origin", None) or ""
-            if origin.startswith(app_root) and name not in ("__main__",):
+            if _is_reloadable_app_module(name, mod, app_root):
                 try:
                     importlib.reload(mod)
                 except Exception:

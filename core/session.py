@@ -118,4 +118,12 @@ class Session:
 
 
 # Global session instance — import this everywhere
-session = Session()
+_live_session = globals().get("session")
+if _live_session is None:
+    session = Session()
+else:
+    # The dashboard's hard refresh reloads this module in place. Keep the same
+    # object so existing imports still share authenticated in-memory state,
+    # while rebinding its class exposes methods from the reloaded definition.
+    _live_session.__class__ = Session
+    session = _live_session
