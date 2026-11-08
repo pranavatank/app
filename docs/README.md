@@ -9,7 +9,7 @@
 - [Terminology](TERMINOLOGY.md) — preferred product language.
 - [Production readiness](PRODUCTION_READINESS.md) — current release gates and evidence.
 - [Visual testing guide](VISUAL_TESTING_GUIDE.md) — current rebuild context and safe UI procedures.
-- [Rebuild runbook](../tools/real_ui_tests/REBUILD_PLAN.md) — current rebuild execution guide.
+- [Rebuild runbook](native/REBUILD_PLAN.md) — current rebuild execution guide.
 - [Audit and rebuild specification](AUDIT_AND_REBUILD_PLAN.md) — retained historical decisions and calculation specifications referenced by current code.
 
 ## Historical plans

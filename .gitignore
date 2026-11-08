@@ -58,8 +58,8 @@ build/
 dist/
 *.egg-info/
 
-# Real UI test screenshots (generated evidence, not source)
-tools/real_ui_tests/screenshots/
+# Generated evidence, validation reports, and per-run test logs
+artifacts/
 
 # Locally checked public rates expire; refresh rather than bundle as current
 data/family_bank_rates.json

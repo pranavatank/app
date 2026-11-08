@@ -64,7 +64,7 @@ Units 4-6 each take over the screen and MUST NOT run concurrently.
 ## Ground rules
 - Back up `data/financial.db` before any writing unit; restore = copy back, app closed.
 - Never commit `data/PersonalData/**`, `data/financial.db`, the passwords or the PAN.
-- UI tests: `tools/real_ui_test_harness.py`; read `docs/VISUAL_TESTING_GUIDE.md`
+- UI tests: `tests/support/real_ui_test_harness.py`; read `docs/VISUAL_TESTING_GUIDE.md`
   (§3.4 scroll, §3.5 cross-check widget state not screenshots, §3.8 pre-arm
   `QTimer.singleShot(0, cb)` before a modal, §6 new-test rules). Real maximized
   window, UTF-8 stdout, always-runs teardown. `findChildren()` takes ONE type.

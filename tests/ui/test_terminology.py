@@ -1,4 +1,4 @@
-from conftest import REPO_ROOT
+from tests.support.repo_paths import REPO_ROOT
 """
 tests/test_terminology.py — Validate that retired terminology is not used in UI strings.
 

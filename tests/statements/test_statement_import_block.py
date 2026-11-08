@@ -13,7 +13,7 @@ import sys
 os.environ["QT_QPA_FONTDIR"] = "C:/Windows/Fonts"
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
-from conftest import REPO_ROOT
+from tests.support.repo_paths import REPO_ROOT
 sys.path.insert(0, str(REPO_ROOT))
 
 import pytest

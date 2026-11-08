@@ -1,4 +1,4 @@
-from conftest import REPO_ROOT
+from tests.support.repo_paths import REPO_ROOT
 """
 tests/test_chart_db_agreement.py — Verify charts plot what the DB aggregates say.
 

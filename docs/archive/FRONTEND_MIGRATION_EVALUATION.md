@@ -3,7 +3,7 @@
 # Frontend migration evaluation — PyQt6 vs. alternatives
 
 **Date:** 2026-09-12
-**Trigger:** Real-click UI testing (`tools/real_ui_test_harness.py`) hit repeated
+**Trigger:** Real-click UI testing (`tests/support/real_ui_test_harness.py`) hit repeated
 flakiness — misclicks from blind pixel coordinates, DPI-scaling (125% Windows
 display scaling) translation bugs, and Windows focus-stealing prevention
 blocking programmatic window focus. That testing problem is **already fixed** in

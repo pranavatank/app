@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from tools.real_ui_tests import rebuild_p5_collect as collector
+from tests.native import rebuild_p5_collect as collector
 
 
 @pytest.fixture

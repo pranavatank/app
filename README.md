@@ -95,16 +95,17 @@ On first launch, you'll be prompted to:
 ## 📁 Project Structure
 
 - `main.py`, `config.py` — application startup and configuration.
-- `core/` — authentication, database, encryption, backup, and session services.
+- `core/` — authentication, database, encryption, backup, and session services; database migration/seed helpers are in `core/database_migrations.py`.
 - `models/` — persisted records and data access.
 - `engines/` — financial calculations, imports, parsers, and planning logic.
 - `ui/` — PySide6 screens, dialogs, themes, and shared widgets.
-- `tests/` — automated tests; see the [test group guide](tests/README.md).
-- `tools/` — command-line utilities and the separate native UI harness; see the [tools guide](tools/README.md).
+- `tests/` — headless tests, native GUI scripts (`tests/native/`), and shared support (`tests/support/`); see the [test group guide](tests/README.md).
+- `tools/` — command-line diagnostics and maintenance utilities, including the headless test runner; see the [tools guide](tools/README.md).
+- `artifacts/` — ignored generated native evidence and timestamped headless runner logs.
 - `docs/` — product guides and operating documentation; start at [docs/README.md](docs/README.md).
 - `data/`, `backups/` — local data locations. The database and backups are plaintext; protect them with device or volume encryption.
 
-See [docs/REPOSITORY_STRUCTURE.md](docs/REPOSITORY_STRUCTURE.md) for the organization audit and deferred code-refactor inventory.
+The bounded extractions also placed `ThemeCard` in `ui/widgets/theme_card.py` and TOTP/restore-recovery dialogs in `ui/dialogs/settings_security.py`; compatibility exports preserve their previous import paths. See [docs/REPOSITORY_STRUCTURE.md](docs/REPOSITORY_STRUCTURE.md) for the organization audit and remaining broader refactor inventory.
 
 ## 🎯 Usage Guide
 

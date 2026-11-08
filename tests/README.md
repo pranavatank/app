@@ -13,6 +13,8 @@ From the repository root:
 - A feature directory or explicit file: `python tools/run_full_tests.py tests/statements` or `python tools/run_full_tests.py tests/statements/test_statement_rows.py`
 - Pass pytest options after `--`: `python tools/run_full_tests.py --feature ui -- -v --tb=short`
 
+Headless runner logs are written to an ignored per-run folder at `artifacts/pytest/<UTC timestamp>/`; pass `--log-dir` to choose another location. Native screenshots and rebuild evidence use `artifacts/native/`.
+
 Feature names are `accounts`, `security`, `backup`, `statements`, `tax`, `planning`, `income`, `rebuild`, `infrastructure`, and `ui`. `pytest` collection is limited to `tests/`; operational scripts and native UI harnesses under `tools/` are not pytest targets.
 
 ## Rerun matrix
@@ -36,7 +38,7 @@ For precise recommendations, match changed source paths against `source_features
 
 ## Native UI regressions
 
-Headless pytest does not cover all native Windows flows. The native S-mode feature reports run through the fresh scratch wrapper described in the [real-UI runbook](../tools/real_ui_tests/REBUILD_PLAN.md). For each flow, run `python tools/real_ui_tests/run_on_scratch.py --fresh tools/real_ui_tests/<script>` so mutations stay on fresh scratch data.
+Headless pytest does not cover all native Windows flows. The native S-mode feature reports run through the fresh scratch wrapper described in the [real-UI runbook](../tests/native/REBUILD_PLAN.md). For each flow, run `python tests/native/run_on_scratch.py --fresh tests/native/<script>` so mutations stay on fresh scratch data.
 
 | Flow | Native script |
 |---|---|

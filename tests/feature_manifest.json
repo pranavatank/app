@@ -45,6 +45,7 @@
     "infrastructure": [
       "tests/infrastructure/test_feature_manifest.py",
       "tests/infrastructure/test_hard_refresh_modules.py",
+      "tests/infrastructure/test_repo_paths.py",
       "tests/infrastructure/test_run_full_tests.py",
       "tests/infrastructure/test_session_reload.py",
       "tests/infrastructure/test_settings_save_merge.py"
@@ -118,7 +119,7 @@
     "ui/tax*.py": [
       "tax"
     ],
-    "tools/rebuild_*.py": [
+    "tests/native/rebuild*.py": [
       "rebuild",
       "infrastructure"
     ],
@@ -188,6 +189,28 @@
       "income",
       "rebuild",
       "infrastructure",
+      "ui"
+    ],
+    "core/database_migrations.py": [
+      "accounts",
+      "security",
+      "backup",
+      "statements",
+      "tax",
+      "planning",
+      "income",
+      "rebuild",
+      "infrastructure",
+      "ui"
+    ],
+    "ui/dialogs/**": [
+      "accounts",
+      "security",
+      "backup",
+      "statements",
+      "tax",
+      "planning",
+      "income",
       "ui"
     ],
     "config.py": [

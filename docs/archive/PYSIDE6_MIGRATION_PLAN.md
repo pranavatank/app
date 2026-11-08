@@ -382,19 +382,19 @@ Every file under `tests/` and `tools/` that contains the string `PyQt6`. Find th
 ```
 grep -rln "PyQt6" tests/ tools/
 ```
-Known members include `tests/conftest.py`, `tests/test_button_hierarchy.py`, `tests/test_chart_relocation.py`, `tests/test_dashboard_lazy.py`, `tests/test_excel_mapping.py`, `tests/test_excel_table_enter_key.py`, `tests/test_excel_table_parity.py`, `tests/test_kpi_tile.py`, `tests/test_money_label.py`, `tests/test_readme_shortcuts.py`, `tests/test_screen_render.py`, `tests/test_statement_import_flow.py`, `tests/test_summary_panel.py`, `tests/test_theme_qss.py`, `tests/test_ui_threading.py`, `tools/real_ui_test_harness.py`, `tools/real_ui_tests/test_add_person_flow.py`. Use the grep result as the authoritative list, not this one.
+Known members include `tests/conftest.py`, `tests/test_button_hierarchy.py`, `tests/test_chart_relocation.py`, `tests/test_dashboard_lazy.py`, `tests/test_excel_mapping.py`, `tests/test_excel_table_enter_key.py`, `tests/test_excel_table_parity.py`, `tests/test_kpi_tile.py`, `tests/test_money_label.py`, `tests/test_readme_shortcuts.py`, `tests/test_screen_render.py`, `tests/test_statement_import_flow.py`, `tests/test_summary_panel.py`, `tests/test_theme_qss.py`, `tests/test_ui_threading.py`, `tests/support/real_ui_test_harness.py`, `tests/native/test_add_person_flow.py`. Use the grep result as the authoritative list, not this one.
 
 **Do not touch `.venv/`.** Restrict every operation to `tests/` and `tools/`.
 
 ### Transformations
 1. **Transformation A:** `from PyQt6.QtCore import ...` → `from PySide6.QtCore import ...`; same for `QtGui`, `QtWidgets`, and **`QtTest`**.
    * `tests/test_statement_import_flow.py:21` — `from PyQt6.QtTest import QTest` → `from PySide6.QtTest import QTest`
-   * `tools/real_ui_test_harness.py:100` — `from PyQt6.QtTest import QTest` → `from PySide6.QtTest import QTest`
+   * `tests/support/real_ui_test_harness.py:100` — `from PyQt6.QtTest import QTest` → `from PySide6.QtTest import QTest`
    * `PySide6.QtTest` exists and exports `QTest` with the same `QTest.keyClick`, `QTest.mouseClick`, `QTest.qWait` surface used here.
 2. **Transformation B:** `pyqtSignal` → `Signal` if present (whole-word).
 3. **Transformation C:** update `PyQt6` in comments/docstrings to `PySide6` **only** where the sentence describes the binding the code runs against. Two known cases to handle:
-   * `tools/real_ui_test_harness.py` contains a docstring line "Since this app is a normal on-screen (non-offscreen) PyQt6 window running in the…" → change `PyQt6` to `PySide6`.
-   * `tools/real_ui_test_harness.py:124` and `:259` reference `QDialog.exec()` / `app.exec()` in prose — those are still accurate; leave the sentences alone except for the `PyQt6` word if present.
+   * `tests/support/real_ui_test_harness.py` contains a docstring line "Since this app is a normal on-screen (non-offscreen) PyQt6 window running in the…" → change `PyQt6` to `PySide6`.
+   * `tests/support/real_ui_test_harness.py:124` and `:259` reference `QDialog.exec()` / `app.exec()` in prose — those are still accurate; leave the sentences alone except for the `PyQt6` word if present.
    * Leave narrative comments that record *past* audit methodology unchanged.
 
 ### Step 4.4 — `tests/conftest.py` binding pin
@@ -421,7 +421,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 ```
 Nothing else in `conftest.py` changes. Do not touch the `setup_test_database` fixture or its temp-dir/DB-path patching.
 
-### Step 4.5 — `tools/real_ui_test_harness.py` binding pin
+### Step 4.5 — `tests/support/real_ui_test_harness.py` binding pin
 This file is an independent entry point. Add, as the first executable statement after its imports of `os`/`sys` and **before** the `from PySide6.QtTest import QTest` on line 100 and before any other Qt import in the file:
 ```python
 os.environ.setdefault("QT_API", "pyside6")
@@ -436,7 +436,7 @@ If `import os` is not already at the top of the file, add it to the existing top
 
 ### Hazards for Unit 4
 * A naive project-wide `sed` will hit `.venv/` (which contains matplotlib's `qt_compat.py` and qtpy, both of which legitimately reference `PyQt6`). **Scope every operation to `tests/` and `tools/` explicitly.**
-* `tools/real_ui_tests/test_add_person_flow.py` uses `QTimer.singleShot(0, _fill_and_save_person_dialog)` at line 117 to pre-schedule work before a blocking `dlg.exec()`. This pattern works identically in PySide6. Do not change it.
+* `tests/native/test_add_person_flow.py` uses `QTimer.singleShot(0, _fill_and_save_person_dialog)` at line 117 to pre-schedule work before a blocking `dlg.exec()`. This pattern works identically in PySide6. Do not change it.
 * One PySide6 behaviour worth knowing but **not** worth pre-emptively coding around: PySide6 keeps a reference to a signal's Python receiver differently from PyQt6 in some lambda-connection cases. In *this* codebase every `.connect()` target is either a bound method of a long-lived widget or a lambda capturing loop variables by default-argument — neither is at risk. **Do not add `functools.partial` rewrites or explicit reference-holding to "fix" a problem that does not exist here.** If a specific crash surfaces later, that is the separate testing effort's problem.
 * After finishing, `grep -rn "PyQt6" tests/ tools/` must return nothing. Do **not** run pytest.
 
@@ -887,19 +887,19 @@ Every file under `tests/` and `tools/` that contains the string `PyQt6`. Find th
 ```
 grep -rln "PyQt6" tests/ tools/
 ```
-Known members include `tests/conftest.py`, `tests/test_button_hierarchy.py`, `tests/test_chart_relocation.py`, `tests/test_dashboard_lazy.py`, `tests/test_excel_mapping.py`, `tests/test_excel_table_enter_key.py`, `tests/test_excel_table_parity.py`, `tests/test_kpi_tile.py`, `tests/test_money_label.py`, `tests/test_readme_shortcuts.py`, `tests/test_screen_render.py`, `tests/test_statement_import_flow.py`, `tests/test_summary_panel.py`, `tests/test_theme_qss.py`, `tests/test_ui_threading.py`, `tools/real_ui_test_harness.py`, `tools/real_ui_tests/test_add_person_flow.py`. Use the grep result as the authoritative list, not this one.
+Known members include `tests/conftest.py`, `tests/test_button_hierarchy.py`, `tests/test_chart_relocation.py`, `tests/test_dashboard_lazy.py`, `tests/test_excel_mapping.py`, `tests/test_excel_table_enter_key.py`, `tests/test_excel_table_parity.py`, `tests/test_kpi_tile.py`, `tests/test_money_label.py`, `tests/test_readme_shortcuts.py`, `tests/test_screen_render.py`, `tests/test_statement_import_flow.py`, `tests/test_summary_panel.py`, `tests/test_theme_qss.py`, `tests/test_ui_threading.py`, `tests/support/real_ui_test_harness.py`, `tests/native/test_add_person_flow.py`. Use the grep result as the authoritative list, not this one.
 
 **Do not touch `.venv/`.** Restrict every operation to `tests/` and `tools/`.
 
 ### Transformations
 1. **Transformation A:** `from PyQt6.QtCore import ...` → `from PySide6.QtCore import ...`; same for `QtGui`, `QtWidgets`, and **`QtTest`**.
    * `tests/test_statement_import_flow.py:21` — `from PyQt6.QtTest import QTest` → `from PySide6.QtTest import QTest`
-   * `tools/real_ui_test_harness.py:100` — `from PyQt6.QtTest import QTest` → `from PySide6.QtTest import QTest`
+   * `tests/support/real_ui_test_harness.py:100` — `from PyQt6.QtTest import QTest` → `from PySide6.QtTest import QTest`
    * `PySide6.QtTest` exists and exports `QTest` with the same `QTest.keyClick`, `QTest.mouseClick`, `QTest.qWait` surface used here.
 2. **Transformation B:** `pyqtSignal` → `Signal` if present (whole-word).
 3. **Transformation C:** update `PyQt6` in comments/docstrings to `PySide6` **only** where the sentence describes the binding the code runs against. Two known cases to handle:
-   * `tools/real_ui_test_harness.py` contains a docstring line "Since this app is a normal on-screen (non-offscreen) PyQt6 window running in the…" → change `PyQt6` to `PySide6`.
-   * `tools/real_ui_test_harness.py:124` and `:259` reference `QDialog.exec()` / `app.exec()` in prose — those are still accurate; leave the sentences alone except for the `PyQt6` word if present.
+   * `tests/support/real_ui_test_harness.py` contains a docstring line "Since this app is a normal on-screen (non-offscreen) PyQt6 window running in the…" → change `PyQt6` to `PySide6`.
+   * `tests/support/real_ui_test_harness.py:124` and `:259` reference `QDialog.exec()` / `app.exec()` in prose — those are still accurate; leave the sentences alone except for the `PyQt6` word if present.
    * Leave narrative comments that record *past* audit methodology unchanged.
 
 ### Step 4.4 — `tests/conftest.py` binding pin
@@ -926,7 +926,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 ```
 Nothing else in `conftest.py` changes. Do not touch the `setup_test_database` fixture or its temp-dir/DB-path patching.
 
-### Step 4.5 — `tools/real_ui_test_harness.py` binding pin
+### Step 4.5 — `tests/support/real_ui_test_harness.py` binding pin
 This file is an independent entry point. Add, as the first executable statement after its imports of `os`/`sys` and **before** the `from PySide6.QtTest import QTest` on line 100 and before any other Qt import in the file:
 ```python
 os.environ.setdefault("QT_API", "pyside6")
@@ -941,7 +941,7 @@ If `import os` is not already at the top of the file, add it to the existing top
 
 ### Hazards for Unit 4
 * A naive project-wide `sed` will hit `.venv/` (which contains matplotlib's `qt_compat.py` and qtpy, both of which legitimately reference `PyQt6`). **Scope every operation to `tests/` and `tools/` explicitly.**
-* `tools/real_ui_tests/test_add_person_flow.py` uses `QTimer.singleShot(0, _fill_and_save_person_dialog)` at line 117 to pre-schedule work before a blocking `dlg.exec()`. This pattern works identically in PySide6. Do not change it.
+* `tests/native/test_add_person_flow.py` uses `QTimer.singleShot(0, _fill_and_save_person_dialog)` at line 117 to pre-schedule work before a blocking `dlg.exec()`. This pattern works identically in PySide6. Do not change it.
 * One PySide6 behaviour worth knowing but **not** worth pre-emptively coding around: PySide6 keeps a reference to a signal's Python receiver differently from PyQt6 in some lambda-connection cases. In *this* codebase every `.connect()` target is either a bound method of a long-lived widget or a lambda capturing loop variables by default-argument — neither is at risk. **Do not add `functools.partial` rewrites or explicit reference-holding to "fix" a problem that does not exist here.** If a specific crash surfaces later, that is the separate testing effort's problem.
 * After finishing, `grep -rn "PyQt6" tests/ tools/` must return nothing. Do **not** run pytest.
 

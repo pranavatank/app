@@ -8,7 +8,9 @@ def test_manifest_covers_every_test_module_once():
     manifest = run_full_tests.load_manifest()
     listed = [path for paths in manifest["features"].values() for path in paths]
     actual = sorted(p.relative_to(run_full_tests.ROOT).as_posix()
-                    for p in (run_full_tests.ROOT / "tests").rglob("test_*.py"))
+                    for p in (run_full_tests.ROOT / "tests").rglob("test_*.py")
+                    if p.relative_to(run_full_tests.ROOT / "tests").parts[0]
+                    not in {"native", "support"})
     assert sorted(listed) == actual
     assert len(listed) == len(set(listed))
     assert manifest["source_features"]

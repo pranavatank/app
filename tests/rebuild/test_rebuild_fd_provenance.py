@@ -4,7 +4,7 @@ import sqlite3
 
 import pytest
 
-from tools.real_ui_tests.rebuild_p2_8_fd_origin import validate_fd_provenance
+from tests.native.rebuild_p2_8_fd_origin import validate_fd_provenance
 
 
 @pytest.fixture

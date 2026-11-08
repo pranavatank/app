@@ -23,6 +23,33 @@ def test_native_crash_after_clean_summary_is_still_crash(returncode):
     assert run_full_tests.classify_result(returncode, "1 passed in 0.01s") == "CRASH"
 
 
+def test_manifest_cannot_select_native_or_support_scripts():
+    manifest = {"features": {"bad": ["tests/native/test_ui.py"]}}
+    with pytest.raises(ValueError, match="not headless test targets"):
+        run_full_tests.discover_tests(features=["bad"], manifest=manifest)
+
+
+def test_directory_discovery_skips_native_and_support(tmp_path, monkeypatch):
+    native = tmp_path / "tests" / "native"
+    support = tmp_path / "tests" / "support"
+    native.mkdir(parents=True)
+    support.mkdir()
+    (native / "test_native.py").write_text("", encoding="utf-8")
+    (support / "test_helper.py").write_text("", encoding="utf-8")
+    monkeypatch.setattr(run_full_tests, "ROOT", tmp_path)
+    manifest = {"features": {}}
+    with pytest.raises(ValueError, match="contains no test_"):
+        run_full_tests.discover_tests(inputs=["tests/native"], manifest=manifest)
+    with pytest.raises(ValueError, match="not headless test targets"):
+        run_full_tests.discover_tests(inputs=["tests/support/test_helper.py"], manifest=manifest)
+
+
+def test_default_discovery_excludes_native_and_support_tree():
+    paths = run_full_tests.discover_tests()
+    assert paths
+    assert all("/native/" not in rel and "/support/" not in rel for rel, _ in paths)
+
+
 def _run_main(tmp_path, monkeypatch, test_files, run_side_effect):
     log_dir = tmp_path / "logs"
     monkeypatch.setattr(

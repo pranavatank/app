@@ -1,7 +1,7 @@
 """Focused pure checks for fresh-rebuild source validation helpers."""
 import pytest
 
-from tools.real_ui_tests.rebuild_preflight import (
+from tests.native.rebuild_preflight import (
     assessment_year_fields, matching_document_year_fields,
     normalize_assessment_year, require_master_credential, validate_person_seed, validate_statement_rows,
 )

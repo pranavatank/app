@@ -7,7 +7,7 @@ import numpy as np
 
 os.environ.setdefault("QT_QPA_FONTDIR", "C:/Windows/Fonts")
 
-from conftest import REPO_ROOT
+from tests.support.repo_paths import REPO_ROOT
 sys.path.insert(0, str(REPO_ROOT))
 
 from PySide6.QtGui import QImage

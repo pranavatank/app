@@ -2,7 +2,7 @@ from PySide6.QtCore import QPoint, Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QCheckBox, QComboBox, QPushButton
 
-from tools.real_ui_tests.rebuild_common import _combo_arrow_local_point, _os_click_local_point
+from tests.native.rebuild_common import _combo_arrow_local_point, _os_click_local_point
 
 
 def test_wide_checkbox_uses_its_indicator_as_os_click_target(qapp):

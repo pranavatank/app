@@ -1,6 +1,6 @@
 # Personal Financial Manager — Audit & Rebuild Plan
 
-> **HISTORICAL SPECIFICATION — NOT A CURRENT EXECUTION PLAN.** This document preserves the audit findings, design decisions, and calculation details from the 2026 rebuild. Its task status, reset procedures, and historical measurements may be superseded. For current readiness and safe operating instructions, use [Production Readiness](PRODUCTION_READINESS.md), the [Visual Testing Guide](VISUAL_TESTING_GUIDE.md), and the current [rebuild runbook](../tools/real_ui_tests/REBUILD_PLAN.md).
+> **HISTORICAL SPECIFICATION — NOT A CURRENT EXECUTION PLAN.** This document preserves the audit findings, design decisions, and calculation details from the 2026 rebuild. Its task status, reset procedures, and historical measurements may be superseded. For current readiness and safe operating instructions, use [Production Readiness](PRODUCTION_READINESS.md), the [Visual Testing Guide](VISUAL_TESTING_GUIDE.md), and the current [rebuild runbook](native/REBUILD_PLAN.md).
 
 **Audit date:** 3 September 2026
 **Audited against:** the owner's real data in `data/PersonalData/Pranav/`

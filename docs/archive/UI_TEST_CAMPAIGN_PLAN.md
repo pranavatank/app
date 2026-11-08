@@ -15,15 +15,15 @@ This is a **testing campaign against a PySide6 desktop app at `D:\Pranav\app`** 
 > **You must NOT modify any application code.** Not `ui/`, not `models/`, not `engines/`, not `core/`, not `config.py`. If a test reveals a bug in the app, **write it down in the findings log and move on to the next check in your unit.** Do not "just quickly fix" anything, even a one-liner, even if it is obviously wrong.
 >
 > **The only files you may create or modify are:**
-> - new test scripts under `tools/real_ui_tests/`
+> - new test scripts under `tests/native/`
 > - your own test script, if the *script* is wrong (wrong accessible name, wrong assertion)
 > - the "Findings log" section at the bottom of `docs/VISUAL_TESTING_GUIDE.md` (append only — never delete a prior entry)
-> - `tools/real_ui_tests/screenshots/` (generated images)
+> - `artifacts/native/` (generated images)
 
 ### 0.3 THE DATABASE IS REAL USER DATA
 This project's SQLite database contains the owner's **real financial records**. It is **not** a disposable fixture.
 - Never call a bulk delete, never truncate, never "reset" anything.
-- Any row your test creates, your test must delete, in a cleanup path that runs on **both** success and failure (see `report()` in `tools/real_ui_tests/test_add_person_flow.py`).
+- Any row your test creates, your test must delete, in a cleanup path that runs on **both** success and failure (see `report()` in `tests/native/test_add_person_flow.py`).
 - For a **destructive** test (Delete Selected / delete a row): **create your own row first, record its ID, delete only that ID, and assert the total row count went back to exactly its pre-test value.** Never select an existing row and delete it.
 - Prefix every test-created record with `RUIH_` so orphans from an interrupted run are identifiable by hand.
 
@@ -41,7 +41,7 @@ Then, exactly as in the template: build `SHOT_DIR`, a `failures` list, a `check(
 
 ### 0.5 Run command
 ```
-.venv/Scripts/python tools/real_ui_tests/<your_test_file>.py
+.venv/Scripts/python tests/native/<your_test_file>.py
 ```
 Run from `D:\Pranav\app`. Each test must exit on its own, leaving no window open.
 
@@ -87,14 +87,14 @@ Use exactly this shape:
 ```markdown
 ### 2026-09-18 — Unit N: <unit name>
 
-**Ran:** `tools/real_ui_tests/<file>.py` (theme: Aurora, dpr: <value>, maximized)
+**Ran:** `tests/native/<file>.py` (theme: Aurora, dpr: <value>, maximized)
 **Result:** <N> checks passed, <M> failed.
 
 #### FINDING N.1 — <short title> [BUG | NOT-A-BUG | UNCONFIRMED | TEST-HARNESS-ONLY]
 - **What I did:** <exact clicks/typing, in order, with the accessible names used>
 - **Expected:** <what should have happened>
 - **Observed (widget/DB state):** <exact values: stack.currentIndex()==0, page_title_lbl.text()=='Settings', DB row count 7 -> 7>
-- **Observed (screenshot):** `tools/real_ui_tests/screenshots/NN_name.png` — <what is visible>
+- **Observed (screenshot):** `artifacts/native/NN_name.png` — <what is visible>
 - **Repaint-lag ruled out?** <yes, because state disagreed after settle(2.0) / no, state and pixels agreed>
 - **Suspected location:** `ui/<file>.py:<line>` — `<function name>` — <one sentence on the mechanism>
 - **Severity:** <blocker | major | minor | cosmetic>
@@ -136,7 +136,7 @@ Recommended order: **1 → 3 → 4 → 5 → 6 → 7**, with **2 running in para
 **Mode:** write-and-run. **Sequencing:** SEQUENTIAL, **runs first**. **Depends on:** nothing.
 
 ## Why this unit exists
-A screenshot from the last session (`tools/real_ui_tests/screenshots/02_01_settings.png`) showed two things that may or may not be bugs:
+A screenshot from the last session (`artifacts/native/02_01_settings.png`) showed two things that may or may not be bugs:
 - (a) `page_title_lbl` read **"Settings"** but the visible body still showed the **Overview** screen's content (KPI cards, "Trends & Distribution", "No transaction data for this period").
 - (b) The sidebar rendered **collapsed to icons only**.
 
@@ -149,7 +149,7 @@ Both must be disambiguated before any other unit trusts a screenshot. Every late
 **The likely explanation for (b):** `ui/dashboard_screen.py` line 149-150 does `self.sidebar_expanded = session.is_sidebar_open()` then `sidebar.setFixedWidth(248 if self.sidebar_expanded else 76)`. The collapsed render is probably **persisted session state, not a bug.** Confirm this — do not assume.
 
 ## File to create
-`tools/real_ui_tests/test_navigation_and_motion.py`
+`tests/native/test_navigation_and_motion.py`
 
 ## Exact steps
 
@@ -157,7 +157,7 @@ Both must be disambiguated before any other unit trusts a screenshot. Every late
 1. Use the §0.4 header. Import:
    ```python
    from PySide6.QtCore import Qt, QTimer
-   from tools.real_ui_test_harness import RealUIHarness
+   from tests.support.real_ui_test_harness import RealUIHarness
    from ui.dashboard_screen import DashboardScreen
    from ui.theme.theme_manager import ThemeManager
    from ui.widgets import motion
@@ -218,8 +218,8 @@ For **each** of the 9 nav indices `0..8` (`Overview, Accounts, Transactions, Inc
 This unit creates **no database rows**. Cleanup is just closing windows (the `report()` pattern's top-level-widget close loop). Restore `motion.ENABLED = True` and do **not** call `session.set_sidebar_open()` with a changed value — if your toggles left it changed, set it back to the value recorded in Part A step 2.
 
 ## Deliverables
-- `tools/real_ui_tests/test_navigation_and_motion.py`
-- Screenshots `00_*` through `03_*` in `tools/real_ui_tests/screenshots/`
+- `tests/native/test_navigation_and_motion.py`
+- Screenshots `00_*` through `03_*` in `artifacts/native/`
 - A findings-log entry in `docs/VISUAL_TESTING_GUIDE.md` per §0.8. **It must contain an explicit, unambiguous verdict sentence on the stale-Settings-screenshot question**, in one of these three forms: "REAL BUG in fade_in()", "REAL BUG in the page swap", or "TEST-HARNESS-ONLY repaint lag (§3.5)". And an explicit verdict on the sidebar: "persisted session state, NOT a bug" or the alternative.
 
 ## Hazards for this unit
@@ -271,8 +271,8 @@ None of the interaction hazards apply. The only hazard is **reporting a SAFE pat
 These are flows 2 and 3 of the five the app owner explicitly asked for (`docs/VISUAL_TESTING_GUIDE.md` §5). Flow 1 (Add Person) already passes.
 
 ## Files to create
-- `tools/real_ui_tests/test_add_bank_flow.py`
-- `tools/real_ui_tests/test_add_account_flow.py`
+- `tests/native/test_add_bank_flow.py`
+- `tests/native/test_add_account_flow.py`
 
 Two separate files, per §6 rule 1 ("one file per flow"). Both follow `test_add_person_flow.py` exactly.
 
@@ -374,7 +374,7 @@ Two test scripts, screenshots, and **one** findings-log entry covering both flow
 Flow 4 of the owner's five. Per §4 this card-based flow (person card → account card → format → browse → parse → preview → import) has **never** been driven with real clicks.
 
 ## File to create
-`tools/real_ui_tests/test_statement_import_flow.py`
+`tests/native/test_statement_import_flow.py`
 
 ## Critical design decision — which account to import into
 **Create your own person + bank + account programmatically** (`add_person`, `add_bank`, `add_account`) with `RUIH_` prefixes, exactly as Unit 3 does. **Do not import into one of the owner's real accounts** — importing real transactions into a real account and then deleting them risks corrupting real data. Importing into a throwaway account and deleting its transactions and then the account itself is clean.
@@ -428,7 +428,7 @@ One test script, screenshots of each of the 6+ steps, and a findings-log entry t
 Flow 5 of the owner's five. Per §5: "click each of the three real drop zones for real, confirm each parses without the app hanging/crashing, confirm the reconciliation view populates."
 
 ## File to create
-`tools/real_ui_tests/test_tax_documents_flow.py`
+`tests/native/test_tax_documents_flow.py`
 
 ## THE CENTRAL CONSTRAINT — read this before writing a line
 `ui/widgets/drop_zone.py` `mousePressEvent()` calls `_on_browse_click()` which calls `QFileDialog.getOpenFileName()`. **Clicking a DropZone opens a native Windows file dialog that QTest cannot close. Your test will hang forever.** Additionally, **all three DropZones have the identical accessible name `"File drop zone"`**, so `harness.find()` cannot distinguish them.
@@ -483,7 +483,7 @@ One test script, four+ screenshots, one findings-log entry including: the verbat
 This is §5's screen-by-screen checklist, steps 1, 2, 4, and 5, across all nine screens, in the light theme. §4 explicitly flags that **no button's rendered size has ever been measured on a real render** — only asserted in code.
 
 ## File to create
-`tools/real_ui_tests/test_screen_sweep.py`
+`tests/native/test_screen_sweep.py`
 
 ## The authoritative design scale (from `docs/FRONTEND_REDESIGN_PLAN.json` → `design_direction.scales_to_enforce`)
 ```
@@ -570,8 +570,8 @@ One test script, ~20+ screenshots, and a findings-log entry containing **a per-s
 §5 step 3 (every ExcelTable interaction) and §5 step 6 (repeat on a dark theme). §3.6 makes the double-click path specifically ambiguous and this unit is where that gets resolved or explicitly marked unconfirmed.
 
 ## Files to create
-- `tools/real_ui_tests/test_excel_table_interactions.py`
-- `tools/real_ui_tests/test_dark_theme_sweep.py`
+- `tests/native/test_excel_table_interactions.py`
+- `tests/native/test_dark_theme_sweep.py`
 
 ## test_excel_table_interactions.py
 
@@ -642,20 +642,20 @@ Two test scripts, screenshots for both, and **one** findings-log entry covering 
 ## Appendix A — Campaign completion checklist
 
 The campaign is done when all of the following are true:
-- [ ] Seven test scripts exist under `tools/real_ui_tests/` (Unit 2 produces none; Units 3 and 7 produce two each).
+- [ ] Seven test scripts exist under `tests/native/` (Unit 2 produces none; Units 3 and 7 produce two each).
 - [ ] `docs/VISUAL_TESTING_GUIDE.md`'s Findings log has **seven new dated entries**, one per unit, in the §0.8 format.
 - [ ] Unit 1's entry contains an explicit verdict on the stale-Settings-screenshot question and on the collapsed sidebar.
 - [ ] Unit 2's entry contains a SUSPECT/CONFIRMED-RISK list plus a SAFE-and-audited list.
 - [ ] Unit 6's entry contains a per-screen button-measurement table against `sm 28 / md 36 / lg 44` and the 280px width rule.
 - [ ] Unit 7's entry contains an explicit `CONFIRMED` / `UNCONFIRMED` verdict on double-click-to-edit.
 - [ ] Every unit's entry proves DB cleanup with before/after row counts.
-- [ ] **Zero application files were modified.** Verify with `git status` — the only changed/new paths should be `tools/real_ui_tests/*`, `tools/real_ui_tests/screenshots/*`, `docs/VISUAL_TESTING_GUIDE.md`, and `docs/UI_TEST_CAMPAIGN_PLAN.md`. **If anything under `ui/`, `models/`, `engines/`, or `core/` appears in `git status`, that is a campaign violation — revert it.**
+- [ ] **Zero application files were modified.** Verify with `git status` — the only changed/new paths should be `tests/native/*`, `artifacts/native/*`, `docs/VISUAL_TESTING_GUIDE.md`, and `docs/UI_TEST_CAMPAIGN_PLAN.md`. **If anything under `ui/`, `models/`, `engines/`, or `core/` appears in `git status`, that is a campaign violation — revert it.**
 
 ## Appendix B — Files each unit will need to read
 
 | Unit | Must read |
 |---|---|
-| all | `docs/VISUAL_TESTING_GUIDE.md` §3, §6; `tools/real_ui_test_harness.py` docstrings; `tools/real_ui_tests/test_add_person_flow.py` |
+| all | `docs/VISUAL_TESTING_GUIDE.md` §3, §6; `tests/support/real_ui_test_harness.py` docstrings; `tests/native/test_add_person_flow.py` |
 | 1 | `ui/dashboard_screen.py` (`_navigate` ~980-1006, `_build_sidebar` ~149-270, `_expand_sidebar`/`_collapse_sidebar` ~1130-1190, `_set_nav_active` ~319); `ui/widgets/motion.py`; `core/session.py` |
 | 2 | all of `ui/`, `core/`, `main.py`, `config.py` (grep-driven) |
 | 3 | `ui/settings_screen.py` (~550-560, 770-800); `ui/manage_data_screen.py`; `ui/dialogs/bank_dialog.py`; `ui/dialogs/account_dialog.py`; `models/bank.py`; `models/bank_account.py`; `models/person.py` |

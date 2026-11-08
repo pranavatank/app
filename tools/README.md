@@ -1,6 +1,6 @@
 # Tools guide
 
-Tools are grouped by purpose. Most are command-line utilities; native interactive UI procedures are kept in `real_ui_tests/` and are separate from headless pytest.
+Tools are grouped by purpose. Most are command-line utilities; native interactive UI procedures are kept in `tests/native/` and are separate from headless pytest.
 
 ## Test commands
 
@@ -13,14 +13,17 @@ Use the suite runner with the project Python environment. The test-group names a
 .venv\Scripts\python.exe tools/run_full_tests.py --list
 ```
 
-Append extra pytest options after `--`, or pass a test directory/module path directly. See [tests/README.md](../tests/README.md) for the feature manifest and rerun guidance. `tools/real_ui_tests/` contains native GUI scripts; they may open windows, interact with the app, or create evidence, so follow the [visual testing guide](../docs/VISUAL_TESTING_GUIDE.md) and [rebuild runbook](real_ui_tests/REBUILD_PLAN.md). Those scripts are not run by the headless feature groups.
+Append extra pytest options after `--`, or pass a test directory/module path directly. See [tests/README.md](../tests/README.md) for the feature manifest and rerun guidance. `tests/native/` contains native GUI scripts; they may open windows, interact with the app, or create evidence, so follow the [visual testing guide](../docs/VISUAL_TESTING_GUIDE.md) and [rebuild runbook](../tests/native/REBUILD_PLAN.md). Those scripts are not run by the headless feature groups.
+
+Headless run logs go to ignored `artifacts/pytest/<UTC timestamp>/` by default (`--log-dir` overrides this). Native screenshots and rebuild evidence go to ignored `artifacts/native/`.
 
 ## Maintenance and diagnostics
 
 - `audit_repository_privacy.py` — scan repository content for privacy issues.
 - `extraction_audit.py`, `taxdoc_audit.py`, `tax_reconcile.py` — inspect statement extraction and tax-document reconciliation.
-- `rebuild_verify.py` — verify rebuild-related outputs.
-- `test_prediction_engine.py` — focused legacy standalone prediction check; prefer the feature-group runner for normal test selection.
+
+- Native runbook: `tests/native/REBUILD_PLAN.md`. Run a scratch flow with `.venv\Scripts\python.exe tests\native\run_on_scratch.py --fresh tests\native\rebuild_p3_01_accounts.py --env S`.
+- Focused prediction check: `.venv\Scripts\python.exe tests\support\check_prediction.py`.
 
 ## Data import and maintenance
 

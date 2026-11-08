@@ -1,6 +1,6 @@
 # FD Planner and real-data testing handoff
 
-**Updated:** 2026-11-08. Read this guide, then `tools/real_ui_tests/REBUILD_PLAN.md` before continuing the rebuild.
+**Updated:** 2026-11-08. Read this guide, then `tests/native/REBUILD_PLAN.md` before continuing the rebuild.
 This is a concise handoff for a fresh agent; old investigation history belongs in Git and ignored run logs.
 For current release gates and readiness status, see [`PRODUCTION_READINESS.md`](PRODUCTION_READINESS.md).
 The final isolated suite and acceptance audits are complete; the first cleanup batch removed only the validated ignored install environment and wheel cache. Public distribution remains gated by nine private-source paths in local-only Git history. Next: file/test organization, refactor, then the full Sol UI audit.
@@ -62,7 +62,7 @@ closing balances matching. All 19 FD openings and 9 redemption records pass prov
 INR 91,590 interest. 26AS imported 158 FY 2025-26 records with INR 13,367 net TDS; AIS and TIS imported, both for
 FY 2025-26, with expected amounts. The saved tax-document password decrypts successfully. `rebuild_postflight.py`
 passed with zero failures, verifying all 507 strict transaction row multisets plus accounts and tax records. See
-ignored `tools/real_ui_tests/screenshots/rebuild/postflight_20261106.out` and `postflight.json`. Integrity is `ok`,
+ignored `artifacts/native/rebuild/postflight_20261106.out` and `postflight.json`. Integrity is `ok`,
 foreign-key violations are 0, and all 13 private-file hashes match. Latest snapshot:
 `backups/rebuild_20261106T101846Z_P2_5_7.db`. Do not reset. All eleven completed P3 read-only reports pass 283/283
 recorded assertions; the runbook lists counts and paths. This records R-mode coverage only, not the mutating flows.
@@ -104,7 +104,7 @@ Native Windows checks passed for Aurora and Nova: timer expiry, worker-thread de
 toast, and modal handoff (`ux_native_integration_20261107.out`). Final Aurora/Nova Windows previews also verify
 wrapping of the full short danger message at a 38px viewport without a scrollbar. Accepted previews are
 `ux_notifications_aurora_final.png`, `ux_notifications_nova_final.png`, and `ux_modal_*_final.png` under
-`tools/real_ui_tests/screenshots/rebuild/`. Toasts use FIFO queues, natural height, 3/5/7-second durations, hover pause,
+`artifacts/native/rebuild/`. Toasts use FIFO queues, natural height, 3/5/7-second durations, hover pause,
 and survive modal handoff. Simple acknowledgement message boxes use toasts; confirmations and TOTP remain modal.
 Focus uses rounded outer borders without an inner native rectangle and remains keyboard accessible, including a
 distinct focused-selected-tab state in light and dark themes. Independent final review approved the repaired queue;
@@ -125,10 +125,10 @@ and after UX work (`ux_complete_compare_20261107.out`).
   them. Check each exit code and independently inspect SQL/fingerprints; screenshots and script PASS lines alone are
   insufficient.
 - R mode must not change the real DB. S mode must use
-  `tools/real_ui_tests/run_on_scratch.py --fresh ... --env S`. Never pass `--real` or point a scratch test at the live DB.
+  `tests/native/run_on_scratch.py --fresh ... --env S`. Never pass `--real` or point a scratch test at the live DB.
 - Secrets come from `FINMGR_MASTER_PASSWORD_FILE` when configured, then ignored `credentials.local.json`, then source
   labels through `rebuild_common.read_secret`. Never print, log, hardcode, or put credentials on a command line.
-- Keep screenshots and logs under ignored `tools/real_ui_tests/screenshots/`. Do not commit `data/`, `backups/`, DB
+- Keep screenshots and logs under ignored `artifacts/native/`. Do not commit `data/`, `backups/`, DB
   files, or screenshots. Keep `pyautogui.FAILSAFE` enabled.
 
 ## Useful commands and sources
@@ -137,7 +137,7 @@ Run from the repo root in PowerShell, one command at a time. The venv is `.venv\
 
 ```powershell
 # Read-only document preflight (required before reset)
-.venv\Scripts\python.exe tools\real_ui_tests\rebuild_p0_expectations.py --defer-unity
+.venv\Scripts\python.exe tests\native\rebuild_p0_expectations.py --defer-unity
 
 # Focused headless groups: run separately to isolate failures
 .venv\Scripts\python.exe tools\run_full_tests.py --feature security
@@ -145,12 +145,12 @@ Run from the repo root in PowerShell, one command at a time. The venv is `.venv\
 .venv\Scripts\python.exe tools\run_full_tests.py --feature rebuild
 
 # Independent DB checks; use after rebuild or against a named backup as appropriate
-.venv\Scripts\python.exe tools\rebuild_verify.py --engines --tempdb
-.venv\Scripts\python.exe tools\rebuild_verify.py --fingerprint --out before_p3
+.venv\Scripts\python.exe tests\native\rebuild_verify.py --engines --tempdb
+.venv\Scripts\python.exe tests\native\rebuild_verify.py --fingerprint --out before_p3
 ```
 
 The source resolver is `tools/private_sources.py`. Preflight and ledger/year validation are in
-`tools/real_ui_tests/rebuild_preflight.py`; P0 parses expected source facts without importing into the DB. Rebuild
+`tests/native/rebuild_preflight.py`; P0 parses expected source facts without importing into the DB. Rebuild
 helpers are in `rebuild_common.py`, per-screen checks in `rebuild_p3_common.py`, and scratch isolation in
 `run_on_scratch.py`. The runbook is authoritative for exact sequence and current checkpoint.
 

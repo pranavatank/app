@@ -53,7 +53,7 @@ new-regime slabs per FY.
 | # | Unit | Mode | Window | Depends |
 |---|---|---|---|---|
 | 1 | engines/prediction_engine.py | SEQUENTIAL (first) | No | - |
-| 2 | tools/test_prediction_engine.py | PARALLEL w/ 3 | No | 1 |
+| 2 | tests/support/check_prediction.py | PARALLEL w/ 3 | No | 1 |
 | 3 | ui/income_prediction_screen.py | PARALLEL w/ 2 | No | 1 |
 | 4 | Nav wiring (dashboard_screen, icons, theme) | SEQUENTIAL | No | 3 |
 | 5 | Verify in the running app + dark theme | SEQUENTIAL (last) | YES | 4 |
