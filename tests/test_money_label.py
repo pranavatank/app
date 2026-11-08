@@ -10,6 +10,7 @@ Tests:
 
 import pytest
 from ui.widgets.money_label import format_inr, MoneyLabel
+from ui.dashboard_screen import _format_indian_number
 
 
 class TestFormatInr:
@@ -43,9 +44,9 @@ class TestFormatInr:
 
     def test_negative_amounts(self):
         """Test negative amount formatting."""
-        assert format_inr(-1000) == "₹-1,000"
-        assert format_inr(-256642) == "₹-2,56,642"
-        assert format_inr(-1234567) == "₹-12,34,567"
+        assert format_inr(-1000) == "-₹1,000"
+        assert format_inr(-256642) == "-₹2,56,642"
+        assert format_inr(-1234567) == "-₹12,34,567"
 
     def test_zero(self):
         """Test zero value."""
@@ -59,8 +60,14 @@ class TestFormatInr:
 
     def test_decimal_with_negative(self):
         """Test negative amounts with decimals."""
-        assert format_inr(-1000.50) == "₹-1,000.50"
-        assert format_inr(-256642.25) == "₹-2,56,642.25"
+        assert format_inr(-1000.50) == "-₹1,000.50"
+        assert format_inr(-256642.25) == "-₹2,56,642.25"
+
+    def test_negative_sign_and_rounded_negative_zero(self):
+        assert format_inr(-100000.1) == "-₹1,00,000.10"
+        assert format_inr(-0.004) == "₹0"
+        assert _format_indian_number(-100000.1) == "-₹1,00,000.10"
+        assert _format_indian_number(-0.004) == "₹0"
 
     def test_lakhs(self):
         """Test lakh-scale formatting."""
@@ -95,7 +102,7 @@ class TestMoneyLabelWidget:
         """Test set_amount with negative value."""
         label = MoneyLabel()
         label.set_amount(-50000)
-        assert label.text() == "₹-50,000"
+        assert label.text() == "-₹50,000"
 
     def test_set_masked(self):
         """Test set_masked method."""

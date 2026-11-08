@@ -426,39 +426,42 @@ def test_tempdb():
             set_statement_password(account_id, "stmt-secret-1", key)
             set_ais_tis_password(person_id, "ais-secret-1", key)
 
-            change_password("Tmp#Pass123", "Tmp#Pass456")
+            changed, _, changed_key = change_password("Tmp#Pass123", "Tmp#Pass456")
 
             ok_new, _, key_new = verify_login("Tmp#Pass456")
             ok_old, _, key_old = verify_login("Tmp#Pass123")
 
-            if ok_new and not ok_old:
+            if changed and ok_new and not ok_old and changed_key == key_new:
                 print("PASS tempdb.change_password observed=ok expected=ok")
             else:
-                failures.append(f"change_password: ok_new={ok_new} ok_old={ok_old}")
+                failures.append(
+                    f"change_password: changed={changed} new_login={ok_new} "
+                    f"old_login={ok_old} returned_key_matches_login={changed_key == key_new}"
+                )
 
             ais_pwd = get_ais_tis_password(person_id, key_new)
             if ais_pwd == "ais-secret-1":
                 print("PASS tempdb.get_ais_tis_password_with_new_key observed=ok expected=ok")
             else:
-                failures.append(f"get_ais_tis_password with new key: {ais_pwd}")
+                failures.append(f"get_ais_tis_password with new key failed: recovered={ais_pwd is not None}")
 
             ais_pwd_old = get_ais_tis_password(person_id, key_old)
             if ais_pwd_old is None:
                 print("PASS tempdb.get_ais_tis_password_with_old_key_fails observed=ok expected=ok")
             else:
-                failures.append(f"get_ais_tis_password with old key should be None: {ais_pwd_old}")
+                failures.append("get_ais_tis_password with old key unexpectedly recovered a value")
 
             stmt_pwd = get_statement_password(account_id, key_new)
             if stmt_pwd == "stmt-secret-1":
                 print("PASS tempdb.get_statement_password_with_new_key observed=ok expected=ok")
             else:
-                failures.append(f"get_statement_password with new key: {stmt_pwd}")
+                failures.append(f"get_statement_password with new key failed: recovered={stmt_pwd is not None}")
 
             stmt_pwd_old = get_statement_password(account_id, key_old)
             if stmt_pwd_old is None:
                 print("PASS tempdb.get_statement_password_with_old_key_fails observed=ok expected=ok")
             else:
-                failures.append(f"get_statement_password with old key should be None: {stmt_pwd_old}")
+                failures.append("get_statement_password with old key unexpectedly recovered a value")
 
             conn = sqlite3.connect(str(test_db))
             cur = conn.cursor()
@@ -466,6 +469,7 @@ def test_tempdb():
                 "SELECT statement_password_enc FROM BankAccount WHERE account_id=?",
                 (account_id,)
             ).fetchone()
+            current_key = key_new
             if enc_before:
                 enc_before = enc_before[0]
                 if isinstance(enc_before, str):
@@ -473,13 +477,23 @@ def test_tempdb():
 
                 corrupt_bytes = bytearray(enc_before)
                 corrupt_bytes[0] = (corrupt_bytes[0] + 1) % 256
+                corrupt_bytes = bytes(corrupt_bytes)
                 cur.execute(
                     "UPDATE BankAccount SET statement_password_enc=? WHERE account_id=?",
-                    (bytes(corrupt_bytes), account_id)
+                    (corrupt_bytes, account_id)
                 )
                 conn.commit()
 
-                change_password("Tmp#Pass456", "Tmp#Pass789")
+                changed_corrupt, _, key_after_corrupt = change_password("Tmp#Pass456", "Tmp#Pass789")
+                login_after_corrupt, _, verified_key_after_corrupt = verify_login("Tmp#Pass789")
+                if changed_corrupt and login_after_corrupt:
+                    current_key = verified_key_after_corrupt
+                if not changed_corrupt or not login_after_corrupt or key_after_corrupt != verified_key_after_corrupt:
+                    failures.append(
+                        "second change_password failed: "
+                        f"changed={changed_corrupt} new_login={login_after_corrupt} "
+                        f"returned_key_matches_login={key_after_corrupt == verified_key_after_corrupt}"
+                    )
 
                 enc_after = cur.execute(
                     "SELECT statement_password_enc FROM BankAccount WHERE account_id=?",
@@ -490,19 +504,21 @@ def test_tempdb():
                     enc_after = enc_after[0]
                     if isinstance(enc_after, str):
                         enc_after = enc_after.encode()
-                    if enc_after == enc_before:
-                        findings.append(f"H12: corrupt ciphertext silently skipped (unchanged)")
+                    if not changed_corrupt:
+                        findings.append("H12 not evaluated: password change did not succeed")
+                    elif enc_after == corrupt_bytes:
+                        findings.append("H12: corrupt ciphertext remained unchanged during password change (skipped)")
                     else:
-                        findings.append(f"H12: corrupt ciphertext was re-encrypted (changed)")
+                        findings.append("H12: corrupt ciphertext changed during password change")
 
             conn.close()
 
-            set_statement_password(account_id, "test-value", key_new)
-            test_pwd = get_statement_password(account_id, key_new)
+            set_statement_password(account_id, "test-value", current_key)
+            test_pwd = get_statement_password(account_id, current_key)
             if test_pwd == "test-value":
                 print("PASS tempdb.password_persist observed=ok expected=ok")
             else:
-                failures.append(f"password persist failed: {test_pwd}")
+                failures.append(f"password persist failed: recovered={test_pwd is not None}")
 
     except Exception as e:
         import traceback

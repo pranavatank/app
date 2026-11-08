@@ -72,8 +72,7 @@ live FD/transaction IDs 28/507, exact ID sets restored after scratch, and integr
 53/53 (`P3_05_statement_import_S_settingsfix_20261107.out`). Nov 8 native S-mode milestones: S06 tax documents
 passed 9/9 after the header fix (`P3_06_tax_documents_S_headerfix_20261108.out`); S07 tax passed 10/10
 (`P3_07_tax_S_expanded_20261108.out`); S09 settings passed 33/33 (`P3_09_settings_S_20261108.out`). The focused
-source-year file passed 13 tests (`taxdoc_header_20261108/test_taxdoc_source_year.py.log`); the wrapper also invoked
-a nonexistent file, so this does not establish a whole-runner pass. The real AIS+TIS parser passed FY2025
+source-year tests passed 13/13 (`full_suite_20261108/test_taxdoc_source_year.py.log`). The real AIS+TIS parser passed FY2025
 (`S06_parser_fixed_20261108.out`). The S06 regression now excludes historical body-page FY mentions using first-page
 metadata while still rejecting conflicting header years. The live DB fingerprint matched its baseline
 (`tax_milestone_compare_20261108.out`). S13 People passed 10/10 on fresh scratch
@@ -82,7 +81,20 @@ confirmed the owner's DOB 2004-03-08 was unchanged. Native R11 hard refresh pass
 (`P3_11_hard_refresh_R_preserved_20261108.out`) with its built-in live DB fingerprint guard unchanged. The refresh
 preserves session identity, key, and FY while excluding venv dependencies. Session reload passed 1 test
 (`session_reload_20261108.out`), selector/module eligibility passed 6 (`hard_refresh_modules_20261108.out`), and Sol
-review found no blockers. The isolated full suite and P5 audit are now underway; results are not yet recorded.
+review found no blockers. The isolated baseline suite passed across 69 files: 735 passed and 8 skipped
+(`full_suite_20261108.out`). The skips are 5 explicit full-DB/session-parity placeholders, 1 legacy 26AS interface
+placeholder, and 2 statement-flow cases without a person fixture; the native S05 import flow already passed 53/53.
+After the final formatter change, the affected regression set passed 23 tests (money 16, hard-refresh selector/module
+6, session reload 1; `final_regressions_20261108.out`). This is a targeted rerun, not a post-change rerun of all 69
+files. P4 engine/tempdb verification exited 0 with zero JSON failures (`P4_engine_tempdb_fixed_20261108.out`); H12's
+deliberately tampered ciphertext remained unchanged and was skipped as expected. P5 exited 0 with 23 current reports,
+zero failures, zero watchdog issues, 6 accessibility lookup observations (not confirmed defects), and 77 observations
+(`P5_final_20261108.out`). The live DB and preferences matched the `resume_20261108_before` baseline. Final audit
+confirmed all 13 private hashes, exact theme preference bytes, SQLite integrity and foreign keys, 507 transactions,
+28 FDs, unchanged owner DOB, and syntax for changed files (`final_audit_20261108.out`). Full database fingerprints
+matched between `resume_20261108_before` and `complete_20261108` (`final_compare_20261108.out`). Sol's final-delta
+review found no blockers. Unity remains explicitly deferred; the bank-rate, tax-policy, and partial manual-coverage
+limits described above still apply.
 
 **Nov 7 UX work — completed.** Toast tests passed 13/13 (`notifications_final_20261107.out`) and focus tests passed
 9/9 (`ux_finish_20261107/test_theme_qss.py.log`). Broader theme checks passed 26/26 (`ux_theme_checks_20261107.out`).
@@ -140,7 +152,7 @@ Run from the repo root in PowerShell, one command at a time. The venv is `.venv\
 The source resolver is `tools/private_sources.py`. Preflight and ledger/year validation are in
 `tools/real_ui_tests/rebuild_preflight.py`; P0 parses expected source facts without importing into the DB. Rebuild
 helpers are in `rebuild_common.py`, per-screen checks in `rebuild_p3_common.py`, and scratch isolation in
-`run_on_scratch.py`. The runbook is authoritative for exact sequence and current pending status.
+`run_on_scratch.py`. The runbook is authoritative for exact sequence and current checkpoint.
 
 The P5 collector requires current P3 files with nonempty boolean-result lists and compares fingerprint row counts and
 hashes across the full table set. A requested baseline that is missing, invalid, or mismatched fails collection.

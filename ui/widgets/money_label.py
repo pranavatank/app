@@ -27,7 +27,7 @@ def format_inr(amount: float) -> str:
         1234567     -> "₹12,34,567"
         100         -> "₹100"
         1234.56     -> "₹1,234.56"
-        -5000       -> "₹-5,000"
+        -5000       -> "-₹5,000"
 
     Args:
         amount: Numeric value to format
@@ -35,12 +35,10 @@ def format_inr(amount: float) -> str:
     Returns:
         Formatted string with ₹ prefix and Indian grouping
     """
-    # Handle sign
-    is_negative = round(amount, 2) < 0
-    abs_amount = abs(amount)
-
-    # Round to 2 decimals before splitting
-    abs_amount = round(abs_amount, 2)
+    # Round first so values that display as zero never retain a negative sign.
+    rounded_amount = round(amount, 2)
+    is_negative = rounded_amount < 0
+    abs_amount = abs(rounded_amount)
 
     # Split into integer and decimal parts
     int_part = int(abs_amount)
@@ -73,10 +71,8 @@ def format_inr(amount: float) -> str:
         result = grouped_int
 
     # Add sign if negative
-    if is_negative:
-        result = f"-{result}"
-
-    return f"₹{result}"
+    sign = "-" if is_negative else ""
+    return f"{sign}₹{result}"
 
 
 class MoneyLabel(QLabel):

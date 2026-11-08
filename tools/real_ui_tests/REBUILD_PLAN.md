@@ -12,17 +12,21 @@ log or independent measurement exists.
 | P0 document preflight | **Passed, exit 0.** `screenshots/rebuild/P0_repair_20261105.out`. Fixed PDF row grouping recovers one Equitas debit; Ujjivan blank balances reconcile between printed anchors. |
 | Focused checks | Private sources 3, password readers 7, preflight 46, FD provenance 34, PDF rows 5, real statement package 10, P5 collection 22 passed. Collection log: `screenshots/rebuild/collection_verified.out`. Other logs: `resume_focused/`, `password_review_verified.out`, `row_repair_verified/`. |
 | Tax imports and postflight | 26AS, AIS, TIS, and `rebuild_postflight.py` passed; zero postflight failures. |
-| Phase 3 | Eleven R-mode reports pass (283/283 assertions). S00 Overview passed; S01 Accounts passed 26/26; S02 Transactions passed 41/41. S03 Income passed 58/58 (`P3_03_income_S.json`, `P3_03_income_S_final_20261107.out`); focused edit/link/unlink/delete passed 15/15 (`P3_03_income_dialogs_S_pickerfix_20261107.out`), and picker/geometry checks passed 3/3. S04 Fixed Deposits passed 19/19; see `P3_04_fixed_deposits_S.json` and `P3_04_fixed_deposits_S_verified_20261107.out`. Independent checks confirmed original FD/transaction ID sets 28/507 restored after scratch and integrity `ok`. S05 Statement Import passed 53/53, exit 0, in `P3_05_statement_import_S_settingsfix_20261107.out`. Nov 8 S06/S07/S09, parser and source-year results are listed below. S13 People passed 10/10 (`P3_13_people_S_20261108.out`); its synthetic DOB add/edit used 1994-03-08 / 1996-11-23, and independent SQL confirmed the owner's DOB 2004-03-08 unchanged. Native R11 passed 55/55 (`P3_11_hard_refresh_R_preserved_20261108.out`) with its built-in live DB fingerprint guard unchanged. The hard refresh preserves session identity, key, and FY while excluding venv dependencies. Session reload passed 1 test (`session_reload_20261108.out`); selector/module eligibility passed 6 (`hard_refresh_modules_20261108.out`). Sol review found no blocker. The isolated full suite and P5 audit are underway; results are not yet recorded. UX notifications and focus completed Nov 7; see the UX checkpoint below. |
+| Phase 3 | Eleven R-mode reports pass (283/283 assertions). S00 Overview passed; S01 Accounts passed 26/26; S02 Transactions passed 41/41. S03 Income passed 58/58 (`P3_03_income_S.json`, `P3_03_income_S_final_20261107.out`); focused edit/link/unlink/delete passed 15/15 (`P3_03_income_dialogs_S_pickerfix_20261107.out`), and picker/geometry checks passed 3/3. S04 Fixed Deposits passed 19/19; see `P3_04_fixed_deposits_S.json` and `P3_04_fixed_deposits_S_verified_20261107.out`. Independent checks confirmed original FD/transaction ID sets 28/507 restored after scratch and integrity `ok`. S05 Statement Import passed 53/53, exit 0, in `P3_05_statement_import_S_settingsfix_20261107.out`. Nov 8 S06/S07/S09, parser, source-year, S13 and R11 results are listed below. Sol final-delta review found no blockers. The baseline suite, targeted final regressions, P4, P5 and final audits are complete; see rows below for scope and limitations. UX notifications and focus completed Nov 7; see the UX checkpoint below. |
 | Unity seven-row mini statement | Explicitly deferred; no opening/running balances. |
 | S03 Income | **Passed 58/58**, plus focused dialogs 15/15 and picker/geometry tests 3/3. |
 | S04 Fixed Deposits | **Passed 19/19.** `P3_04_fixed_deposits_S_verified_20261107.out`; exact original IDs restored after scratch. |
 | S05 Statement Import | **Passed 53/53, exit 0.** `P3_05_statement_import_S_settingsfix_20261107.out`. |
-| S06 FY behavior | **Native S passed 9/9**, `P3_06_tax_documents_S_headerfix_20261108.out`; parser FY2025 passed for AIS+TIS. Historical body-page year mentions are excluded using first-page metadata; conflicting header years still reject. |
+| S06 FY behavior | **Native S passed 9/9**, `P3_06_tax_documents_S_headerfix_20261108.out`; source-year tests passed 13/13 (`full_suite_20261108/test_taxdoc_source_year.py.log`) and parser FY2025 passed for AIS+TIS. Historical body-page year mentions are excluded using first-page metadata; conflicting header years still reject. |
 | S07 Tax | **Native S passed 10/10**, `P3_07_tax_S_expanded_20261108.out`. |
 | S09 Settings | **Native S passed 33/33**, `P3_09_settings_S_20261108.out`. |
 | S13 People/DOB | **Native S passed 10/10**, `P3_13_people_S_20261108.out`; synthetic DOB add/edit values were 1994-03-08 / 1996-11-23; owner DOB 2004-03-08 independently verified unchanged. |
 | Hard refresh (R11) | **Native R passed 55/55**, `P3_11_hard_refresh_R_preserved_20261108.out`; live DB fingerprint guard unchanged. Session identity/key/FY preserved and venv modules excluded. Unit checks: session reload 1 pass; selector/module eligibility 6 passes. Sol review found no blocker. |
-| Isolated full suite and P5 audit | In progress; no results recorded yet. |
+| Isolated baseline suite | **69 files passed:** 735 passed, 8 skipped (`full_suite_20261108.out`). The skips are 5 explicit full-DB/session-parity placeholders, 1 legacy 26AS interface placeholder, and 2 statement-flow cases without a person fixture; native S05 import already passed 53/53. |
+| Final affected regressions | **23 passed** after the formatter change: money 16, hard-refresh selector/module 6, session reload 1 (`final_regressions_20261108.out`). This was a targeted rerun; the full 69-file suite was not rerun after that last delta. |
+| P4 engines/tempdb | **Passed, exit 0**, zero JSON failures (`P4_engine_tempdb_fixed_20261108.out`). H12's deliberately tampered ciphertext remained unchanged and was skipped as expected. |
+| P5 final audit | **Passed, exit 0:** 23 current reports, zero failures, zero watchdog issues, 6 accessibility lookup observations (not confirmed defects), 77 observations (`P5_final_20261108.out`). |
+| Final data and source audit | **Passed:** 13 private hashes, exact theme bytes, SQLite integrity/FKs, 507 transactions, 28 FDs, owner DOB unchanged, changed-file syntax (`final_audit_20261108.out`). Full DB fingerprints matched `resume_20261108_before` and `complete_20261108` (`final_compare_20261108.out`). |
 
 ### Nov 7 UX checkpoint — completed
 
@@ -72,8 +76,9 @@ passed 41/41; transaction dialog geometry passed 2/2, with a recorded non-OS dat
 (`P3_03_income_dialogs_S_pickerfix_20261107.out`), and picker/geometry checks passed 3/3. S04 Fixed Deposits passed
 19/19 (`P3_04_fixed_deposits_S_verified_20261107.out`); original FD/transaction ID sets 28/507 were restored and
 integrity was `ok`. S05 Statement Import passed 53/53 (`P3_05_statement_import_S_settingsfix_20261107.out`). The Nov 8
-S06/S07/S09, S13, R11 and parser milestones are recorded in Current status above. The coordinating agent is now
-running the isolated full suite and P5 audit; update this checkpoint with their observed outcomes when available.
+S06/S07/S09, S13, R11, parser, full-suite, P4, P5 and final-audit outcomes are recorded in Current status above.
+The baseline and final audit checkpoints are complete with the documented skips and coverage limits; Unity remains
+deferred because its mini statement has no opening or running balances.
 
 | R-mode report | Result | JSON |
 |---|---:|---|

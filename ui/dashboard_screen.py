@@ -87,14 +87,10 @@ def _is_reloadable_app_module(name, module, app_root):
 
 def _format_indian_number(value: float) -> str:
     """Format a number with Indian digit grouping (2,56,642 not 256,642)."""
-    if value < 0:
-        sign = "-"
-        value = abs(value)
-    else:
-        sign = ""
-
-    # Round to 2 decimals before splitting
+    # Determine the sign after rounding so displayed zero is never negative.
     value = round(value, 2)
+    sign = "-" if value < 0 else ""
+    value = abs(value)
     val_int = int(value)
     dec_str = f"{value:.2f}".split(".")[1]
 
