@@ -225,7 +225,7 @@ class TestMergeTaxDocuments:
             ]
         }
         form26as_data = {
-            "pan": "AZIPT9702H",
+            "pan": "ABCDE1234F",
             "name": "PRANAV ARVINDBHAI TANK",
             "assessment_year": "2026-27",
             "total_tds": 13367.0,
@@ -271,7 +271,7 @@ class TestMergeTaxDocuments:
             ]
         }
         form26as_data = {
-            "pan": "AZIPT9702H",
+            "pan": "ABCDE1234F",
             "name": "PRANAV ARVINDBHAI TANK",
             "assessment_year": "2026-27",
             "total_tds": 13367.0,
@@ -318,7 +318,7 @@ class TestMergeTaxDocuments:
             ]
         }
         form26as_data = {
-            "pan": "AZIPT9702H",
+            "pan": "ABCDE1234F",
             "name": "PRANAV ARVINDBHAI TANK",
             "assessment_year": "2026-27",
             "total_tds": 13367.0,
@@ -367,7 +367,7 @@ class TestMergeTaxDocuments:
             ]
         }
         form26as_data = {
-            "pan": "AZIPT9702H",
+            "pan": "ABCDE1234F",
             "name": "PRANAV ARVINDBHAI TANK",
             "assessment_year": "2026-27",
             "total_tds": 13367.0,
@@ -426,7 +426,7 @@ class TestMergeTaxDocuments:
             ]
         }
         form26as_data = {
-            "pan": "AZIPT9702H",
+            "pan": "ABCDE1234F",
             "name": "PRANAV ARVINDBHAI TANK",
             "assessment_year": "2026-27",
             "total_tds": 13367.0,
@@ -479,7 +479,7 @@ class TestMergeTaxDocuments:
             ]
         }
         form26as_data = {
-            "pan": "AZIPT9702H",
+            "pan": "ABCDE1234F",
             "name": "PRANAV ARVINDBHAI TANK",
             "assessment_year": "2026-27",
             "total_tds": 13367.0,

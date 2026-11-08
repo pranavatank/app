@@ -141,7 +141,7 @@
         "id": "M8",
         "claim": "26AS extraction recovers 14% of the TDS and invents a section code.",
         "detail": "It searches for the literal strings 'PART A'/'PART B' but 26AS uses 'PART-I'/'PART-II', so the section state machine never exits and ingests the legend pages. It requires a TAN on the line, so detail rows are never read. It parses dates as dd/mm/yyyy while 26AS prints 31-Mar-2026. re.search(r'19[0-9][A-Z]?') matched '194BA' in the legend. Part II (15G/15H) is not handled at all — that is 2,23,133 of the owner's interest income. Reversal entries (Remarks B/G, negative amounts) are never netted.",
-        "result": "6 records from a document with 200+ detail rows. TDS sum 1,847 (true 13,367). Section '194B' (lottery winnings) recorded. All transaction dates empty. Name extracted as 'AZIPT9702H Assessee Name'."
+        "result": "6 records from a document with 200+ detail rows. TDS sum 1,847 (true 13,367). Section '194B' (lottery winnings) recorded. All transaction dates empty. Name extracted as '[redacted PAN] Assessee Name'."
       },
       {
         "id": "M9",

@@ -3,6 +3,7 @@
 **Updated:** 2026-11-08. Read `docs/VISUAL_TESTING_GUIDE.md` first for product purpose, FD Planner limits, expected source
 figures, and safety rules. This file is the current execution checklist. Do not rely on prior run claims unless a matching
 log or independent measurement exists.
+Current release gates and readiness status are tracked in [`docs/PRODUCTION_READINESS.md`](../../docs/PRODUCTION_READINESS.md).
 
 ## Current status
 

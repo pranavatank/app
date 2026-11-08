@@ -381,7 +381,7 @@ class TestParserIntegration:
         """
         Test that header table extracts values from the cell AFTER the label.
         Synthetic header table from Form 26AS:
-        Row 0: ['Permanent Account Number (PAN)', 'AZIPT9702H', 'Current Status of PAN', 'Active and Operative', ...]
+        Row 0: ['Permanent Account Number (PAN)', 'ABCDE1234F', 'Current Status of PAN', 'Active and Operative', ...]
         Row 1: ['Name of Assessee', 'PRANAV ARVINDBHAI TANK', '', '', ...]
         Row 2: ['Address of Assessee', 'SHYAM, ATIKA MAIN ROAD, OPP NA', '', '', ...]
         """
@@ -391,7 +391,7 @@ class TestParserIntegration:
 
         # Create a mock PDF with synthetic header table
         synthetic_header_table = [
-            ['Permanent Account Number (PAN)', 'AZIPT9702H', 'Current Status of PAN', 'Active and Operative',
+            ['Permanent Account Number (PAN)', 'ABCDE1234F', 'Current Status of PAN', 'Active and Operative',
              'Financial Year', '2025-26', 'Assessment Year', '2026-27'],
             ['Name of Assessee', 'PRANAV ARVINDBHAI TANK', '', '', '', '', '', ''],
             ['Address of Assessee', 'SHYAM, ATIKA MAIN ROAD, OPP NA', '', '', '', '', '', '']
@@ -417,7 +417,7 @@ class TestParserIntegration:
                 result = parse_form26as_pdf(tmp_path)
 
                 # Verify extracted values
-                assert result['pan'] == 'AZIPT9702H', f"PAN mismatch: {result['pan']}"
+                assert result['pan'] == 'ABCDE1234F', f"PAN mismatch: {result['pan']}"
                 assert result['name'] == 'PRANAV ARVINDBHAI TANK', f"Name mismatch: {result['name']}"
                 assert result['assessment_year'] == '2026-27', f"Assessment year mismatch: {result['assessment_year']}"
         finally:

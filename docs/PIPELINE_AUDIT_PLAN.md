@@ -22,8 +22,8 @@ one IDFC row, and some balances. The work is to port legacy's ref/balance
 extraction onto modern, then point the UI at modern.
 
 ### Passwords are on disk — do not prompt, do not brute-force
-`data/PersonalData/Pranav/password.txt` (gitignored): AIS/TIS `azipt9702h08032004`,
-Equitas `0803PRA`. PAN `AZIPT9702H` (confirmed inside 26AS). Never commit these.
+The ignored local credentials file contains the AIS/TIS and Equitas document passwords. Read it only when needed; never copy credential values into tracked files.
+Never commit credentials. Tax identifiers appear in 26AS. Never commit personal identifiers or credentials.
 
 ### 26AS extraction is badly broken — this is the number the owner wants
 Ground truth measured from the real PDF text:

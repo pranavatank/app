@@ -280,7 +280,7 @@ unfixed, this fabricates ₹26 lakh of taxable income.
 
 ```
 sum tds_deducted : 1,847.00     (truth 13,367)      -86%
-name             : 'AZIPT9702H Assessee Name'
+name             : '[redacted PAN] Assessee Name'
 sections seen    : {'194J': 1, '194A': 4, '194B': 1}   <- 194B = lottery winnings
 dates            : ''  (all empty)
 deductor name    : '1 ENLIGHTVISION TECHNOLOGIES PRIVATE LIMITED  105069.00 10508.00 10508'
@@ -972,7 +972,7 @@ its test passes against the files in `data/PersonalData/Pranav/`.
 
 **Task 0.5 — Build the regression harness.** *(everything after this depends on it)*
 - **Files:** new `tests/fixtures/` and `tests/test_real_documents.py`
-- **Change:** add tests that parse the four statements and the three tax PDFs and assert against the known-correct figures in §2 and §3.3. Passwords: AIS/TIS `azipt9702h08032004`, Equitas statement `0803PRA` — read them from an environment variable or a local untracked file, **never commit them**.
+- **Change:** add tests that parse the four statements and the three tax PDFs and assert against the known-correct figures in §2 and §3.3. Passwords: AIS/TIS `read credentials from the ignored local credentials file only when needed; do not copy them into tracked files`, Equitas statement `read credentials from the ignored local credentials file only when needed; do not copy them into tracked files` — read them from an environment variable or a local untracked file, **never commit them**.
 - **Accept:** the suite runs and currently **fails** with the deltas listed in §2 — that failure is the baseline.
 
 > ### ⚠ Do Task 0.6 first — real credentials are already committed to git
