@@ -6,6 +6,7 @@ FIX: Brand header uses Theme.gradient() so all themes look correct.
 
 import os
 import traceback
+from collections import Counter
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
@@ -431,98 +432,107 @@ class DashboardScreen(QMainWindow):
     def _build_topbar(self) -> QWidget:
         bar = QWidget()
         bar.setObjectName("topBar")
-        bar.setMinimumHeight(60)
+        self._topbar_layout = layout = QGridLayout(bar)
+        layout.setContentsMargins(20, 8, 20, 8)
+        layout.setHorizontalSpacing(16)
+        layout.setVerticalSpacing(6)
+        self._topbar = bar
 
-        layout = QHBoxLayout(bar)
-        layout.setContentsMargins(24, 0, 24, 0)
-        layout.setSpacing(10)
-
-        logo_chip = QLabel()
-        logo_chip.setFixedSize(40, 40)
-        logo_chip.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        topbar_pm = logo_pixmap(30)
-        if not topbar_pm.isNull():
-            logo_chip.setPixmap(topbar_pm)
-        else:
-            logo_chip.setText("PF")
-        layout.addWidget(logo_chip)
-
-        # Page accent bar (colored indicator below the logo)
+        self._topbar_heading = heading = QWidget()
+        title_layout = QHBoxLayout(heading)
+        title_layout.setContentsMargins(0, 0, 0, 0)
         self.page_accent_bar = QFrame()
         self.page_accent_bar.setObjectName("pageAccentBar")
         self.page_accent_bar.setFixedSize(4, 24)
         self.page_accent_bar.setProperty("screen", _NAV_ITEMS[0][1])
-        layout.addWidget(self.page_accent_bar)
+        title_layout.addWidget(self.page_accent_bar)
 
         self.page_title_lbl = QLabel("Overview")
         self.page_title_lbl.setObjectName("pageTitle")
         self.page_title_lbl.setFont(QFont("Segoe UI", 15, QFont.Weight.Bold))
-        self.page_title_lbl.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        layout.addWidget(self.page_title_lbl)
+        title_layout.addWidget(self.page_title_lbl, stretch=1)
 
-        layout.addStretch()
+        self._topbar_context = context = QWidget()
+        context_layout = QHBoxLayout(context)
+        context_layout.setContentsMargins(0, 0, 0, 0)
+        context_layout.setSpacing(8)
 
-        def _sep():
-            s = QFrame()
-            s.setFrameShape(QFrame.Shape.VLine)
-            s.setObjectName("divider")
-            s.setMinimumHeight(28)
-            return s
+        def add_selector(label, name, description, minimum, maximum):
+            combo = QComboBox()
+            combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+            combo.setMinimumWidth(minimum)
+            combo.setMaximumWidth(maximum)
+            combo.setMinimumHeight(34)
+            combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+            combo.setAccessibleName(name)
+            combo.setAccessibleDescription(description)
+            combo.currentIndexChanged.connect(lambda: self._update_combo_tooltip(combo))
+            caption = QLabel(label)
+            caption.setBuddy(combo)
+            caption.setStyleSheet(Theme.section_label_style())
+            context_layout.addWidget(caption)
+            context_layout.addWidget(combo)
+            return combo
 
-        def _combo_lbl(text):
-            l = QLabel(text)
-            l.setStyleSheet(Theme.section_label_style())
-            return l
-
-        layout.addWidget(_combo_lbl("Person"))
-        self.person_combo = QComboBox()
-        self.person_combo.setMinimumWidth(120)
-        self.person_combo.setMinimumHeight(34)
-        self.person_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        self.person_combo.setAccessibleName("Dashboard person selector")
-        self.person_combo.setAccessibleDescription("Filter the dashboard by family member.")
+        self.person_combo = add_selector(
+            "Person", "Dashboard person selector",
+            "Filter the dashboard by family member.", 150, 200,
+        )
         self.person_combo.currentIndexChanged.connect(self._on_person_changed)
-        self.person_combo.currentIndexChanged.connect(lambda: self._update_combo_tooltip(self.person_combo))
-        layout.addWidget(self.person_combo)
-
-        layout.addWidget(_sep())
-        layout.addWidget(_combo_lbl("Account"))
-        self.account_combo = QComboBox()
-        self.account_combo.setMinimumWidth(160)
-        self.account_combo.setMinimumHeight(34)
-        self.account_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        self.account_combo.setAccessibleName("Dashboard account selector")
-        self.account_combo.setAccessibleDescription("Switch the dashboard to a specific bank account.")
+        self.account_combo = add_selector(
+            "Account", "Dashboard account selector",
+            "Switch the dashboard to a specific bank account.", 260, 420,
+        )
         self.account_combo.currentIndexChanged.connect(self._on_account_changed)
-        self.account_combo.currentIndexChanged.connect(lambda: self._update_combo_tooltip(self.account_combo))
-        layout.addWidget(self.account_combo)
-
-        layout.addWidget(_sep())
-        layout.addWidget(_combo_lbl("FY"))
-        self.fy_combo = QComboBox()
-        self.fy_combo.setMinimumWidth(100)
-        self.fy_combo.setMinimumHeight(34)
-        self.fy_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        self.fy_combo.setAccessibleName("Dashboard financial year selector")
-        self.fy_combo.setAccessibleDescription("Choose the financial year shown in summaries.")
+        self.fy_combo = add_selector(
+            "FY", "Dashboard financial year selector",
+            "Choose the financial year shown in summaries.", 144, 158,
+        )
         self.fy_combo.currentTextChanged.connect(self._on_fy_changed)
-        self.fy_combo.currentIndexChanged.connect(lambda: self._update_combo_tooltip(self.fy_combo))
-        layout.addWidget(self.fy_combo)
 
-        layout.addSpacing(8)
-        btn_refresh = Theme.btn("⟳ Refresh", "secondary", height=34, min_width=102)
-        btn_refresh.setToolTip("Hard refresh — reload all screens without logging out")
+        self._topbar_actions = actions = QWidget()
+        action_layout = QHBoxLayout(actions)
+        action_layout.setContentsMargins(0, 0, 0, 0)
+        btn_refresh = Theme.btn("Refresh", "secondary", height=34, min_width=102)
+        btn_refresh.setToolTip("Reload all screens without signing out")
         btn_refresh.setAccessibleName("Hard Refresh")
         btn_refresh.clicked.connect(self._on_hard_refresh)
-        layout.addWidget(btn_refresh)
+        action_layout.addWidget(btn_refresh)
 
         btn_logout = Theme.btn("Logout", "secondary", height=34, min_width=102)
         btn_logout.setAccessibleName("Logout")
         btn_logout.setAccessibleDescription("Sign out of the application.")
         btn_logout.clicked.connect(self._on_logout)
-        layout.addWidget(btn_logout)
+        action_layout.addWidget(btn_logout)
 
+        self._topbar_compact = None
+        self._layout_topbar(0)
+        bar.installEventFilter(self)
         return bar
+
+    def eventFilter(self, watched, event):
+        if watched is getattr(self, "_topbar", None) and event.type() == QEvent.Type.Resize:
+            self._layout_topbar(event.size().width())
+        return super().eventFilter(watched, event)
+
+    def _layout_topbar(self, width):
+        # Leave room for a long screen title and the full-width account selector.
+        compact = width < 1120
+        if compact == self._topbar_compact:
+            return
+        self._topbar_compact = compact
+        layout = self._topbar_layout
+        for widget in (self._topbar_heading, self._topbar_context, self._topbar_actions):
+            layout.removeWidget(widget)
+        layout.addWidget(self._topbar_heading, 0, 0)
+        if compact:
+            layout.addWidget(self._topbar_actions, 0, 2, Qt.AlignmentFlag.AlignRight)
+            layout.addWidget(self._topbar_context, 1, 0, 1, 3)
+        else:
+            layout.addWidget(self._topbar_context, 0, 1)
+            layout.addWidget(self._topbar_actions, 0, 2, Qt.AlignmentFlag.AlignRight)
+        layout.setColumnStretch(0, 1)
+
 
     # ── Content stack ─────────────────────────────────────────────────────────
 
@@ -822,6 +832,7 @@ class DashboardScreen(QMainWindow):
         if idx >= 0:
             self.fy_combo.setCurrentIndex(idx)
         self.fy_combo.blockSignals(False)
+        self._update_combo_tooltip(self.fy_combo)
         if self.fy_combo.currentText():
             session.set_financial_year(self.fy_combo.currentText())
         self._sync_context_selectors()
@@ -853,6 +864,7 @@ class DashboardScreen(QMainWindow):
             self.person_combo.setCurrentIndex(0)
         session.selected_person_id = self.person_combo.currentData()
         self.person_combo.blockSignals(False)
+        self._update_combo_tooltip(self.person_combo)
         preferred = previous_account if session.selected_person_id == previous_person else None
         self._reload_accounts(select_id=preferred)
 
@@ -860,20 +872,25 @@ class DashboardScreen(QMainWindow):
         self.account_combo.blockSignals(True)
         self.account_combo.clear()
         pid = self.person_combo.currentData()
-        if pid is None:
-            self._accounts = get_all_accounts()
-            self.account_combo.addItem("All Accounts", userData=None)
-            for a in self._accounts:
-                self.account_combo.addItem(
-                    f"{a['person_name']} — {a.get('bank_display_name', a['bank_name'])} ({a['account_type']})",
-                    userData=a["account_id"])
-        else:
-            self._accounts = get_accounts_for_person(pid)
-            self.account_combo.addItem("All Accounts", userData=None)
-            for a in self._accounts:
-                self.account_combo.addItem(
-                    f"{a.get('bank_display_name', a['bank_name'])} ({a['account_type']})",
-                    userData=a["account_id"])
+        self._accounts = get_all_accounts() if pid is None else get_accounts_for_person(pid)
+        self.account_combo.addItem("All Accounts", userData=None)
+        labels = []
+        for account in self._accounts:
+            label = f"{account.get('bank_display_name') or account['bank_name']} ({account['account_type']})"
+            if pid is None:
+                label = f"{account['person_name']} · {label}"
+            number = account.get("account_number_full") or account.get("account_number_masked") or ""
+            last_four = number.strip()[-4:]
+            if len(number.strip()) > 4 and last_four.isalnum():
+                label = f"••••{last_four} · {label}"
+            labels.append(label)
+        counts = Counter(labels)
+        for account, label in zip(self._accounts, labels):
+            account_id = account["account_id"]
+            if counts[label] > 1:
+                label = f"Account {account_id} · {label}"
+            self.account_combo.addItem(label, userData=account_id)
+            self.account_combo.setItemData(self.account_combo.count() - 1, label, Qt.ItemDataRole.ToolTipRole)
         selected = False
         if select_id is not None:
             for i in range(self.account_combo.count()):
@@ -883,6 +900,7 @@ class DashboardScreen(QMainWindow):
             self.account_combo.setCurrentIndex(0)
         session.set_account(self.account_combo.currentData())
         self.account_combo.blockSignals(False)
+        self._update_combo_tooltip(self.account_combo)
 
     # ═══════════════════════════════════════════════════════════════════════
     # Refresh
@@ -1062,7 +1080,7 @@ class DashboardScreen(QMainWindow):
             lambda: self.income_page.refresh() if hasattr(self, 'income_page') else None,
             lambda: self.fd_page.refresh() if hasattr(self, 'fd_page') else None,
             lambda: self.import_page.refresh() if hasattr(self, 'import_page') else None,
-            lambda: None,  # Tax Documents keeps no persisted view to reload
+            lambda: self.tax_documents_page.refresh() if hasattr(self, 'tax_documents_page') else None,
             lambda: self.tax_page.refresh() if hasattr(self, 'tax_page') else None,
             lambda: self.prediction_page.refresh() if hasattr(self, 'prediction_page') else None,
             lambda: self.settings_page.refresh() if hasattr(self, 'settings_page') else None,

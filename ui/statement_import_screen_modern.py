@@ -13,7 +13,10 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QStackedWidget, QScrollArea, QSizePolicy, QFormLayout
 )
-from PySide6.QtCore import Qt, Signal, QThread, QObject, QMimeData, QEvent
+from PySide6.QtCore import (
+    Qt, Signal, QThread, QObject, QMimeData, QEvent,
+    QSignalBlocker, QItemSelection, QItemSelectionModel,
+)
 from PySide6.QtGui import QFont, QColor, QDragEnterEvent, QDropEvent, QFontMetrics
 from datetime import datetime
 import json
@@ -22,7 +25,7 @@ import re
 
 from ui.widgets.excel_table import ExcelTableWithStats
 from ui.widgets.loader import Loader
-from ui.widgets.toast_utils import show_success, show_warning, show_info
+from ui.widgets.toast_utils import show_success, show_warning
 from ui.widgets.drop_zone import DropZone
 from ui.widgets.money_label import format_inr
 from ui.theme import Theme
@@ -340,6 +343,7 @@ class StatementImportScreen(QWidget):
         self.failing_rows_balance = []
         self._import_blocked = False
         self._loader = None
+        self._busy = False
         self._preview_cell_change_lock = False
         self._selection_tab_order_ready = False
         self._preview_tab_order_ready = False
@@ -506,7 +510,7 @@ class StatementImportScreen(QWidget):
         layout.setSpacing(16)
 
         # Header card
-        self._preview_header_card = header_card = self._create_card()
+        self._preview_header_card = header_card = self._create_card(padding=8)
         hc_layout = QVBoxLayout(header_card)
         hc_layout.setSpacing(10)
         
@@ -521,12 +525,24 @@ class StatementImportScreen(QWidget):
         )
         title_row.addWidget(self.preview_summary_label)
         hc_layout.addLayout(title_row)
+
+        self.preview_status_label = QLabel()
+        self.preview_status_label.setWordWrap(True)
+        self.preview_status_label.setTextFormat(Qt.TextFormat.PlainText)
+        self.preview_status_label.setAccessibleName("Statement validation status")
+        self.preview_status_label.setProperty("textrole", "secondary-md")
+        hc_layout.addWidget(self.preview_status_label)
+
+        self.review_balance_btn = Theme.btn("Review First Row", "secondary", height=34, min_width=155)
+        self.review_balance_btn.setAccessibleName("Review first balance mismatch")
+        self.review_balance_btn.clicked.connect(self._review_first_balance_row)
+        self.review_balance_btn.hide()
         
         # Action buttons
         actions = QHBoxLayout()
         actions.setSpacing(8)
         
-        btn_select_all = Theme.btn("Select All New", "success", height=34, min_width=130)
+        self.btn_select_all = btn_select_all = Theme.btn("Select All New", "success", height=34, min_width=130)
         btn_select_all.clicked.connect(lambda: self._set_preview_selection(True))
         btn_select_all.setAccessibleName("Select all new transactions")
         btn_select_all.setAccessibleDescription("Select all non-duplicate transactions for import.")
@@ -536,7 +552,7 @@ class StatementImportScreen(QWidget):
         set_btn_icon(btn_select_all, "select_all")
         actions.addWidget(btn_select_all)
         
-        btn_clear = Theme.btn("Clear Selection", "secondary", height=34, min_width=130)
+        self.btn_clear = btn_clear = Theme.btn("Clear Selection", "secondary", height=34, min_width=130)
         btn_clear.clicked.connect(lambda: self._set_preview_selection(False))
         btn_clear.setAccessibleName("Clear transaction selection")
         btn_clear.setAccessibleDescription("Clear all selected transactions in the preview.")
@@ -545,6 +561,7 @@ class StatementImportScreen(QWidget):
         btn_clear.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         set_btn_icon(btn_clear, "clear_sel")
         actions.addWidget(btn_clear)
+        actions.addWidget(self.review_balance_btn)
         
         actions.addStretch()
         
@@ -556,7 +573,6 @@ class StatementImportScreen(QWidget):
         self.copy_debug_btn.setShortcut("Alt+D")
         self.copy_debug_btn.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         set_btn_icon(self.copy_debug_btn, "copy")
-        actions.addWidget(self.copy_debug_btn)
         
         self.export_debug_btn = Theme.btn("Export Debug", "secondary", height=34, min_width=130)
         self.export_debug_btn.clicked.connect(self._export_debug_report)
@@ -566,7 +582,10 @@ class StatementImportScreen(QWidget):
         self.export_debug_btn.setShortcut("Alt+E")
         self.export_debug_btn.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         set_btn_icon(self.export_debug_btn, "export")
-        actions.addWidget(self.export_debug_btn)
+
+        hc_layout.addLayout(actions)
+        actions = QHBoxLayout()
+        actions.setSpacing(8)
 
         self.bulk_edit_btn = Theme.btn("Bulk Edit", "secondary", height=34, min_width=120)
         self.bulk_edit_btn.clicked.connect(self._bulk_edit_selected_rows)
@@ -607,6 +626,7 @@ class StatementImportScreen(QWidget):
         self.merge_rows_btn.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         set_btn_icon(self.merge_rows_btn, "merge")
         actions.addWidget(self.merge_rows_btn)
+        actions.addStretch()
         
         hc_layout.addLayout(actions)
         layout.addWidget(header_card)
@@ -620,18 +640,20 @@ class StatementImportScreen(QWidget):
         self.preview_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self.preview_table.setAccessibleName("Transaction preview table")
         self.preview_table.setAccessibleDescription("Editable preview of parsed transactions. Use the checkbox column to select rows for import.")
+        self.preview_table.setSortingEnabled(False)
         self.preview_table.setToolTip("Editable preview of parsed transactions. Use the checkbox column to select rows for import.")
         self.preview_table.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.preview_table.doubleClicked.connect(self._on_preview_row_double_click)
         self.preview_table.itemChanged.connect(self._on_preview_item_changed)
         
-        for i, w in enumerate([40, 95, 100, 110, 120, 110, 280, 95]):
+        self.preview_table.horizontalHeader().setStretchLastSection(False)
+        for i, w in enumerate([40, 125, 110, 110, 120, 142, 142, 240, 130]):
             self.preview_table.setColumnWidth(i, w)
         
         layout.addWidget(self.preview_table_widget, stretch=3)
 
         # Debug panel (collapsible with toggle)
-        self._debug_card = debug_card = self._create_card()
+        self._debug_card = debug_card = self._create_card(padding=8)
         debug_layout = QVBoxLayout(debug_card)
         debug_layout.setSpacing(10)
         
@@ -640,6 +662,9 @@ class StatementImportScreen(QWidget):
         debug_header.addWidget(debug_title_widget)
         debug_header.addStretch()
         
+        debug_header.addWidget(self.copy_debug_btn)
+        debug_header.addWidget(self.export_debug_btn)
+
         self.debug_toggle_btn = Theme.btn("▼ Show", "secondary", height=28, min_width=80)
         self.debug_toggle_btn.clicked.connect(self._toggle_debug_panel)
         debug_header.addWidget(self.debug_toggle_btn)
@@ -656,7 +681,10 @@ class StatementImportScreen(QWidget):
         self.debug_output.setToolTip("Shows parser attempts, validation issues, and duplicate information.")
         debug_layout.addWidget(self.debug_output)
         layout.addWidget(debug_card, stretch=0)
-        
+        for card in (header_card, debug_card):
+            for button in card.findChildren(QPushButton):
+                button.setMinimumWidth(max(button.minimumWidth(), button.sizeHint().width()))
+
         return container
 
     def _build_stepper(self) -> QWidget:
@@ -709,7 +737,7 @@ class StatementImportScreen(QWidget):
             else:
                 self.btn_back.setVisible(True)
 
-    def _create_card(self) -> QFrame:
+    def _create_card(self, padding: int = 20) -> QFrame:
         """Create a modern card container"""
         card = QFrame()
         card.setObjectName("ImportCard")
@@ -718,7 +746,7 @@ class StatementImportScreen(QWidget):
                 bg=Theme.SURFACE,
                 border_color=Theme.BORDER,
                 radius=14,
-                padding=20,
+                padding=padding,
                 selector="QFrame#ImportCard",
             )
         )
@@ -993,7 +1021,8 @@ class StatementImportScreen(QWidget):
         person_selected = self.selected_person_id is not None
         account_selected = self.selected_account_id is not None
         file_selected = self.selected_file is not None
-        self.btn_next.setEnabled(person_selected and account_selected and file_selected)
+        if self.stack.currentIndex() == 0:
+            self.btn_next.setEnabled(not self._busy and person_selected and account_selected and file_selected)
 
     def _browse_file(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -1022,6 +1051,8 @@ class StatementImportScreen(QWidget):
 
     def _go_next(self):
         """Handle next button - validate and parse"""
+        if self._busy:
+            return
         if self.stack.currentIndex() == 0:
             # Validate selection screen
             if not self.selected_person_id:
@@ -1048,11 +1079,14 @@ class StatementImportScreen(QWidget):
 
     def _go_back(self):
         """Go back to selection screen"""
-        if self.stack.currentIndex() == 1:
+        if not self._busy and self.stack.currentIndex() == 1:
             self.stack.setCurrentIndex(0)
             self._set_step(1)
             self.btn_back.setEnabled(False)
             self.btn_next.setText("Parse Statement →")
+            set_btn_icon(self.btn_next, "search")
+            self.btn_next.setToolTip("Parse the selected statement.")
+            self._update_parse_button_state()
             if self.selected_person_id and self.selected_person_id in self._person_cards:
                 self._person_cards[self.selected_person_id].setFocus()
             else:
@@ -1076,24 +1110,22 @@ class StatementImportScreen(QWidget):
             self._parse_password = password
             self._parse_save_password = save_password
 
-        # Disable controls and start parse in background thread
-        self.btn_next.setEnabled(False)
-        self._drop_zone.setEnabled(False)
-        # Disable account cards during parsing
-        for card in self._account_cards.values():
-            card.setEnabled(False)
-
         self._start_statement_parse_worker()
 
     def _start_statement_parse_worker(self):
         """Start the statement parser in a background thread."""
+        self._set_parse_busy(True)
+
         def on_parse_done(result):
             txns, debug_info = result
             self.import_debug_info = debug_info or {}
 
             # Save password if requested
             if self._parse_save_password and self._parse_password:
-                set_statement_password(self.selected_account_id, self._parse_password, session.aes_key)
+                try:
+                    set_statement_password(self.selected_account_id, self._parse_password, session.aes_key)
+                except Exception:
+                    show_warning("Could not save the statement password. You can still review and import these rows.")
 
             # Process parsed transactions on the GUI thread
             self._process_parsed_statement(txns)
@@ -1123,13 +1155,14 @@ class StatementImportScreen(QWidget):
             on_error=on_parse_error
         )
 
+    def _set_parse_busy(self, busy: bool):
+        self._busy = busy
+        self._update_parse_button_state()
+        self.stack.setEnabled(not busy)
+
     def _handle_parse_error(self, exc):
         """Handle errors from statement parsing."""
-        self.btn_next.setEnabled(True)
-        self._drop_zone.setEnabled(True)
-        # Re-enable account cards during error
-        for card in self._account_cards.values():
-            card.setEnabled(True)
+        self._set_parse_busy(False)
 
         if isinstance(exc, StatementPasswordRequiredError):
             saved_password = self._get_saved_statement_password()
@@ -1154,11 +1187,7 @@ class StatementImportScreen(QWidget):
 
     def _process_parsed_statement(self, txns):
         """Process parsed transactions on the GUI thread (after worker returns)."""
-        self.btn_next.setEnabled(True)
-        self._drop_zone.setEnabled(True)
-        # Re-enable account cards after parsing
-        for card in self._account_cards.values():
-            card.setEnabled(True)
+        self._set_parse_busy(False)
 
         try:
             # Extract metadata (lightweight operation, can stay on UI thread)
@@ -1203,15 +1232,15 @@ class StatementImportScreen(QWidget):
                 self.preview_duplicate_flags = []
                 self.validation_errors = []
                 self.duplicate_count = 0
+                self._import_blocked = False
+                self.parse_confidence = 0.0
+                self.failing_rows_balance = []
                 self._populate_preview_table()
                 self._switch_to_preview()
-                show_warning("Could not extract transactions. Check debug panel for details.")
                 return
 
             valid, errors = validate_transactions(txns)
             self.validation_errors = errors
-            if errors:
-                show_warning(f"{len(errors)} rows were skipped. Check debug panel for details.")
 
             # Normalize transaction order BEFORE confidence/balance checking
             # (modern parser does this internally, but we re-check here)
@@ -1220,17 +1249,12 @@ class StatementImportScreen(QWidget):
             # Calculate confidence score and check for low confidence
             self.parse_confidence = confidence(valid)
             self.failing_rows_balance = balance_walk(valid)
-            balance_pass_rate = 1.0 - (len(self.failing_rows_balance) / len(valid)) if valid else 0.0
 
             # Block import if balance column present but no tied rows or low confidence
             tied, _ = direction_errors(valid)
             has_balances = sum(1 for t in valid if t.get("balance_after") is not None) >= 2
             self._import_blocked = has_balances and (tied == 0 or self.parse_confidence < 0.9)
             if self._import_blocked:
-                fail_count = sum(1 for txn in valid if any(f["index"] == valid.index(txn) for f in self.failing_rows_balance))
-                reason = f"Balance validation failed for {len(self.failing_rows_balance)} row(s) (confidence: {self.parse_confidence:.0%})"
-                show_warning(f"Import blocked: {reason}\n\nPlease review the statement and try again.")
-                # Still show preview but prevent import
                 self.preview_transactions = valid
                 self.preview_duplicate_flags = [False] * len(valid)
                 self.parsed_transactions = valid
@@ -1257,15 +1281,8 @@ class StatementImportScreen(QWidget):
             dups = sum(1 for is_dup in self.preview_duplicate_flags if is_dup)
             self.duplicate_count = dups
 
-            if dups > 0:
-                if dups == len(valid) and valid:
-                    show_info("All extracted rows already exist. Preview shows parsed rows, but duplicates are disabled for import.")
-                else:
-                    show_info(f"{dups} duplicate(s) will be skipped.")
-
             self.parsed_transactions = unique
             self._populate_preview_table()
-            self._show_confidence_summary(len(valid), balance_pass_rate)
             self._switch_to_preview()
 
         except Exception as e:
@@ -1278,10 +1295,33 @@ class StatementImportScreen(QWidget):
         self.btn_back.setEnabled(True)
         self.btn_next.setText("Import Selected →")
         set_btn_icon(self.btn_next, "check")
+        self._update_preview_summary()
         self.preview_table.setFocus()
+
+    def _review_first_balance_row(self):
+        row = self.failing_rows_balance[0]["index"]
+        item = self.preview_table.item(row, 6)
+        if item is not None:
+            self.preview_table.setCurrentItem(item)
+            self.preview_table.scrollToItem(item)
+            self.preview_table.setFocus()
+
+    def _checked_new_preview_rows(self):
+        return [
+            row for row in self.preview_table.getCheckedRows()
+            if row < len(self.preview_transactions) and not self.preview_duplicate_flags[row]
+        ]
+
+    def _set_import_busy(self, busy: bool):
+        self._busy = busy
+        self.stack.setEnabled(not busy)
+        self._update_preview_summary()
+        self.btn_back.setEnabled(not busy and self.stack.currentIndex() == 1)
 
     def _import_transactions(self):
         """Import selected transactions using background worker thread."""
+        if self._busy:
+            return
         if not self.preview_transactions:
             show_warning("No transactions available. Please go back and choose another file.")
             return
@@ -1290,14 +1330,12 @@ class StatementImportScreen(QWidget):
             show_warning("Import blocked: balance validation failed for this statement. Please review the statement and try again.")
             return
 
-        checked_rows = self.preview_table.getCheckedRows()
+        checked_rows = self._checked_new_preview_rows()
         if not checked_rows:
             show_warning("Please select at least one transaction to import.")
             return
 
-        # Disable controls during import
-        self.btn_next.setEnabled(False)
-        self.btn_back.setEnabled(False)
+        self._set_import_busy(True)
 
         def on_import_done(result):
             """Callback on GUI thread after worker finishes database operations."""
@@ -1355,22 +1393,19 @@ class StatementImportScreen(QWidget):
 
                 if self.parent_window:
                     self.parent_window.refresh_overview()
-                self.refresh()
-
             except Exception as e:
                 if self._loader:
                     self._loader.hide()
                 QMessageBox.critical(self, "Post-Import Error", str(e))
             finally:
-                self.btn_next.setEnabled(True)
-                self.btn_back.setEnabled(True)
+                self._set_import_busy(False)
+                self.refresh()
 
         def on_import_error(exc):
             """Callback on GUI thread if worker fails."""
             if self._loader:
                 self._loader.hide()
-            self.btn_next.setEnabled(True)
-            self.btn_back.setEnabled(True)
+            self._set_import_busy(False)
             QMessageBox.critical(self, "Import Failed", str(exc))
 
         def on_import_progress(msg):
@@ -1405,6 +1440,9 @@ class StatementImportScreen(QWidget):
         This is called when navigating back to this screen, and ALSO when top-bar changes via _on_refresh_all().
         To prevent top-bar interference, we only reset file/parsing state, NOT the card selections.
         """
+        if self._busy:
+            return
+
         # Clear file and parsing state
         self.selected_file = None
         self.parsed_transactions = []
@@ -1424,6 +1462,8 @@ class StatementImportScreen(QWidget):
         self._set_step(1)
         self.btn_back.setEnabled(False)
         self.btn_next.setText("Parse Statement →")
+        set_btn_icon(self.btn_next, "search")
+        self.btn_next.setToolTip("Parse the selected statement.")
 
         # Preserve person/account/format selections — do NOT rebuild cards
         # The person/account cards remain as they were, allowing independent selection
@@ -1455,12 +1495,6 @@ class StatementImportScreen(QWidget):
         self.btn_next.setEnabled(True)
         self.btn_back.setEnabled(self.stack.currentIndex() == 1)
 
-    def _show_confidence_summary(self, rows_parsed: int, balance_pass_rate: float):
-        """Show confidence summary as a toast notification"""
-        fail_count = len(self.failing_rows_balance)
-        summary = f"Parsed {rows_parsed} rows | Balance validation: {balance_pass_rate:.0%} | Rows needing review: {fail_count}"
-        show_info(summary)
-
     def _populate_preview_table(self):
         """Populate preview table with transactions"""
         self.preview_table.setRowCount(len(self.preview_transactions))
@@ -1470,7 +1504,10 @@ class StatementImportScreen(QWidget):
             # Checkbox
             cb = QCheckBox()
             is_duplicate = self.preview_duplicate_flags[idx] if idx < len(self.preview_duplicate_flags) else False
-            cb.setChecked(not is_duplicate)
+            selectable = not is_duplicate and not self._import_blocked
+            cb.setChecked(selectable)
+            cb.setEnabled(selectable)
+            cb.toggled.connect(self._update_preview_summary)
             cb.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
             cb.setAccessibleName(f"Select transaction row {idx + 1}")
             cb.setAccessibleDescription(
@@ -1497,7 +1534,7 @@ class StatementImportScreen(QWidget):
 
             # Apply colors
             for col, item in enumerate([date_item, type_item, mode_item, cat_item, amt_item, bal_item, desc_item, status_item]):
-                if col != 7 and not is_duplicate:
+                if col != 7 and selectable:
                     item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
                 else:
                     item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
@@ -1522,11 +1559,12 @@ class StatementImportScreen(QWidget):
 
     def _update_preview_row(self, row: int):
         """Update a single row in preview table after edit"""
-        if row < 0 or row >= len(self.preview_transactions):
+        if self._busy or self._import_blocked or not 0 <= row < len(self.preview_transactions):
             return
-        
+        if self.preview_duplicate_flags[row]:
+            return
+
         txn = self.preview_transactions[row]
-        is_duplicate = self.preview_duplicate_flags[row] if row < len(self.preview_duplicate_flags) else False
         
         # Update data columns (skip checkbox at column 0)
         date_item = QTableWidgetItem(format_display_date(txn.get("transaction_date")))
@@ -1575,21 +1613,60 @@ class StatementImportScreen(QWidget):
             show_success("Column mapping saved for this import.")
 
     def _set_preview_selection(self, selected: bool):
-        for idx in range(len(self.preview_transactions)):
-            is_duplicate = self.preview_duplicate_flags[idx] if idx < len(self.preview_duplicate_flags) else False
-            if not is_duplicate:
-                self.preview_table.setRowChecked(idx, selected)
+        table = self.preview_table
+        selection = QItemSelection()
+        model = table.model()
+        for row in range(table.rowCount()):
+            checkbox = table.cellWidget(row, 0).findChild(QCheckBox)
+            if checkbox.isEnabled():
+                with QSignalBlocker(checkbox):
+                    checkbox.setChecked(selected)
+                if selected:
+                    index = model.index(row, 0)
+                    selection.select(index, index)
+        table.selectionModel().select(
+            selection, QItemSelectionModel.SelectionFlag.ClearAndSelect | QItemSelectionModel.SelectionFlag.Rows
+        )
         self._update_preview_summary()
 
     def _update_preview_summary(self):
-        if not hasattr(self, "preview_summary_label"):
-            return
         total = len(self.preview_transactions)
-        new_count = sum(1 for flag in self.preview_duplicate_flags if not flag)
-        selected = len(self.preview_table.getCheckedRows())
+        self.duplicate_count = sum(self.preview_duplicate_flags)
+        new_count = total - self.duplicate_count
+        selected = len(self._checked_new_preview_rows()) if total else 0
         self.preview_summary_label.setText(
             f"Total: {total}  |  New: {new_count}  |  Duplicates: {self.duplicate_count}  |  Selected: {selected}"
         )
+
+        if self._busy:
+            status = "Importing selected rows…"
+        elif self._import_blocked:
+            failures = len(self.failing_rows_balance)
+            detail = f"{failures} balance mismatch(es) found." if failures else "The running balances could not be verified."
+            status = f"Import blocked. {detail} Go back to review the file or column mapping, then parse again."
+        elif not total:
+            status = "No usable transactions found. Check the debug report or go back to choose a file."
+        elif not new_count:
+            status = "All rows already exist in this account. Go back to choose another statement."
+        elif not selected:
+            status = "Select at least one new transaction to import."
+        else:
+            status = "Review the selected transactions before importing."
+            if self.failing_rows_balance:
+                status += f" Initial balance check flagged {len(self.failing_rows_balance)} row(s)."
+        if self.validation_errors:
+            status += f" {len(self.validation_errors)} invalid row(s) skipped. See the debug report."
+        self.preview_status_label.setText(status)
+        self.review_balance_btn.setVisible(self._import_blocked and bool(self.failing_rows_balance))
+
+        editable = not self._busy and not self._import_blocked and new_count > 0
+        self.btn_select_all.setEnabled(editable and selected < new_count)
+        self.btn_clear.setEnabled(editable and selected > 0)
+        for button in (self.bulk_edit_btn, self.shift_dates_btn, self.split_row_btn, self.merge_rows_btn):
+            button.setEnabled(editable)
+        if self.stack.currentIndex() == 1:
+            self.btn_next.setEnabled(editable and selected > 0)
+            self.btn_next.setToolTip(status)
 
     def _build_debug_text(self) -> str:
         lines = []
@@ -1768,10 +1845,12 @@ class StatementImportScreen(QWidget):
             self._update_preview_summary()
 
     def _selected_preview_rows(self) -> list[int]:
-        selected = sorted({item.row() for item in self.preview_table.selectedItems()})
+        if self._busy or self._import_blocked:
+            return []
+        selected = {item.row() for item in self.preview_table.selectedItems()}
         if selected:
-            return selected
-        return sorted(set(self.preview_table.getCheckedRows()))
+            return sorted(row for row in selected if not self.preview_duplicate_flags[row])
+        return self._checked_new_preview_rows()
 
     def _on_preview_item_changed(self, item: QTableWidgetItem):
         if self._preview_cell_change_lock:

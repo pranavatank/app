@@ -16,7 +16,6 @@ from dateutil.relativedelta import relativedelta
 
 from ui.widgets.excel_table import ExcelTableWithStats
 from ui.widgets.chart_widget import ChartWidget
-from ui.widgets.section import CollapsibleSection
 from ui.widgets.states import EmptyState
 from ui.widgets.toast_utils import show_success, show_warning, show_info
 from ui.widgets.money_label import format_inr
@@ -58,6 +57,7 @@ class FixedDepositsScreen(QWidget):
         super().__init__(parent)
         self.parent_window = parent
         self._build_ui()
+        self._build_interest_dialog()
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
@@ -68,65 +68,77 @@ class FixedDepositsScreen(QWidget):
         self.header_frame = QFrame()
         self.header_frame.setObjectName("pageHeader")
         self.header_frame.setStyleSheet(Theme.page_header_style())
-        header = QHBoxLayout(self.header_frame)
-        header.setContentsMargins(20, 16, 20, 16)
+        header_layout = QVBoxLayout(self.header_frame)
+        header_layout.setContentsMargins(16, 10, 16, 10)
+        header_layout.setSpacing(8)
+        header = QHBoxLayout()
+        header_layout.addLayout(header)
+        actions = QHBoxLayout()
+        actions.setSpacing(8)
+        header_layout.addLayout(actions)
         self._title_lbl = title = QLabel("Fixed Deposits")
         title.setObjectName("fdTitle")
         title.setFont(QFont("Segoe UI", 15, QFont.Weight.Bold))
         header.addWidget(title)
-        self._subtitle_lbl = subtitle = QLabel("Track FD principal, expected vs actual interest, and transaction linkage")
-        subtitle.setObjectName("fdSubtitle")
-        header.addWidget(subtitle)
         header.addStretch()
 
-        btn_add = Theme.btn("  Add FD", "primary", height=38, min_width=120)
+        btn_add = Theme.btn("Add FD", "primary", height=38, min_width=120)
         btn_add.setIcon(app_icon("add", color="on_primary", size=16))
         btn_add.setAccessibleName("Add fixed deposit")
         btn_add.clicked.connect(self._on_add_fd)
         header.addWidget(btn_add)
 
-        btn_del = Theme.btn("  Delete Selected", "destructive", height=38, min_width=170)
+        btn_del = Theme.btn("Delete", "destructive", height=38, min_width=102)
         btn_del.setIcon(app_icon("delete", color=Theme.DANGER, size=16))
         btn_del.setAccessibleName("Delete selected fixed deposit")
         btn_del.clicked.connect(self._delete_selected_fds)
-        header.addWidget(btn_del)
+        actions.addWidget(btn_del)
 
-        btn_link = Theme.btn("  Link Txn", "secondary", height=38, min_width=120)
+        btn_link = Theme.btn("Link", "secondary", height=38, min_width=105)
         btn_link.setIcon(app_icon("link", color=Theme.TEXT_PRIMARY, size=16))
         btn_link.setAccessibleName("Link transaction to fixed deposit")
         btn_link.clicked.connect(self._on_link_fd_transaction)
-        header.addWidget(btn_link)
+        actions.addWidget(btn_link)
 
-        btn_auto = Theme.btn("  Auto-Link", "secondary", height=38, min_width=130)
+        btn_auto = Theme.btn("Auto-Link", "secondary", height=38, min_width=118)
         btn_auto.setIcon(app_icon("auto_link", color=Theme.TEXT_PRIMARY, size=16))
         btn_auto.setAccessibleName("Auto-link fixed deposit transactions")
         btn_auto.clicked.connect(self._on_auto_link)
-        header.addWidget(btn_auto)
+        actions.addWidget(btn_auto)
 
-        btn_recalc = Theme.btn("  Recalculate Selected", "secondary", height=38, min_width=190)
+        btn_recalc = Theme.btn("Recalculate", "secondary", height=38, min_width=127)
         btn_recalc.setIcon(app_icon("recalculate", color=Theme.TEXT_PRIMARY, size=16))
         btn_recalc.setAccessibleName("Recalculate selected fixed deposits")
         btn_recalc.clicked.connect(self._on_recalculate_selected)
-        header.addWidget(btn_recalc)
+        actions.addWidget(btn_recalc)
 
-        btn_rates = Theme.btn("  Enter Real Rates", "secondary", height=38, min_width=155)
+        btn_rates = Theme.btn("Rates", "secondary", height=38, min_width=106)
         btn_rates.setAccessibleName("Enter real fixed deposit rates")
         btn_rates.setAccessibleDescription("Bulk-enter the real interest rate and tenure for deposits still on default projections.")
+        btn_rates.setToolTip("Enter actual rates and tenures")
         btn_rates.clicked.connect(self._on_enter_real_rates)
-        header.addWidget(btn_rates)
+        actions.addWidget(btn_rates)
 
-        btn_planner = Theme.btn("  FD Planner", "secondary", height=38, min_width=140)
+        btn_planner = Theme.btn("Planner", "secondary", height=38, min_width=114)
         btn_planner.setIcon(app_icon("fixed_deposits", color=Theme.TEXT_PRIMARY, size=16))
         btn_planner.setAccessibleName("Open FD planner")
         btn_planner.setAccessibleDescription("Compare current bank FD rates and split savings across banks within the deposit insurance limit.")
+        btn_planner.setToolTip("Open FD planner")
         btn_planner.clicked.connect(self._on_open_planner)
-        header.addWidget(btn_planner)
+        actions.addWidget(btn_planner)
 
-        btn_save = Theme.btn("  Save Changes", "secondary", height=38, min_width=155)
+        btn_save = Theme.btn("Save Changes", "secondary", height=38, min_width=155)
         btn_save.setIcon(app_icon("save", color=Theme.TEXT_PRIMARY, size=16))
         btn_save.setAccessibleName("Save fixed deposit changes")
         btn_save.clicked.connect(self._on_save_changes)
         header.addWidget(btn_save)
+
+        btn_trend = Theme.btn("Interest Trend", "secondary", height=38, min_width=138)
+        btn_trend.clicked.connect(self._show_interest_trend)
+        header.addWidget(btn_trend)
+        actions.addStretch()
+        for button in self.header_frame.findChildren(QPushButton):
+            button.setMinimumWidth(max(button.minimumWidth(), button.sizeHint().width()))
 
         layout.addWidget(self.header_frame)
 
@@ -146,13 +158,6 @@ class FixedDepositsScreen(QWidget):
         tds_layout.addWidget(self.tds_banner_label, stretch=1)
         self.tds_banner.setVisible(False)
         layout.addWidget(self.tds_banner)
-
-        # Interest trend chart (collapsible, initially collapsed)
-        self.interest_chart = ChartWidget()
-        self.interest_chart.setMinimumHeight(120)
-        self.interest_chart_section = CollapsibleSection("Interest Trend", expanded=False, accent="fixed_deposits")
-        self.interest_chart_section.content_layout().addWidget(self.interest_chart)
-        layout.addWidget(self.interest_chart_section)
 
         # Table
         self.table_widget = ExcelTableWithStats(show_checkboxes=True)
@@ -397,12 +402,27 @@ class FixedDepositsScreen(QWidget):
         )
         self.tds_banner.setVisible(True)
 
+    def _build_interest_dialog(self):
+        self._interest_dialog = QDialog(self)
+        self._interest_dialog.setWindowTitle("Interest Trend")
+        self._interest_dialog.resize(760, 400)
+        layout = QVBoxLayout(self._interest_dialog)
+        self.interest_chart = ChartWidget()
+        layout.addWidget(self.interest_chart)
+        close = Theme.btn("Close", "secondary", height=34)
+        close.clicked.connect(self._interest_dialog.close)
+        layout.addWidget(close, alignment=Qt.AlignmentFlag.AlignRight)
+
+    def _show_interest_trend(self):
+        self._refresh_interest_chart()
+        self._interest_dialog.exec()
+
     def _refresh_interest_chart(self):
         """Refresh the FD and Savings interest trend chart."""
         if not hasattr(self, 'interest_chart') or not self.interest_chart:
             return
 
-        fys = list(reversed(get_all_financial_years(since_year=2020)))
+        fys = sorted(get_all_financial_years(since_year=2020))
         pid = session.selected_person_id
 
         fd_interests  = [get_total_fd_interest(fy, pid)      for fy in fys]

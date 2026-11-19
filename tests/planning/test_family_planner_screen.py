@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 import pytest
+from PySide6.QtCore import QCoreApplication, QEvent
 from core.session import session
 from engines.family_workbook import FamilyData
 from ui.fd_planner_screen import FDPlannerScreen
@@ -18,8 +19,13 @@ def screen(qapp,monkeypatch):
     monkeypatch.setattr(module,'read_family_workbook',lambda *args,**kwargs:data)
     monkeypatch.setattr(FDPlannerScreen,'_refresh_rates',lambda self:None)
     monkeypatch.setattr(session,'privacy_mode',False)
-    page=FDPlannerScreen();yield page
-    page.tree.timer.stop();page.close()
+    page = FDPlannerScreen()
+    yield page
+    page.tree.timer.stop()
+    if page.close():
+        # Dispose of the graphics scene while QApplication is still running.
+        page.deleteLater()
+        QCoreApplication.sendPostedEvents(page, QEvent.Type.DeferredDelete)
 
 
 def test_page_is_a_widget_and_main_settings_are_compact(screen):

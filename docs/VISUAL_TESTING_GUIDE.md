@@ -3,7 +3,7 @@
 **Updated:** 2026-11-08. Read this guide, then `tests/native/REBUILD_PLAN.md` before continuing the rebuild.
 This is a concise handoff for a fresh agent; old investigation history belongs in Git and ignored run logs.
 For current release gates and readiness status, see [`PRODUCTION_READINESS.md`](PRODUCTION_READINESS.md).
-The final isolated suite and acceptance audits are complete; the first cleanup batch removed only the validated ignored install environment and wheel cache. Public distribution remains gated by nine private-source paths in local-only Git history. Next: file/test organization, refactor, then the full Sol UI audit.
+The previous device completed the real-data rebuild and acceptance audits. The latest commits organized the tests, relocated native tooling, and extracted several runtime components. See the readiness page for verification on the new device before using the real-data runbook.
 
 ## Product and data model
 
@@ -131,6 +131,17 @@ and after UX work (`ux_complete_compare_20261107.out`).
 - Keep screenshots and logs under ignored `artifacts/native/`. Do not commit `data/`, `backups/`, DB
   files, or screenshots. Keep `pyautogui.FAILSAFE` enabled.
 
+## Batch 1 compact layout and statement feedback
+
+Check the app at 1200 × 720 logical pixels with 125% scaling and the sidebar expanded. Repeat at a wider size to confirm that the dashboard controls return to one row. Switch between two same-bank accounts with the same last four characters and check that the picker distinguishes them. Hover over a long label to read it in full.
+
+- **Transactions.** Use a long description, large totals and a negative running balance. Confirm that the date, direction, amount and balance are visible together. Sort the ledger, select cells, and copy and paste across Description, Amount and Balance to verify the visible order.
+- **Statement Import.** Check mixed and duplicate-only previews, no usable rows, cleared selections, and balance failures. Confirm that the status explains each disabled Import action. Check that the first balance mismatch can be reached, that Back restores parsing, and that duplicate rows stay out of editing and selection. In the native rebuild, assert that Select All New and Import Selected are disabled for an all-duplicate replay, then confirm the account transaction count is unchanged.
+- **Fixed Deposits.** Check that the toolbar actions fit and at least five rows are fully visible with a populated ledger. Open Interest Trend from the header and close it to return to the same ledger.
+- **Tax Documents.** Use complete, partial and missing saved-document sets. Switch person and financial year and verify the saved sources update together with their results. Scroll the page to the disclosure and fixed-deposit tables and check their full rows and headers.
+
+The Batch 1 smoke used an isolated synthetic database for all 11 [captures](../artifacts/native/batch1-compact/). The full native statement replay with a source PDF remains pending. The focused checks passed 75 tests with 5 skips for full-session table parity. The render module reached the combined runner's 120-second limit and passed all 5 tests in an isolated run of `python -m pytest -q tests/ui/test_screen_render.py`. The repository privacy suite passed 9 tests and 2 subtests. [Focused test logs](../artifacts/pytest/batch1-final/), [privacy test log](../artifacts/pytest/batch1-privacy/)
+
 ## Useful commands and sources
 
 Run from the repo root in PowerShell, one command at a time. The venv is `.venv\Scripts\python.exe`.
@@ -156,4 +167,4 @@ helpers are in `rebuild_common.py`, per-screen checks in `rebuild_p3_common.py`,
 
 The P5 collector requires current P3 files with nonempty boolean-result lists and compares fingerprint row counts and
 hashes across the full table set. A requested baseline that is missing, invalid, or mismatched fails collection.
-Review policy: Sol medium for planning and review; Luna medium for implementation, with a focused collection test.
+The plan-then-build skill uses Sol medium for planning and review. Its implementation step uses Luna medium when available and the coordinator otherwise.

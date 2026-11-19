@@ -91,14 +91,10 @@ class TestStatementImportBlocking:
         screen.selected_account_id = test_account_id
 
         warnings_shown = []
-        infos_shown = []
         successes_shown = []
 
         def mock_warning(msg):
             warnings_shown.append(msg)
-
-        def mock_info(msg):
-            infos_shown.append(msg)
 
         def mock_success(msg):
             successes_shown.append(msg)
@@ -146,7 +142,6 @@ class TestStatementImportBlocking:
         ]
 
         with patch("ui.statement_import_screen_modern.show_warning", side_effect=mock_warning), \
-             patch("ui.statement_import_screen_modern.show_info", side_effect=mock_info), \
              patch("ui.statement_import_screen_modern.show_success", side_effect=mock_success), \
              patch("ui.statement_import_screen_modern.QMessageBox.critical", side_effect=mock_critical), \
              patch("ui.statement_import_screen_modern.validate_transactions") as mock_validate, \
@@ -157,8 +152,8 @@ class TestStatementImportBlocking:
             screen._process_parsed_statement(rows)
 
             assert screen._import_blocked, "_import_blocked should be True for tied rows with low confidence"
-            assert len(warnings_shown) > 0, "show_warning should have been called"
-            assert "blocked" in warnings_shown[0].lower(), "Warning should mention 'blocked'"
+            assert "blocked" in screen.preview_status_label.text().lower()
+            assert not screen.btn_next.isEnabled()
 
         with patch("ui.statement_import_screen_modern.show_warning", side_effect=mock_warning), \
              patch("ui.statement_import_screen_modern.Loader.run", side_effect=mock_loader_run):
@@ -184,13 +179,9 @@ class TestStatementImportBlocking:
         screen.selected_account_id = test_account_id
 
         warnings_shown = []
-        infos_shown = []
 
         def mock_warning(msg):
             warnings_shown.append(msg)
-
-        def mock_info(msg):
-            infos_shown.append(msg)
 
         def mock_critical(parent, title, text, *args, **kwargs):
             pytest.fail(f"QMessageBox.critical should not be called: {title}: {text}")
@@ -231,7 +222,6 @@ class TestStatementImportBlocking:
         ]
 
         with patch("ui.statement_import_screen_modern.show_warning", side_effect=mock_warning), \
-             patch("ui.statement_import_screen_modern.show_info", side_effect=mock_info), \
              patch("ui.statement_import_screen_modern.QMessageBox.critical", side_effect=mock_critical), \
              patch("ui.statement_import_screen_modern.validate_transactions") as mock_validate, \
              patch("ui.statement_import_screen_modern.check_duplicate") as mock_check_dup, \
@@ -244,6 +234,12 @@ class TestStatementImportBlocking:
 
             assert not screen._import_blocked, "_import_blocked should be False when no balance_after (no tied rows)"
             assert screen.parse_confidence == 0.0, "confidence should be 0.0 without balance_after"
+            assert screen.btn_next.isEnabled()
+            screen._set_preview_selection(False)
+            assert "Select at least one" in screen.preview_status_label.text()
+            assert not screen.btn_next.isEnabled()
+            screen._set_preview_selection(True)
+            assert screen.btn_next.isEnabled()
 
         checked_rows = [0, 1, 2]
         with patch("ui.statement_import_screen_modern.show_warning", side_effect=mock_warning), \
@@ -273,9 +269,6 @@ class TestStatementImportBlocking:
 
         def mock_warning(msg):
             warnings_shown.append(msg)
-
-        def mock_info(msg):
-            pass
 
         def mock_critical(parent, title, text, *args, **kwargs):
             pytest.fail(f"QMessageBox.critical should not be called: {title}: {text}")
@@ -319,7 +312,6 @@ class TestStatementImportBlocking:
         ]
 
         with patch("ui.statement_import_screen_modern.show_warning", side_effect=mock_warning), \
-             patch("ui.statement_import_screen_modern.show_info", side_effect=mock_info), \
              patch("ui.statement_import_screen_modern.QMessageBox.critical", side_effect=mock_critical), \
              patch("ui.statement_import_screen_modern.validate_transactions") as mock_validate, \
              patch("ui.statement_import_screen_modern.Loader.run", side_effect=mock_loader_run):
@@ -329,5 +321,5 @@ class TestStatementImportBlocking:
             screen._process_parsed_statement(rows)
 
             assert screen._import_blocked, "_import_blocked should be True when has_balances=True and tied==0"
-            assert len(warnings_shown) > 0, "show_warning should have been called"
-            assert "blocked" in warnings_shown[0].lower(), "Warning should mention 'blocked'"
+            assert "blocked" in screen.preview_status_label.text().lower()
+            assert not screen.btn_next.isEnabled()

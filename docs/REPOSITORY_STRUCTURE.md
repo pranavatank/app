@@ -24,7 +24,7 @@
 
 This work included a small runtime organization pass alongside the test and artifact relocation:
 
-- Ten database migration and seed helpers moved from `core/database.py` into `core/database_migrations.py` (687 lines). The original public functions remain available through compatibility exports so existing imports keep working.
+- Ten database migration and seed helpers moved from `core/database.py` into `core/database_migrations.py`. The original public functions remain available through compatibility exports so existing imports keep working.
 - `ThemeCard` moved to `ui/widgets/theme_card.py`, with its former import path retained as a compatibility export.
 - TOTP enrollment and restore-recovery dialogs moved to `ui/dialogs/settings_security.py`, with compatibility exports retained from their former module.
 

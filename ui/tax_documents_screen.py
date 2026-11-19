@@ -37,7 +37,10 @@ from engines.taxdocs.persist import (
 )
 from engines.statement_parser import is_pdf_encrypted
 from models.fixed_deposit import get_all_fds, find_fd_by_account_no
-from models.person import get_ais_tis_password, set_ais_tis_password
+from models.ais_tis_import import get_ais_tis_data
+from models.form26as import get_form26as_import
+from models.person import get_ais_tis_password, get_all_persons, set_ais_tis_password
+import json
 import os
 
 
@@ -50,23 +53,29 @@ def _format_inr(amount: float) -> str:
     return s.replace("₹", "₹ ", 1)
 
 
-def _extract_financial_year(pdf_data: dict) -> str:
-    """Extract financial year from parsed PDF data."""
-    # Try to find FY in the data
-    if isinstance(pdf_data, dict):
-        if 'financial_year' in pdf_data:
-            fy = pdf_data['financial_year']
-            return f"FY {fy}" if fy else "—"
-        if 'assessment_year' in pdf_data:
-            ay = pdf_data['assessment_year']
-            if ay:
-                # AY 2026-27 means FY 2025-26
-                try:
-                    year = int(str(ay)[:4])
-                    return f"FY {year-1}-{year}"
-                except:
-                    pass
-    return "—"
+def _selected_person_id() -> int | None:
+    if session.selected_person_id is not None:
+        return session.selected_person_id
+    people = get_all_persons()
+    return people[0]["person_id"] if len(people) == 1 else None
+
+
+def _saved_ais_tis(person_id: int, financial_year: str, source_type: str) -> dict | None:
+    row = get_ais_tis_data(person_id, financial_year, source_type)
+    if row is None:
+        return None
+    try:
+        parsed = json.loads(row.get("raw_json") or "{}")
+    except (TypeError, ValueError):
+        parsed = {}
+    return {
+        "dividend": row.get("dividend_income") or 0.0,
+        "savings_interest": row.get("savings_interest") or 0.0,
+        "fd_interest": row.get("fd_interest") or 0.0,
+        "business_receipts": row.get("other_income") or 0.0,
+        "tds": row.get("tds_deducted") or 0.0,
+        **(parsed if isinstance(parsed, dict) else {}),
+    }
 
 
 class TaxDocumentsScreen(QWidget):
@@ -76,8 +85,8 @@ class TaxDocumentsScreen(QWidget):
         super().__init__(parent)
         self.parent_window = parent
         self.merge_result = None
-        self._itr_financial_year: str | None = None
         self._build_ui()
+        self.refresh()
 
     def _build_ui(self):
         """Build the screen layout."""
@@ -90,6 +99,11 @@ class TaxDocumentsScreen(QWidget):
         title.setFont(QFont("Segoe UI", 15, QFont.Weight.Bold))
         title.setProperty("textrole", "title-md")
         layout.addWidget(title)
+
+        self.person_prompt = QLabel("Select a person to view or import their tax documents.")
+        self.person_prompt.setProperty("textrole", "secondary-md")
+        self.person_prompt.setWordWrap(True)
+        layout.addWidget(self.person_prompt)
 
         # Upload zones
         upload_frame = QFrame()
@@ -105,7 +119,6 @@ class TaxDocumentsScreen(QWidget):
             filter_text="PDF files (*.pdf)",
             parent=self
         )
-        self.zone_26as.setMinimumHeight(120)
         self.zone_ais = DropZone(
             title="AIS",
             subtitle="Drag PDF here or click to browse",
@@ -113,7 +126,6 @@ class TaxDocumentsScreen(QWidget):
             filter_text="PDF files (*.pdf)",
             parent=self
         )
-        self.zone_ais.setMinimumHeight(120)
         self.zone_tis = DropZone(
             title="TIS",
             subtitle="Drag PDF here or click to browse",
@@ -121,7 +133,6 @@ class TaxDocumentsScreen(QWidget):
             filter_text="PDF files (*.pdf)",
             parent=self
         )
-        self.zone_tis.setMinimumHeight(120)
 
         upload_layout.addWidget(self.zone_26as)
         upload_layout.addWidget(self.zone_ais)
@@ -130,8 +141,6 @@ class TaxDocumentsScreen(QWidget):
         self.zone_26as.fileSelected.connect(self._on_26as_selected)
         self.zone_ais.fileSelected.connect(self._on_ais_selected)
         self.zone_tis.fileSelected.connect(self._on_tis_selected)
-
-        layout.addWidget(upload_frame)
 
         # Scrollable content area
         scroll = QScrollArea()
@@ -144,12 +153,13 @@ class TaxDocumentsScreen(QWidget):
         inner_layout = QVBoxLayout(inner)
         inner_layout.setContentsMargins(0, 0, 0, 0)
         inner_layout.setSpacing(16)
+        inner_layout.addWidget(upload_frame)
 
         # Empty state
         self.empty_state = EmptyState(
             icon_name="document",
-            headline="No tax documents yet",
-            explanation="Upload Form 26AS, AIS, and TIS PDFs to view reconciliation.",
+            headline="Reconciliation needs all three documents",
+            explanation="Add the missing Form 26AS, AIS, or TIS PDF for this financial year.",
             action_text="Browse Form 26AS"
         )
         self.empty_state.action_clicked.connect(self.zone_26as._on_browse_click)
@@ -175,6 +185,34 @@ class TaxDocumentsScreen(QWidget):
         scroll.setWidget(inner)
         layout.addWidget(scroll, stretch=1)
 
+    def refresh(self):
+        """Show the saved documents for the current person and financial year."""
+        person_id = _selected_person_id()
+        fy = session.selected_fy
+        self.person_prompt.setVisible(person_id is None)
+        self.merge_result = None
+        self.position_frame.hide()
+        self.non_income_frame.hide()
+        self.fd_frame.hide()
+        self.empty_state.setVisible(person_id is not None)
+
+        form26as = get_form26as_import(person_id, fy) if person_id is not None else None
+        ais = _saved_ais_tis(person_id, fy, SOURCE_TYPE_AIS) if person_id is not None else None
+        tis = _saved_ais_tis(person_id, fy, SOURCE_TYPE_TIS) if person_id is not None else None
+        for zone, data in ((self.zone_26as, form26as), (self.zone_ais, ais), (self.zone_tis, tis)):
+            zone.setEnabled(person_id is not None)
+            zone.pdf_data = data
+            zone.pdf_path = None
+            saved = data is not None
+            zone.icon_label.setVisible(not saved)
+            zone.setMinimumHeight(76 if saved else 120)
+            vertical_padding = 8 if saved else 20
+            zone.layout().setContentsMargins(20, vertical_padding, 20, vertical_padding)
+            zone.layout().setSpacing(4 if saved else 12)
+            zone.set_status(f"{zone.title_text} · Saved" if data is not None else zone.title_text,
+                            fy=f"FY {fy}" if data is not None else "")
+        self._try_merge(person_id)
+
     def _build_position_frame(self) -> QFrame:
         """Build the reconciled position table."""
         frame = QFrame()
@@ -197,7 +235,7 @@ class TaxDocumentsScreen(QWidget):
         self.position_table.setAccessibleName("Reconciled financial position table")
         self.position_table.setAccessibleDescription("Shows the comparison of financial data across TIS, AIS, Form 26AS, and in-app records.")
         self.position_table.setSortingEnabled(False)
-        layout.addWidget(self.position_table_widget, stretch=1)
+        layout.addWidget(self.position_table_widget)
 
         return frame
 
@@ -226,7 +264,7 @@ class TaxDocumentsScreen(QWidget):
         self.non_income_table.setAccessibleName("Non-income items disclosure table")
         self.non_income_table.setAccessibleDescription("Lists transactions that are disclosed but not counted as taxable income.")
         self.non_income_table.setSortingEnabled(False)
-        layout.addWidget(self.non_income_table_widget, stretch=1)
+        layout.addWidget(self.non_income_table_widget)
 
         return frame
 
@@ -257,29 +295,27 @@ class TaxDocumentsScreen(QWidget):
         self.fd_table.setAccessibleName("Fixed deposit reconciliation table")
         self.fd_table.setAccessibleDescription("Shows matching between AIS account numbers and Fixed Deposit records.")
         self.fd_table.setSortingEnabled(False)
-        layout.addWidget(self.fd_table_widget, stretch=1)
+        layout.addWidget(self.fd_table_widget)
 
         return frame
 
     def _on_26as_selected(self, path: str):
         """Handle 26AS file selection."""
+        person_id = _selected_person_id()
+        if person_id is None:
+            show_warning("Select a person before importing tax documents.")
+            return
         self.zone_26as.set_status("Parsing...", error=False)
 
         def parse_26as():
             parsed = parse_form26as_pdf(path, password=None, debug={})
-            info = persist_form26as(session.selected_person_id or 1, parsed,
+            info = persist_form26as(person_id, parsed,
                                     source_file=os.path.basename(path))
-            return parsed, info
+            return info
 
-        def on_done(result):
-            parsed, info = result
-            self._itr_financial_year = info["financial_year"]
-            self.zone_26as.pdf_data = parsed
-            self.zone_26as.pdf_path = path
-            fy = _extract_financial_year(parsed)
-            self.zone_26as.set_status("✓ Loaded", fy=fy)
+        def on_done(info):
+            self.refresh()
             show_success(f"Form 26AS imported — {info['record_count']} records, FY {info['financial_year']}")
-            self._try_merge()
 
         def on_error(exc):
             self.zone_26as.set_status(f"Error: {str(exc)[:50]}", error=True)
@@ -290,9 +326,11 @@ class TaxDocumentsScreen(QWidget):
 
     def _on_ais_selected(self, path: str):
         """Handle AIS file selection."""
+        person_id = _selected_person_id()
+        if person_id is None:
+            show_warning("Select a person before importing tax documents.")
+            return
         self.zone_ais.set_status("Parsing...", error=False)
-
-        person_id = session.selected_person_id or 1
 
         # Check if encrypted and prompt for password on GUI thread BEFORE starting background parse
         password = None
@@ -327,22 +365,17 @@ class TaxDocumentsScreen(QWidget):
 
         def parse_ais():
             parsed = parse_ais_pdf(path, password=password)
-            info = persist_ais_tis(session.selected_person_id or 1, parsed, SOURCE_TYPE_AIS,
+            info = persist_ais_tis(person_id, parsed, SOURCE_TYPE_AIS,
                                    source_file=os.path.basename(path))
-            return parsed, info
+            return info
 
-        def on_done(result):
-            parsed, info = result
+        def on_done(info):
             # Save password if requested
             if should_save and password:
                 set_ais_tis_password(person_id, password, session.aes_key)
 
-            self.zone_ais.pdf_data = parsed
-            self.zone_ais.pdf_path = path
-            fy = _extract_financial_year(parsed)
-            self.zone_ais.set_status("✓ Loaded", fy=fy)
+            self.refresh()
             show_success(f"AIS imported — {info['record_count']} records, FY {info['financial_year']}")
-            self._try_merge()
 
         def on_error(exc):
             self.zone_ais.set_status(f"Error: {str(exc)[:50]}", error=True)
@@ -353,9 +386,11 @@ class TaxDocumentsScreen(QWidget):
 
     def _on_tis_selected(self, path: str):
         """Handle TIS file selection."""
+        person_id = _selected_person_id()
+        if person_id is None:
+            show_warning("Select a person before importing tax documents.")
+            return
         self.zone_tis.set_status("Parsing...", error=False)
-
-        person_id = session.selected_person_id or 1
 
         # Check if encrypted and prompt for password on GUI thread BEFORE starting background parse
         password = None
@@ -390,22 +425,17 @@ class TaxDocumentsScreen(QWidget):
 
         def parse_tis():
             parsed = parse_tis_pdf(path, password=password)
-            info = persist_ais_tis(session.selected_person_id or 1, parsed, SOURCE_TYPE_TIS,
+            info = persist_ais_tis(person_id, parsed, SOURCE_TYPE_TIS,
                                    source_file=os.path.basename(path))
-            return parsed, info
+            return info
 
-        def on_done(result):
-            parsed, info = result
+        def on_done(info):
             # Save password if requested
             if should_save and password:
                 set_ais_tis_password(person_id, password, session.aes_key)
 
-            self.zone_tis.pdf_data = parsed
-            self.zone_tis.pdf_path = path
-            fy = _extract_financial_year(parsed)
-            self.zone_tis.set_status("✓ Loaded", fy=fy)
+            self.refresh()
             show_success(f"TIS imported — {info['record_count']} records, FY {info['financial_year']}")
-            self._try_merge()
 
         def on_error(exc):
             self.zone_tis.set_status(f"Error: {str(exc)[:50]}", error=True)
@@ -414,18 +444,19 @@ class TaxDocumentsScreen(QWidget):
         Loader.run(self, fn=parse_tis, message="Parsing TIS…",
                   on_done=on_done, on_error=on_error)
 
-    def _try_merge(self):
+    def _try_merge(self, person_id: int | None):
         """Try to merge if all three documents are loaded."""
-        if (self.zone_26as.pdf_data and
+        if (person_id is not None and
+            self.zone_26as.pdf_data and
             self.zone_ais.pdf_data and
             self.zone_tis.pdf_data):
-            self._on_all_loaded()
+            self._on_all_loaded(person_id)
 
-    def _on_all_loaded(self):
+    def _on_all_loaded(self, person_id: int):
         """Called when all three documents are loaded."""
         try:
             # Build FD lookup function
-            lookup_fd = lambda acct: find_fd_by_account_no(acct, session.selected_person_id)
+            lookup_fd = lambda acct: find_fd_by_account_no(acct, person_id)
 
             # Merge documents
             self.merge_result = merge_tax_documents(
@@ -433,7 +464,7 @@ class TaxDocumentsScreen(QWidget):
                 ais_data=self.zone_ais.pdf_data,
                 form26as_data=self.zone_26as.pdf_data,
                 fd_by_account_no_lookup=lookup_fd,
-                financial_year=self._itr_financial_year or session.selected_fy,
+                financial_year=session.selected_fy,
             )
 
             # Display results
@@ -445,8 +476,6 @@ class TaxDocumentsScreen(QWidget):
             self._render_position_table()
             self._render_non_income_table()
             self._render_fd_table()
-
-            show_success("Tax documents reconciled successfully")
 
         except Exception as e:
             show_danger(f"Merge failed: {str(e)}")
@@ -521,6 +550,22 @@ class TaxDocumentsScreen(QWidget):
             "✓"
         )
 
+        self._fit_result_table(self.position_table)
+
+    @staticmethod
+    def _fit_result_table(table):
+        header = table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        header.setStretchLastSection(True)
+        table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        table.ensurePolished()
+        rows_height = sum(table.rowHeight(row) for row in range(table.rowCount()))
+        # Keep every row in the page scroll and reserve room for a horizontal scrollbar.
+        table.setFixedHeight(
+            header.sizeHint().height() + rows_height
+            + 2 * table.frameWidth() + table.horizontalScrollBar().sizeHint().height()
+        )
+
     def _add_position_row(self, category: str, tis: str, ais: str, form26as: str, in_app: str, status: str):
         """Add a row to the position table."""
         row_data = [category, tis, ais, form26as, in_app, status]
@@ -546,6 +591,7 @@ class TaxDocumentsScreen(QWidget):
 
                 row_data = [category_display, _format_inr(amount)]
                 self.non_income_table.addDataRow(row_data)
+        self._fit_result_table(self.non_income_table)
 
     def _render_fd_table(self):
         """Render the FD reconciliation table."""
@@ -575,4 +621,5 @@ class TaxDocumentsScreen(QWidget):
             status_item = self.fd_table.item(row, 3)
             if status_item:
                 status_item.setForeground(QColor(Theme.WARNING))
+        self._fit_result_table(self.fd_table)
 

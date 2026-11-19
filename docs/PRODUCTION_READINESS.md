@@ -1,6 +1,22 @@
 # Production readiness and release gates
 
-**Status date:** 2026-11-08. The recorded production baseline and acceptance gates are complete; subsequent test/artifact relocation and bounded runtime extractions are documented in the [organization audit](REPOSITORY_STRUCTURE.md), and their current-tree verification is tracked separately. **Public production release remains blocked** because nine historical private-source paths remain in repository history; the owner confirms the repository stayed local and was not distributed. This page is the current release handoff.
+The production baseline and acceptance gates were recorded on 2026-11-08. The [organization audit](REPOSITORY_STRUCTURE.md) documents the later test relocation and runtime extractions. **Public distribution remains gated** by nine private-source paths in local Git history.
+
+## New Windows device checkpoint
+
+On 2026-11-19, `main` at `8c83270` was checked in `D:\Study\Projects\app`. Python 3.12.10 runs from the local `.venv`, which uses the unpacked runtime under `artifacts/python312/runtime/tools`. `pip check` passed. Launch the app from the checkout with `.\.venv\Scripts\python.exe main.py`.
+
+The Windows startup smoke used an isolated app copy and a disposable database. First-run password setup, login, onboarding, and all 11 dashboard pages passed. SQLite integrity returned `ok` and the foreign-key check found no violations. A second run used the bundled QtAwesome fonts because the sandbox restricts the Windows per-user font directory. See the [smoke log](../artifacts/native/device-smoke-20261119/smoke-bundled-fonts.log) and [installed package versions](../artifacts/native/device-smoke-20261119/installed-versions.txt).
+
+The 78-module headless run reported 77 clean exits. The FD Planner screen module passed its assertions and then crashed at Qt shutdown. Its fixture now disposes of the widget while Qt is active after a successful close. The affected module passed all 12 tests and exited cleanly on four isolated reruns. Together, the full run and focused rerun cover **765 passed and 47 skipped**, with 2 additional passing subtests. The skips comprise 36 missing document fixtures, 4 missing live-database checks, 2 statement-import cases without a person fixture, and 5 full-session parity placeholders. See the [full run](../artifacts/pytest/device-20261119/suite.log), [FD Planner rerun](../artifacts/pytest/device-20261119-planner-rerun/suite.log), and [repeat checks](../artifacts/pytest/device-20261119-planner-rerun/repeats.log).
+
+The [temporary-database verification](../artifacts/native/rebuild/P4_verify_tempdb.json) recorded zero failures, and the tracked-path privacy check passed. The device smoke took place before the live database was initialized on this checkout.
+
+The current checkout preflight and workbook-dependent scenarios require the actual inputs. The prior device's rebuild counts and screenshots are historical evidence. Once the new source files are available, begin with the read-only preflight in the [native rebuild runbook](../tests/native/REBUILD_PLAN.md).
+
+## Compact UI checkpoint
+
+Batch 1 addresses the dashboard selectors, transaction ledger, statement preview, Fixed Deposits toolbar and Tax Documents results. The [visual testing guide](VISUAL_TESTING_GUIDE.md#batch-1-compact-layout-and-statement-feedback) records the checks and links to the synthetic captures and test logs. The statement native scripts were updated for the disabled action states. The real-PDF native replay remains a release verification step.
 
 ## Completed evidence
 
@@ -23,6 +39,6 @@
 ## Remaining release limitation and next work
 
 1. **History and distribution:** nine historical private-source paths remain. The repository stayed local and was not distributed. Do not rewrite history here or claim it is clean; public distribution remains gated.
-2. **Next sequence:** the test/native artifact relocation and bounded runtime extractions are recorded in the [organization audit](REPOSITORY_STRUCTURE.md). The existing 77-module isolated suite result (775 passed, 8 skipped) predates these latest edits and is not validation of the current tree. Broader runtime decomposition remains future work, followed by the full Sol UI audit. The earlier cleanup batch removed the validated ignored clean-install environment and copied wheel cache; logs and tested-constraints snapshot were preserved. See the read-only [cleanup inventory](../artifacts/native/rebuild/cleanup_inventory_20261108.md) for remaining runtime candidates and migration cautions.
+2. **Remaining engineering work.** The private visual audit is complete. The next UI batch covers shared controls, tables and theme consistency. The [organization audit](REPOSITORY_STRUCTURE.md) lists deferred runtime refactors. See the [cleanup inventory](../artifacts/native/rebuild/cleanup_inventory_20261108.md) for the previous device's remaining runtime candidates and migration cautions.
 
-The live database and existing source-data facts remain frozen during subsequent organization/refactor work. The rebuild runbook at [`native/REBUILD_PLAN.md`](native/REBUILD_PLAN.md) and the visual handoff at [`VISUAL_TESTING_GUIDE.md`](VISUAL_TESTING_GUIDE.md) link here for the authoritative readiness status.
+The live database and existing source-data facts remain frozen during subsequent organization and refactor work. The [native rebuild runbook](../tests/native/REBUILD_PLAN.md) and [visual testing guide](VISUAL_TESTING_GUIDE.md) link here for the current readiness status.

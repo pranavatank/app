@@ -176,44 +176,57 @@ class TransactionsScreen(QWidget):
         bar = QFrame()
         bar.setObjectName("actionBar")
         bar.setStyleSheet(Theme.action_bar_style())
-        layout = QHBoxLayout(bar)
+        layout = QVBoxLayout(bar)
         layout.setContentsMargins(12, 8, 12, 8)
         layout.setSpacing(10)
 
-        self.btn_add = Theme.btn("  Add Transaction", "primary", height=Theme.HEIGHT_MD, min_width=140)
+        actions = QHBoxLayout()
+        actions.setSpacing(10)
+        layout.addLayout(actions)
+
+        self.btn_add = Theme.btn("Add Transaction", "primary", height=Theme.HEIGHT_MD, min_width=176)
         self.btn_add.setIcon(app_icon("add", color="on_primary", size=16))
         self.btn_add.clicked.connect(self._add_transaction)
-        layout.addWidget(self.btn_add)
+        actions.addWidget(self.btn_add)
 
-        self.btn_edit = Theme.btn("  Edit", "edit", height=Theme.HEIGHT_MD, min_width=96)
+        self.btn_edit = Theme.btn("Edit", "edit", height=Theme.HEIGHT_MD, min_width=96)
         self.btn_edit.setIcon(app_icon("edit", color="on_primary", size=16))
         self.btn_edit.setEnabled(False)
         self.btn_edit.setToolTip("Select a transaction from the table to edit")
         self.btn_edit.clicked.connect(self._edit_transaction)
-        layout.addWidget(self.btn_edit)
+        actions.addWidget(self.btn_edit)
 
-        self.btn_delete = Theme.btn("  Delete", "danger", height=Theme.HEIGHT_MD, min_width=105)
+        self.btn_delete = Theme.btn("Delete", "danger", height=Theme.HEIGHT_MD, min_width=105)
         self.btn_delete.setIcon(app_icon("delete", color="on_primary", size=16))
         self.btn_delete.setEnabled(False)
         self.btn_delete.setToolTip("Select a transaction from the table to delete")
         self.btn_delete.clicked.connect(self._delete_transaction)
-        layout.addWidget(self.btn_delete)
+        actions.addWidget(self.btn_delete)
 
-        self.btn_reprocess = Theme.btn("Link Transfers", "secondary", height=Theme.HEIGHT_MD, min_width=130)
+        self.btn_reprocess = Theme.btn("Link Transfers", "secondary", height=Theme.HEIGHT_MD, min_width=154)
         self.btn_reprocess.setIcon(app_icon("refresh", size=16))
         self.btn_reprocess.setToolTip("Detect and link matching transfers between accounts")
         self.btn_reprocess.clicked.connect(self._reprocess_data)
-        layout.addWidget(self.btn_reprocess)
+        actions.addWidget(self.btn_reprocess)
 
-        layout.addStretch()
+        btn_import = Theme.btn("Import Statement", "secondary", height=Theme.HEIGHT_MD, min_width=156)
+        btn_import.clicked.connect(self._trigger_import)
+        actions.addWidget(btn_import)
+        actions.addStretch()
+
+        totals = QHBoxLayout()
+        totals.setSpacing(10)
+        layout.addLayout(totals)
 
         # Pill badges
         self.lbl_income_sum  = self._badge("Income: —",  Theme.SUCCESS_LIGHT, Theme.SUCCESS_DARK)
         self.lbl_expense_sum = self._badge("Expense: —", Theme.DANGER_LIGHT,  Theme.DANGER_DARK)
         self.lbl_net_sum     = self._badge("Net: —",     Theme.PRIMARY_LIGHT, Theme.PRIMARY_DARK)
-        layout.addWidget(self.lbl_income_sum)
-        layout.addWidget(self.lbl_expense_sum)
-        layout.addWidget(self.lbl_net_sum)
+        totals.addWidget(self.lbl_income_sum)
+        totals.addWidget(self.lbl_expense_sum)
+        totals.addWidget(self.lbl_net_sum)
+
+        totals.addStretch()
 
         self.action_bar = bar  # keep ref for theme refresh
         return bar
@@ -320,27 +333,21 @@ class TransactionsScreen(QWidget):
         # Override delete to ensure DB stays in sync when using Delete key.
         self.table.deleteSelectedRows = self._delete_selected_rows
 
-        # Configure content-aware column sizing
-        # Checkbox column (0) stays at 40px
-        # Date (1), Type (2), Amount (7), Balance (8) are FIXED narrow
-        # Description (6), Account (9), Person (10) get STRETCH
-        # Reference No (5) gets identifier width (110px for "—")
-        # Mode (4), Category (3) get moderate width
-        # ID column (11) is hidden (0 width not needed, will be hidden)
-        col_specs = {
-            1: {"mode": "FIXED", "width": 85},      # Date
-            2: {"mode": "FIXED", "width": 75},      # Type
-            3: {"mode": "FIXED", "width": 100},     # Category
-            4: {"mode": "FIXED", "width": 120},     # Mode
-            5: {"mode": "FIXED", "width": 110},     # Reference No (ID-like, shows "—")
-            6: {"mode": "STRETCH"},                  # Description
-            7: {"mode": "FIXED", "width": 130},     # Amount (₹)
-            8: {"mode": "FIXED", "width": 130},     # Balance (₹)
-            9: {"mode": "STRETCH"},                  # Account
-            10: {"mode": "STRETCH"},                 # Person (visible, stretches)
-            11: {"mode": "FIXED", "width": 0},      # ID (hidden)
-        }
-        self.table.setColumnSizing(col_specs)
+        # Keep existing logical IDs for editing and show financial figures before context.
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        display_order = (
+            _COL_DATE, _COL_TYPE, _COL_DESC, _COL_AMOUNT, _COL_BAL,
+            _COL_CAT, _COL_MODE, _COL_REF, _COL_ACCT, _COL_PERSON, _COL_ID,
+        )
+        for visual_index, column in enumerate(display_order, start=1):
+            header.moveSection(header.visualIndex(column + 1), visual_index)
+        for column, width in (
+            (_COL_DATE, 125), (_COL_TYPE, 110), (_COL_DESC, 165), (_COL_AMOUNT, 142),
+            (_COL_BAL, 142), (_COL_CAT, 130), (_COL_MODE, 125), (_COL_REF, 145),
+            (_COL_ACCT, 180), (_COL_PERSON, 155),
+        ):
+            self.table.setColumnWidth(column + 1, width)
 
         # Set tooltip support for columns that may be truncated
         self.table.setColumnElidedWithTooltip(_COL_MODE+1)     # Mode
@@ -348,8 +355,6 @@ class TransactionsScreen(QWidget):
         self.table.setColumnElidedWithTooltip(_COL_ACCT+1)     # Account
         self.table.setColumnElidedWithTooltip(_COL_PERSON+1)   # Person
 
-        hdr = self.table.horizontalHeader()
-        hdr.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self.table.setColumnWidth(0, 40)  # Checkbox column
         self.table.setColumnHidden(_COL_ID+1, True)  # Hide ID column from user
         self.table.itemSelectionChanged.connect(self._on_selection_changed)
@@ -464,24 +469,22 @@ class TransactionsScreen(QWidget):
 
             def item(text, align=Qt.AlignmentFlag.AlignLeft):
                 it = QTableWidgetItem(str(text) if text is not None else "—")
-                it.setForeground(color)
                 it.setTextAlignment(align | Qt.AlignmentFlag.AlignVCenter)
                 return it
 
             def amt_item(val):
                 it = _AmountSortItem(f"{val:,.2f}" if val is not None else "—")
-                it.setForeground(color)
                 it.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 return it
 
             date_display = format_display_date(row.get("transaction_date"))
             date_item = _DateSortItem(date_display)
-            date_item.setForeground(color)
             date_item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
             date_item.setData(Qt.ItemDataRole.UserRole, row.get("transaction_date"))
             self.table.setItem(r, _COL_DATE+1, date_item)
             
             type_item = item(display_type)
+            type_item.setForeground(color)
             self.table.setItem(r, _COL_TYPE+1, type_item)
             
             # Category - editable
@@ -533,6 +536,15 @@ class TransactionsScreen(QWidget):
             self.table.setItem(r, _COL_PERSON+1, person_item)
             self.table.setItem(r, _COL_ID+1,     QTableWidgetItem(str(row["transaction_id"])))
             self.table.setRowHeight(r, 32)
+
+        for column in (_COL_DATE, _COL_TYPE, _COL_AMOUNT, _COL_BAL):
+            logical_column = column + 1
+            width = max(
+                self.table.sizeHintForColumn(logical_column) + 4,
+                self.table.horizontalHeader().sectionSizeHint(logical_column),
+                self.table.columnWidth(logical_column),
+            )
+            self.table.setColumnWidth(logical_column, width)
 
         self.table.setSortingEnabled(True)
         self.table.blockSignals(False)  # Re-enable signals

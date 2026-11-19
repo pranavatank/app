@@ -21,7 +21,7 @@ from tests.support.repo_paths import artifact_path
 from tests.native.rebuild_p3_common import P3Run, main_wrapper
 from tests.native.rebuild_common import (
     os_click, os_click_widget, os_select_combo, os_type, os_type_widget, native_file_dialog,
-    answer_modal_dialog, wait_until, toast_texts,
+    answer_modal_dialog, wait_until,
 )
 from tools.private_sources import get_personal_data_dir
 from PySide6.QtWidgets import (
@@ -178,16 +178,12 @@ def run_part_a(p, nav_page):
     expected = _jana_expectations().get("count", 65)
     p.checks.check("part_a Jana count matches expectation", count_before == expected, f"got {count_before}, expected {expected}")
 
-    os_click(p.harness, nav_page, "Select all new transactions", wait=1.0)
     p.checks.check("part_a no rows selected (all duplicates)", nav_page.preview_table.getCheckedRows() == [],
                    f"checked={nav_page.preview_table.getCheckedRows()}")
-
-    os_click(p.harness, nav_page, "Next button", wait=1.5)
-    toasts = toast_texts()
-    p.observe("part_a import with nothing selected: toasts", " | ".join(toasts))
-    refused = nav_page.stack.currentIndex() == 1
-    p.checks.check("part_a import with nothing selected stays on preview", refused,
-                   f"stack_index={nav_page.stack.currentIndex()}")
+    p.checks.check("part_a Select All New disabled", not nav_page.btn_select_all.isEnabled(), "")
+    p.checks.check("part_a Import Selected disabled", not nav_page.btn_next.isEnabled(), "")
+    p.checks.check("part_a duplicate reason visible",
+                   "All rows already exist" in nav_page.preview_status_label.text(), "")
 
     os_click(p.harness, nav_page, "Back button", wait=1.0)
     p.harness.settle(1.0)

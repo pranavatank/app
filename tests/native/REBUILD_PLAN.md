@@ -4,7 +4,7 @@
 figures, and safety rules. This file is the current execution checklist. Do not rely on prior run claims unless a matching
 log or independent measurement exists.
 Current release gates and readiness status are tracked in [`docs/PRODUCTION_READINESS.md`](../../docs/PRODUCTION_READINESS.md).
-Final coding and acceptance gates are complete, including the isolated suite and hash/theme/integrity/FK audit. The first cleanup batch removed only the validated ignored install environment and wheel cache; logs and the constraints snapshot remain. Public distribution remains gated by nine private-source paths in local-only Git history; next work is file/test organization, refactor, then the full Sol UI audit.
+The previous device completed the real-data rebuild and acceptance audits. That evidence describes its database and source files. Use the readiness page for the latest checkout verification and begin with preflight when the new device's actual inputs are available.
 
 ## Current status
 

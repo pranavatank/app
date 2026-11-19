@@ -272,7 +272,7 @@ class ExcelTable(QTableWidget):
         widget = self.cellWidget(row, 0)
         if widget:
             cb = widget.findChild(QCheckBox)
-            if cb:
+            if cb and cb.isEnabled():
                 cb.setChecked(checked)
                 self._sync_row_selection_to_checkbox(row, checked)
 
@@ -336,7 +336,7 @@ class ExcelTable(QTableWidget):
         lines = []
         for row in sorted(rows_data.keys()):
             cols = rows_data[row]
-            line = "\t".join(cols.get(c, "") for c in sorted(cols.keys()))
+            line = "\t".join(cols.get(c, "") for c in sorted(cols, key=self.visualColumn))
             lines.append(line)
             
         QApplication.clipboard().setText("\n".join(lines))
@@ -391,7 +391,7 @@ class ExcelTable(QTableWidget):
             return
             
         start_row = current.row()
-        start_col = current.column()
+        start_col = self.visualColumn(current.column())
         
         if self.show_checkboxes and start_col == 0:
             start_col = 1
@@ -405,9 +405,10 @@ class ExcelTable(QTableWidget):
             cells = line.split("\t")
             for c_offset, value in enumerate(cells):
                 row = start_row + r_offset
-                col = start_col + c_offset
-                if row >= self.rowCount() or col >= self.columnCount():
+                visual_column = start_col + c_offset
+                if row >= self.rowCount() or visual_column >= self.columnCount():
                     continue
+                col = self.horizontalHeader().logicalIndex(visual_column)
                 if self.show_checkboxes and col == 0:
                     continue
                 item = self.item(row, col)
@@ -433,9 +434,7 @@ class ExcelTable(QTableWidget):
             if widget:
                 cb = widget.findChild(QCheckBox)
                 if cb:
-                    new_state = not cb.isChecked()
-                    cb.setChecked(new_state)
-                    self._sync_row_selection_to_checkbox(row, new_state)
+                    self.setRowChecked(row, not cb.isChecked())
 
     def _on_header_section_clicked(self, section: int):
         """Handle header section clicks. If checkbox column header is clicked, toggle all checkboxes."""
@@ -446,7 +445,7 @@ class ExcelTable(QTableWidget):
                 widget = self.cellWidget(r, 0)
                 if widget:
                     cb = widget.findChild(QCheckBox)
-                    if cb and not cb.isChecked():
+                    if cb and cb.isEnabled() and not cb.isChecked():
                         all_checked = False
                         break
             # Toggle: if all are checked, uncheck all; otherwise check all

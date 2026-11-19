@@ -236,9 +236,10 @@ def main():
             print(f"[DEBUG]\n{debug_text}")
         return report(harness)
 
-    # 10. Import: click "Select all new transactions" then find Import button
-    harness.click(import_screen, "Select all new transactions")
-    harness.settle(1.0)
+    # 10. Import: new rows are selected by default.
+    if import_screen.btn_select_all.isEnabled():
+        harness.click(import_screen, "Select all new transactions")
+        harness.settle(1.0)
 
     # Re-dump names after reaching preview screen (button labels may have changed)
     print("\n--- Accessible names on preview screen (for Import button) ---")
