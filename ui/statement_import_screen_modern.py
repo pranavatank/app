@@ -895,9 +895,17 @@ class StatementImportScreen(QWidget):
         # Do NOT reset self.file_type here — format choice is independent
 
         accounts = get_accounts_for_person(person_id)
+        labels = []
         for acc in accounts:
+            label = f"{acc.get('bank_display_name') or acc['bank_name']} — {acc['account_type']}"
+            number = (acc.get("account_number_full") or acc.get("account_number_masked") or "").strip()
+            if len(number) > 4 and number[-4:].isalnum():
+                label = f"••••{number[-4:]} · {label}"
+            labels.append(label)
+        for acc, label in zip(accounts, labels):
             account_id = acc["account_id"]
-            label = f"{acc.get('bank_display_name', acc['bank_name'])} — {acc['account_type']}"
+            if labels.count(label) > 1:
+                label = f"Account {account_id} · {label}"
             card = self._create_account_card(label, account_id)
             self._account_cards[account_id] = card
             self.account_cards_layout.addWidget(card)
@@ -1446,6 +1454,7 @@ class StatementImportScreen(QWidget):
 
         # Clear file and parsing state
         self.selected_file = None
+        self._drop_zone.set_status(self._drop_zone.title_text)
         self.parsed_transactions = []
         self.preview_transactions = []
         self.preview_duplicate_flags = []
@@ -1469,6 +1478,26 @@ class StatementImportScreen(QWidget):
         # Preserve person/account/format selections — do NOT rebuild cards
         # The person/account cards remain as they were, allowing independent selection
         self._update_parse_button_state()
+
+    def preselect_person(self, person_id: int) -> bool:
+        """Select the requested person's cards for a routed import."""
+        if self._busy:
+            return False
+        if person_id not in self._person_cards:
+            self._rebuild_person_cards()
+        if person_id not in self._person_cards:
+            return False
+        self._select_person_card(person_id)
+        return True
+
+    def preselect_account(self, account_id: int, person_id: int) -> bool:
+        """Select a validated account/person pair for a routed import request."""
+        if not self.preselect_person(person_id):
+            return False
+        if account_id not in self._account_cards:
+            return False
+        self._select_account_card(account_id)
+        return True
 
     # Helper methods — use the shared branded Loader overlay (same widget
     # Settings uses for backup/restore) instead of a bespoke QProgressDialog,

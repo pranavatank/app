@@ -3,7 +3,7 @@ ui/income_management_screen.py — Income expectations, FD interest, and income 
 """
 
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QComboBox,
+    QWidget, QCheckBox, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QComboBox,
     QFrame, QTableWidget, QTableWidgetItem, QHeaderView, QDialog, QFormLayout,
     QDateEdit, QDoubleSpinBox, QTextEdit, QMessageBox, QLineEdit, QSpinBox,
     QSizePolicy, QScrollArea
@@ -16,7 +16,6 @@ from dateutil.relativedelta import relativedelta
 
 from ui.widgets.chart_widget import ChartWidget
 from ui.widgets.kpi_tile import KpiTile
-from ui.widgets.states import EmptyState
 from ui.widgets.toast_utils import show_success, show_warning, show_info
 from ui.widgets.excel_table import ExcelTable, ExcelTableWithStats
 from ui.widgets.money_label import format_inr
@@ -112,6 +111,7 @@ class IncomeManagementScreen(QWidget):
         panel_layout.setContentsMargins(0, 0, 0, 0)
 
         # Panels: manage individual expectations, then analysis panels, then ledger
+        panel_layout.addWidget(self._build_actual_income_panel())
         panel_layout.addWidget(self._build_panel_manage_expectations())
 
         # Chart panels wrapped in collapsible sections (collapsed by default)
@@ -145,15 +145,43 @@ class IncomeManagementScreen(QWidget):
         header.addStretch()
         return header
 
+    def _build_actual_income_panel(self) -> QFrame:
+        """Show actual income entries independently from expectation matching."""
+        panel = QFrame()
+        panel.setObjectName("analysisPanel")
+        layout = QVBoxLayout(panel)
+        heading = QLabel("Actual Income")
+        heading.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
+        layout.addWidget(heading)
+        self.actual_income_summary = QLabel("Recorded income credits: —")
+        self.actual_income_summary.setAccessibleName("Actual income summary")
+        layout.addWidget(self.actual_income_summary)
+        self.actual_income_note = QLabel(
+            "Ledger credits across all accounts in this scope. FD redemptions can include returned principal. "
+            "Projected interest is shown separately."
+        )
+        self.actual_income_note.setWordWrap(True)
+        self.actual_income_note.setProperty("textrole", "muted")
+        layout.addWidget(self.actual_income_note)
+        self.actual_income_chart_section = CollapsibleSection(
+            "Recorded Income by Category", expanded=False, accent="income"
+        )
+        self.chart_actual_income = ChartWidget()
+        self.chart_actual_income.setAccessibleName("Actual income by category")
+        self.chart_actual_income.setMinimumHeight(220)
+        self.actual_income_chart_section.content_layout().addWidget(self.chart_actual_income)
+        layout.addWidget(self.actual_income_chart_section)
+        return panel
+
     def _build_kpi_tiles(self) -> QHBoxLayout:
         """Build 4 KPI tiles: Expected, Received, Still Expected, Projected Tax using the reusable KpiTile component."""
         kpi_layout = QHBoxLayout()
         kpi_layout.setSpacing(14)
 
         self.kpi_expected = KpiTile("Expected Income", 0.0, is_currency=True, accent="primary", icon="income_src")
-        self.kpi_received = KpiTile("Received to Date", 0.0, is_currency=True, accent="success", icon="check")
+        self.kpi_received = KpiTile("Matched to Expectations", 0.0, is_currency=True, accent="success", icon="check")
         self.kpi_pending = KpiTile("Still Expected", 0.0, is_currency=True, accent="warning", icon="calendar")
-        self.kpi_tax = KpiTile("Projected Tax", 0.0, is_currency=True, accent="danger", icon="tax")
+        self.kpi_tax = KpiTile("Estimated FD Tax", 0.0, is_currency=True, accent="danger", icon="tax")
 
         kpi_layout.addWidget(self.kpi_expected, stretch=1)
         kpi_layout.addWidget(self.kpi_received, stretch=1)
@@ -187,12 +215,14 @@ class IncomeManagementScreen(QWidget):
         set_btn_icon(btn_edit, "edit")
         btn_edit.setAccessibleName("Edit selected income expectation")
         btn_edit.clicked.connect(self._edit_expectation)
+        self.btn_edit_expectation = btn_edit
         title_layout.addWidget(btn_edit)
 
         btn_delete = Theme.btn("Delete", "destructive", height=32, min_width=80)
         set_btn_icon_auto(btn_delete, "delete")
         btn_delete.setAccessibleName("Delete selected income expectation")
         btn_delete.clicked.connect(self._delete_expectation)
+        self.btn_delete_expectation = btn_delete
         title_layout.addWidget(btn_delete)
 
         layout.addLayout(title_layout)
@@ -208,20 +238,24 @@ class IncomeManagementScreen(QWidget):
         self.table_expectations.setAccessibleName("Income expectations")
         self.table_expectations.setAccessibleDescription("List of individual income expectations with their status and matching transactions.")
         self.table_expectations.setSortingEnabled(False)
+        self.table_expectations.currentCellChanged.connect(self._update_expectation_actions)
+        self.table_expectations.itemSelectionChanged.connect(self._update_expectation_actions)
         self.table_expectations_widget.setMinimumHeight(280)
         layout.addWidget(self.table_expectations_widget)
 
         # Empty state
-        self.empty_state_expectations = EmptyState(
-            icon_name="income_src",
-            headline="No Income Expectations",
-            explanation="Add income expectations to track expected income and match with actual transactions.",
-            action_text="Add Expected Income",
-            accent="income"
-        )
-        self.empty_state_expectations.action_clicked.connect(self._add_expectation)
-        # Toolbar's "Add Expected Income" button above is already primary
-        Theme.style_button(self.empty_state_expectations.btn_action, "secondary")
+        self.empty_state_expectations = QFrame()
+        self.empty_state_expectations.setObjectName("emptyExpectationsPanel")
+        empty_layout = QVBoxLayout(self.empty_state_expectations)
+        empty_layout.setContentsMargins(14, 10, 14, 10)
+        empty_layout.setSpacing(4)
+        empty_heading = QLabel("No expectations")
+        empty_heading.setProperty("textrole", "title-sm")
+        empty_layout.addWidget(empty_heading)
+        empty_hint = QLabel("Add an expectation to match it with recorded income.")
+        empty_hint.setWordWrap(True)
+        empty_hint.setProperty("textrole", "secondary")
+        empty_layout.addWidget(empty_hint)
         self.empty_state_expectations.setVisible(False)
         layout.addWidget(self.empty_state_expectations)
 
@@ -335,23 +369,45 @@ class IncomeManagementScreen(QWidget):
         self._selected_fy = fy
         self._selected_person_id = person_id
 
-        # Fetch data
+        # Fetch data independently: actual ledger entries exist even when there
+        # are no expectations (or none of them have been matched).
         expectations = self._fetch_expectations(person_id, fy)
-
-        if not expectations:
-            self._show_empty_state()
-            return
-
-        # Update KPIs
         self._update_kpi_tiles(expectations, person_id, fy)
-
-        # Update charts and tables
         self._populate_chart_1(expectations, fy)
         self._populate_chart_2(person_id, fy)
         self._populate_chart_3(person_id, fy)
         self._populate_table_4_tds(person_id, fy)
         self._populate_table_5_ledger(expectations)
         self._populate_table_expectations(expectations)
+        self._populate_actual_income(person_id, fy)
+
+    def _populate_actual_income(self, person_id, fy):
+        try:
+            transactions = get_transactions(person_id=person_id, financial_year=fy, transaction_type="Income")
+            transactions = [t for t in transactions if not t.get("is_internal_transfer")]
+            total = sum(float(t.get("amount") or 0) for t in transactions)
+            scope = f"{('Selected person' if person_id else 'All persons')} · FY {fy}"
+            self.actual_income_summary.setText(
+                f"{scope} · Recorded income credits: {len(transactions)} · Total {session.mask(total)}"
+                if transactions else f"{scope} · No income transactions recorded."
+            )
+            if session.privacy_mode:
+                self.chart_actual_income.show_empty_state("Amounts hidden in privacy mode")
+                return
+            by_category = {}
+            for txn in transactions:
+                category = (txn.get("category") or "Uncategorized").strip() or "Uncategorized"
+                by_category[category] = by_category.get(category, 0) + float(txn.get("amount") or 0)
+            if by_category:
+                self.chart_actual_income.plot_bar(
+                    categories=list(by_category), values=list(by_category.values()),
+                    title="Recorded Income by Category", ylabel="Amount (₹)", color=Theme.SUCCESS
+                )
+            else:
+                self.chart_actual_income.show_empty_state("No recorded income transactions")
+        except Exception:
+            self.actual_income_summary.setText("Recorded income data is unavailable for this selection.")
+            self.chart_actual_income.show_empty_state("Income data unavailable")
 
     def _show_empty_state(self):
         """Show empty state when no data."""
@@ -360,10 +416,13 @@ class IncomeManagementScreen(QWidget):
         self.table_expectations_widget.setVisible(False)
         self.empty_state_expectations.setVisible(True)
         self.chart_vs_actual.show_empty_state("No income expectations for this selection")
-        self.chart_composition.show_empty_state("Add income expectations to analyze composition")
+        self.chart_composition.show_empty_state("No income expectations to analyze")
         self.chart_fd_runway.show_empty_state("No FD interest data available")
         self.table_tds.setRowCount(0)
         self.table_ledger.setRowCount(0)
+        self.chart_actual_income.show_empty_state("No recorded income transactions")
+        self.actual_income_summary.setText("No income transactions recorded for this selection.")
+        self._update_expectation_actions()
 
     def _fetch_expectations(self, person_id, fy):
         """Fetch income expectations for the selection."""
@@ -510,7 +569,7 @@ class IncomeManagementScreen(QWidget):
 
                 self.chart_fd_runway.plot_bar(
                     title="FD Interest Runway",
-                    labels=labels,
+                    categories=labels,
                     values=values,
                     color=Theme.PRIMARY
                 )
@@ -676,9 +735,8 @@ class IncomeManagementScreen(QWidget):
         try:
             self.table_expectations.setRowCount(0)
 
-            # Show table, hide empty state
-            self.table_expectations_widget.setVisible(True)
-            self.empty_state_expectations.setVisible(False)
+            self.table_expectations_widget.setVisible(bool(expectations))
+            self.empty_state_expectations.setVisible(not expectations)
 
             for exp in expectations:
                 # Income Type
@@ -735,6 +793,8 @@ class IncomeManagementScreen(QWidget):
                     str(exp["expectation_id"])
                 ]
                 self.table_expectations.addDataRow(row_data, user_data=exp["expectation_id"])
+                checkbox = self.table_expectations.cellWidget(self.table_expectations.rowCount() - 1, 0).findChild(QCheckBox)
+                checkbox.toggled.connect(self._update_expectation_actions)
 
                 # Apply colors to the newly added row
                 row = self.table_expectations.rowCount() - 1
@@ -770,8 +830,16 @@ class IncomeManagementScreen(QWidget):
                         else:
                             color = Theme.WARNING
                     status_item.setForeground(QColor(color))
+            self._update_expectation_actions()
         except Exception as e:
             show_warning(f"Error populating expectations table: {e}")
+
+    def _update_expectation_actions(self, *_):
+        """Keep row actions inert until their required row selection exists."""
+        if not hasattr(self, "btn_edit_expectation"):
+            return
+        self.btn_edit_expectation.setEnabled(self.table_expectations.currentRow() >= 0)
+        self.btn_delete_expectation.setEnabled(bool(self.table_expectations.getCheckedRows()))
 
     def _add_expectation(self):
         """Open dialog to add a new income expectation."""
@@ -844,6 +912,12 @@ class IncomeManagementScreen(QWidget):
                 )
                 show_success("Income expectation updated.")
                 self.refresh()
+                for restored_row in range(self.table_expectations.rowCount()):
+                    item = self.table_expectations.item(restored_row, 9)
+                    if item and item.text() == str(exp_id):
+                        self.table_expectations.setCurrentCell(restored_row, 1)
+                        self.table_expectations.setFocus(Qt.FocusReason.OtherFocusReason)
+                        break
                 if self._parent_window:
                     self._parent_window.refresh_overview()
             except Exception as e:
@@ -906,10 +980,9 @@ class IncomeManagementScreen(QWidget):
         """Re-tint widgets that bake colours in at build time.
 
         The dashboard calls this on a live theme switch. Charts hold their
-        facecolor from construction, so without this the three charts here keep
-        a light background after switching to a dark theme.
+        facecolor from construction and need to be redrawn when the theme changes.
         """
-        for name in ("chart_vs_actual", "chart_composition", "chart_fd_runway",
+        for name in ("chart_actual_income", "chart_vs_actual", "chart_composition", "chart_fd_runway",
                      "table_expectations_widget", "table_tds_widget",
                      "table_ledger_widget"):
             widget = getattr(self, name, None)

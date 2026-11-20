@@ -5,7 +5,7 @@ This can be used as either a dialog or an in-screen panel.
 
 from PySide6.QtWidgets import (
     QWidget, QDialog, QVBoxLayout, QHBoxLayout, QLabel,
-    QScrollArea, QFrame, QFormLayout, QTabWidget
+    QScrollArea, QFrame, QFormLayout, QTabWidget, QSizePolicy
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
@@ -23,12 +23,15 @@ from ui.dialogs.account_dialog import AccountDialog
 class AccountDetailsPanel(QWidget):
     """Read-only or editable account details panel that can be used in-screen."""
 
-    def __init__(self, parent=None, account: dict = None, on_updated=None, on_deleted=None, on_closed=None):
+    def __init__(self, parent=None, account: dict = None, on_updated=None, on_deleted=None, on_closed=None,
+                 on_view_transactions=None, on_import_statement=None):
         super().__init__(parent)
         self.account = account
         self.on_updated = on_updated
         self.on_deleted = on_deleted
         self.on_closed = on_closed
+        self.on_view_transactions = on_view_transactions
+        self.on_import_statement = on_import_statement
         self._build_ui()
 
     def _build_ui(self):
@@ -74,12 +77,16 @@ class AccountDetailsPanel(QWidget):
         cl.addWidget(tabs)
 
         scroll.setWidget(content)
-        layout.addWidget(scroll)
+        layout.addWidget(scroll, stretch=1)
         layout.addWidget(self._footer())
 
     def update_account(self, account: dict):
         """Update the displayed account."""
         self.account = account
+        self._build_ui()
+
+    def clear_account(self):
+        self.account = None
         self._build_ui()
 
     def _header(self) -> QFrame:
@@ -90,7 +97,8 @@ class AccountDetailsPanel(QWidget):
         hl.setContentsMargins(28, 0, 28, 0)
         title = QLabel(self.account.get('bank_display_name', self.account['bank_name']))
         title.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
-        title.setProperty("textrole", "title-lg")
+        title.setStyleSheet(f"color: {Theme.TEXT_ON_PRIMARY}; background: transparent;")
+        title.setWordWrap(True)
         hl.addWidget(title)
         hl.addStretch()
         status = self.account.get("account_status", "Active")
@@ -102,24 +110,43 @@ class AccountDetailsPanel(QWidget):
     def _footer(self) -> QFrame:
         f = QFrame()
         f.setObjectName("AccountDetailsFooter")
-        f.setMinimumHeight(68)
-        fl = QHBoxLayout(f)
-        fl.setContentsMargins(28, 14, 28, 14)
-        fl.addStretch()
+        f.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        fl = QVBoxLayout(f)
+        fl.setContentsMargins(10, 8, 10, 8)
+        fl.setSpacing(6)
+        navigation = QHBoxLayout()
+        actions = QHBoxLayout()
+        navigation.setSpacing(6)
+        actions.setSpacing(6)
+        btn_transactions = Theme.btn("Transactions", "secondary", height=Theme.HEIGHT_MD)
+        btn_transactions.setAccessibleName("View transactions")
+        btn_transactions.setToolTip("View transactions for this account")
+        btn_transactions.clicked.connect(self._view_transactions)
+        navigation.addWidget(btn_transactions)
+        btn_import = Theme.btn("Import", "secondary", height=Theme.HEIGHT_MD)
+        btn_import.setAccessibleName("Import statement")
+        btn_import.setToolTip("Import a statement for this account")
+        btn_import.clicked.connect(self._import_statement)
+        navigation.addWidget(btn_import)
+        fl.addLayout(navigation)
 
-        btn_edit = Theme.btn(" Edit", "edit", height=Theme.HEIGHT_MD, min_width=110)
+        btn_edit = Theme.btn("Edit", "edit", height=Theme.HEIGHT_MD, min_width=100)
+        btn_edit.setAccessibleName("Edit account")
         set_btn_icon(btn_edit, "edit")
         btn_edit.clicked.connect(self._on_edit)
-        fl.addWidget(btn_edit)
+        actions.addWidget(btn_edit)
 
-        btn_del = Theme.btn(" Delete", "danger", height=Theme.HEIGHT_MD, min_width=110)
+        btn_del = Theme.btn("Delete", "danger", height=Theme.HEIGHT_MD, min_width=100)
         set_btn_icon(btn_del, "delete")
         btn_del.clicked.connect(self._on_delete)
-        fl.addWidget(btn_del)
+        actions.addWidget(btn_del)
 
-        btn_close = Theme.btn("Close", "secondary", height=Theme.HEIGHT_MD, min_width=110)
+        btn_close = Theme.btn("Close", "secondary", height=Theme.HEIGHT_MD, min_width=100)
         btn_close.clicked.connect(self._on_close)
-        fl.addWidget(btn_close)
+        actions.addWidget(btn_close)
+        fl.addLayout(actions)
+        f.ensurePolished()
+        f.setMinimumHeight(fl.sizeHint().height() + 12)
         return f
 
     def _tab_basic(self) -> QWidget:
@@ -221,26 +248,36 @@ class AccountDetailsPanel(QWidget):
         return sec
 
     def _on_edit(self):
+        account_id = self.account["account_id"]
         dlg = AccountDialog(self, get_all_persons(), self.account)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             payload = dlg.get_data()
             tan_code = payload.pop("tan_code", None)
-            update_account(self.account["account_id"], **payload)
+            update_account(account_id, **payload)
             get_or_create_bank(payload.get("bank_name") or "")
             if tan_code:
                 update_bank_tan_code_if_exists(payload.get("bank_name") or "", tan_code)
             if self.on_updated:
-                self.on_updated(self.account["account_id"])
+                self.on_updated(account_id)
+
+    def _view_transactions(self):
+        if self.account and self.on_view_transactions:
+            self.on_view_transactions(int(self.account["account_id"]))
+
+    def _import_statement(self):
+        if self.account and self.on_import_statement:
+            self.on_import_statement(int(self.account["account_id"]))
 
     def _on_delete(self):
         from PySide6.QtWidgets import QMessageBox
+        account_id = self.account["account_id"]
         reply = QMessageBox.question(
             self, "Confirm Delete",
             f"Delete account '{self.account.get('bank_display_name', self.account['bank_name'])}'?\n\n"
             "All transactions for this account will also be deleted!",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         if reply == QMessageBox.StandardButton.Yes:
-            delete_account(self.account["account_id"])
+            delete_account(account_id)
             show_success("Account deleted successfully!")
             if self.on_deleted:
                 self.on_deleted()
@@ -260,7 +297,8 @@ class AccountDetailsDialog(QDialog):
         super().__init__(parent)
         self.account = account
         self.setWindowTitle(f"{account.get('bank_display_name', account['bank_name'])} — Account Details")
-        self.setMinimumSize(720, 660)
+        self.setMinimumSize(0, 0)
+        self.resize(540, 520)
         self.panel = AccountDetailsPanel(self, account,
                                          on_updated=self._on_updated,
                                          on_deleted=self._on_deleted)

@@ -5,9 +5,9 @@ ui/accounts_screen.py — Account management with card/list view toggle.
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QScrollArea, QFrame, QGridLayout, QDialog, QMessageBox,
-    QTabWidget, QFormLayout
+    QTabWidget, QFormLayout, QPushButton
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal, QSettings
 from PySide6.QtGui import QFont
 
 from ui.theme.theme import Theme
@@ -29,11 +29,18 @@ from models.savings_interest import get_total_savings_interest
 class AccountsScreen(QWidget):
     """Account management with card/list view toggle."""
 
+    view_transactions_requested = Signal(int)
+    import_statement_requested = Signal(int)
+
     def __init__(self, selected_person_id=None, selected_fy=None):
         super().__init__()
         self.selected_person_id = selected_person_id
         self.selected_fy = selected_fy or "2024-25"
-        self.view_mode = "card"  # card or list
+        settings = QSettings("FinManager", "FinManager")
+        self.view_mode = settings.value("accounts/view_mode", "card", type=str)
+        if self.view_mode not in {"card", "list"}:
+            self.view_mode = "card"
+        self.selected_account_id = None
         self._build_ui()
         self._load_accounts()
 
@@ -59,8 +66,8 @@ class AccountsScreen(QWidget):
         header.addStretch()
 
         # View toggle button
-        self.btn_toggle = Theme.btn(" List View", "secondary", height=Theme.HEIGHT_MD, min_width=134)
-        set_btn_icon(self.btn_toggle, "list_view", color=Theme.TEXT_SECONDARY)
+        self.btn_toggle = Theme.btn(" Card View" if self.view_mode == "list" else " List View", "secondary", height=Theme.HEIGHT_MD, min_width=134)
+        set_btn_icon(self.btn_toggle, "card_view" if self.view_mode == "list" else "list_view", color=Theme.TEXT_SECONDARY)
         self.btn_toggle.setAccessibleName("Toggle account view")
         self.btn_toggle.setAccessibleDescription("Switch between card and list view.")
         self.btn_toggle.clicked.connect(self._toggle_view)
@@ -84,6 +91,7 @@ class AccountsScreen(QWidget):
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setObjectName("transparentBg")
+        self.accounts_scroll = scroll
 
         self.container = QWidget()
         self.container.setObjectName("transparentSurface")
@@ -108,7 +116,12 @@ class AccountsScreen(QWidget):
         self.detail_frame.setMaximumWidth(0)
         detail_layout = QVBoxLayout(self.detail_frame)
         detail_layout.setContentsMargins(0, 0, 0, 0)
-        self.detail_panel = AccountDetailsPanel(self, on_updated=self._on_account_updated, on_deleted=self._on_accounts_reload, on_closed=self._on_detail_panel_closed)
+        self.detail_panel = AccountDetailsPanel(
+            self, on_updated=self._on_account_updated,
+            on_deleted=self._on_accounts_reload, on_closed=self._on_detail_panel_closed,
+            on_view_transactions=self._request_view_transactions,
+            on_import_statement=self._request_import_statement,
+        )
         detail_layout.addWidget(self.detail_panel)
         master_detail.addWidget(self.detail_frame, stretch=0)
 
@@ -121,9 +134,13 @@ class AccountsScreen(QWidget):
         self.view_mode = "list" if self.view_mode == "card" else "card"
         self.btn_toggle.setText(" Card View" if self.view_mode == "list" else " List View")
         set_btn_icon(self.btn_toggle, "card_view" if self.view_mode == "list" else "list_view", color=Theme.TEXT_SECONDARY)
+        QSettings("FinManager", "FinManager").setValue("accounts/view_mode", self.view_mode)
         self._load_accounts()
 
     def _load_accounts(self):
+        scroll_position = self.accounts_scroll.verticalScrollBar().value() if hasattr(self, "accounts_scroll") else 0
+        focused = self.focusWidget()
+        focused_name = focused.objectName() if focused else ""
         while self.container_layout.count():
             item = self.container_layout.takeAt(0)
             w = item.widget()
@@ -134,6 +151,12 @@ class AccountsScreen(QWidget):
         accounts = get_all_accounts()
         if self.selected_person_id:
             accounts = [a for a in accounts if a["person_id"] == self.selected_person_id]
+
+        visible_account_ids = {int(a["account_id"]) for a in accounts}
+        if self.selected_account_id is not None and int(self.selected_account_id) not in visible_account_ids:
+            self.selected_account_id = None
+            self.detail_panel.clear_account()
+            self._on_detail_panel_closed()
 
         if not accounts:
             empty_state = EmptyState(
@@ -153,6 +176,21 @@ class AccountsScreen(QWidget):
             self._render_card_view(accounts)
         else:
             self._render_list_view(accounts)
+        self.accounts_scroll.verticalScrollBar().setValue(scroll_position)
+        if focused_name:
+            replacement = self.findChild(QWidget, focused_name)
+            if replacement:
+                replacement.setFocus(Qt.FocusReason.OtherFocusReason)
+        # Keep detail selection bound to its database identity across rebuilds.
+        if self.selected_account_id is not None:
+            account = next(a for a in accounts if a["account_id"] == self.selected_account_id)
+            details = get_account(self.selected_account_id)
+            if details:
+                self._show_account_details({**account, **details})
+            else:
+                self.selected_account_id = None
+                self.detail_panel.clear_account()
+                self._on_detail_panel_closed()
 
     def _render_card_view(self, accounts):
         grid_widget = QWidget()
@@ -223,13 +261,16 @@ class AccountsScreen(QWidget):
         item.setGraphicsEffect(Theme.shadow_card())
         item.setCursor(Qt.CursorShape.PointingHandCursor)
         item.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        item.setAccessibleName(f"Account card for {account.get('bank_display_name', account['bank_name'])}")
+        item.setAccessibleName(
+            f"Account {account.get('bank_display_name', account['bank_name'])} "
+            f"{account.get('account_number_masked') or 'number unavailable'}"
+        )
         item.setAccessibleDescription("Open detailed account information.")
         item.mousePressEvent = lambda e: self._on_card_clicked(account)
         item.setMinimumHeight(80)
 
-        layout = QHBoxLayout(item)
-        layout.setSpacing(24)
+        layout = QVBoxLayout(item)
+        layout.setSpacing(8)
         layout.setContentsMargins(0, 0, 0, 0)
 
         # Left: Bank + Person info
@@ -239,22 +280,27 @@ class AccountsScreen(QWidget):
         bank_lbl = QLabel(account.get("bank_display_name", account["bank_name"]))
         bank_lbl.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
         bank_lbl.setProperty("textrole", "emphasis-lg")
+        bank_lbl.setWordWrap(True)
         left.addWidget(bank_lbl)
 
-        if self.selected_person_id is None:
-            person_lbl = QLabel(account.get('person_name', '—'))
-            person_lbl.setProperty("textrole", "secondary-sm")
-            left.addWidget(person_lbl)
+        person_lbl = QLabel(account.get('person_name', '—'))
+        person_lbl.setProperty("textrole", "secondary-sm")
+        left.addWidget(person_lbl)
 
-        type_lbl = QLabel(f"{account['account_type']}  •  {account.get('account_number_masked', '—')}")
+        type_lbl = QLabel(account['account_type'])
         type_lbl.setProperty("textrole", "muted-md")
         left.addWidget(type_lbl)
+        account_lbl = QLabel(f"Account: {account.get('account_number_masked') or '—'}")
+        account_lbl.setProperty("textrole", "muted-sm")
+        left.addWidget(account_lbl)
 
-        layout.addLayout(left, 3)
+        identity = QHBoxLayout()
+        identity.addLayout(left, 1)
+        layout.addLayout(identity)
 
         # Right: Metrics
         metrics = QHBoxLayout()
-        metrics.setSpacing(32)
+        metrics.setSpacing(12)
 
         # Current Balance
         bal_box = QVBoxLayout()
@@ -304,7 +350,16 @@ class AccountsScreen(QWidget):
         si_box.addWidget(si_val)
         metrics.addLayout(si_box)
 
-        layout.addLayout(metrics, 5)
+        layout.addLayout(metrics)
+
+        btn_details = Theme.btn("View details", "secondary", height=Theme.HEIGHT_SM)
+        btn_details.setAccessibleName(
+            f"View details for {account.get('bank_display_name') or account['bank_name']} "
+            f"{account.get('account_number_masked') or account['account_id']}"
+        )
+        btn_details.setObjectName(f"accountDetails-{account['account_id']}")
+        btn_details.clicked.connect(lambda _=False, acc=account: self._on_card_clicked(acc))
+        identity.addWidget(btn_details, alignment=Qt.AlignmentFlag.AlignTop)
 
         return item
 
@@ -319,6 +374,10 @@ class AccountsScreen(QWidget):
 
         card = QFrame()
         card.setObjectName("accountCard")
+        card.setAccessibleName(
+            f"Account {account.get('bank_display_name', account['bank_name'])} "
+            f"{account.get('account_number_masked') or 'number unavailable'}"
+        )
         card.setProperty("variant", variant)
         card.setGraphicsEffect(Theme.shadow_card())
         card.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -396,27 +455,73 @@ class AccountsScreen(QWidget):
             dc.setProperty("color", "warning")
             layout.addWidget(dc)
 
+        btn_details = Theme.btn("View details", "secondary", height=Theme.HEIGHT_SM)
+        btn_details.setAccessibleName(
+            f"View details for {account.get('bank_display_name') or account['bank_name']} "
+            f"{account.get('account_number_masked') or account['account_id']}"
+        )
+        btn_details.setObjectName(f"accountDetails-{account['account_id']}")
+        btn_details.clicked.connect(lambda _=False, acc=account: self._on_card_clicked(acc))
+        layout.addWidget(btn_details)
         layout.addStretch()
         return card
 
     def _on_card_clicked(self, account: dict):
         """Show account details in the detail panel (non-modal) and expand the panel."""
-        self.detail_frame.setMinimumWidth(340)
-        self.detail_frame.setMaximumWidth(16777215)  # Max width to allow expansion
-        self.detail_panel.update_account(account)
+        self.selected_account_id = int(account["account_id"])
+        details = get_account(self.selected_account_id)
+        if details:
+            self._show_account_details({**account, **details})
+        else:
+            self._on_detail_panel_closed()
+
+    def _show_account_details(self, account):
+        self._fit_detail_layout()
+        if self.detail_panel.account != account:
+            self.detail_panel.update_account(account)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if self.selected_account_id is not None:
+            self._fit_detail_layout()
+
+    def _fit_detail_layout(self):
+        compact = self.width() < 1060
+        self.accounts_scroll.setVisible(not compact)
+        self.detail_frame.setMaximumWidth(16777215 if compact else 440)
+        self.detail_frame.setMinimumWidth(0 if compact else 380)
 
     def _on_detail_panel_closed(self):
-        """Collapse the detail panel when close is clicked."""
+        account_id = self.selected_account_id
+        self.selected_account_id = None
+        self.accounts_scroll.show()
         self.detail_frame.setMinimumWidth(0)
         self.detail_frame.setMaximumWidth(0)
+        if account_id is not None:
+            details_button = self.findChild(QPushButton, f"accountDetails-{account_id}")
+            if details_button:
+                self.accounts_scroll.ensureWidgetVisible(details_button)
+                details_button.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def _on_account_updated(self, account_id):
         """Reload when account is updated in the detail panel."""
+        self.selected_account_id = int(account_id)
+        updated = get_account(self.selected_account_id)
+        if updated:
+            visible_row = next((row for row in get_all_accounts() if row["account_id"] == account_id), {})
+            self.detail_panel.update_account({**visible_row, **updated})
         self._load_accounts()
 
     def _on_accounts_reload(self):
         """Reload when account is deleted in the detail panel."""
+        self._on_detail_panel_closed()
         self._load_accounts()
+
+    def _request_view_transactions(self, account_id):
+        self.view_transactions_requested.emit(int(account_id))
+
+    def _request_import_statement(self, account_id):
+        self.import_statement_requested.emit(int(account_id))
 
     def set_person_filter(self, person_id):
         """Update person filter and reload."""

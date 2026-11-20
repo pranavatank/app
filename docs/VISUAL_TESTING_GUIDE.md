@@ -152,6 +152,14 @@ Use `Theme.HEIGHT_SM/MD/LG` and `Theme.btn` or `Theme.style_button` for action d
 
 The Batch 2 captures use an isolated synthetic database. The focused run reported 83 passed, 5 skipped and 7 failed. Those same seven QSS and theme-accent pixel assertions failed on the unchanged Batch 1 commit in this offscreen environment. Native visual confirmation of those assertions and the chart-to-database comparison against the live database remain pending. [Synthetic captures](../artifacts/native/batch2-shared-ui/), [Batch 1 baseline comparison](../artifacts/pytest/batch2-baseline/), [Batch 2 test logs](../artifacts/pytest/batch2-verified/)
 
+## Batch 3 banking, income, and Overview verification
+
+- **Accounts.** Use two accounts at the same bank with different masked numbers. Switch between Card View and List View, then reopen the page to verify the stored preference. Open details and check that Transactions and Import use the exact account. Cancel a navigation request and confirm the original context stays selected. At compact widths, close the full-width details to return to the list.
+- **Actual income and expectations.** Verify that recorded credits remain visible with zero expectations and that internal transfers are excluded. Recorded FD redemption credits can include returned principal. Review matched and unmatched expectations separately. Switch person and financial year and verify values refresh. In privacy mode, the actual-income total and category amounts are hidden.
+- **Overview.** Check a scope with recorded FY activity, one with no recorded activity, and a pending FD. Compare the latest successful import log with the activity count. The log stores an import timestamp, so the statement period remains unknown. Use Statement import to verify account or person preselection. Fixed Deposits opens deposits for the current person or family.
+
+The offscreen Windows smoke passed using an isolated synthetic database at 1200 × 720 logical pixels with 125% scaling. All 51 focused tests passed. [Eight captures and smoke script](../artifacts/native/batch3-banking-income/), [focused test logs](../artifacts/pytest/batch3-final/)
+
 ## Useful commands and sources
 
 Run from the repo root in PowerShell, one command at a time. The venv is `.venv\Scripts\python.exe`.

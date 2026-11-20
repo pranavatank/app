@@ -604,6 +604,10 @@ class DashboardScreen(QMainWindow):
         elif index == 1:  # Accounts
             from ui.accounts_screen import AccountsScreen
             self.accounts_page = AccountsScreen()
+            self.accounts_page.view_transactions_requested.connect(
+                lambda account_id: self._route_account_request(account_id, 2))
+            self.accounts_page.import_statement_requested.connect(
+                lambda account_id: self._route_account_request(account_id, 5))
             return self.accounts_page
         elif index == 2:  # Transactions
             from ui.transactions_screen import TransactionsScreen
@@ -716,8 +720,9 @@ class DashboardScreen(QMainWindow):
         kpi_layout.addLayout(header)
         kpi_layout.addSpacing(12)
 
-        # KPI tiles grid (responsive, even distribution)
-        kpi_tiles_layout = QHBoxLayout()
+        # Give current balance clear priority, with period-based figures grouped
+        # beneath it so the FY context remains distinct.
+        kpi_tiles_layout = QVBoxLayout()
         kpi_tiles_layout.setSpacing(12)
 
         # Create KPI tiles using the reusable KpiTile component
@@ -727,11 +732,13 @@ class DashboardScreen(QMainWindow):
         self.kpi_savings = KpiTile("Net Savings", 0.0, is_currency=True, accent="info", icon="fixed_deposits")
         self.kpi_interest = KpiTile("Interest Income", 0.0, is_currency=True, accent="purple", icon="interest")
 
-        kpi_tiles_layout.addWidget(self.kpi_balance, stretch=1)
-        kpi_tiles_layout.addWidget(self.kpi_income, stretch=1)
-        kpi_tiles_layout.addWidget(self.kpi_expense, stretch=1)
-        kpi_tiles_layout.addWidget(self.kpi_savings, stretch=1)
-        kpi_tiles_layout.addWidget(self.kpi_interest, stretch=1)
+        self.kpi_balance.setFixedHeight(105)
+        kpi_tiles_layout.addWidget(self.kpi_balance)
+        period_tiles = QHBoxLayout()
+        period_tiles.setSpacing(12)
+        for tile in (self.kpi_income, self.kpi_expense, self.kpi_savings, self.kpi_interest):
+            period_tiles.addWidget(tile, stretch=1)
+        kpi_tiles_layout.addLayout(period_tiles)
 
         kpi_layout.addLayout(kpi_tiles_layout)
         kpi_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
@@ -746,6 +753,21 @@ class DashboardScreen(QMainWindow):
         charts_header = QLabel("Trends & Distribution")
         charts_header.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
         charts_layout.addWidget(charts_header)
+
+        coverage_row = QHBoxLayout()
+        self.statement_coverage_lbl = QLabel("")
+        self.statement_coverage_lbl.setObjectName("statementCoverage")
+        self.statement_coverage_lbl.setWordWrap(True)
+        self.statement_coverage_lbl.setProperty("textrole", "secondary")
+        coverage_row.addWidget(self.statement_coverage_lbl, 1)
+        self.btn_review_statements = Theme.btn("Statement import", "secondary", height=Theme.HEIGHT_MD)
+        self.btn_review_statements.clicked.connect(self._open_statement_import_from_overview)
+        coverage_row.addWidget(self.btn_review_statements)
+        self.btn_review_fds = Theme.btn("Fixed Deposits", "secondary", height=Theme.HEIGHT_MD)
+        self.btn_review_fds.setToolTip("Open all fixed deposits for the selected person or family")
+        self.btn_review_fds.clicked.connect(self._open_fds_from_overview)
+        coverage_row.addWidget(self.btn_review_fds)
+        charts_layout.addLayout(coverage_row)
 
         # Charts grid (2 charts side by side on wide screens)
         charts_grid = QGridLayout()
@@ -929,8 +951,8 @@ class DashboardScreen(QMainWindow):
         net     = income - expense
         next_start = int(fy.split("-")[0]) + 1
         next_fy = f"{next_start}-{str(next_start + 1)[2:]}"
-        fd_curr = get_total_fd_interest(fy, person_id=pid)
-        sav_curr = get_total_savings_interest(fy, person_id=pid)
+        fd_curr = get_total_fd_interest(fy, person_id=pid, account_id=aid)
+        sav_curr = get_total_savings_interest(fy, person_id=pid, account_id=aid)
         total_interest = fd_curr + sav_curr
 
         # Update KPI tiles using set_value (passes masked value when privacy mode is on)
@@ -959,6 +981,32 @@ class DashboardScreen(QMainWindow):
                 financial_year=fy
             )
 
+            # FY transaction presence is evidence of recorded activity, not proof
+            # that a complete statement was imported. Import logs have timestamps
+            # only and cannot establish the statement period.
+            scoped_accounts = ([a for a in (get_accounts_for_person(pid) if pid else get_all_accounts())
+                                if aid is None or a.get("account_id") == aid])
+            recorded_account_ids = {tx.get("account_id") for tx in transactions
+                                    if tx.get("account_id") is not None}
+            recorded_count = sum(a.get("account_id") in recorded_account_ids for a in scoped_accounts)
+            total_count = len(scoped_accounts)
+            no_activity = max(0, total_count - recorded_count)
+            from models.fixed_deposit import get_all_fds
+            pending_fds = [fd for fd in get_all_fds(person_id=pid)
+                           if (aid is None or fd.get("account_id") == aid)
+                           if fd.get("status") == "Pending Details"]
+            from models.statement_import_log import get_import_logs
+            logs = get_import_logs(account_id=aid, person_id=pid)
+            successful_logs = [row for row in logs if row.get("status") == "Success"]
+            last_import = (successful_logs[0].get("import_date") if successful_logs else None)
+            last_import_text = f" Last successful import log: {last_import}." if last_import else " No successful import log is recorded in this scope."
+            self.statement_coverage_lbl.setText(
+                f"FY {fy} recorded activity: {recorded_count} of {total_count} account(s) have transactions. "
+                f"Statement period coverage is unknown because import history stores timestamps only.{last_import_text} "
+                f"Review: {no_activity} account(s) have no recorded FY activity (they may be inactive); "
+                f"{len(pending_fds)} FD(s) have pending details."
+            )
+
             # Aggregate by month
             monthly_income = {}
             monthly_expense = {}
@@ -976,9 +1024,9 @@ class DashboardScreen(QMainWindow):
                     # Account for FY starting in April
                     display_month = f"{month_num-3} Apr" if month_num >= 4 else f"{month_num+9} {tx_date.strftime('%B')}"
 
-                    if tx["transaction_type"] == "Income":
+                    if tx.get("transaction_type") == "Income":
                         monthly_income[month_key] = monthly_income.get(month_key, 0) + tx["amount"]
-                    else:
+                    elif tx.get("transaction_type") == "Expense":
                         monthly_expense[month_key] = monthly_expense.get(month_key, 0) + tx["amount"]
                 except (ValueError, KeyError):
                     continue
@@ -996,6 +1044,8 @@ class DashboardScreen(QMainWindow):
 
             # Get account distribution
             accounts = get_accounts_for_person(pid) if pid else get_all_accounts()
+            if aid is not None:
+                accounts = [a for a in accounts if a.get("account_id") == aid]
             account_names = [a.get('bank_display_name', a['bank_name']) for a in accounts]
             account_balances = [a["current_balance"] for a in accounts]
 
@@ -1045,8 +1095,12 @@ class DashboardScreen(QMainWindow):
     # ═══════════════════════════════════════════════════════════════════════
 
     def _navigate(self, index: int):
+        if (hasattr(self, "import_page") and self.import_page._busy
+                and self.stack.currentIndex() == 5 and index != 5):
+            QMessageBox.information(self, "Statement Import", "Please wait for the current import to finish.")
+            return False
         if not self._confirm_unsaved_transactions("switch pages"):
-            return
+            return False
 
         # Lazy-load screen if not yet loaded.
         # Compare against what is actually IN the stack, not against the page
@@ -1069,6 +1123,43 @@ class DashboardScreen(QMainWindow):
         self.page_title_lbl.setText(_NAV_ITEMS[index][0])
         self.page_title_lbl.updateGeometry()
         self._on_refresh_all()
+        return True
+
+    def _route_account_request(self, account_id: int, destination: int):
+        """Open transactions/import for the exact account requested by Accounts."""
+        from models.bank_account import get_account
+        account = get_account(account_id)
+        if not account:
+            QMessageBox.information(self, "Account unavailable", "That account could not be found.")
+            return
+        if destination == 5 and hasattr(self, "import_page") and self.import_page._busy:
+            QMessageBox.information(self, "Statement Import", "Please wait for the current import to finish.")
+            return
+        if not self._navigate(destination):
+            return
+        session.set_person(account["person_id"])
+        session.set_account(account["account_id"])
+        self._sync_context_selectors()
+        if destination == 2:
+            self.transactions_page.refresh()
+        elif destination == 5:
+            self.import_page.refresh()
+            if not self.import_page.preselect_account(account["account_id"], account["person_id"]):
+                QMessageBox.information(self, "Account unavailable", "Could not select that account for import.")
+
+    def _open_statement_import_from_overview(self):
+        if not self._navigate(5):
+            return
+        if session.selected_account_id is not None:
+            from models.bank_account import get_account
+            account = get_account(session.selected_account_id)
+            if account:
+                self.import_page.preselect_account(account["account_id"], account["person_id"])
+        elif session.selected_person_id is not None:
+            self.import_page.preselect_person(session.selected_person_id)
+
+    def _open_fds_from_overview(self):
+        self._navigate(4)
 
     def _on_refresh_all(self):
         self._sync_context_selectors()
