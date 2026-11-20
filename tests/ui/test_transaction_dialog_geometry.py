@@ -36,3 +36,20 @@ def test_transaction_dialog_scrolls_form_and_keeps_footer_visible(qapp, availabl
     assert dialog.form_scroll_area.viewport().rect().contains(desc_rect)
 
     dialog.close()
+
+
+@pytest.mark.parametrize("balance", [None, 0.0, -99_999_999.99, -123.4567])
+def test_transaction_preserves_untouched_monetary_values(qapp, balance):
+    dialog = TransactionDialog(
+        persons=[{"person_id": 1, "full_name": "Test Person"}],
+        accounts=[{"account_id": 1, "person_id": 1, "bank_name": "Test Bank", "account_type": "Savings"}],
+        existing={"person_id": 1, "account_id": 1, "amount": 25.1267, "balance_after": balance},
+    )
+    assert dialog.amount_spin.cleanText() == "25.13"
+    assert dialog.get_data()["amount"] == 25.1267
+    assert dialog.get_data()["balance_after"] == balance
+    dialog.amount_spin.setValue(25.0)
+    dialog.bal_spin.setValue(10)
+    assert dialog.get_data()["amount"] == 25.0
+    assert dialog.get_data()["balance_after"] == 10
+    dialog.close()

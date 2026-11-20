@@ -142,6 +142,16 @@ Check the app at 1200 × 720 logical pixels with 125% scaling and the sidebar ex
 
 The Batch 1 smoke used an isolated synthetic database for all 11 [captures](../artifacts/native/batch1-compact/). The full native statement replay with a source PDF remains pending. The focused checks passed 75 tests with 5 skips for full-session table parity. The render module reached the combined runner's 120-second limit and passed all 5 tests in an isolated run of `python -m pytest -q tests/ui/test_screen_render.py`. The repository privacy suite passed 9 tests and 2 subtests. [Focused test logs](../artifacts/pytest/batch1-final/), [privacy test log](../artifacts/pytest/batch1-privacy/)
 
+## Batch 2 shared UI verification
+
+Use `Theme.HEIGHT_SM/MD/LG` and `Theme.btn` or `Theme.style_button` for action density and roles. Page titles use the existing `title-md` text role. Banking headers use `Theme.page_header_style`. `Theme.status_chip_style` maps summary, positive, negative and informational labels to existing colors and pill geometry. `ThemeCard` remains available for metric cards.
+
+- **Shell and banking.** At 1200 × 720 logical pixels with 125% scaling, check the Accounts header, Add Account and view switch. On the ledger, select a row and verify the checkbox and totals. Switch between a light theme and a dark theme with the window open.
+- **Charts.** Use Tab and Space to open View chart data. Confirm the rendered series agree with the read-only table. Include negative amounts, exact decimals, zero, missing data, and distinct actual and estimated series. The table stays available when the Matplotlib canvas is unavailable.
+- **Editors.** Scroll the Account, Transaction, Fixed Deposit and Income Expectation forms at short window heights. Confirm Cancel and the primary action stay visible. Submit an incomplete form and verify focus moves to the relevant field. In a transaction edit, verify an untouched amount retains its stored precision, and a blank balance stays distinct from zero.
+
+The Batch 2 captures use an isolated synthetic database. The focused run reported 83 passed, 5 skipped and 7 failed. Those same seven QSS and theme-accent pixel assertions failed on the unchanged Batch 1 commit in this offscreen environment. Native visual confirmation of those assertions and the chart-to-database comparison against the live database remain pending. [Synthetic captures](../artifacts/native/batch2-shared-ui/), [Batch 1 baseline comparison](../artifacts/pytest/batch2-baseline/), [Batch 2 test logs](../artifacts/pytest/batch2-verified/)
+
 ## Useful commands and sources
 
 Run from the repo root in PowerShell, one command at a time. The venv is `.venv\Scripts\python.exe`.

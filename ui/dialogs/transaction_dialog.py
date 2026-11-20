@@ -9,6 +9,8 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QDate
 
+from ui.theme import Theme
+from ui.dialogs.form_layout import configure_editor_form, focus_editor_field
 from ui.widgets.toast_utils import show_warning
 from config import INCOME_CATEGORIES, EXPENSE_CATEGORIES, TRANSACTION_MODES
 from models.transaction import (
@@ -39,13 +41,11 @@ class TransactionDialog(QDialog):
 
         form_widget = QWidget(self)
         form = QFormLayout(form_widget)
-        form.setSpacing(12)
-        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        configure_editor_form(form)
 
         self.cmb_person = QComboBox()
         for p in self._persons:
             self.cmb_person.addItem(p["full_name"], userData=p["person_id"])
-        self.cmb_person.currentIndexChanged.connect(self._on_person_changed)
         if self._preselect_pid:
             for i in range(self.cmb_person.count()):
                 if self.cmb_person.itemData(i) == self._preselect_pid:
@@ -59,6 +59,7 @@ class TransactionDialog(QDialog):
                 if self.cmb_account.itemData(i) == self._preselect_aid:
                     self.cmb_account.setCurrentIndex(i); break
         form.addRow("Account *", self.cmb_account)
+        self.cmb_person.currentIndexChanged.connect(self._on_person_changed)
 
         self.date_edit = QDateEdit()
         self.date_edit.setCalendarPopup(True)
@@ -91,7 +92,7 @@ class TransactionDialog(QDialog):
         form.addRow("Amount *", self.amount_spin)
 
         self.bal_spin = QDoubleSpinBox()
-        self.bal_spin.setRange(-99_999_999.99, 99_999_999.99)
+        self.bal_spin.setRange(-100_000_000.00, 99_999_999.99)
         self.bal_spin.setDecimals(2)
         self.bal_spin.setGroupSeparatorShown(True)
         self.bal_spin.setPrefix("₹ ")
@@ -114,7 +115,11 @@ class TransactionDialog(QDialog):
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         self.button_box = buttons
-        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Save" if self._existing else "Add")
+        primary = buttons.button(QDialogButtonBox.StandardButton.Ok)
+        primary.setText("Save" if self._existing else "Add")
+        Theme.style_button(primary, "primary", height=Theme.HEIGHT_MD)
+        Theme.style_button(buttons.button(QDialogButtonBox.StandardButton.Cancel), "secondary", height=Theme.HEIGHT_MD)
+        primary.setDefault(True)
         buttons.accepted.connect(self._on_accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
@@ -181,6 +186,8 @@ class TransactionDialog(QDialog):
         self.amount_spin.setValue(txn.get("amount",0.0))
         bal = txn.get("balance_after")
         if bal is not None: self.bal_spin.setValue(bal)
+        self._initial_amount = self.amount_spin.value()
+        self._initial_balance = self.bal_spin.value()
         self.desc_edit.setPlainText(txn.get("description") or "")
 
     def _on_person_changed(self): self._populate_accounts()
@@ -188,14 +195,24 @@ class TransactionDialog(QDialog):
 
     def _on_accept(self):
         if not self.cmb_account.currentData():
-            show_warning("Please select an account."); return
+            focus_editor_field(self.cmb_account)
+            show_warning("Please select an account.")
+            return
         if self.amount_spin.value() <= 0:
-            show_warning("Amount must be > 0."); return
+            focus_editor_field(self.amount_spin)
+            show_warning("Amount must be > 0.")
+            return
         self.accept()
 
     def get_data(self) -> dict:
-        bal_val = self.bal_spin.value()
-        bal = None if bal_val == self.bal_spin.minimum() else bal_val
+        amount = self.amount_spin.value()
+        balance = self.bal_spin.value()
+        if self._existing and amount == self._initial_amount:
+            amount = self._existing.get("amount", amount)
+        if self._existing and balance == self._initial_balance:
+            balance = self._existing.get("balance_after")
+        elif balance == self.bal_spin.minimum():
+            balance = None
         return {
             "account_id":       self.cmb_account.currentData(),
             "person_id":        self.cmb_person.currentData(),
@@ -204,8 +221,8 @@ class TransactionDialog(QDialog):
             "category":         self.cmb_category.currentText().strip() or None,
             "mode":             self.cmb_mode.currentText().strip() or None,
             "reference_no":     self.ref_input.text().strip().upper() or None,
-            "amount":           self.amount_spin.value(),
+            "amount":           amount,
             "description":      self.desc_edit.toPlainText().strip() or None,
-            "balance_after":    bal,
+            "balance_after":    balance,
             "source":           "Manual",
         }

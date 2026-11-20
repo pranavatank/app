@@ -219,9 +219,9 @@ class TransactionsScreen(QWidget):
         layout.addLayout(totals)
 
         # Pill badges
-        self.lbl_income_sum  = self._badge("Income: —",  Theme.SUCCESS_LIGHT, Theme.SUCCESS_DARK)
-        self.lbl_expense_sum = self._badge("Expense: —", Theme.DANGER_LIGHT,  Theme.DANGER_DARK)
-        self.lbl_net_sum     = self._badge("Net: —",     Theme.PRIMARY_LIGHT, Theme.PRIMARY_DARK)
+        self.lbl_income_sum  = self._badge("Income: —", "positive")
+        self.lbl_expense_sum = self._badge("Expense: —", "negative")
+        self.lbl_net_sum     = self._badge("Net: —", "summary")
         totals.addWidget(self.lbl_income_sum)
         totals.addWidget(self.lbl_expense_sum)
         totals.addWidget(self.lbl_net_sum)
@@ -260,9 +260,10 @@ class TransactionsScreen(QWidget):
         self._unsaved_bar = bar
         return bar
 
-    def _badge(self, text, bg, fg) -> QLabel:
+    def _badge(self, text, role) -> QLabel:
         lbl = QLabel(text)
-        lbl.setStyleSheet(Theme.badge_style(bg, fg))
+        lbl.setProperty("statusChip", role)
+        lbl.setStyleSheet(Theme.status_chip_style(role))
         return lbl
 
     @staticmethod
@@ -377,12 +378,8 @@ class TransactionsScreen(QWidget):
             self._unsaved_bar.setStyleSheet(self._unsaved_bar_css())
         if hasattr(self, 'filter_bar') and self.filter_bar:
             self.filter_bar.setStyleSheet(Theme.filter_bar_style())
-        if hasattr(self, 'lbl_income_sum'):
-            self.lbl_income_sum.setStyleSheet(Theme.badge_style(Theme.SUCCESS_LIGHT, Theme.SUCCESS_DARK))
-        if hasattr(self, 'lbl_expense_sum'):
-            self.lbl_expense_sum.setStyleSheet(Theme.badge_style(Theme.DANGER_LIGHT, Theme.DANGER_DARK))
-        if hasattr(self, 'lbl_net_sum'):
-            self.lbl_net_sum.setStyleSheet(Theme.badge_style(Theme.PRIMARY_LIGHT, Theme.PRIMARY_DARK))
+        for chip in (self.lbl_income_sum, self.lbl_expense_sum, self.lbl_net_sum):
+            chip.setStyleSheet(Theme.status_chip_style(chip.property("statusChip")))
         if hasattr(self, 'table_widget') and self.table_widget:
             self.table_widget.refresh_theme()
         if hasattr(self, 'monthly_chart') and self.monthly_chart:

@@ -78,7 +78,7 @@ class FixedDepositsScreen(QWidget):
         header_layout.addLayout(actions)
         self._title_lbl = title = QLabel("Fixed Deposits")
         title.setObjectName("fdTitle")
-        title.setFont(QFont("Segoe UI", 15, QFont.Weight.Bold))
+        title.setProperty("textrole", "title-md")
         header.addWidget(title)
         header.addStretch()
 

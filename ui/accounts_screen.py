@@ -47,28 +47,32 @@ class AccountsScreen(QWidget):
         layout.setContentsMargins(28, 24, 28, 24)
 
         # Header
-        header = QHBoxLayout()
+        self.header_frame = QFrame()
+        self.header_frame.setObjectName("pageHeader")
+        self.header_frame.setStyleSheet(Theme.page_header_style())
+        header = QHBoxLayout(self.header_frame)
+        header.setContentsMargins(16, 10, 16, 10)
+        header.setSpacing(8)
         title = QLabel("Bank Accounts")
-        title.setFont(QFont("Segoe UI", 18, QFont.Weight.Bold))
-        title.setProperty("textrole", "title-xl")
+        title.setProperty("textrole", "title-md")
         header.addWidget(title)
         header.addStretch()
 
         # View toggle button
-        self.btn_toggle = Theme.btn(" List View", "secondary", height=38, min_width=120)
+        self.btn_toggle = Theme.btn(" List View", "secondary", height=Theme.HEIGHT_MD, min_width=134)
         set_btn_icon(self.btn_toggle, "list_view", color=Theme.TEXT_SECONDARY)
         self.btn_toggle.setAccessibleName("Toggle account view")
         self.btn_toggle.setAccessibleDescription("Switch between card and list view.")
         self.btn_toggle.clicked.connect(self._toggle_view)
         header.addWidget(self.btn_toggle)
 
-        btn_add = Theme.btn(" Add Account", "primary", height=38, min_width=140)
+        btn_add = Theme.btn(" Add Account", "primary", height=Theme.HEIGHT_MD, min_width=154)
         set_btn_icon(btn_add, "add")
         btn_add.setAccessibleName("Add account")
         btn_add.setAccessibleDescription("Open the dialog to add a new bank account.")
         btn_add.clicked.connect(self._on_add_account)
         header.addWidget(btn_add)
-        layout.addLayout(header)
+        layout.addWidget(self.header_frame)
 
         # Master-detail layout: list on left, details panel on right
         master_detail = QHBoxLayout()
@@ -427,6 +431,7 @@ class AccountsScreen(QWidget):
     def refresh_theme(self):
         """Called after a live theme switch — cards are rebuilt fresh on every
         _load_accounts() call, so simply reloading picks up the new colours."""
+        self.header_frame.setStyleSheet(Theme.page_header_style())
         self._load_accounts()
 
     def _on_add_account(self):

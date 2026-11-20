@@ -18,7 +18,12 @@ import functools
 import os
 import traceback
 
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel
+from PySide6.QtWidgets import (
+    QDialog, QDialogButtonBox, QHeaderView, QLabel, QToolButton, QVBoxLayout, QWidget,
+)
+from PySide6.QtGui import QColor, QPalette
+
+from ui.widgets.excel_table import ExcelTable
 from PySide6.QtCore import Qt
 
 from ui.theme import Theme
@@ -88,6 +93,8 @@ def _remember_call(fn):
 
 def _inr(value: float) -> str:
     """Format a number as Indian Rupee (abbreviated)."""
+    if value < 0:
+        return "-" + _inr(-value)
     if value >= 1_00_00_000:
         return f"₹{value/1_00_00_000:.1f}Cr"
     if value >= 1_00_000:
@@ -122,11 +129,56 @@ class ChartWidget(QWidget):
         self._empty_lbl = None
         self._last_call: tuple | None = None
 
-        if not _MPL_AVAILABLE:
+        if _MPL_AVAILABLE:
+            self._setup_canvas()
+        else:
             self._show_unavailable()
-            return
 
-        self._setup_canvas()
+        self._table_button = QToolButton(self)
+        self._table_button.setObjectName("chartDataButton")
+        self._table_button.setText("View chart data")
+        self._table_button.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self._table_button.clicked.connect(self._show_data_table)
+        self._layout.addWidget(self._table_button, alignment=Qt.AlignmentFlag.AlignRight)
+        self._set_data("", "", [], {})
+
+    def _set_data(self, title, category_header, categories, series):
+        self._chart_title = title or "Chart data"
+        self._data_headers = (category_header or "Category", *series)
+        self._data_rows = tuple(
+            (category, *(values[index] if index < len(values) else None for values in series.values()))
+            for index, category in enumerate(categories)
+        )
+        self.setAccessibleName(self._chart_title)
+        self.setAccessibleDescription("")
+        self._table_button.setAccessibleName(f"View data for {self._chart_title}" if title else "View chart data")
+        self._table_button.setVisible(bool(categories) and bool(series))
+
+    def _show_data_table(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle(self._chart_title)
+        dialog.resize(600, 420)
+        layout = QVBoxLayout(dialog)
+        table = ExcelTable(dialog, show_checkboxes=False, read_only=True)
+        palette = table.palette()
+        palette.setColor(QPalette.ColorRole.AlternateBase, QColor(Theme.SURFACE_ALT))
+        table.setPalette(palette)
+        table.setAccessibleName(f"{self._chart_title} data table")
+        table.setHeaders(list(self._data_headers))
+        for row in self._data_rows:
+            # Keep the original recorded precision and distinguish missing amounts from zero.
+            table.addDataRow(list(row))
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        table.horizontalHeader().setMinimumSectionSize(100)
+        table.horizontalHeader().setStretchLastSection(True)
+        layout.addWidget(table)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        Theme.style_button(buttons.button(QDialogButtonBox.StandardButton.Close), "secondary")
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        table.setFocus()
+        dialog.exec()
+        dialog.deleteLater()
 
     # ── Canvas init ──────────────────────────────────────────────────────────
 
@@ -165,8 +217,20 @@ class ChartWidget(QWidget):
         ax.set_axisbelow(True)
         return ax
 
-    def _finish(self, ax, title: str, xlabel: str = "", ylabel: str = ""):
-        # Note: in-figure title removed — section heading above chart names it
+    def _add_legend(self, ax, **options):
+        ax.legend(
+            facecolor=Theme.SURFACE,
+            edgecolor=Theme.BORDER,
+            labelcolor=Theme.TEXT_PRIMARY,
+            fontsize=8,
+            **options,
+        )
+
+    def _finish(self, ax, title: str, xlabel: str = "", ylabel: str = "", *, currency=True):
+        if title:
+            ax.set_title(title, color=Theme.TEXT_PRIMARY, fontsize=10, wrap=True, pad=6)
+        if currency:
+            ax.yaxis.set_major_formatter(mticker.FuncFormatter(self._inr_formatter))
         if xlabel:
             ax.set_xlabel(xlabel, color=Theme.TEXT_SECONDARY, fontsize=10, labelpad=6)
         if ylabel:
@@ -208,12 +272,18 @@ class ChartWidget(QWidget):
 
     @_remember_call
     def clear(self):
+        self._set_data("", "", [], {})
         if self._canvas:
             self._fig.clear()
             self._canvas.draw()
 
     @_remember_call
     def show_empty_state(self, message: str = "No data to display"):
+        self._set_data("", "", [], {})
+        self._draw_empty_state(message)
+
+    def _draw_empty_state(self, message):
+        self.setAccessibleDescription(message)
         if not self._canvas:
             return
         self._fig.clear()
@@ -240,10 +310,11 @@ class ChartWidget(QWidget):
         ylabel: str = "",
         color: str | None = None,
     ):
+        self._set_data(title, xlabel, categories, {ylabel or "Amount (₹)": values})
         if not self._canvas:
             return
         if not values or all(v == 0 for v in values):
-            self.show_empty_state("No data for this period")
+            self._draw_empty_state("No data for this period")
             return
         try:
             ax = self._new_ax()
@@ -265,11 +336,10 @@ class ChartWidget(QWidget):
             ax.set_xticklabels(categories,
                                rotation=30 if n > 5 else 0,
                                ha="right" if n > 5 else "center")
-            ax.yaxis.set_major_formatter(mticker.FuncFormatter(self._inr_formatter))
             self._finish(ax, title, xlabel, ylabel)
         except Exception:
             traceback.print_exc()
-            self.show_empty_state("Chart error")
+            self._draw_empty_state("Chart error")
 
     # ── Comparison bar chart ──────────────────────────────────────────────────
 
@@ -285,10 +355,16 @@ class ChartWidget(QWidget):
         xlabel: str = "",
         ylabel: str = "",
     ):
+        first_header = label1 or "Series 1"
+        second_header = label2 or "Series 2"
+        if first_header == second_header:
+            first_header += " (1)"
+            second_header += " (2)"
+        self._set_data(title, xlabel, categories, {first_header: values1, second_header: values2})
         if not self._canvas:
             return
         if not categories:
-            self.show_empty_state("No data to compare")
+            self._draw_empty_state("No data to compare")
             return
         try:
             ax = self._new_ax()
@@ -308,29 +384,23 @@ class ChartWidget(QWidget):
                 rotation=35 if len(categories) > 5 else 0,
                 ha="right" if len(categories) > 5 else "center",
             )
-            ax.yaxis.set_major_formatter(mticker.FuncFormatter(self._inr_formatter))
 
-            leg = ax.legend(
-                facecolor=Theme.SURFACE,
-                edgecolor=Theme.BORDER,
-                labelcolor=Theme.TEXT_PRIMARY,
-                fontsize=9,
-                framealpha=0.95,
-                bbox_to_anchor=(1.02, 1), loc='upper left',
-            )
+            if ax.get_legend_handles_labels()[0]:
+                self._add_legend(ax, loc="best")
             self._finish(ax, title, xlabel, ylabel)
         except Exception:
             traceback.print_exc()
-            self.show_empty_state("Chart error")
+            self._draw_empty_state("Chart error")
 
     # ── Pie / donut chart ─────────────────────────────────────────────────────
 
     @_remember_call
     def plot_pie(self, labels: list, values: list, title: str = ""):
+        self._set_data(title, "Category", labels, {"Amount (₹)": values})
         if not self._canvas:
             return
         if not values or sum(values) == 0:
-            self.show_empty_state("No data to display")
+            self._draw_empty_state("No data to display")
             return
         try:
             self._fig.clear()
@@ -338,7 +408,8 @@ class ChartWidget(QWidget):
             ax = self._fig.add_subplot(111)
             ax.set_facecolor(Theme.SURFACE)
 
-            colors  = Theme.CHART_COLORS[:len(labels)]
+            palette = Theme.CHART_COLORS
+            colors = [palette[index % len(palette)] for index in range(len(labels))]
             explode = [0.03] * len(labels)
 
             wedges, texts, autotexts = ax.pie(
@@ -365,22 +436,11 @@ class ChartWidget(QWidget):
                 mpatches.Patch(color=colors[i], label=f"{labels[i]}  {_inr(values[i])}")
                 for i in range(len(labels))
             ]
-            ax.legend(
-                handles=patches,
-                loc="center left",
-                bbox_to_anchor=(1.02, 0.5),
-                frameon=True,
-                facecolor=Theme.SURFACE,
-                edgecolor=Theme.BORDER,
-                fontsize=8,
-                labelcolor=Theme.TEXT_PRIMARY,
-            )
-            # Note: in-figure title removed — section heading above chart names it
-            self._fig.patch.set_facecolor(Theme.SURFACE)
-            self._canvas.draw()
+            self._add_legend(ax, handles=patches, loc="center left", bbox_to_anchor=(1.02, 0.5))
+            self._finish(ax, title, currency=False)
         except Exception:
             traceback.print_exc()
-            self.show_empty_state("Chart error")
+            self._draw_empty_state("Chart error")
 
     # ── Line chart ────────────────────────────────────────────────────────────
 
@@ -394,10 +454,11 @@ class ChartWidget(QWidget):
         ylabel: str = "",
         color: str | None = None,
     ):
+        self._set_data(title, xlabel, x_data, {ylabel or "Amount (₹)": y_data})
         if not self._canvas:
             return
         if not y_data:
-            self.show_empty_state("No data to display")
+            self._draw_empty_state("No data to display")
             return
         try:
             ax = self._new_ax()
@@ -420,11 +481,10 @@ class ChartWidget(QWidget):
                 rotation=35 if len(x_data) > 5 else 0,
                 ha="right" if len(x_data) > 5 else "center",
             )
-            ax.yaxis.set_major_formatter(mticker.FuncFormatter(self._inr_formatter))
             self._finish(ax, title, xlabel, ylabel)
         except Exception:
             traceback.print_exc()
-            self.show_empty_state("Chart error")
+            self._draw_empty_state("Chart error")
 
     # ── Multi-line trend chart ────────────────────────────────────────────────
 
@@ -443,10 +503,14 @@ class ChartWidget(QWidget):
         series = {"FD Interest": [v1, v2, ...], "Savings Interest": [...]}
         trim_trailing_empty: if True, remove trailing all-zero/None months
         """
+        self._set_data(title, xlabel, categories, series)
         if not self._canvas:
             return
         if not series or not categories:
-            self.show_empty_state("No data to display")
+            self._draw_empty_state("No data to display")
+            return
+        if not any(value is not None for values in series.values() for value in values):
+            self._draw_empty_state("No data to display")
             return
         try:
             # Trim trailing empty months if all series end with 0/None
@@ -470,6 +534,10 @@ class ChartWidget(QWidget):
 
             for idx, (name, values) in enumerate(series.items()):
                 c = cols[idx % len(cols)]
+                values = np.array(
+                    [values[i] if i < len(values) else None for i in x],
+                    dtype=float,
+                )
                 ax.plot(
                     x, values,
                     color=c, linewidth=2.2,
@@ -486,18 +554,12 @@ class ChartWidget(QWidget):
                 rotation=35 if len(categories) > 5 else 0,
                 ha="right" if len(categories) > 5 else "center",
             )
-            ax.yaxis.set_major_formatter(mticker.FuncFormatter(self._inr_formatter))
-            ax.legend(
-                facecolor=Theme.SURFACE,
-                edgecolor=Theme.BORDER,
-                labelcolor=Theme.TEXT_PRIMARY,
-                fontsize=9,
-                bbox_to_anchor=(1.02, 1), loc='upper left',
-            )
+            if ax.get_legend_handles_labels()[0]:
+                self._add_legend(ax, loc="best")
             self._finish(ax, title, xlabel, ylabel)
         except Exception:
             traceback.print_exc()
-            self.show_empty_state("Chart error")
+            self._draw_empty_state("Chart error")
 
     # ── Monthly income vs expense bar chart ───────────────────────────────────
 
@@ -510,10 +572,11 @@ class ChartWidget(QWidget):
         title: str = "Monthly Overview",
     ):
         """Stacked-side monthly income vs expense bar chart."""
+        self._set_data(title, "Month", months, {"Income (₹)": income, "Expense (₹)": expense})
         if not self._canvas:
             return
         if not months:
-            self.show_empty_state("No monthly data")
+            self._draw_empty_state("No monthly data")
             return
         try:
             ax = self._new_ax()
@@ -529,15 +592,9 @@ class ChartWidget(QWidget):
 
             ax.set_xticks(x)
             ax.set_xticklabels(months, rotation=30, ha="right")
-            ax.yaxis.set_major_formatter(mticker.FuncFormatter(self._inr_formatter))
-            ax.legend(
-                facecolor=Theme.SURFACE,
-                edgecolor=Theme.BORDER,
-                labelcolor=Theme.TEXT_PRIMARY,
-                fontsize=9,
-                bbox_to_anchor=(1.02, 1), loc='upper left',
-            )
+            if ax.get_legend_handles_labels()[0]:
+                self._add_legend(ax, loc="best")
             self._finish(ax, title, ylabel="Amount (₹)")
         except Exception:
             traceback.print_exc()
-            self.show_empty_state("Chart error")
+            self._draw_empty_state("Chart error")

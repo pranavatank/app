@@ -49,3 +49,42 @@ def test_fixed_deposits_interest_chart(qapp):
     assert hasattr(screen, 'interest_chart'), "FixedDepositsScreen missing interest_chart"
     assert screen.interest_chart is not None, "interest_chart is None"
     print("[PASS] Fixed Deposits interest chart present")
+
+
+@pytest.mark.parametrize("canvas_available", [True, False])
+def test_chart_data_keeps_exact_values_and_missing_cells(qapp, monkeypatch, canvas_available):
+    from PySide6.QtWidgets import QDialog
+    from ui.widgets import chart_widget
+    from ui.widgets.excel_table import ExcelTable
+
+    if canvas_available and not chart_widget._MPL_AVAILABLE:
+        pytest.skip("Matplotlib canvas unavailable")
+    monkeypatch.setattr(chart_widget, "_MPL_AVAILABLE", canvas_available)
+    chart = chart_widget.ChartWidget()
+    chart.plot_trend_line(
+        ["Apr", "May", "Jun"],
+        {"Actual": [-12_345.6789, None], "Estimated": [0, 42.5]},
+        title="Synthetic interest",
+        xlabel="Month",
+    )
+    chart.refresh_theme()
+    dialogs_seen = []
+
+    def verify_dialog(dialog):
+        table = dialog.findChild(ExcelTable)
+        assert table.accessibleName() == "Synthetic interest data table"
+        assert table.rowCount() == 3
+        assert [table.horizontalHeaderItem(i).text() for i in range(3)] == ["Month", "Actual", "Estimated"]
+        assert table.item(0, 1).text() == "-12345.6789"
+        assert table.item(0, 2).text() == "0"
+        assert table.item(1, 1).text() == "—"
+        assert table.item(1, 2).text() == "42.5"
+        dialogs_seen.append(dialog)
+
+    monkeypatch.setattr(QDialog, "exec", verify_dialog)
+    assert not chart._table_button.isHidden()
+    assert chart._table_button.accessibleName() == "View data for Synthetic interest"
+    chart._table_button.click()
+    assert len(dialogs_seen) == 1
+    chart.show_empty_state()
+    assert chart._table_button.isHidden()

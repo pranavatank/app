@@ -449,7 +449,7 @@ class DashboardScreen(QMainWindow):
 
         self.page_title_lbl = QLabel("Overview")
         self.page_title_lbl.setObjectName("pageTitle")
-        self.page_title_lbl.setFont(QFont("Segoe UI", 15, QFont.Weight.Bold))
+        self.page_title_lbl.setProperty("textrole", "title-md")
         title_layout.addWidget(self.page_title_lbl, stretch=1)
 
         self._topbar_context = context = QWidget()
@@ -469,7 +469,7 @@ class DashboardScreen(QMainWindow):
             combo.currentIndexChanged.connect(lambda: self._update_combo_tooltip(combo))
             caption = QLabel(label)
             caption.setBuddy(combo)
-            caption.setStyleSheet(Theme.section_label_style())
+            caption.setProperty("textrole", "section-label")
             context_layout.addWidget(caption)
             context_layout.addWidget(combo)
             return combo

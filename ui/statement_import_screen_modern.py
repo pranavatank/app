@@ -23,7 +23,7 @@ import json
 import os
 import re
 
-from ui.widgets.excel_table import ExcelTableWithStats
+from ui.widgets.excel_table import ExcelTableWithStats, table_checkbox
 from ui.widgets.loader import Loader
 from ui.widgets.toast_utils import show_success, show_warning
 from ui.widgets.drop_zone import DropZone
@@ -520,9 +520,7 @@ class StatementImportScreen(QWidget):
         title_row.addStretch()
         
         self.preview_summary_label = QLabel("Total: 0 | New: 0 | Duplicates: 0 | Selected: 0")
-        self.preview_summary_label.setStyleSheet(
-            Theme.badge_style(Theme.INFO_LIGHT, Theme.INFO_DARK, radius=8, padding="6px 12px", size=11, weight=600)
-        )
+        self.preview_summary_label.setStyleSheet(Theme.status_chip_style("info"))
         title_row.addWidget(self.preview_summary_label)
         hc_layout.addLayout(title_row)
 
@@ -686,6 +684,9 @@ class StatementImportScreen(QWidget):
                 button.setMinimumWidth(max(button.minimumWidth(), button.sizeHint().width()))
 
         return container
+
+    def refresh_theme(self):
+        self.preview_summary_label.setStyleSheet(Theme.status_chip_style("info"))
 
     def _build_stepper(self) -> QWidget:
         """Two-step progress indicator: numbered dots joined by a line,
@@ -1502,7 +1503,7 @@ class StatementImportScreen(QWidget):
         
         for idx, txn in enumerate(self.preview_transactions):
             # Checkbox
-            cb = QCheckBox()
+            cb = table_checkbox()
             is_duplicate = self.preview_duplicate_flags[idx] if idx < len(self.preview_duplicate_flags) else False
             selectable = not is_duplicate and not self._import_blocked
             cb.setChecked(selectable)

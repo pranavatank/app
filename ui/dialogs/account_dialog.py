@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QDate
 from PySide6.QtGui import QFont
 
+from ui.dialogs.form_layout import configure_editor_form, focus_editor_field, editor_footer
 from ui.theme import Theme
 from ui.widgets.excel_table import enable_copy_shortcut
 from ui.widgets.toast_utils import show_success, show_warning
@@ -211,7 +212,7 @@ class AccountDialog(QDialog):
         layout.setSpacing(14)
         layout.setContentsMargins(24, 20, 24, 18)
 
-        tabs = QTabWidget()
+        self.detail_tabs = tabs = QTabWidget()
         tabs.setAccessibleName("Account details tabs")
         tabs.addTab(self._scroll_tab(self._basic_tab()),   "Basic Info")
         tabs.addTab(self._scroll_tab(self._bank_tab()),    "Bank Details")
@@ -229,7 +230,7 @@ class AccountDialog(QDialog):
         div.setStyleSheet(f"color: {Theme.BORDER};")
         layout.addWidget(div)
 
-        btns = QHBoxLayout(); btns.addStretch()
+        btns = editor_footer()
         btn_cancel = _btn("Close" if self.view_only else "Cancel", "secondary")
         btn_cancel.setAccessibleName("Close account dialog" if self.view_only else "Cancel account dialog")
         btn_cancel.clicked.connect(self.reject)
@@ -299,9 +300,8 @@ class AccountDialog(QDialog):
     def _form_widget(self) -> tuple[QWidget, QFormLayout]:
         w = QWidget()
         f = QFormLayout(w)
-        f.setSpacing(12)
+        configure_editor_form(f)
         f.setContentsMargins(16, 16, 16, 16)
-        f.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         return w, f
 
     def _spin(self, prefix="₹ ", min_val=0, max_val=99_999_999.99) -> QDoubleSpinBox:
@@ -723,30 +723,42 @@ class AccountDialog(QDialog):
     def _on_save(self):
         bank_name = (self.bank_combo.currentData() or self.bank_combo.currentText() or "").strip()
         if not bank_name or bank_name == "-- Select or Type New Bank --":
+            self.detail_tabs.setCurrentIndex(0)
+            focus_editor_field(self.bank_combo)
             show_warning("Please enter a bank name."); return
 
         tan = self.tan_input.text().strip().upper()
         if tan and not re.fullmatch(r"[A-Z]{4}[0-9]{5}[A-Z]", tan):
+            self.detail_tabs.setCurrentIndex(0)
+            focus_editor_field(self.tan_input)
             show_warning("TAN must be 10 characters in the format ABCD12345E.")
             return
 
         ifsc = self.ifsc_input.text().strip().upper()
         if ifsc and not re.fullmatch(r"[A-Z]{4}0[A-Z0-9]{6}", ifsc):
+            self.detail_tabs.setCurrentIndex(1)
+            focus_editor_field(self.ifsc_input)
             show_warning("IFSC must be 11 characters in the format HDFC0001234.")
             return
 
         micr = self.micr_input.text().strip()
         if micr and not re.fullmatch(r"[0-9]{9}", micr):
+            self.detail_tabs.setCurrentIndex(1)
+            focus_editor_field(self.micr_input)
             show_warning("MICR code must be exactly 9 digits.")
             return
 
         email = self.email_input.text().strip()
         if email and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+            self.detail_tabs.setCurrentIndex(2)
+            focus_editor_field(self.email_input)
             show_warning("Please enter a valid email address.")
             return
 
         phone = self.phone_input.text().strip()
         if phone and not re.fullmatch(r"[0-9]{10}", re.sub(r"[\s\-+]", "", phone).removeprefix("91")):
+            self.detail_tabs.setCurrentIndex(2)
+            focus_editor_field(self.phone_input)
             show_warning("Please enter a valid 10-digit phone number.")
             return
 

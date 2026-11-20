@@ -13,6 +13,7 @@ from PySide6.QtGui import QFont, QDoubleValidator
 
 from datetime import date
 
+from ui.dialogs.form_layout import configure_editor_form, focus_editor_field, editor_footer
 from ui.theme import Theme
 from ui.widgets.toast_utils import show_success, show_warning
 from ui.widgets.money_label import format_inr
@@ -63,7 +64,8 @@ class FDDialog(QDialog):
         form_container_layout.setContentsMargins(0, 0, 0, 0)
         form_container_layout.setSpacing(12)
 
-        form = QFormLayout(); form.setSpacing(12)
+        form = QFormLayout()
+        configure_editor_form(form)
 
         self.person_combo = QComboBox()
         for p in get_all_persons():
@@ -153,7 +155,7 @@ class FDDialog(QDialog):
         scroll.setWidget(form_container)
         layout.addWidget(scroll, 1)
 
-        btns = QHBoxLayout(); btns.addStretch()
+        btns = editor_footer()
         btn_show = Theme.btn("Show Calculations", "secondary", height=36, min_width=130)
         btn_show.clicked.connect(self._on_show_calculations)
         btns.addWidget(btn_show)
@@ -437,8 +439,8 @@ class FDDialog(QDialog):
         try:
             account_id = self.account_combo.currentData()
             person_id  = self.person_combo.currentData()
-            principal  = float(self.principal_input.text())
-            rate       = float(self.rate_input.text())
+            principal  = float(self.principal_input.text() or 0)
+            rate       = float(self.rate_input.text() or 0)
             tenure_years  = int(self.tenure_years_input.text() or 0)
             tenure_months = int(self.tenure_months_input.text() or 0)
             tenure_days   = int(self.tenure_days_input.text() or 0)
@@ -447,8 +449,16 @@ class FDDialog(QDialog):
             fd_ref_no = (self.fd_no_input.text() or "").strip() or None
             expected_interest = float(self.expected_interest_input.text()) if (self.expected_interest_input.text() or "").strip() else None
             actual_interest = float(self.actual_interest_input.text()) if (self.actual_interest_input.text() or "").strip() else None
-            if not account_id or principal<=0 or rate<=0 or rate>100 or (tenure_years<=0 and tenure_months<=0 and tenure_days<=0):
-                show_warning("Please fill all fields correctly (interest rate must be between 0 and 100)."); return
+            invalid_field = next((field for invalid, field in (
+                (not account_id, self.account_combo),
+                (principal <= 0, self.principal_input),
+                (not 0 < rate <= 100, self.rate_input),
+                (tenure_years <= 0 and tenure_months <= 0 and tenure_days <= 0, self.tenure_months_input),
+            ) if invalid), None)
+            if invalid_field is not None:
+                focus_editor_field(invalid_field)
+                show_warning("Please fill all fields correctly (interest rate must be between 0 and 100).")
+                return
             mat_date = calculate_fd_maturity_date(start, tenure_years, tenure_months, tenure_days)
             mat_formula = calculate_fd_maturity_flexible(
                 principal, rate, start, mat_date, compounding,

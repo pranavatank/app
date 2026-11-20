@@ -96,7 +96,8 @@ class FDBulkRateDialog(QDialog):
         fill_layout.addWidget(self.compounding_combo)
 
         # Apply button with left-align wrapper
-        apply_btn = Theme.btn("Apply to Checked", "secondary", height=Theme.HEIGHT_MD, min_width=150)
+        apply_btn = Theme.btn("Apply to Checked", "secondary", height=Theme.HEIGHT_MD, min_width=180)
+        apply_btn.setMinimumWidth(max(apply_btn.minimumWidth(), apply_btn.sizeHint().width()))
         apply_btn.clicked.connect(self._on_apply_to_checked)
         apply_wrapper = QWidget()
         apply_wrapper_layout = QHBoxLayout(apply_wrapper)

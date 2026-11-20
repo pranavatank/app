@@ -411,6 +411,17 @@ class Theme:
         return tc.badge_style(Theme, bg=bg, fg=fg, radius=radius, padding=padding, size=size, weight=weight)
 
     @staticmethod
+    def status_chip_style(role: str) -> str:
+        t = Theme
+        bg, fg = {
+            "positive": (t.SUCCESS_LIGHT, t.SUCCESS_DARK),
+            "negative": (t.DANGER_LIGHT, t.DANGER_DARK),
+            "summary": (t.PRIMARY_LIGHT, t.PRIMARY_DARK),
+            "info": (t.INFO_LIGHT, t.INFO_DARK),
+        }[role]
+        return t.badge_style(bg, fg, radius=t.RADIUS_PILL, padding="5px 12px")
+
+    @staticmethod
     def card_style(bg=None, border_color=None, radius=14, padding=14,
                    left_accent=None, selector="QFrame") -> str:
         return tc.card_style(Theme, bg=bg, border_color=border_color, radius=radius,
@@ -1020,6 +1031,17 @@ QCheckBox#setupTotpCheck {{ color: {t.TEXT_SECONDARY}; font-size: 12px; }}
 
 /* ═══════════════════════════ TEXT ROLES ════════════════════════════ */
 /* Title variants */
+QCheckBox[tableCheckbox="true"] {{ padding: 0; margin: 0; spacing: 0; }}
+QCheckBox[tableCheckbox="true"]::indicator {{
+    width: 16px; height: 16px; border-radius: 4px;
+}}
+QToolButton#chartDataButton {{
+    color: {t.TEXT_PRIMARY}; background-color: {t.SURFACE};
+    border: 1px solid {t.BORDER}; border-radius: {t.RADIUS_CONTROL}px;
+    padding: 3px 8px;
+}}
+QToolButton#chartDataButton:hover {{ background-color: {t.SURFACE_ALT}; }}
+QToolButton#chartDataButton:focus {{ border-color: {t.PRIMARY}; }}
 QLabel[textrole="title-sm"] {{ color: {t.TEXT_HEADING}; font-size: 14px; font-weight: 700; }}
 QLabel[textrole="title-md"] {{ color: {t.TEXT_HEADING}; font-size: 15px; font-weight: 700; }}
 QLabel[textrole="title-lg"] {{ color: {t.TEXT_HEADING}; font-size: 16px; font-weight: 700; }}

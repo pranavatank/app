@@ -14,6 +14,7 @@ import calendar
 from datetime import date, datetime
 from dateutil.relativedelta import relativedelta
 
+from ui.dialogs.form_layout import configure_editor_form, focus_editor_field, editor_footer
 from ui.theme import Theme
 from ui.icons import set_btn_icon, set_btn_icon_auto
 from ui.widgets.toast_utils import show_warning
@@ -78,8 +79,7 @@ class IncomeExpectationDialog(QDialog):
         # Form fields
         form = QFormLayout()
         self.form_layout = form
-        form.setSpacing(12)
-        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        configure_editor_form(form)
 
         # Person
         self.person_combo = QComboBox()
@@ -201,8 +201,7 @@ class IncomeExpectationDialog(QDialog):
         layout.addWidget(self.footer_divider)
 
         # Buttons
-        btns = QHBoxLayout()
-        btns.addStretch()
+        btns = editor_footer()
         btn_cancel = _btn("Cancel", "secondary")
         btn_cancel.setAccessibleName("Cancel income expectation dialog")
         btn_cancel.clicked.connect(self.reject)
@@ -458,14 +457,17 @@ class IncomeExpectationDialog(QDialog):
     def _on_save(self):
         """Validate and accept dialog."""
         if not self.person_combo.currentData():
+            focus_editor_field(self.person_combo)
             show_warning("Please select a Person.")
             return
 
         if not self.account_combo.currentData():
+            focus_editor_field(self.account_combo)
             show_warning("Please select an Account.")
             return
 
         if self.amount_spin.value() <= 0:
+            focus_editor_field(self.amount_spin)
             show_warning("Expected Amount must be greater than 0.")
             return
 

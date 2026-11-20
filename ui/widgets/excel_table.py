@@ -51,6 +51,13 @@ class NoFocusRectDelegate(QStyledItemDelegate):
         return editor
 
 
+def table_checkbox() -> QCheckBox:
+    checkbox = QCheckBox()
+    checkbox.setProperty("tableCheckbox", True)
+    checkbox.setFixedSize(24, 24)
+    return checkbox
+
+
 class ExcelTable(QTableWidget):
     """Table with Excel-like features: cell/row selection, copy/paste, checkboxes, stats."""
 
@@ -280,7 +287,7 @@ class ExcelTable(QTableWidget):
         """Build and set up a checkbox cell with toggle signal connection."""
         if not self.show_checkboxes or row >= self.rowCount():
             return
-        cb = QCheckBox()
+        cb = table_checkbox()
         cb.setChecked(checked)
         cb_widget = QWidget()
         cb_layout = QHBoxLayout(cb_widget)
