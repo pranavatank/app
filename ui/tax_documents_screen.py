@@ -39,6 +39,7 @@ from engines.statement_parser import is_pdf_encrypted
 from models.fixed_deposit import get_all_fds, find_fd_by_account_no
 from models.ais_tis_import import get_ais_tis_data
 from models.form26as import get_form26as_import
+from models.transaction import get_transactions
 from models.person import get_ais_tis_password, get_all_persons, set_ais_tis_password
 import json
 import os
@@ -307,7 +308,7 @@ class TaxDocumentsScreen(QWidget):
         self.position_table_widget = ExcelTableWithStats(show_checkboxes=False, read_only=True)
         self.position_table = self.position_table_widget.table
         self.position_table.setHeaders([
-            "Category", "TIS", "AIS", "26AS", "In App", "Status"
+            "Category", "TIS", "AIS", "26AS", "Document Result", "Bank Ledger", "Status"
         ])
         self.position_table.setAccessibleName("Reconciled financial position table")
         self.position_table.setAccessibleDescription("Shows the comparison of financial data across TIS, AIS, Form 26AS, and in-app records.")
@@ -386,9 +387,23 @@ class TaxDocumentsScreen(QWidget):
         if started is None:
             return
         request, captured_person_id, captured_fy, active_key = started
+        password = None
+        if is_pdf_encrypted(path):
+            dialog = PasswordDialog(
+                self, title="Enter Form 26AS Password",
+                info_text="Enter the password for this Form 26AS PDF.",
+                placeholder_text="Form 26AS password",
+                save_label=None,
+                accept_label="Continue",
+            )
+            if dialog.exec() != QDialog.DialogCode.Accepted or not dialog.get_password():
+                self._finish_source_request(active_key)
+                self.refresh()
+                return
+            password = dialog.get_password()
 
         def parse_26as():
-            parsed = parse_form26as_pdf(path, password=None, debug={})
+            parsed = parse_form26as_pdf(path, password=password, debug={})
             info = persist_form26as(person_id, parsed,
                                     source_file=os.path.basename(path))
             return info
@@ -585,14 +600,14 @@ class TaxDocumentsScreen(QWidget):
             self.non_income_frame.setVisible(True)
             self.fd_frame.setVisible(True)
 
-            self._render_position_table()
+            self._render_position_table(person_id)
             self._render_non_income_table()
             self._render_fd_table()
 
         except Exception as e:
             show_danger(f"Merge failed: {str(e)}")
 
-    def _render_position_table(self):
+    def _render_position_table(self, person_id):
         """Render the reconciled position table."""
         if not self.merge_result:
             return
@@ -602,6 +617,16 @@ class TaxDocumentsScreen(QWidget):
         tds_recon = self.merge_result.get('tds_reconciliation', {})
 
         self.position_table.setRowCount(0)
+        categories_in_ledger = {
+            "Dividend": "dividend", "Savings Interest": "savings_interest",
+            "FD Interest": "fd_interest", "Business Income": "business_receipts",
+            "Professional Fees": "business_receipts",
+        }
+        ledger = {}
+        for row in get_transactions(person_id=person_id, financial_year=session.selected_fy, transaction_type="Income"):
+            key = categories_in_ledger.get(row.get("category"))
+            if key and not row.get("is_internal_transfer"):
+                ledger[key] = ledger.get(key, 0) + row["amount"]
 
         # Income rows
         categories = [
@@ -616,13 +641,19 @@ class TaxDocumentsScreen(QWidget):
         for key, label in categories:
             if key in iv:
                 row_data = iv[key]
+                status = []
+                if abs(row_data.get("difference", 0)) >= 0.01:
+                    status.append("AIS / TIS differ")
+                if key in ledger and abs(ledger[key] - row_data.get("tis", 0)) >= 0.01:
+                    status.append("Ledger differs")
                 self._add_position_row(
                     label,
                     _format_inr(row_data.get('tis', 0)),
                     _format_inr(row_data.get('ais', 0)),
                     "—",  # 26AS doesn't have income detail
                     _format_inr(fp.get(key, 0)) if key in fp else "—",
-                    "✓" if row_data.get('difference', 0) == 0 else "⚠"
+                    " · ".join(status) or ("Matches" if key in ledger else "No ledger rows"),
+                    ledger=_format_inr(ledger[key]) if key in ledger else "—",
                 )
             elif key in fp:
                 self._add_position_row(
@@ -678,9 +709,9 @@ class TaxDocumentsScreen(QWidget):
             + 2 * table.frameWidth() + table.horizontalScrollBar().sizeHint().height()
         )
 
-    def _add_position_row(self, category: str, tis: str, ais: str, form26as: str, in_app: str, status: str):
+    def _add_position_row(self, category: str, tis: str, ais: str, form26as: str, result: str, status: str, ledger: str = "—"):
         """Add a row to the position table."""
-        row_data = [category, tis, ais, form26as, in_app, status]
+        row_data = [category, tis, ais, form26as, result, ledger, status]
         self.position_table.addDataRow(row_data)
 
     def _render_non_income_table(self):

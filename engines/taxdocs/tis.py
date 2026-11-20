@@ -4,7 +4,7 @@ engines/taxdocs/tis.py — Parse TIS PDF using pdfplumber table extraction
 
 import re
 from typing import Dict, Any
-from engines.taxdocs.period import extract_tax_period_from_pages
+from engines.taxdocs.period import extract_tax_period_from_pages, extract_taxpayer_pan
 
 
 def _parse_inr_amount(value: str) -> float:
@@ -45,6 +45,7 @@ def parse_tis_pdf(pdf_path: str, password: str = None) -> Dict[str, Any]:
 
     result = {
         **extract_tax_period_from_pages(page_texts),
+        "pan": extract_taxpayer_pan(page_texts[0] if page_texts else ""),
         'dividend': 0.0,
         'savings_interest': 0.0,
         'fd_interest': 0.0,

@@ -18,11 +18,13 @@ sys.path.insert(0, str(REPO_ROOT))
 
 import pytest
 from unittest.mock import patch, MagicMock
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from ui.statement_import_screen_modern import StatementImportScreen
+from ui.dialogs.account_metadata_dialog import AccountMetadataDialog
 from models.person import get_all_persons, add_person
-from models.bank_account import add_account, delete_account
+from models.bank_account import add_account, delete_account, get_account
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -82,9 +84,10 @@ class TestStatementImportBlocking:
         Rows:
         - (2025-04-01, Income, 100, balance_after 1000, desc A)
         - (2025-04-02, Income, 100, balance_after 900, desc B)  <- direction wrong (balance decreased but Income)
-        - (2025-04-03, Income, 50, balance_after 850, desc C)
+        - (2025-04-03, Income, 50, balance_after 875, desc C)  <- inconsistent amount
 
-        This creates tied rows with direction mismatches, triggering low confidence.
+        The first mismatch can be corrected from the running balance, while the
+        inconsistent amount must still block the import.
         """
         screen = StatementImportScreen(None)
         screen.selected_person_id = test_person_id
@@ -133,7 +136,7 @@ class TestStatementImportBlocking:
                 "transaction_date": "2025-04-03",
                 "transaction_type": "Income",
                 "amount": 50.0,
-                "balance_after": 850.0,  # decreased, but Income (wrong direction)
+                "balance_after": 875.0,  # movement cannot prove the amount
                 "description": "C",
                 "mode": "Transfer",
                 "category": "Salary",
@@ -152,6 +155,8 @@ class TestStatementImportBlocking:
             screen._process_parsed_statement(rows)
 
             assert screen._import_blocked, "_import_blocked should be True for tied rows with low confidence"
+            assert screen.preview_transactions[1]["transaction_type"] == "Expense"
+            assert screen.preview_transactions[2]["transaction_type"] == "Income"
             assert "blocked" in screen.preview_status_label.text().lower()
             assert not screen.btn_next.isEnabled()
 
@@ -162,6 +167,44 @@ class TestStatementImportBlocking:
             assert len(loader_runs) == 0, "Loader.run should not be called when import is blocked"
             assert any("blocked" in w.lower() for w in warnings_shown), \
                 "Warning containing 'blocked' should be shown in _import_transactions"
+
+    @pytest.mark.parametrize("number_suffix", ["0001", "0002"])
+    def test_preview_account_details_respects_selected_account(
+        self, qapp, test_person_id, test_account_id, number_suffix,
+    ):
+        screen = StatementImportScreen(None)
+        screen.selected_person_id = test_person_id
+        screen.selected_account_id = test_account_id
+        rows = [{
+            "transaction_date": "2025-04-01",
+            "transaction_type": "Income",
+            "amount": 100.0,
+            "description": "Synthetic credit",
+            "mode": "Transfer",
+            "category": "Salary",
+            "reference_no": None,
+        }]
+        statement_text = f"Account Number: 12345678{number_suffix}\nBranch Name: Test Branch"
+        with patch("ui.statement_import_screen_modern.extract_statement_text", return_value=statement_text):
+            screen._process_parsed_statement(rows)
+
+        if number_suffix == "0002":
+            assert screen._import_blocked
+            assert screen.review_metadata_btn.isHidden()
+            assert get_account(test_account_id)["account_number_full"] == "TEST_FULL_001"
+            return
+
+        assert not screen._import_blocked
+        assert not screen.review_metadata_btn.isHidden()
+
+        def confirm_dialog():
+            dialog = screen.findChild(AccountMetadataDialog)
+            dialog.update_check.setChecked(True)
+            dialog._on_confirm()
+
+        QTimer.singleShot(0, confirm_dialog)
+        screen.review_metadata_btn.click()
+        assert get_account(test_account_id)["account_number_full"] == "123456780001"
 
     def test_import_not_blocked_without_balance_after(self, qapp, test_person_id, test_account_id):
         """

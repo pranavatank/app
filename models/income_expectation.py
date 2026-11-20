@@ -2,7 +2,10 @@
 models/income_expectation.py — Income expectation tracking
 """
 
+from collections import defaultdict
+
 from core.database import get_connection
+from config import fy_date_range
 
 def add_income_expectation(person_id, account_id, income_type, expected_amount,
                           expected_date, frequency, financial_year, notes=None):
@@ -141,7 +144,10 @@ def get_income_expectations(person_id=None, financial_year=None, income_type=Non
             FROM IncomeExpectation ie
             JOIN Person p ON ie.person_id = p.person_id
             JOIN BankAccount ba ON ie.account_id = ba.account_id
-            LEFT JOIN Bank b ON lower(b.bank_name) = lower(ba.bank_name)
+            LEFT JOIN Bank b ON b.bank_id = (
+                SELECT bank_id FROM Bank WHERE lower(bank_name) = lower(ba.bank_name)
+                ORDER BY bank_id LIMIT 1
+            )
             LEFT JOIN Transactions t ON ie.actual_transaction_id = t.transaction_id
             WHERE 1=1
         """
@@ -195,9 +201,31 @@ def update_income_expectation(expectation_id, expected_amount=None, expected_dat
         conn.close()
 
 def link_actual_transaction(expectation_id, transaction_id):
-    """Link actual transaction to expectation."""
+    """Link one external credit from the expected account and financial year."""
     conn = get_connection()
     try:
+        conn.execute("BEGIN IMMEDIATE")
+        expectation = conn.execute(
+            "SELECT * FROM IncomeExpectation WHERE expectation_id = ?", (expectation_id,),
+        ).fetchone()
+        if expectation is None:
+            raise ValueError("This expectation no longer exists.")
+        start, end = fy_date_range(expectation["financial_year"])
+        eligible = conn.execute("""
+            SELECT 1 FROM Transactions t
+            WHERE t.transaction_id = ? AND t.person_id = ? AND t.account_id = ?
+              AND t.transaction_type = 'Income' AND t.amount > 0
+              AND COALESCE(t.is_internal_transfer, 0) = 0
+              AND COALESCE(t.category, '') NOT IN ('Internal Transfer', 'FD Maturity')
+              AND t.transaction_date BETWEEN ? AND ?
+              AND NOT EXISTS (
+                  SELECT 1 FROM IncomeExpectation e WHERE e.actual_transaction_id = t.transaction_id
+                    AND e.expectation_id <> ?
+              )
+        """, (transaction_id, expectation["person_id"], expectation["account_id"],
+              start.isoformat(), end.isoformat(), expectation_id)).fetchone()
+        if not eligible:
+            raise ValueError("Choose an unlinked income credit from this account and financial year.")
         conn.execute("""
             UPDATE IncomeExpectation
             SET actual_transaction_id = ?
@@ -230,18 +258,10 @@ def delete_income_expectation(expectation_id):
         conn.close()
 
 def auto_link_income_expectations(person_id, account_id, financial_year):
-    """Automatically link unlinked expectations with best-matching transactions.
-
-    Matching priority (per expectation, within the same calendar month):
-      1. Amount score  — |actual - expected| / expected  (lower = better)
-      2. Date score    — |actual_day - expected_day|      (lower = better)
-
-    A candidate is only considered if its amount is within 50 % of the
-    expected amount.  This prevents a small interest credit from being
-    matched to a large salary expectation.
-    """
+    """Match an unambiguous, categorized credit in the expected month."""
     conn = get_connection()
     try:
+        conn.execute("BEGIN IMMEDIATE")
         expectations = conn.execute("""
             SELECT expectation_id, expected_date, income_type, expected_amount
             FROM IncomeExpectation
@@ -253,14 +273,15 @@ def auto_link_income_expectations(person_id, account_id, financial_year):
         if not expectations:
             return 0
 
-        from config import fy_date_range
         fy_start, fy_end = fy_date_range(financial_year)
 
         transactions = conn.execute("""
             SELECT transaction_id, transaction_date, amount, category
             FROM Transactions
             WHERE person_id = ? AND account_id = ?
-            AND transaction_type = 'Income'
+            AND transaction_type = 'Income' AND amount > 0
+            AND COALESCE(is_internal_transfer, 0) = 0
+            AND COALESCE(category, '') NOT IN ('Internal Transfer', 'FD Maturity')
             AND transaction_date BETWEEN ? AND ?
             AND transaction_id NOT IN (
                 SELECT actual_transaction_id
@@ -275,38 +296,38 @@ def auto_link_income_expectations(person_id, account_id, financial_year):
 
         from datetime import datetime
 
-        # Convert to mutable list of dicts so we can remove matched ones
         available = [
             {
                 "transaction_id": t["transaction_id"],
                 "date": datetime.strptime(t["transaction_date"], "%Y-%m-%d").date(),
                 "amount": t["amount"],
+                "category": (t["category"] or "").casefold(),
             }
             for t in transactions
         ]
 
-        linked_count = 0
+        proposals = defaultdict(list)
 
         for exp in expectations:
             exp_date = datetime.strptime(exp["expected_date"], "%Y-%m-%d").date()
             exp_amount = exp["expected_amount"]
             exp_day = exp_date.day
+            income_type = exp["income_type"].casefold()
+            categories = {
+                "interest": {"fd interest", "savings interest", "interest"},
+                "rent": {"rental income", "rent"},
+                "business": {"business income", "business"},
+                "freelance": {"professional fees", "freelance"},
+            }.get(income_type, {income_type})
 
             # Candidates: same month+year, amount within 50 % of expected
             candidates = [
                 t for t in available
                 if t["date"].month == exp_date.month
                 and t["date"].year == exp_date.year
+                and t["category"] in categories
                 and abs(t["amount"] - exp_amount) <= exp_amount * 0.50
             ]
-
-            if not candidates:
-                # Relax: same month, no amount filter — pick closest amount
-                candidates = [
-                    t for t in available
-                    if t["date"].month == exp_date.month
-                    and t["date"].year == exp_date.year
-                ]
 
             if not candidates:
                 continue
@@ -317,15 +338,22 @@ def auto_link_income_expectations(person_id, account_id, financial_year):
                 date_score = abs(t["date"].day - exp_day) / 31.0
                 return (amount_score, date_score)
 
-            best = min(candidates, key=score)
+            candidates.sort(key=score)
+            best = candidates[0]
+            if len(candidates) > 1 and score(best) == score(candidates[1]):
+                continue
+            proposals[best["transaction_id"]].append((score(best), exp["expectation_id"]))
 
+        linked_count = 0
+        for transaction_id, matches in proposals.items():
+            matches.sort()
+            if len(matches) > 1 and matches[0][0] == matches[1][0]:
+                continue
             conn.execute("""
                 UPDATE IncomeExpectation
                 SET actual_transaction_id = ?
                 WHERE expectation_id = ?
-            """, (best["transaction_id"], exp["expectation_id"]))
-
-            available = [t for t in available if t["transaction_id"] != best["transaction_id"]]
+            """, (transaction_id, matches[0][1]))
             linked_count += 1
 
         conn.commit()

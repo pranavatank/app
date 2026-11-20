@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Optional
 import re
 
-from engines.parser_utils import _guess_fd_category, _extract_reference_no
+from engines.parser_utils import _extract_reference_no, infer_statement_category
 
 
 def parse_amount(text: str) -> Optional[float]:
@@ -308,8 +308,7 @@ def assemble_transactions(
         deposit_account_no = normalize_account_no(description)
 
         # Guess category
-        desc_upper = description.upper()
-        category = _guess_fd_category(desc_upper, txn_type) or ("Other Income" if txn_type == "Income" else "Other Expense")
+        category = infer_statement_category(description, txn_type) or f"Other {txn_type}"
 
         # Guess mode
         mode = _guess_mode(description)

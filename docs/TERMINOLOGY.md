@@ -52,10 +52,11 @@ This document establishes a single term for each concept in the application, ens
 ### "Salary & Pension Income" (fixed from: Salary_Pension Income)
 - Already corrected; uses ampersand (&) instead of underscore for display.
 
-### "Link Transfers" (was: Reprocess Data)
-- **Used for**: The button that detects and links matching transfers between accounts
-- **Tooltip**: "Detect and link matching transfers between accounts"
-- **Why**: "Link Transfers" accurately describes the function (establishing transfer links). The old label "Reprocess Data" was vague and did not communicate intent to users.
+### Find Transfers and Link Transfer
+
+- **Find Transfers** scans family accounts for unambiguous equal debits and credits with a shared bank reference.
+- **Link Transfer** lets the user confirm the matching entry for a selected transaction. Selecting a linked entry shows **Unlink Transfer**.
+- Both entries remain in the account history. Income, expense, and statement-based tax totals exclude the linked amounts.
 
 ---
 

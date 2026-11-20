@@ -3,7 +3,9 @@ models/transaction.py — CRUD for the Transactions table.
 """
 
 import re
+from contextlib import closing
 from datetime import datetime
+from collections import defaultdict
 
 from core.database import get_connection
 from config import fy_date_range
@@ -13,7 +15,7 @@ INTERNAL_TRANSFER_CATEGORY = "Internal Transfer"
 TRANSFER_CREDIT_CATEGORIES = {"Other Income", INTERNAL_TRANSFER_CATEGORY, None, ""}
 TRANSFER_DEBIT_CATEGORIES = {"Other Expense", INTERNAL_TRANSFER_CATEGORY, None, ""}
 TRANSFER_MAX_DAY_GAP = 2
-_FD_NARRATION = re.compile(r"REDEEM|\bFD\b|/FD/|PAYIN")
+
 
 _TYPE_ALIAS_TO_CANON = {
     "income": "Income",
@@ -51,179 +53,121 @@ def _date_diff_days(d1: str, d2: str) -> int:
         return 999
 
 
-def _load_transfer_rows(conn, person_id=None, financial_year=None) -> tuple[list[dict], dict[int, str]]:
-    """Load transaction rows for transfer detection with owner name mapping.
-
-    Returns: (list of transaction dicts, dict mapping person_id to full_name)
-    """
-    filters = []
-    params = []
-
-    if person_id is not None:
-        filters.append("t.person_id = ?")
-        params.append(person_id)
-
-    if financial_year:
-        start, end = fy_date_range(financial_year)
-        filters.append("t.transaction_date BETWEEN ? AND ?")
-        params.extend([start.isoformat(), end.isoformat()])
-
-    where = f"WHERE {' AND '.join(filters)}" if filters else ""
-
-    rows = conn.execute(f"""
-        SELECT
-            t.transaction_id, t.account_id, t.person_id, t.transaction_date,
-            t.transaction_type, t.amount, t.category, t.description,
-            p.full_name
-        FROM Transactions t
-        JOIN Person p ON p.person_id = t.person_id
-        {where}
-        ORDER BY t.transaction_date, t.transaction_id
-    """, params).fetchall()
-
-    txns = [dict(r) for r in rows]
-    owner_names = {}
-    for r in rows:
-        owner_names[r["person_id"]] = r["full_name"]
-
-    return txns, owner_names
+def _transfer_pair_valid(left, right):
+    return (
+        left["account_id"] != right["account_id"]
+        and {left["transaction_type"], right["transaction_type"]} == {"Income", "Expense"}
+        and left["amount"] > 0
+        and round(left["amount"] * 100) == round(right["amount"] * 100)
+    )
 
 
-def find_internal_transfers(txns: list[dict], owner_names: dict[int, str]) -> tuple[list[tuple[int, int]], list[int]]:
-    """Find internal transfer pairs and self-transfers.
+def _link_transfer_pair(conn, left_id, right_id, group_id):
+    conn.executemany("""
+        UPDATE Transactions
+        SET linked_transaction_id = ?, internal_transfer_group_id = ?, is_internal_transfer = 1
+        WHERE transaction_id = ?
+    """, ((right_id, group_id, left_id), (left_id, group_id, right_id)))
+    conn.execute(
+        "UPDATE IncomeExpectation SET actual_transaction_id = NULL WHERE actual_transaction_id IN (?, ?)",
+        (left_id, right_id),
+    )
 
-    Returns: (list of (debit_txn_id, credit_txn_id) pairs, list of self-credit transaction ids)
-    """
-    debits = [
-        t for t in txns
-        if t.get("transaction_type") == "Expense" and t.get("category") in TRANSFER_DEBIT_CATEGORIES
+
+def _next_transfer_group(conn):
+    return conn.execute(
+        "SELECT COALESCE(MAX(internal_transfer_group_id), 0) + 1 FROM Transactions"
+    ).fetchone()[0]
+
+
+def _clear_transfer_pair(conn, transaction_id):
+    transaction = conn.execute(
+        "SELECT linked_transaction_id FROM Transactions WHERE transaction_id = ?", (transaction_id,),
+    ).fetchone()
+    if transaction and transaction["linked_transaction_id"] is not None:
+        conn.execute("""
+            UPDATE Transactions
+            SET linked_transaction_id = NULL, internal_transfer_group_id = NULL, is_internal_transfer = 0
+            WHERE transaction_id = ? OR linked_transaction_id = ?
+        """, (transaction_id, transaction_id))
+
+
+def _get_transfer_pair(conn, left_id, right_id):
+    rows = conn.execute(
+        "SELECT * FROM Transactions WHERE transaction_id IN (?, ?)", (left_id, right_id),
+    ).fetchall()
+    if len(rows) != 2 or not _transfer_pair_valid(*rows):
+        raise ValueError("Choose an equal debit and credit from two different accounts.")
+    return rows
+
+
+def link_internal_transfer(left_id, right_id):
+    """Confirm the two ledger entries for a family transfer."""
+    with closing(get_connection()) as conn, conn:
+        conn.execute("BEGIN IMMEDIATE")
+        rows = _get_transfer_pair(conn, left_id, right_id)
+        if any(row["linked_transaction_id"] is not None for row in rows):
+            raise ValueError("Unlink the existing transfer pair first.")
+        _link_transfer_pair(conn, left_id, right_id, _next_transfer_group(conn))
+
+
+def unlink_internal_transfer(transaction_id):
+    with closing(get_connection()) as conn, conn:
+        conn.execute("BEGIN IMMEDIATE")
+        _clear_transfer_pair(conn, transaction_id)
+
+
+def get_transfer_counterparts(transaction_id):
+    left = get_transaction(transaction_id)
+    if not left or left["transaction_type"] not in {"Income", "Expense"}:
+        return []
+    opposite = "Expense" if left["transaction_type"] == "Income" else "Income"
+    rows = get_transactions(transaction_type=opposite)
+    return [
+        row for row in rows
+        if row["linked_transaction_id"] is None and _transfer_pair_valid(left, row)
     ]
-    credits = [
-        t for t in txns
-        if t.get("transaction_type") == "Income" and t.get("category") in TRANSFER_CREDIT_CATEGORIES
-    ]
-
-    pairs = []
-    used_credits = set()
-
-    for d in debits:
-        candidates = []
-        for c in credits:
-            if c["transaction_id"] in used_credits:
-                continue
-            if d["account_id"] == c["account_id"]:
-                continue
-            if abs(float(d["amount"]) - float(c["amount"])) > 0.01:
-                continue
-            day_gap = _date_diff_days(d["transaction_date"], c["transaction_date"])
-            if day_gap > TRANSFER_MAX_DAY_GAP:
-                continue
-            candidates.append(c)
-
-        if len(candidates) == 1:
-            c = candidates[0]
-            cluster_debits = [
-                t for t in debits
-                if abs(float(t["amount"]) - float(c["amount"])) <= 0.01
-                and _date_diff_days(t["transaction_date"], c["transaction_date"]) <= TRANSFER_MAX_DAY_GAP
-            ]
-            cluster_credits = [
-                t for t in credits
-                if t["transaction_id"] not in used_credits
-                and abs(float(t["amount"]) - float(d["amount"])) <= 0.01
-                and _date_diff_days(t["transaction_date"], d["transaction_date"]) <= TRANSFER_MAX_DAY_GAP
-            ]
-
-            if len(cluster_debits) == 1 and len(cluster_credits) == 1:
-                pairs.append((d["transaction_id"], c["transaction_id"]))
-                used_credits.add(c["transaction_id"])
-
-    self_credit_ids = []
-    for c in credits:
-        if c["transaction_id"] not in used_credits:
-            person_id = c["person_id"]
-            if person_id in owner_names:
-                full_name = owner_names[person_id]
-                tokens = [t for t in re.split(r"\W+", full_name.upper()) if t]
-                if len(tokens) >= 2:
-                    key = tokens[0] + tokens[1][:4]
-                    if len(key) >= 8:
-                        desc_upper = (c.get("description") or "").upper()
-                        desc_clean = re.sub(r"[^A-Z0-9]", "", desc_upper)
-                        if key in desc_clean and not _FD_NARRATION.search(desc_upper):
-                            self_credit_ids.append(c["transaction_id"])
-
-    return pairs, self_credit_ids
 
 
 def reprocess_internal_transfers(person_id: int = None, financial_year: str = None) -> tuple[int, int]:
-    """Auto-link internal transfer pairs and mark self-transfers.
+    """Link unambiguous pairs with the same bank reference. Preserve saved pairs."""
+    date_range = fy_date_range(financial_year) if financial_year else None
 
-    Returns: (pairs_linked, transactions_marked)
-    """
-    conn = get_connection()
+    def in_scope(row):
+        matches_person = person_id is None or row["person_id"] == person_id
+        return matches_person and (
+            date_range is None
+            or date_range[0].isoformat() <= row["transaction_date"] <= date_range[1].isoformat()
+        )
 
-    filters_for_update = []
-    params = []
-    if person_id is not None:
-        filters_for_update.append("person_id = ?")
-        params.append(person_id)
-    if financial_year:
-        start, end = fy_date_range(financial_year)
-        filters_for_update.append("transaction_date BETWEEN ? AND ?")
-        params.extend([start.isoformat(), end.isoformat()])
+    with closing(get_connection()) as conn, conn:
+        conn.execute("BEGIN IMMEDIATE")
+        candidates = defaultdict(list)
+        rows = conn.execute("""
+            SELECT transaction_id, account_id, person_id, transaction_date, transaction_type,
+                   amount, reference_no, category
+            FROM Transactions
+            WHERE linked_transaction_id IS NULL AND COALESCE(is_internal_transfer, 0) = 0
+              AND reference_no IS NOT NULL AND amount > 0
+        """)
+        for row in rows:
+            categories = TRANSFER_DEBIT_CATEGORIES if row["transaction_type"] == "Expense" else TRANSFER_CREDIT_CATEGORIES
+            if row["category"] not in categories:
+                continue
+            ref = re.sub(r"[^A-Z0-9]", "", row["reference_no"].upper())
+            if len(ref) >= 8 and any(char.isdigit() for char in ref) and len(set(ref)) > 2:
+                candidates[(ref, round(row["amount"] * 100))].append(row)
 
-    where_update = f"WHERE {' AND '.join(filters_for_update)}" if filters_for_update else ""
-
-    conn.execute(f"""
-        UPDATE Transactions
-        SET linked_transaction_id = NULL,
-            internal_transfer_group_id = NULL,
-            is_internal_transfer = 0
-        {where_update}
-    """, params)
-
-    txns, owner_names = _load_transfer_rows(conn, person_id=person_id, financial_year=financial_year)
-    pairs, self_credit_ids = find_internal_transfers(txns, owner_names)
-
-    if not pairs and not self_credit_ids:
-        conn.commit()
-        conn.close()
-        return 0, 0
-
-    group_row = conn.execute(
-        "SELECT COALESCE(MAX(internal_transfer_group_id), 0) AS g FROM Transactions"
-    ).fetchone()
-    next_group = int(group_row["g"] or 0) + 1
-
-    for debit_id, credit_id in pairs:
-        gid = next_group
-        next_group += 1
-        conn.execute("""
-            UPDATE Transactions
-            SET linked_transaction_id = ?,
-                internal_transfer_group_id = ?,
-                is_internal_transfer = 1
-            WHERE transaction_id = ?
-        """, (credit_id, gid, debit_id))
-        conn.execute("""
-            UPDATE Transactions
-            SET linked_transaction_id = ?,
-                internal_transfer_group_id = ?,
-                is_internal_transfer = 1
-            WHERE transaction_id = ?
-        """, (debit_id, gid, credit_id))
-
-    for txn_id in self_credit_ids:
-        conn.execute("""
-            UPDATE Transactions
-            SET is_internal_transfer = 1
-            WHERE transaction_id = ?
-        """, (txn_id,))
-
-    conn.commit()
-    conn.close()
-    return len(pairs), len(pairs) * 2 + len(self_credit_ids)
+        group_id = _next_transfer_group(conn)
+        count = 0
+        for rows in candidates.values():
+            if len(rows) != 2 or not any(in_scope(row) for row in rows):
+                continue
+            left, right = rows
+            if _transfer_pair_valid(left, right) and _date_diff_days(left["transaction_date"], right["transaction_date"]) <= TRANSFER_MAX_DAY_GAP:
+                _link_transfer_pair(conn, left["transaction_id"], right["transaction_id"], group_id + count)
+                count += 1
+        return count, count * 2
 
 
 def add_transaction(account_id: int, person_id: int, transaction_date: str,
@@ -341,7 +285,10 @@ def get_transactions(account_id: int = None, person_id: int = None,
                p.full_name AS person_name
         FROM Transactions t
         JOIN BankAccount ba ON t.account_id = ba.account_id
-        LEFT JOIN Bank b ON lower(b.bank_name) = lower(ba.bank_name)
+        LEFT JOIN Bank b ON b.bank_id = (
+            SELECT bank_id FROM Bank WHERE lower(bank_name) = lower(ba.bank_name)
+            ORDER BY bank_id LIMIT 1
+        )
         JOIN Person p ON t.person_id = p.person_id
         WHERE 1=1
     """
@@ -418,24 +365,41 @@ def update_transaction(transaction_id: int, transaction_date: str,
 
     params.append(transaction_id)
 
-    conn = get_connection()
-    conn.execute(f"""
-        UPDATE Transactions
-        SET {', '.join(set_clauses)}
-        WHERE transaction_id = ?
-    """, params)
-    conn.commit()
-    conn.close()
+    with closing(get_connection()) as conn, conn:
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute(f"""
+            UPDATE Transactions
+            SET {', '.join(set_clauses)}
+            WHERE transaction_id = ?
+        """, params)
+        updated = conn.execute(
+            "SELECT * FROM Transactions WHERE transaction_id = ?", (transaction_id,),
+        ).fetchone()
+        if updated is None:
+            return
+        linked_id = updated["linked_transaction_id"]
+        if linked_id is not None:
+            try:
+                _get_transfer_pair(conn, transaction_id, linked_id)
+            except ValueError:
+                _clear_transfer_pair(conn, transaction_id)
+        try:
+            day = datetime.fromisoformat(transaction_date).date()
+            fy_start = day.year - (day.month < 4)
+            fy = f"{fy_start}-{(fy_start + 1) % 100:02d}"
+        except (TypeError, ValueError):
+            fy = ""
+        conn.execute("""
+            UPDATE IncomeExpectation SET actual_transaction_id = NULL
+            WHERE actual_transaction_id = ?
+              AND (account_id <> ? OR person_id <> ? OR ? <> 'Income' OR ? <= 0
+                OR ? IN ('Internal Transfer', 'FD Maturity') OR ? <> 0 OR financial_year <> ?)
+        """, (transaction_id, updated["account_id"], updated["person_id"], txn_type, amount,
+              category, updated["is_internal_transfer"] or 0, fy))
 
 
 def delete_transaction(transaction_id: int) -> None:
-    conn = get_connection()
-    _detach_transaction_refs(conn, [transaction_id])
-    conn.execute(
-        "DELETE FROM Transactions WHERE transaction_id = ?", (transaction_id,)
-    )
-    conn.commit()
-    conn.close()
+    delete_transactions_by_ids([transaction_id])
 
 
 # ── Summary Queries ───────────────────────────────────────────────────────────

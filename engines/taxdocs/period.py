@@ -52,3 +52,15 @@ def extract_tax_period_from_pages(page_texts) -> dict:
     """
     pages = list(page_texts or [])
     return extract_tax_period(pages[0] if pages else "")
+
+
+def extract_taxpayer_pan(first_page: str) -> str | None:
+    """Read a unique, explicitly labelled PAN from the document header."""
+    matches = {
+        match.upper() for match in re.findall(
+            r"(?mi)^[ \t]*(?:Permanent Account Number(?:[ \t]*\(PAN\))?|PAN)"
+            r"[ \t]*[:\-]?[ \t]*(?:\n[ \t]*)?([A-Z]{5}\d{4}[A-Z])\b",
+            first_page or "",
+        )
+    }
+    return next(iter(matches)) if len(matches) == 1 else None

@@ -201,7 +201,7 @@ def _matched_realised_fd_interest(
 
     credited_by_account: dict[tuple[str, str], float] = {}
     for txn in get_transactions(person_id=person_id, financial_year=financial_year, transaction_type="Income"):
-        if txn.get("category") != "FD Interest":
+        if txn.get("is_internal_transfer") or txn.get("category") != "FD Interest":
             continue
         try:
             if date.fromisoformat(txn["transaction_date"]) > cutoff:
@@ -314,7 +314,7 @@ def project_savings_interest(
             txn_type = row.get("transaction_type")
             row_date = row.get("transaction_date")
 
-            if category == "Savings Interest" and txn_type == "Income":
+            if not row.get("is_internal_transfer") and category == "Savings Interest" and txn_type == "Income":
                 try:
                     d = date.fromisoformat(row_date)
                     if fy_start <= d <= cutoff:
@@ -328,7 +328,7 @@ def project_savings_interest(
             txn_type = row.get("transaction_type")
             row_date = row.get("transaction_date")
 
-            if category == "Savings Interest" and txn_type == "Income":
+            if not row.get("is_internal_transfer") and category == "Savings Interest" and txn_type == "Income":
                 try:
                     d = date.fromisoformat(row_date)
                     if p_start <= d <= p_end:
@@ -390,9 +390,8 @@ def realised_income_to_date(
     Realised (already-received) income to the as_of date from transactions.
 
     Classification logic:
-    1. Taxable category match takes precedence (TAXABLE_INCOME_CATEGORIES).
-    2. Then check internal_transfer flag OR non-taxable category (NON_TAXABLE_INCOME_CATEGORIES).
-    3. All others are marked unclassified.
+    Paired transfers are excluded. Legacy unpaired transfer marks retain their
+    non-taxable treatment, then other ledger entries are classified by category.
 
     Returns:
         {
@@ -415,6 +414,8 @@ def realised_income_to_date(
     by_category = {}
 
     for txn in txns:
+        if txn.get("is_internal_transfer") and txn.get("internal_transfer_group_id"):
+            continue
         try:
             if date.fromisoformat(txn["transaction_date"]) > cutoff or cutoff < fy_start:
                 continue
@@ -428,9 +429,11 @@ def realised_income_to_date(
 
         by_category[category] += amount
 
-        if category in TAXABLE_INCOME_CATEGORIES:
+        if txn.get("is_internal_transfer"):
+            non_taxable += amount
+        elif category in TAXABLE_INCOME_CATEGORIES:
             taxable += amount
-        elif txn.get("is_internal_transfer") or category in NON_TAXABLE_INCOME_CATEGORIES:
+        elif category in NON_TAXABLE_INCOME_CATEGORIES:
             non_taxable += amount
         else:
             unclassified += amount

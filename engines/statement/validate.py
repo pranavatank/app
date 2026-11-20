@@ -72,6 +72,26 @@ def direction_errors(transactions: list[dict]) -> tuple[int, int]:
     return (tied, wrong)
 
 
+def correct_balance_directions(transactions: list[dict]) -> list[dict]:
+    """Use an exact running-balance tie to resolve a parsed debit or credit."""
+    from engines.parser_utils import infer_statement_category
+
+    corrected = list(transactions)
+    for index, (previous, row) in enumerate(zip(transactions, transactions[1:]), start=1):
+        before, after = previous.get("balance_after"), row.get("balance_after")
+        amount = row.get("amount", 0)
+        if before is None or after is None or not amount or amount <= 0:
+            continue
+        delta = after - before
+        if abs(abs(delta) - amount) >= 0.02 or abs(delta) < 0.01:
+            continue
+        direction = "Income" if delta > 0 else "Expense"
+        if row.get("transaction_type") in ("Income", "Expense") and row["transaction_type"] != direction:
+            category = infer_statement_category(row.get("description"), direction) or f"Other {direction}"
+            corrected[index] = {**row, "transaction_type": direction, "category": category}
+    return corrected
+
+
 def _parse_transaction_date(date_str: str) -> Optional[datetime]:
     """
     Parse a transaction date string into a datetime object.

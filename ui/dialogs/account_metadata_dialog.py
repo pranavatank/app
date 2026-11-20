@@ -11,7 +11,8 @@ from PySide6.QtGui import QFont
 
 from ui.theme import Theme
 from ui.icons import icon_label
-from models.bank_account import update_account
+from models.bank_account import get_account, get_all_accounts, update_account
+from ui.widgets.toast_utils import show_warning
 
 
 class AccountMetadataDialog(QDialog):
@@ -126,6 +127,7 @@ class AccountMetadataDialog(QDialog):
         
         sections = {
             "Account Information": [
+                ('account_holder_name', 'Account Holder'),
                 ('customer_id', 'Customer ID'),
                 ('account_number_full', 'Account Number'),
                 ('ckyc_id', 'CKYC ID'),
@@ -275,7 +277,20 @@ class AccountMetadataDialog(QDialog):
             # Generate masked account number if full number provided
             if 'account_number_full' in update_data and 'account_number_masked' not in update_data:
                 from engines.statement_metadata_extractor import mask_account_number
-                update_data['account_number_masked'] = mask_account_number(update_data['account_number_full'])
+                number = update_data['account_number_full']
+                account = get_account(self.account_id)
+                if not account or not number.isdigit() or not 8 <= len(number) <= 22:
+                    show_warning("Enter a valid account number.")
+                    return
+                if any(
+                    other['account_id'] != self.account_id
+                    and other['bank_name'].casefold() == account['bank_name'].casefold()
+                    and other.get('account_number_full') == number
+                    for other in get_all_accounts()
+                ):
+                    show_warning("This account number already belongs to another account at this bank.")
+                    return
+                update_data['account_number_masked'] = mask_account_number(number)
             
             update_account(self.account_id, **update_data)
 

@@ -70,22 +70,30 @@ def test_import_completion_reloads_the_returned_to_context(qapp, monkeypatch):
     screen.close()
 
 
-def test_import_completion_reloads_the_returned_to_context(qapp, monkeypatch):
-    first = add_person("Synthetic Import Owner")
-    second = add_person("Synthetic Other Owner")
-    fy = "2025-26"
-    monkeypatch.setattr(session, "selected_person_id", first)
-    monkeypatch.setattr(session, "selected_fy", fy)
-    screen = TaxDocumentsScreen()
-    request, owner, request_fy, lock = screen._begin_source_request("ais", screen.zone_ais)
-    monkeypatch.setattr(session, "selected_person_id", second)
-    screen.refresh()
-    monkeypatch.setattr(session, "selected_person_id", first)
-    screen.refresh()
-    assert screen.zone_ais.pdf_data is None
-    save_ais_tis_data(first, fy, "AIS", "{}", {})
+def test_bank_ledger_column_excludes_family_transfers(qapp, monkeypatch):
+    from models.bank_account import add_account
+    from models.transaction import add_transaction, link_internal_transfer
 
-    assert not screen._complete_source_request("ais", request, owner, request_fy, lock, fy)
-    assert screen.zone_ais.pdf_data is not None
-    assert "Saved" in screen.zone_ais.title_label.text()
+    first = add_person("Synthetic tax owner")
+    second = add_person("Synthetic transfer sender")
+    source = add_account(second, "Test Bank A", "Savings")
+    target = add_account(first, "Test Bank B", "Savings")
+    debit = add_transaction(source, second, "2025-04-20", "Expense", 120)
+    credit = add_transaction(target, first, "2025-04-20", "Income", 120, category="Savings Interest")
+    add_transaction(target, first, "2025-04-21", "Income", 30, category="Savings Interest")
+    link_internal_transfer(debit, credit)
+
+    monkeypatch.setattr(session, "selected_person_id", first)
+    monkeypatch.setattr(session, "selected_fy", "2025-26")
+    screen = TaxDocumentsScreen()
+    screen.merge_result = {
+        "financial_position": {"savings_interest": 150},
+        "income_variance": {"savings_interest": {"tis": 150, "ais": 150, "difference": 0}},
+    }
+    screen._render_position_table(first)
+
+    assert screen.position_table.horizontalHeaderItem(5).text() == "Bank Ledger"
+    assert "150" in screen.position_table.item(0, 4).text()
+    assert "30" in screen.position_table.item(0, 5).text()
+    assert screen.position_table.item(0, 6).text() == "Ledger differs"
     screen.close()

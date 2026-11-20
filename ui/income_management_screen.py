@@ -31,7 +31,6 @@ from config import (
     COMPOUNDING_TYPES, FD_TDS_FORM_NAME, FD_TDS_FORM_NAME_SENIOR
 )
 from models.person import get_all_persons
-from models.bank_account import get_accounts_for_person, get_all_accounts
 from models.income_expectation import (
     get_income_expectations, auto_link_income_expectations,
     add_income_expectation, update_income_expectation, delete_income_expectation
@@ -110,7 +109,7 @@ class IncomeManagementScreen(QWidget):
         panel_layout.setSpacing(14)
         panel_layout.setContentsMargins(0, 0, 0, 0)
 
-        # Panels: manage individual expectations, then analysis panels, then ledger
+        # Actual income, expectations, and analysis
         panel_layout.addWidget(self._build_actual_income_panel())
         panel_layout.addWidget(self._build_panel_manage_expectations())
 
@@ -125,7 +124,6 @@ class IncomeManagementScreen(QWidget):
 
         panel_layout.addWidget(self._build_panel_3_fd_runway())
         panel_layout.addWidget(self._build_panel_4_tds_gauges())
-        panel_layout.addWidget(self._build_panel_5_ledger())
 
         panel_layout.addStretch()
         scroll.setWidget(panel_container)
@@ -211,7 +209,7 @@ class IncomeManagementScreen(QWidget):
         btn_add.clicked.connect(self._add_expectation)
         title_layout.addWidget(btn_add)
 
-        btn_edit = Theme.btn("Edit", "edit", height=32, min_width=80)
+        btn_edit = Theme.btn("Edit / Link", "edit", height=32, min_width=100)
         set_btn_icon(btn_edit, "edit")
         btn_edit.setAccessibleName("Edit selected income expectation")
         btn_edit.clicked.connect(self._edit_expectation)
@@ -224,6 +222,13 @@ class IncomeManagementScreen(QWidget):
         btn_delete.clicked.connect(self._delete_expectation)
         self.btn_delete_expectation = btn_delete
         title_layout.addWidget(btn_delete)
+
+        btn_auto_match = Theme.btn("Auto-Match", "success", height=32, min_width=100)
+        set_btn_icon(btn_auto_match, "auto_link")
+        btn_auto_match.setAccessibleName("Auto-match income expectations")
+        btn_auto_match.setAccessibleDescription("Automatically match income expectations with transactions in the selected financial year.")
+        btn_auto_match.clicked.connect(self._on_auto_match_ledger)
+        title_layout.addWidget(btn_auto_match)
 
         layout.addLayout(title_layout)
 
@@ -315,45 +320,6 @@ class IncomeManagementScreen(QWidget):
 
         return panel
 
-    def _build_panel_5_ledger(self) -> QFrame:
-        """Panel 5: Expectation ledger with inline editing and auto-match."""
-        panel = QFrame()
-        panel.setObjectName("analysisPanel")
-
-        layout = QVBoxLayout(panel)
-        layout.setSpacing(8)
-
-        # Title and button
-        title_layout = QHBoxLayout()
-        title = QLabel("Income Expectation Ledger")
-        title.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
-        title_layout.addWidget(title)
-        title_layout.addStretch()
-
-        btn_auto_match = Theme.btn("Auto-Match", "success", height=32, min_width=100)
-        set_btn_icon(btn_auto_match, "auto_link")
-        btn_auto_match.setAccessibleName("Auto-match income expectations")
-        btn_auto_match.setAccessibleDescription("Automatically match income expectations with transactions in the ledger.")
-        btn_auto_match.clicked.connect(self._on_auto_match_ledger)
-        title_layout.addWidget(btn_auto_match)
-
-        layout.addLayout(title_layout)
-
-        # Ledger table (read-only - it's a computed summary)
-        self.table_ledger_widget = ExcelTableWithStats(show_checkboxes=False, read_only=True)
-        self.table_ledger = self.table_ledger_widget.table
-        self.table_ledger.setHeaders([
-            "Month", "Type", "Source", "Expected", "Actual", "Variance", "Status", "Matched Txn"
-        ])
-        self.table_ledger.setAccessibleName("Income expectation ledger table")
-        self.table_ledger.setAccessibleDescription("Shows income expectations with expected amounts, actual receipts, variance, and matching transaction status.")
-        self.table_ledger.setSortingEnabled(False)
-        self.table_ledger_widget.setMinimumHeight(280)
-        layout.addWidget(self.table_ledger_widget)
-
-        return panel
-
-
     def refresh(self):
         """Refresh all panels with current selections from top bar."""
         # Get FY and person_id from parent window's top bar selectors
@@ -377,7 +343,6 @@ class IncomeManagementScreen(QWidget):
         self._populate_chart_2(person_id, fy)
         self._populate_chart_3(person_id, fy)
         self._populate_table_4_tds(person_id, fy)
-        self._populate_table_5_ledger(expectations)
         self._populate_table_expectations(expectations)
         self._populate_actual_income(person_id, fy)
 
@@ -419,7 +384,6 @@ class IncomeManagementScreen(QWidget):
         self.chart_composition.show_empty_state("No income expectations to analyze")
         self.chart_fd_runway.show_empty_state("No FD interest data available")
         self.table_tds.setRowCount(0)
-        self.table_ledger.setRowCount(0)
         self.chart_actual_income.show_empty_state("No recorded income transactions")
         self.actual_income_summary.setText("No income transactions recorded for this selection.")
         self._update_expectation_actions()
@@ -436,7 +400,7 @@ class IncomeManagementScreen(QWidget):
         """Update KPI values based on expectations."""
         total_expected = sum(e["expected_amount"] for e in expectations)
         total_received = sum(e.get("actual_amount", 0) for e in expectations if e["actual_transaction_id"])
-        total_pending = total_expected - total_received
+        total_pending = sum(max(0, e["expected_amount"] - (e.get("actual_amount") or 0)) for e in expectations)
 
         # Projected tax (rough estimate: assume 15% on FD interest over 50k)
         fd_interest_total = self._get_total_fd_interest(person_id, fy)
@@ -634,102 +598,6 @@ class IncomeManagementScreen(QWidget):
         except Exception as e:
             show_warning(f"Error loading TDS status: {e}")
 
-    def _populate_table_5_ledger(self, expectations):
-        """Table 5: Expectation ledger."""
-        try:
-            self.table_ledger.setRowCount(0)
-
-            for exp in expectations:
-                # Month
-                try:
-                    exp_date = datetime.strptime(exp["expected_date"], "%Y-%m-%d").date()
-                    month_text = exp_date.strftime("%b %Y")
-                except ValueError:
-                    month_text = f"Day {exp['expected_date']}"
-
-                # Type
-                exp_type = exp["income_type"]
-
-                # Source (account)
-                source = f"{exp.get('bank_display_name', exp['bank_name'])} ({exp['account_type']})"
-
-                # Expected amount
-                expected_str = _format_inr(exp["expected_amount"])
-
-                # Actual amount
-                actual = exp.get("actual_amount", 0) if exp["actual_transaction_id"] else None
-                actual_str = _format_inr(actual) if actual else "—"
-
-                # Variance
-                if actual:
-                    variance = actual - exp["expected_amount"]
-                    variance_str = _format_inr(variance)
-                else:
-                    variance_str = "—"
-
-                # Status
-                if exp["actual_transaction_id"]:
-                    status = "Received"
-                else:
-                    exp_date_obj = datetime.strptime(exp["expected_date"], "%Y-%m-%d").date() if "-" in exp["expected_date"] else date.today()
-                    if exp_date_obj < date.today():
-                        status = "Overdue"
-                    else:
-                        status = "Pending"
-
-                # Matched transaction
-                matched_text = f"Txn #{exp['actual_transaction_id']}" if exp["actual_transaction_id"] else "—"
-
-                # Add row
-                row_data = [
-                    month_text,
-                    exp_type,
-                    source,
-                    expected_str,
-                    actual_str,
-                    variance_str,
-                    status,
-                    matched_text
-                ]
-                self.table_ledger.addDataRow(row_data)
-
-                # Apply colors to the newly added row
-                row = self.table_ledger.rowCount() - 1
-
-                # Right-align amounts
-                for col in [3, 4, 5]:  # Expected, Actual, Variance
-                    item = self.table_ledger.item(row, col)
-                    if item:
-                        item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-
-                # Color actual amount
-                if actual:
-                    actual_item = self.table_ledger.item(row, 4)
-                    if actual_item:
-                        actual_item.setForeground(QColor(Theme.SUCCESS))
-
-                # Color variance
-                if actual:
-                    variance_item = self.table_ledger.item(row, 5)
-                    if variance_item:
-                        color = Theme.SUCCESS if variance >= 0 else Theme.DANGER
-                        variance_item.setForeground(QColor(color))
-
-                # Color status
-                status_item = self.table_ledger.item(row, 6)
-                if status_item:
-                    if exp["actual_transaction_id"]:
-                        color = Theme.SUCCESS
-                    else:
-                        exp_date_obj = datetime.strptime(exp["expected_date"], "%Y-%m-%d").date() if "-" in exp["expected_date"] else date.today()
-                        if exp_date_obj < date.today():
-                            color = Theme.DANGER
-                        else:
-                            color = Theme.WARNING
-                    status_item.setForeground(QColor(color))
-        except Exception as e:
-            show_warning(f"Error populating ledger: {e}")
-
     def _populate_table_expectations(self, expectations):
         """Populate the individual expectations table."""
         try:
@@ -900,7 +768,10 @@ class IncomeManagementScreen(QWidget):
         persons = get_all_persons()
         dlg = IncomeExpectationDialog(self, persons=persons, existing=existing)
 
-        if dlg.exec() == QDialog.DialogCode.Accepted:
+        result = dlg.exec()
+        if result != QDialog.DialogCode.Accepted and dlg.link_changed:
+            self.refresh()
+        if result == QDialog.DialogCode.Accepted:
             data = dlg.get_data()
             try:
                 update_income_expectation(
@@ -957,18 +828,16 @@ class IncomeManagementScreen(QWidget):
 
     def _on_auto_match_ledger(self):
         """Auto-match expectations with transactions."""
-        person_id = self._selected_person_id
-        if not person_id:
-            show_warning("Please select a specific person to auto-match.")
-            return
-
         fy = self._selected_fy
-        accounts = get_accounts_for_person(person_id)
-
-        total_matched = 0
-        for account in accounts:
-            matched = auto_link_income_expectations(person_id, account["account_id"], fy)
-            total_matched += matched
+        targets = {
+            (row["person_id"], row["account_id"])
+            for row in self._fetch_expectations(self._selected_person_id, fy)
+            if row["actual_transaction_id"] is None
+        }
+        total_matched = sum(
+            auto_link_income_expectations(person_id, account_id, fy)
+            for person_id, account_id in sorted(targets)
+        )
 
         if total_matched > 0:
             show_success(f"Auto-matched {total_matched} expectation{'s' if total_matched != 1 else ''}.")
@@ -983,8 +852,7 @@ class IncomeManagementScreen(QWidget):
         facecolor from construction and need to be redrawn when the theme changes.
         """
         for name in ("chart_actual_income", "chart_vs_actual", "chart_composition", "chart_fd_runway",
-                     "table_expectations_widget", "table_tds_widget",
-                     "table_ledger_widget"):
+                     "table_expectations_widget", "table_tds_widget"):
             widget = getattr(self, name, None)
             if widget is not None and hasattr(widget, "refresh_theme"):
                 try:

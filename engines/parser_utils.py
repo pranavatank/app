@@ -140,4 +140,26 @@ def _guess_fd_category(desc_upper: str, txn_type: str) -> Optional[str]:
     return None
 
 
-__all__ = ["_REF_PATTERNS", "_extract_reference_no", "_append_issue", "_guess_fd_category"]
+def infer_statement_category(description: str, transaction_type: str) -> Optional[str]:
+    """Recognize specific bank narration across statement formats."""
+    text = (description or "").upper()
+    fd_category = _guess_fd_category(text, transaction_type)
+    if fd_category:
+        return fd_category
+    if transaction_type == "Income":
+        patterns = (
+            (r"\b(?:PENSION|PPO)\b", "Pension"),
+            (r"\bSALARY\b", "Salary"),
+            (r"\b(?:SAVINGS? INTEREST|SB INTEREST|SB INT|INT CR|INTEREST (?:PAID|CREDIT(?:ED)?))\b", "Savings Interest"),
+            (r"\bDIVIDEND\b", "Dividend"),
+        )
+    elif transaction_type == "Expense":
+        patterns = (
+            (r"\b(?:BANK CHARGES?|SMS CHARGES?|ATM FEE|SERVICE CHARGES?)\b", "Bank Charges"),
+        )
+    else:
+        return None
+    return next((category for pattern, category in patterns if re.search(pattern, text)), None)
+
+
+__all__ = ["_REF_PATTERNS", "_extract_reference_no", "_append_issue", "_guess_fd_category", "infer_statement_category"]

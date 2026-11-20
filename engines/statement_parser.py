@@ -21,7 +21,7 @@ from engines.parser_utils import (
     _REF_PATTERNS,
     _extract_reference_no,
     _append_issue,
-    _guess_fd_category,
+    infer_statement_category,
 )
 from engines.bank_parsers import parse_sbi_pdf
 from engines.parser_registry import get as get_bank_parser, register as register_bank_parser
@@ -650,17 +650,10 @@ class GenericPDFParser(BankTemplate):
         """Guess category from description."""
         desc_upper = description.upper()
         
+        category = infer_statement_category(desc_upper, txn_type)
+        if category:
+            return category
         if txn_type == "Income":
-            if any(word in desc_upper for word in ["PRINC AND INT AUTO REDEEM", "AUTO REDEEM", "FD CR", "PAT CR"]):
-                return "FD Maturity"
-            if any(word in desc_upper for word in ["INT AUTO REDEEM", "FD INTEREST"]):
-                return "FD Interest"
-            if any(word in desc_upper for word in ["SALARY", "SAL"]):
-                return "Salary"
-            elif any(word in desc_upper for word in ["INTEREST", "INT"]):
-                if any(word in desc_upper for word in ["FD", "FIXED DEPOSIT"]):
-                    return "FD Interest"
-                return "Savings Interest"
             return "Other Income"
         else:
             if any(word in desc_upper for word in ["ATM", "CASH"]):
@@ -1121,19 +1114,10 @@ class GenericExcelParser(BankTemplate):
         """Guess category from description."""
         desc_upper = description.upper()
 
-        fd_category = _guess_fd_category(desc_upper, txn_type)
-        if fd_category:
-            return fd_category
-
+        category = infer_statement_category(desc_upper, txn_type)
+        if category:
+            return category
         if txn_type == "Income":
-            if "INTEREST" in desc_upper and "CREDIT" in desc_upper:
-                return "Savings Interest"
-            if any(word in desc_upper for word in ["SALARY", "SAL"]):
-                return "Salary"
-            if "PPO" in desc_upper or "PENSION" in desc_upper:
-                return "Pension"
-            if any(word in desc_upper for word in ["INTEREST", "INT CR"]):
-                return "Savings Interest"
             return "Other Income"
         else:
             if "ATM" in desc_upper and "WDL" in desc_upper:
@@ -1541,22 +1525,14 @@ STATEMENT:
     
     def _infer_category(self, desc_upper: str, txn_type: str) -> str:
         """Infer category from description."""
-        fd_category = _guess_fd_category(desc_upper, txn_type)
-        if fd_category:
-            return fd_category
-
+        category = infer_statement_category(desc_upper, txn_type)
+        if category:
+            return category
         if txn_type == "Income":
-            if "INTEREST" in desc_upper:
-                return "Savings Interest"
-            if "SALARY" in desc_upper or "SAL" in desc_upper:
-                return "Salary"
-            if "PPO" in desc_upper:
-                return "Pension"
             return "Other Income"
-        else:
-            if "ATM" in desc_upper or "CASH" in desc_upper:
-                return "Cash"
-            return "Other Expense"
+        if "ATM" in desc_upper or "CASH" in desc_upper:
+            return "Cash"
+        return "Other Expense"
 
 
 # ── Main parser interface ─────────────────────────────────────────────────────
@@ -1780,6 +1756,11 @@ def validate_transactions(transactions: List[Dict]) -> tuple[List[Dict], List[st
             errors.append(f"Row {idx+1}: Missing transaction type")
             continue
         
+        category = txn.get("category")
+        if category in (None, "", "Other Income", "Other Expense"):
+            recognized = infer_statement_category(txn.get("description"), txn["transaction_type"])
+            if recognized:
+                txn = {**txn, "category": recognized}
         valid.append(txn)
     
     return valid, errors

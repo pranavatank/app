@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
     QPushButton, QComboBox, QLineEdit, QTableWidget,
     QTableWidgetItem, QHeaderView, QDialog, QDialogButtonBox,
     QFormLayout, QDateEdit, QDoubleSpinBox, QTextEdit,
-    QMessageBox, QFrame, QAbstractItemView, QCheckBox, QTabWidget, QSizePolicy
+    QMessageBox, QFrame, QAbstractItemView, QCheckBox, QTabWidget, QSizePolicy, QInputDialog
 )
 from PySide6.QtCore import Qt, QDate, QTimer
 from PySide6.QtGui import QFont, QColor
@@ -33,7 +33,7 @@ from models.bank_account import get_accounts_for_person, get_all_accounts
 from models.transaction import (
     get_transactions, add_transaction, update_transaction, delete_transaction,
     reprocess_internal_transfers, display_transaction_type, normalize_transaction_type,
-    get_category_summary
+    get_category_summary, get_transfer_counterparts, link_internal_transfer, unlink_internal_transfer,
 )
 from engines.balance_engine import recalculate_account_balance
 
@@ -203,11 +203,16 @@ class TransactionsScreen(QWidget):
         self.btn_delete.clicked.connect(self._delete_transaction)
         actions.addWidget(self.btn_delete)
 
-        self.btn_reprocess = Theme.btn("Link Transfers", "secondary", height=Theme.HEIGHT_MD, min_width=154)
+        self.btn_reprocess = Theme.btn("Find Transfers", "secondary", height=Theme.HEIGHT_MD, min_width=154)
         self.btn_reprocess.setIcon(app_icon("refresh", size=16))
         self.btn_reprocess.setToolTip("Detect and link matching transfers between accounts")
         self.btn_reprocess.clicked.connect(self._reprocess_data)
         actions.addWidget(self.btn_reprocess)
+
+        self.btn_link_transfer = Theme.btn("Link Transfer", "secondary", height=Theme.HEIGHT_MD, min_width=128)
+        self.btn_link_transfer.setEnabled(False)
+        self.btn_link_transfer.clicked.connect(self._manage_transfer_pair)
+        actions.addWidget(self.btn_link_transfer)
 
         btn_import = Theme.btn("Import Statement", "secondary", height=Theme.HEIGHT_MD, min_width=156)
         btn_import.clicked.connect(self._trigger_import)
@@ -405,6 +410,8 @@ class TransactionsScreen(QWidget):
         rows = get_transactions(account_id=aid, person_id=pid, financial_year=fy, transaction_type=typ)
         if is_transfer_filter:
             rows = [r for r in rows if r.get("is_internal_transfer")]
+        elif typ is not None:
+            rows = [r for r in rows if not r.get("is_internal_transfer")]
         if term:
             rows = [r for r in rows if term in (r.get("description") or "").lower()
                     or term in (r.get("category") or "").lower()
@@ -415,6 +422,7 @@ class TransactionsScreen(QWidget):
         self._update_pills(rows)
         self.btn_edit.setEnabled(False)
         self.btn_delete.setEnabled(False)
+        self.btn_link_transfer.setEnabled(False)
 
     def _populate_table(self, rows):
         # Show empty state if no transactions
@@ -461,8 +469,8 @@ class TransactionsScreen(QWidget):
             self.table.setCheckboxCell(r, checked=False)
             
             txn_type = row.get("transaction_type", "")
-            display_type = display_transaction_type(txn_type)
-            color    = type_colors.get(normalize_transaction_type(txn_type), QColor(Theme.TEXT_PRIMARY))
+            display_type = f"Transfer ({'In' if txn_type == 'Income' else 'Out'})" if row.get("is_internal_transfer") else display_transaction_type(txn_type)
+            color = type_colors.get("Transfer" if row.get("is_internal_transfer") else txn_type, QColor(Theme.TEXT_PRIMARY))
 
             def item(text, align=Qt.AlignmentFlag.AlignLeft):
                 it = QTableWidgetItem(str(text) if text is not None else "—")
@@ -603,11 +611,12 @@ class TransactionsScreen(QWidget):
         )
 
     def _reprocess_data(self):
+        if not self._confirm_unsaved("finding transfers"):
+            return
         reply = QMessageBox.question(
             self,
             "Reprocess Internal Transfers",
-            "This will scan bank-transfer-like entries across all accounts "
-            "and relink internal transfers. Continue?",
+            "Find equal debits and credits with the same bank reference across all accounts?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.Yes,
         )
@@ -619,6 +628,42 @@ class TransactionsScreen(QWidget):
         if self._parent_window:
             self._parent_window.refresh_overview()
         show_success(f"Linked pairs: {pairs}\nTransactions marked as Internal Transfer: {marked}")
+
+    def _manage_transfer_pair(self):
+        if not self._confirm_unsaved("linking a transfer"):
+            return
+        txn = self._selected_transaction()
+        if txn is None:
+            return
+        transaction_id = txn["transaction_id"]
+        if txn.get("linked_transaction_id"):
+            if QMessageBox.question(self, "Unlink Transfer", "Unlink both entries in this transfer?") != QMessageBox.StandardButton.Yes:
+                return
+            unlink_internal_transfer(transaction_id)
+        else:
+            candidates = get_transfer_counterparts(transaction_id)
+            choices = {
+                (f"{row['transaction_date']} · {row['person_name']} · {row['bank_display_name']} · "
+                 f"{row['description'] or row['reference_no'] or 'Bank entry'} · #{row['transaction_id']}"): row["transaction_id"]
+                for row in candidates
+            }
+            if not choices:
+                show_warning("No unlinked entry for the same amount was found in another account.")
+                return
+            choice, accepted = QInputDialog.getItem(
+                self, "Link Family Transfer", "Select the matching entry from another account.",
+                list(choices), 0, False,
+            )
+            if not accepted:
+                return
+            try:
+                link_internal_transfer(transaction_id, choices[choice])
+            except ValueError as error:
+                show_warning(str(error))
+                return
+        self._fetch_and_display()
+        if self._parent_window:
+            self._parent_window.refresh_overview()
 
     def _add_transaction(self):
         persons  = get_all_persons()
@@ -727,6 +772,9 @@ class TransactionsScreen(QWidget):
         has = bool(self.table.selectedItems())
         self.btn_edit.setEnabled(has)
         self.btn_delete.setEnabled(has)
+        txn = self._selected_transaction()
+        self.btn_link_transfer.setEnabled(bool(txn and txn["transaction_type"] in {"Income", "Expense"}))
+        self.btn_link_transfer.setText("Unlink Transfer" if txn and txn.get("linked_transaction_id") else "Link Transfer")
 
     def _on_table_data_changed(self):
         """Handle data changes in table (after paste or edit)."""

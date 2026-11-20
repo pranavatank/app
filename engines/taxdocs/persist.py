@@ -6,9 +6,10 @@ through models/form26as.py and models/ais_tis_import.py.
 """
 
 import json
-from config import get_current_financial_year
+import re
 from models.form26as import save_form26as_import
 from models.ais_tis_import import save_ais_tis_data, save_ais_tis_records
+from models.person import get_person
 
 
 SOURCE_TYPE_26AS = "26AS"
@@ -42,6 +43,16 @@ def source_financial_year(parsed: dict) -> str:
     if not fy:
         raise ValueError("tax document has no financial year or assessment year")
     return fy
+
+
+def _validate_source_person(person_id: int, parsed: dict) -> None:
+    source_pan = str(parsed.get("pan") or "").strip().upper()
+    if not re.fullmatch(r"[A-Z]{5}\d{4}[A-Z]", source_pan):
+        return
+    person = get_person(person_id)
+    expected = (person or {}).get("pan_number") or ""
+    if expected.strip() and expected.strip().upper() != source_pan:
+        raise ValueError("The tax document PAN differs from the selected person's PAN.")
 
 
 def form26as_records_for_storage(parsed: dict) -> list[dict]:
@@ -112,7 +123,10 @@ def form26as_records_for_storage(parsed: dict) -> list[dict]:
 def persist_form26as(person_id: int, parsed: dict, source_file: str = "",
                      financial_year: str | None = None) -> dict:
     """Store parsed Form 26AS data."""
-    fy = financial_year or financial_year_from_assessment_year(parsed.get("assessment_year")) or get_current_financial_year()
+    fy = source_financial_year(parsed)
+    if financial_year and financial_year != fy:
+        raise ValueError("The requested financial year differs from the Form 26AS source year.")
+    _validate_source_person(person_id, parsed)
 
     records = form26as_records_for_storage(parsed)
 
@@ -178,6 +192,7 @@ def persist_ais_tis(person_id: int, parsed: dict, source_type: str,
             f"requested financial year {financial_year} conflicts with source year {source_fy}"
         )
     financial_year = source_fy
+    _validate_source_person(person_id, parsed)
 
     raw_json = json.dumps(parsed, default=str)
     payload = ais_tis_payload(parsed)

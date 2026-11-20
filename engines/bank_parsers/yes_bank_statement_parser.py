@@ -19,7 +19,7 @@ import pdfplumber
 from engines.parser_utils import (
     _extract_reference_no,
     _append_issue,
-    _guess_fd_category,
+    infer_statement_category,
 )
 from engines.statement_passwords import (
     StatementPasswordError,
@@ -88,14 +88,10 @@ def _guess_mode(desc: str) -> str:
 
 def _guess_category(desc: str, txn_type: str) -> str:
     u = desc.upper()
-    fd_cat = _guess_fd_category(u, txn_type)
-    if fd_cat:
-        return fd_cat
+    category = infer_statement_category(u, txn_type)
+    if category:
+        return category
     if txn_type == "Income":
-        if "INTEREST" in u or "INT" in u:
-            return "Savings Interest"
-        if "SALARY" in u or "SAL" in u:
-            return "Salary"
         if "REFUND" in u:
             return "Other Income"
         if "NEFT" in u and "CR" in u:

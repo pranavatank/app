@@ -49,7 +49,16 @@ from engines.statement_parser import (
 
 )
 from engines.statement import parse_statement_pdf
-from engines.statement.validate import confidence, balance_walk, extract_control_totals, reconcile_totals, LowConfidenceParse, normalise_order, direction_errors
+from engines.statement.validate import (
+    LowConfidenceParse,
+    balance_walk,
+    confidence,
+    correct_balance_directions,
+    direction_errors,
+    extract_control_totals,
+    normalise_order,
+    reconcile_totals,
+)
 from engines.statement_metadata_extractor import extract_account_metadata
 from engines.interest_engine import allocate_savings_interest_to_fy
 from engines.balance_engine import recalculate_account_balance
@@ -58,14 +67,6 @@ from ui.dialogs.account_dialog import AccountDialog
 from ui.dialogs.account_metadata_dialog import AccountMetadataDialog
 from ui.dialogs.password_dialog import PasswordDialog
 from ui.dialogs.column_mapping_dialog import ColumnMappingDialog
-
-# The post-parse "Update Account Details" modal is DISABLED. It opened as a
-# blocking dialog in the middle of processing parse results, so the import
-# appeared to hang: the preview table never populated and the dialog could sit
-# behind the main window with no visible cue. Set True to restore it once it is
-# reworked to be non-modal or deferred until after the preview is shown.
-SHOW_METADATA_DIALOG = False
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Worker class for parsing statements in background thread
@@ -338,6 +339,8 @@ class StatementImportScreen(QWidget):
         self.validation_errors = []
         self.duplicate_count = 0
         self.statement_text = ""
+        self._statement_metadata = {}
+        self._account_number_mismatch = False
         self.fds_created_last_import = 0
         self.parse_confidence = 0.0
         self.failing_rows_balance = []
@@ -559,6 +562,11 @@ class StatementImportScreen(QWidget):
         btn_clear.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         set_btn_icon(btn_clear, "clear_sel")
         actions.addWidget(btn_clear)
+        self.review_metadata_btn = Theme.btn("Account details", "secondary", height=34, min_width=155)
+        self.review_metadata_btn.setAccessibleName("Review account details extracted from statement")
+        self.review_metadata_btn.clicked.connect(self._review_statement_account_details)
+        self.review_metadata_btn.hide()
+        actions.addWidget(self.review_metadata_btn)
         actions.addWidget(self.review_balance_btn)
         
         actions.addStretch()
@@ -1199,22 +1207,24 @@ class StatementImportScreen(QWidget):
         self._set_parse_busy(False)
 
         try:
-            # Extract metadata (lightweight operation, can stay on UI thread)
+            self._statement_metadata = {}
+            self._account_number_mismatch = False
             try:
-                self.statement_text = extract_statement_text(self.selected_file, self.file_type, password=self._parse_password)
-                metadata = extract_account_metadata(self.statement_text)
-
-                if any(metadata.values()) and SHOW_METADATA_DIALOG:
-                    acc = get_account(self.selected_account_id)
-                    dialog = AccountMetadataDialog(
-                        self,
-                        account_id=self.selected_account_id,
-                        account_name=(acc or {}).get('bank_name', 'Account'),
-                        metadata=metadata,
-                    )
-                    dialog.exec()
-            except Exception as e:
-                print(f"Metadata extraction failed: {e}")
+                self.statement_text = extract_statement_text(
+                    self.selected_file, self.file_type, password=self._parse_password,
+                )
+                self._statement_metadata = extract_account_metadata(self.statement_text)
+                account = get_account(self.selected_account_id) or {}
+                stored_number = str(account.get("account_number_full") or "").strip()
+                masked_number = str(account.get("account_number_masked") or "").strip()
+                source_number = str(self._statement_metadata.get("account_number_full") or "").strip()
+                if source_number.isdigit() and len(source_number) >= 8:
+                    if stored_number.isdigit():
+                        self._account_number_mismatch = stored_number != source_number
+                    elif re.fullmatch(r"[Xx*•]+\d{4}", masked_number):
+                        self._account_number_mismatch = masked_number[-4:] != source_number[-4:]
+            except Exception:
+                self.statement_text = ""
 
             # If no transactions extracted and it's Excel, suggest mapping columns and retry
             if not txns and self.file_type and self.file_type.lower().startswith("excel"):
@@ -1253,7 +1263,7 @@ class StatementImportScreen(QWidget):
 
             # Normalize transaction order BEFORE confidence/balance checking
             # (modern parser does this internally, but we re-check here)
-            valid = normalise_order(valid)
+            valid = correct_balance_directions(normalise_order(valid))
 
             # Calculate confidence score and check for low confidence
             self.parse_confidence = confidence(valid)
@@ -1262,7 +1272,9 @@ class StatementImportScreen(QWidget):
             # Block import if balance column present but no tied rows or low confidence
             tied, _ = direction_errors(valid)
             has_balances = sum(1 for t in valid if t.get("balance_after") is not None) >= 2
-            self._import_blocked = has_balances and (tied == 0 or self.parse_confidence < 0.9)
+            self._import_blocked = self._account_number_mismatch or (
+                has_balances and (tied == 0 or self.parse_confidence < 0.9 or bool(self.failing_rows_balance))
+            )
             if self._import_blocked:
                 self.preview_transactions = valid
                 self.preview_duplicate_flags = [False] * len(valid)
@@ -1307,6 +1319,18 @@ class StatementImportScreen(QWidget):
         self._update_preview_summary()
         self.preview_table.setFocus()
 
+    def _review_statement_account_details(self):
+        if self._busy or self._account_number_mismatch or not any(self._statement_metadata.values()):
+            return
+        account = get_account(self.selected_account_id)
+        if not account or account["person_id"] != self.selected_person_id:
+            return
+        AccountMetadataDialog(
+            self, account_id=account["account_id"],
+            account_name=account.get("bank_display_name") or account["bank_name"],
+            metadata=self._statement_metadata,
+        ).exec()
+
     def _review_first_balance_row(self):
         row = self.failing_rows_balance[0]["index"]
         item = self.preview_table.item(row, 6)
@@ -1333,6 +1357,10 @@ class StatementImportScreen(QWidget):
             return
         if not self.preview_transactions:
             show_warning("No transactions available. Please go back and choose another file.")
+            return
+
+        if self._account_number_mismatch:
+            show_warning("Import blocked: the statement account number differs from the selected account.")
             return
 
         if self._import_blocked:
@@ -1454,6 +1482,8 @@ class StatementImportScreen(QWidget):
 
         # Clear file and parsing state
         self.selected_file = None
+        self._statement_metadata = {}
+        self._account_number_mismatch = False
         self._drop_zone.set_status(self._drop_zone.title_text)
         self.parsed_transactions = []
         self.preview_transactions = []
@@ -1670,6 +1700,8 @@ class StatementImportScreen(QWidget):
 
         if self._busy:
             status = "Importing selected rows…"
+        elif self._account_number_mismatch:
+            status = "Import blocked. This statement's account number differs from the selected account. Go back to change the account."
         elif self._import_blocked:
             failures = len(self.failing_rows_balance)
             detail = f"{failures} balance mismatch(es) found." if failures else "The running balances could not be verified."
@@ -1687,7 +1719,10 @@ class StatementImportScreen(QWidget):
         if self.validation_errors:
             status += f" {len(self.validation_errors)} invalid row(s) skipped. See the debug report."
         self.preview_status_label.setText(status)
-        self.review_balance_btn.setVisible(self._import_blocked and bool(self.failing_rows_balance))
+        self.review_balance_btn.setVisible(self._import_blocked and not self._account_number_mismatch and bool(self.failing_rows_balance))
+        self.review_metadata_btn.setVisible(
+            not self._account_number_mismatch and any(self._statement_metadata.values())
+        )
 
         editable = not self._busy and not self._import_blocked and new_count > 0
         self.btn_select_all.setEnabled(editable and selected < new_count)

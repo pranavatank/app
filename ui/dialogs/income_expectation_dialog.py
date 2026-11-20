@@ -30,7 +30,7 @@ from models.income_expectation import (
 
 
 # Income types used in the app
-INCOME_TYPES = ["Salary", "Rent", "Interest", "Dividend", "Business", "Freelance", "Other"]
+INCOME_TYPES = ["Salary", "Pension", "Rent", "Interest", "Dividend", "Business", "Freelance", "Other"]
 FREQUENCIES = ["One-Time", "Monthly", "Quarterly", "Half-Yearly", "Annual"]
 
 
@@ -52,6 +52,7 @@ class IncomeExpectationDialog(QDialog):
         """
         super().__init__(parent)
         self.persons = persons or []
+        self.link_changed = False
         self.existing = existing
         self.preselect_person_id = preselect_person_id
         self._linking_dialog = None
@@ -338,20 +339,26 @@ class IncomeExpectationDialog(QDialog):
         if dlg.exec() == QDialog.DialogCode.Accepted:
             txn_id = dlg.get_selected_transaction_id()
             if txn_id:
-                link_actual_transaction(self.existing["expectation_id"], txn_id)
-                # Refresh the link panel
-                self.existing["actual_transaction_id"] = txn_id
-                # Rebuild link panel (remove old one first)
-                layout = self.content_layout
-                for i in range(layout.count()):
-                    widget = layout.itemAt(i).widget()
-                    if widget and widget.objectName() == "LinkPanel":
-                        layout.removeWidget(widget)
-                        widget.deleteLater()
-                        break
-                self.link_panel = self._build_link_panel()
-                # Keep the rebuilt panel inside the scrollable content.
-                layout.insertWidget(layout.count() - 1, self.link_panel)
+                try:
+                    link_actual_transaction(self.existing["expectation_id"], txn_id)
+                except ValueError as error:
+                    show_warning(str(error))
+                    return
+                matched = next(
+                    item for item in get_income_expectations(person_id=person_id)
+                    if item["expectation_id"] == self.existing["expectation_id"]
+                )
+                self.existing.update(matched)
+                self.link_changed = True
+                self._refresh_link_panel()
+
+    def _refresh_link_panel(self):
+        layout = self.content_layout
+        old_panel = self.link_panel
+        self.link_panel = self._build_link_panel()
+        layout.replaceWidget(old_panel, self.link_panel)
+        old_panel.hide()
+        old_panel.deleteLater()
 
     def _on_unlink_transaction(self):
         """Unlink transaction with confirmation."""
@@ -364,17 +371,9 @@ class IncomeExpectationDialog(QDialog):
 
         if reply == QMessageBox.StandardButton.Yes:
             unlink_actual_transaction(self.existing["expectation_id"])
-            self.existing["actual_transaction_id"] = None
-            # Rebuild link panel
-            layout = self.content_layout
-            for i in range(layout.count()):
-                widget = layout.itemAt(i).widget()
-                if widget == self.link_panel:
-                    layout.removeWidget(widget)
-                    widget.deleteLater()
-                    break
-            self.link_panel = self._build_link_panel()
-            layout.insertWidget(layout.count() - 1, self.link_panel)
+            self.existing.update(actual_transaction_id=None, actual_date=None, actual_amount=None)
+            self.link_changed = True
+            self._refresh_link_panel()
 
     def _load_data(self):
         """Load existing data if editing."""
@@ -447,7 +446,8 @@ class IncomeExpectationDialog(QDialog):
         idx = self.fy_combo.findText(fy)
         if idx >= 0:
             self.fy_combo.setCurrentIndex(idx)
-        self.fy_combo.setEnabled(False)  # Disable in edit mode
+        for control in (self.fy_combo, self.person_combo, self.account_combo, self.income_type_combo):
+            control.setEnabled(False)
 
         # Set notes
         notes = self.existing.get("notes")
@@ -470,6 +470,13 @@ class IncomeExpectationDialog(QDialog):
             focus_editor_field(self.amount_spin)
             show_warning("Expected Amount must be greater than 0.")
             return
+
+        if self.frequency_combo.currentText() not in ("Monthly", "Quarterly", "Half-Yearly"):
+            start, end = fy_date_range(self.fy_combo.currentText())
+            if not start <= self.date_edit.date().toPython() <= end:
+                focus_editor_field(self.date_edit)
+                show_warning("Choose an expected date within the selected financial year.")
+                return
 
         self.accept()
 
@@ -595,7 +602,8 @@ class LinkActualDialog(QDialog):
 
             for txn in txns:
                 txn_id = txn.get("transaction_id")
-                if txn_id in linked_ids:
+                if (txn_id in linked_ids or txn.get("is_internal_transfer")
+                        or txn.get("category") in {"Internal Transfer", "FD Maturity"}):
                     continue
 
                 # Filter by date range if FY is set

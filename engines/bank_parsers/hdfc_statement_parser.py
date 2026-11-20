@@ -18,6 +18,8 @@ Key quirks:
 from __future__ import annotations
 
 import re
+
+from engines.parser_utils import infer_statement_category
 from datetime import datetime
 from typing import Dict, List, Optional
 
@@ -69,21 +71,6 @@ def _is_statement_summary_line(text: str) -> bool:
     ]
     return any(m in upper for m in markers)
 
-
-def _guess_fd_category(desc_upper: str, txn_type: str) -> Optional[str]:
-    if txn_type == "Income":
-        if any(w in desc_upper for w in ["PRINC AND INT AUTO REDEEM", "AUTO REDEEM", "FD CR", "PAT CR"]):
-            return "FD Maturity"
-        if any(w in desc_upper for w in ["INT AUTO REDEEM", "FD INTEREST"]):
-            return "FD Interest"
-        if "INTEREST" in desc_upper and any(w in desc_upper for w in ["FD", "FIXED DEPOSIT", "TERM DEPOSIT"]):
-            return "FD Interest"
-        if any(w in desc_upper for w in ["MATURITY", "MATURED", "REDEMPTION", "REDEEMED"]):
-            return "FD Maturity"
-    else:
-        if any(w in desc_upper for w in ["TD. GENERIC PAYIN DEBIT", "PAYIN DEBIT", "FIXED DEPOSIT", "TERM DEPOSIT"]):
-            return "FD Principal"
-    return None
 
 # ── Patterns ──────────────────────────────────────────────────────────────────
 
@@ -207,14 +194,10 @@ def _guess_mode(narration: str) -> str:
 
 def _guess_category(narration: str, txn_type: str) -> str:
     upper = narration.upper()
-    fd_cat = _guess_fd_category(upper, txn_type)
-    if fd_cat:
-        return fd_cat
+    category = infer_statement_category(upper, txn_type)
+    if category:
+        return category
     if txn_type == "Income":
-        if "INTEREST" in upper:
-            return "Savings Interest"
-        if "SALARY" in upper or "ALA/C-SALARY" in upper or "A2AINT" in upper:
-            return "Salary"
         if "REFUND" in upper or "REVERSAL" in upper:
             return "Refund"
         return "Other Income"
