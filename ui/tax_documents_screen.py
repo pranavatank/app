@@ -78,6 +78,13 @@ def _saved_ais_tis(person_id: int, financial_year: str, source_type: str) -> dic
     }
 
 
+def _source_needs_review(data: dict | None) -> bool:
+    if not isinstance(data, dict):
+        return False
+    status = str(data.get("review_status") or "").strip().casefold()
+    return bool(data.get("needs_review") or data.get("review_required") or status in {"needs review", "review required"})
+
+
 class TaxDocumentsScreen(QWidget):
     """Screen for uploading and reconciling tax documents."""
 
@@ -85,6 +92,9 @@ class TaxDocumentsScreen(QWidget):
         super().__init__(parent)
         self.parent_window = parent
         self.merge_result = None
+        self._source_request = {"26as": 0, "ais": 0, "tis": 0}
+        self._last_context = None
+        self._active_imports = set()
         self._build_ui()
         self.refresh()
 
@@ -92,7 +102,7 @@ class TaxDocumentsScreen(QWidget):
         """Build the screen layout."""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 22, 28, 18)
-        layout.setSpacing(16)
+        layout.setSpacing(10)
 
         # Title
         title = QLabel("Tax Documents Reconciliation")
@@ -104,13 +114,19 @@ class TaxDocumentsScreen(QWidget):
         self.person_prompt.setProperty("textrole", "secondary-md")
         self.person_prompt.setWordWrap(True)
         layout.addWidget(self.person_prompt)
+        self.context_label = QLabel()
+        self.context_label.setObjectName("taxDocumentContext")
+        self.context_label.setProperty("textrole", "emphasis-sm")
+        self.context_label.setWordWrap(True)
+        self.context_label.setTextFormat(Qt.TextFormat.PlainText)
+        layout.addWidget(self.context_label)
 
         # Upload zones
         upload_frame = QFrame()
         upload_frame.setObjectName("panelFrame")
         upload_layout = QHBoxLayout(upload_frame)
         upload_layout.setContentsMargins(0, 0, 0, 0)
-        upload_layout.setSpacing(16)
+        upload_layout.setSpacing(8)
 
         self.zone_26as = DropZone(
             title="Form 26AS",
@@ -141,6 +157,19 @@ class TaxDocumentsScreen(QWidget):
         self.zone_26as.fileSelected.connect(self._on_26as_selected)
         self.zone_ais.fileSelected.connect(self._on_ais_selected)
         self.zone_tis.fileSelected.connect(self._on_tis_selected)
+        self.source_zones = {"26as": self.zone_26as, "ais": self.zone_ais, "tis": self.zone_tis}
+        self.replace_buttons = {}
+        for source, zone in self.source_zones.items():
+            zone.title_label.setWordWrap(True)
+            zone.subtitle_label.setWordWrap(True)
+            browse_link = next(label for label in zone.findChildren(QLabel) if label.text().startswith("<a href="))
+            browse_link.setText('<a href="#" style="color: ' + Theme.PRIMARY + '; text-decoration: none;">Browse</a>')
+            browse_link.setObjectName(f"replace_{source}")
+            browse_link.setTextInteractionFlags(
+                Qt.TextInteractionFlag.LinksAccessibleByMouse | Qt.TextInteractionFlag.LinksAccessibleByKeyboard
+            )
+            browse_link.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+            self.replace_buttons[source] = browse_link
 
         # Scrollable content area
         scroll = QScrollArea()
@@ -189,6 +218,15 @@ class TaxDocumentsScreen(QWidget):
         """Show the saved documents for the current person and financial year."""
         person_id = _selected_person_id()
         fy = session.selected_fy
+        context = (person_id, fy)
+        if self._last_context is not None and context != self._last_context:
+            for source in self._source_request:
+                self._source_request[source] += 1
+        self._last_context = context
+        people = {p["person_id"]: p for p in get_all_persons()}
+        person = people.get(person_id) if person_id is not None else None
+        person_name = (person.get("full_name") or f"Person {person_id}") if person else "No person selected"
+        self.context_label.setText(f"{person_name}  ·  FY {fy}")
         self.person_prompt.setVisible(person_id is None)
         self.merge_result = None
         self.position_frame.hide()
@@ -199,19 +237,58 @@ class TaxDocumentsScreen(QWidget):
         form26as = get_form26as_import(person_id, fy) if person_id is not None else None
         ais = _saved_ais_tis(person_id, fy, SOURCE_TYPE_AIS) if person_id is not None else None
         tis = _saved_ais_tis(person_id, fy, SOURCE_TYPE_TIS) if person_id is not None else None
-        for zone, data in ((self.zone_26as, form26as), (self.zone_ais, ais), (self.zone_tis, tis)):
+        for key, zone, data in (("26as", self.zone_26as, form26as), ("ais", self.zone_ais, ais), ("tis", self.zone_tis, tis)):
             zone.setEnabled(person_id is not None)
             zone.pdf_data = data
             zone.pdf_path = None
             saved = data is not None
             zone.icon_label.setVisible(not saved)
-            zone.setMinimumHeight(76 if saved else 120)
-            vertical_padding = 8 if saved else 20
+            zone.setMinimumHeight(86 if saved else 120)
+            vertical_padding = 7 if saved else 12
             zone.layout().setContentsMargins(20, vertical_padding, 20, vertical_padding)
-            zone.layout().setSpacing(4 if saved else 12)
-            zone.set_status(f"{zone.title_text} · Saved" if data is not None else zone.title_text,
-                            fy=f"FY {fy}" if data is not None else "")
+            zone.layout().setSpacing(3 if saved else 8)
+            if not saved:
+                source_status = "Missing"
+            else:
+                source_status = "Needs review" if _source_needs_review(data) else "Saved"
+            zone.set_status(
+                f"{zone.title_text} · {source_status}",
+                fy=f"FY {fy}" if saved else "Drop PDF here",
+            )
+            self.replace_buttons[key].setText(
+                f'<a href="#" style="color: {Theme.PRIMARY}; text-decoration: none;">{"Replace" if saved else "Browse"}</a>'
+            )
+            self.replace_buttons[key].setAccessibleName(f"{'Replace' if saved else 'Browse for'} {zone.title_text} document")
+            self.replace_buttons[key].setVisible(True)
+            zone.setToolTip(f"{zone.title_text}: {source_status} for {person_name}, FY {fy}")
         self._try_merge(person_id)
+
+    def _begin_source_request(self, source: str, zone):
+        person_id, fy = _selected_person_id(), session.selected_fy
+        active_key = (source, person_id)
+        if active_key in self._active_imports:
+            show_warning(f"{zone.title_text} is already being imported for this person.")
+            return None
+        self._active_imports.add(active_key)
+        self._source_request[source] += 1
+        request = self._source_request[source]
+        zone.set_status("Parsing…", fy=f"For FY {fy}")
+        return request, person_id, fy, active_key
+
+    def _finish_source_request(self, active_key):
+        self._active_imports.discard(active_key)
+
+    def _request_is_current(self, source: str, request: int, person_id: int, fy: str) -> bool:
+        return (self._source_request[source] == request
+                and _selected_person_id() == person_id
+                and session.selected_fy == fy)
+
+    def _complete_source_request(self, source, request, person_id, fy, active_key, imported_fy):
+        self._finish_source_request(active_key)
+        current = self._request_is_current(source, request, person_id, fy)
+        if current or (_selected_person_id() == person_id and session.selected_fy == imported_fy):
+            self.refresh()
+        return current
 
     def _build_position_frame(self) -> QFrame:
         """Build the reconciled position table."""
@@ -305,7 +382,10 @@ class TaxDocumentsScreen(QWidget):
         if person_id is None:
             show_warning("Select a person before importing tax documents.")
             return
-        self.zone_26as.set_status("Parsing...", error=False)
+        started = self._begin_source_request("26as", self.zone_26as)
+        if started is None:
+            return
+        request, captured_person_id, captured_fy, active_key = started
 
         def parse_26as():
             parsed = parse_form26as_pdf(path, password=None, debug={})
@@ -314,10 +394,16 @@ class TaxDocumentsScreen(QWidget):
             return info
 
         def on_done(info):
-            self.refresh()
+            if not self._complete_source_request(
+                "26as", request, captured_person_id, captured_fy, active_key, info["financial_year"]
+            ):
+                return
             show_success(f"Form 26AS imported — {info['record_count']} records, FY {info['financial_year']}")
 
         def on_error(exc):
+            self._finish_source_request(active_key)
+            if not self._request_is_current("26as", request, captured_person_id, captured_fy):
+                return
             self.zone_26as.set_status(f"Error: {str(exc)[:50]}", error=True)
             show_danger(f"Failed to parse 26AS: {str(exc)}")
 
@@ -330,7 +416,10 @@ class TaxDocumentsScreen(QWidget):
         if person_id is None:
             show_warning("Select a person before importing tax documents.")
             return
-        self.zone_ais.set_status("Parsing...", error=False)
+        started = self._begin_source_request("ais", self.zone_ais)
+        if started is None:
+            return
+        request, captured_person_id, captured_fy, active_key = started
 
         # Check if encrypted and prompt for password on GUI thread BEFORE starting background parse
         password = None
@@ -350,12 +439,16 @@ class TaxDocumentsScreen(QWidget):
                 accept_label="Continue"
             )
             if dlg.exec() != QDialog.DialogCode.Accepted:
-                self.zone_ais.set_status("Cancelled", error=False)
+                if self._request_is_current("ais", request, captured_person_id, captured_fy):
+                    self.refresh()
+                self._finish_source_request(active_key)
                 return
             password = dlg.get_password()
             if not password:
                 show_warning("Password is required to open the encrypted file.")
-                self.zone_ais.set_status("Password required", error=True)
+                if self._request_is_current("ais", request, captured_person_id, captured_fy):
+                    self.zone_ais.set_status("Password required", error=True)
+                self._finish_source_request(active_key)
                 return
 
             # Remember if user wants to save password
@@ -370,14 +463,20 @@ class TaxDocumentsScreen(QWidget):
             return info
 
         def on_done(info):
+            if not self._complete_source_request(
+                "ais", request, captured_person_id, captured_fy, active_key, info["financial_year"]
+            ):
+                return
             # Save password if requested
             if should_save and password:
                 set_ais_tis_password(person_id, password, session.aes_key)
 
-            self.refresh()
             show_success(f"AIS imported — {info['record_count']} records, FY {info['financial_year']}")
 
         def on_error(exc):
+            self._finish_source_request(active_key)
+            if not self._request_is_current("ais", request, captured_person_id, captured_fy):
+                return
             self.zone_ais.set_status(f"Error: {str(exc)[:50]}", error=True)
             show_danger(f"Failed to parse AIS: {str(exc)}")
 
@@ -390,7 +489,10 @@ class TaxDocumentsScreen(QWidget):
         if person_id is None:
             show_warning("Select a person before importing tax documents.")
             return
-        self.zone_tis.set_status("Parsing...", error=False)
+        started = self._begin_source_request("tis", self.zone_tis)
+        if started is None:
+            return
+        request, captured_person_id, captured_fy, active_key = started
 
         # Check if encrypted and prompt for password on GUI thread BEFORE starting background parse
         password = None
@@ -410,12 +512,16 @@ class TaxDocumentsScreen(QWidget):
                 accept_label="Continue"
             )
             if dlg.exec() != QDialog.DialogCode.Accepted:
-                self.zone_tis.set_status("Cancelled", error=False)
+                if self._request_is_current("tis", request, captured_person_id, captured_fy):
+                    self.refresh()
+                self._finish_source_request(active_key)
                 return
             password = dlg.get_password()
             if not password:
                 show_warning("Password is required to open the encrypted file.")
-                self.zone_tis.set_status("Password required", error=True)
+                if self._request_is_current("tis", request, captured_person_id, captured_fy):
+                    self.zone_tis.set_status("Password required", error=True)
+                self._finish_source_request(active_key)
                 return
 
             # Remember if user wants to save password
@@ -430,14 +536,20 @@ class TaxDocumentsScreen(QWidget):
             return info
 
         def on_done(info):
+            if not self._complete_source_request(
+                "tis", request, captured_person_id, captured_fy, active_key, info["financial_year"]
+            ):
+                return
             # Save password if requested
             if should_save and password:
                 set_ais_tis_password(person_id, password, session.aes_key)
 
-            self.refresh()
             show_success(f"TIS imported — {info['record_count']} records, FY {info['financial_year']}")
 
         def on_error(exc):
+            self._finish_source_request(active_key)
+            if not self._request_is_current("tis", request, captured_person_id, captured_fy):
+                return
             self.zone_tis.set_status(f"Error: {str(exc)[:50]}", error=True)
             show_danger(f"Failed to parse TIS: {str(exc)}")
 

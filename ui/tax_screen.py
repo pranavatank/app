@@ -189,6 +189,8 @@ class TaxScreen(QWidget):
         super().__init__(parent)
         self.parent_window = parent
         self.data_source = "ais"
+        self._loading_inputs = False
+        self._manual_edits = False
         self._section_groups: list[QGroupBox] = []
         self._build_ui()
 
@@ -204,9 +206,13 @@ class TaxScreen(QWidget):
         # Header card
         self._header_card = header_card = QFrame()
         header_card.setObjectName("TaxHeaderCard")
-        header_layout = QHBoxLayout(header_card)
+        header_layout = QVBoxLayout(header_card)
         header_layout.setContentsMargins(16, 12, 16, 12)
-        header_layout.setSpacing(12)
+        header_layout.setSpacing(8)
+        context_row = QHBoxLayout()
+        context_row.setSpacing(12)
+        action_row = QHBoxLayout()
+        action_row.setSpacing(8)
 
         head_left = QVBoxLayout()
         title = QLabel("Tax Planner")
@@ -217,102 +223,91 @@ class TaxScreen(QWidget):
         self.person_label = QLabel("Select a person")
         self.person_label.setFont(QFont("Segoe UI", 12, QFont.Weight.DemiBold))
         self.person_label.setProperty("textrole", "emphasis-sm")
+        self.person_label.setWordWrap(True)
+        self.person_label.setMaximumWidth(300)
         head_left.addWidget(self.person_label)
-        header_layout.addLayout(head_left)
+        context_row.addLayout(head_left, 1)
 
         # Person selector (shown when multiple persons exist)
         self.person_combo = QComboBox()
         self.person_combo.setMinimumWidth(150)
+        self.person_combo.setMaximumWidth(230)
         self.person_combo.setMinimumHeight(40)
-        self.person_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.person_combo.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         self.person_combo.setAccessibleName("Tax person selector")
         self.person_combo.setAccessibleDescription("Choose the person for tax planning.")
         self.person_combo.currentIndexChanged.connect(self._on_person_selected)
-        header_layout.addWidget(self.person_combo)
-
-        header_layout.addStretch()
+        context_row.addWidget(self.person_combo, alignment=Qt.AlignmentFlag.AlignVCenter)
+        header_layout.addLayout(context_row)
 
         source_label = QLabel("Data Source")
         source_label.setProperty("textrole", "section-label")
-        header_layout.addWidget(source_label)
+        action_row.addWidget(source_label)
 
         self.source_combo = QComboBox()
         self.source_combo.addItems(["AIS/TIS Data", "App Actual Data"])
         self.source_combo.setMinimumWidth(150)
+        self.source_combo.setMaximumWidth(190)
         self.source_combo.setMinimumHeight(40)
-        self.source_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.source_combo.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         self.source_combo.setAccessibleName("Tax data source selector")
         self.source_combo.setAccessibleDescription("Choose whether the tax estimate uses AIS/TIS data or app data.")
         self.source_combo.currentIndexChanged.connect(self._on_source_changed)
-        header_layout.addWidget(self.source_combo)
+        action_row.addWidget(self.source_combo)
 
         self.btn_calc = Theme.btn("  Estimate Tax", "primary", height=Theme.HEIGHT_MD, min_width=158)
         set_btn_icon(self.btn_calc, "calculate")
         self.btn_calc.setAccessibleName("Estimate tax")
         self.btn_calc.setAccessibleDescription("Calculate tax from the selected data source.")
         self.btn_calc.clicked.connect(self._on_calculate)
-        header_layout.addWidget(self.btn_calc)
+        action_row.addWidget(self.btn_calc)
+        self.estimate_status = QLabel("Inputs are sourced. Estimate to calculate.")
+        self.estimate_status.setObjectName("taxEstimateStatus")
+        self.estimate_status.setWordWrap(True)
+        self.estimate_status.setMinimumWidth(0)
+        self.estimate_status.setMaximumWidth(340)
+        self.estimate_status.setProperty("textrole", "body-sm")
+        action_row.addWidget(self.estimate_status, 1)
+        header_layout.addLayout(action_row)
         layout.addWidget(header_card)
 
-        # Context and results splitter
-        splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.setChildrenCollapsible(False)
-        splitter.setHandleWidth(8)
-
-        # Left rail: forms
-        left_scroll = QScrollArea()
-        left_scroll.setWidgetResizable(True)
-        left_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        left_scroll.setObjectName("transparentBg")
-
-        left_content = QWidget()
-        left_content.setObjectName("transparentSurface")
-        left_layout = QVBoxLayout(left_content)
-        left_layout.setSpacing(14)
-        left_layout.setContentsMargins(0, 0, 8, 0)
-
-        left_layout.addWidget(self._build_basic_info_section())
-        left_layout.addWidget(self._build_salary_section())
-        left_layout.addWidget(self._build_capital_gains_section())
-        left_layout.addWidget(self._build_business_section())
-        left_layout.addWidget(self._build_other_sources_section())
-        left_layout.addWidget(self._build_taxes_paid_section())
-        left_layout.addStretch()
-
-        left_scroll.setWidget(left_content)
-        splitter.addWidget(left_scroll)
-
-        # Right rail: context + results + projection
-        right_scroll = QScrollArea()
-        right_scroll.setWidgetResizable(True)
-        right_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        right_scroll.setObjectName("transparentBg")
-
-        right_content = QWidget()
-        right_content.setObjectName("transparentSurface")
-        right_layout = QVBoxLayout(right_content)
-        right_layout.setSpacing(12)
-        right_layout.setContentsMargins(8, 0, 0, 0)
-
-        right_layout.addWidget(self._build_waterfall_section())
-        right_layout.addWidget(self._build_projection_section())
-        right_layout.addStretch()
-
-        right_scroll.setWidget(right_content)
-        splitter.addWidget(right_scroll)
-
-        splitter.setStretchFactor(0, 4)
-        splitter.setStretchFactor(1, 3)
-        layout.addWidget(splitter, 1)
+        # One page scroll owns the whole workflow. The header, source/person
+        # context and Estimate action stay fixed while inputs/results scroll together.
+        self.workflow_scroll = QScrollArea()
+        self.workflow_scroll.setWidgetResizable(True)
+        self.workflow_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.workflow_scroll.setObjectName("transparentBg")
+        workflow = QWidget()
+        workflow.setObjectName("transparentSurface")
+        workflow_layout = QVBoxLayout(workflow)
+        workflow_layout.setSpacing(14)
+        workflow_layout.setContentsMargins(0, 0, 0, 0)
+        workflow_layout.addWidget(self._build_basic_info_section())
+        workflow_layout.addWidget(self._build_salary_section())
+        workflow_layout.addWidget(self._build_capital_gains_section())
+        workflow_layout.addWidget(self._build_business_section())
+        workflow_layout.addWidget(self._build_other_sources_section())
+        workflow_layout.addWidget(self._build_taxes_paid_section())
+        self.results_section = self._build_waterfall_section()
+        workflow_layout.addWidget(self.results_section)
+        workflow_layout.addWidget(self._build_projection_section())
+        workflow_layout.addStretch()
+        self.workflow_scroll.setWidget(workflow)
+        layout.addWidget(self.workflow_scroll, 1)
         self._connect_signals()
         self._update_context_panel()
 
     def _on_person_selected(self):
         """Handle person selection change from the person combo."""
         pid = self.person_combo.currentData()
-        if pid is not None:
-            session.set_person(pid)
-            self.refresh()
+        dashboard_selector = getattr(self.parent_window, "person_combo", None)
+        if dashboard_selector is not None:
+            index = dashboard_selector.findData(pid)
+            if index >= 0 and index != dashboard_selector.currentIndex():
+                dashboard_selector.setCurrentIndex(index)
+                return
+        session.set_person(pid)
+        self.refresh()
 
     def _update_context_panel(self):
         """Update person label and populate person combo."""
@@ -324,6 +319,7 @@ class TaxScreen(QWidget):
             p = get_person(pid)
             if p:
                 self.person_label.setText(f"Tax Estimator for {p.get('full_name', 'Unknown')}")
+                self.person_label.setToolTip(p.get("full_name", "Unknown"))
             else:
                 self.person_label.setText("Select a person")
         else:
@@ -333,12 +329,13 @@ class TaxScreen(QWidget):
         self.person_combo.blockSignals(True)
         self.person_combo.clear()
 
-        # Always add "All Persons" option
-        self.person_combo.addItem("All Persons", userData=None)
+        # This estimator needs one taxpayer; None is an explicit unselected state.
+        self.person_combo.addItem("Select a person", userData=None)
 
         # Add all persons
         for p in persons:
             self.person_combo.addItem(p["full_name"], userData=p["person_id"])
+            self.person_combo.setItemData(self.person_combo.count() - 1, p["full_name"], Qt.ItemDataRole.ToolTipRole)
 
         # Select the current person if set
         if pid:
@@ -351,13 +348,8 @@ class TaxScreen(QWidget):
 
         self.person_combo.blockSignals(False)
 
-        # If exactly 1 person exists and none is selected, auto-select
-        if len(persons) == 1 and not pid:
-            self.person_combo.setCurrentIndex(1)  # Index 1 is the only person
-            session.set_person(persons[0]["person_id"])
-
-        # Hide combo if only one person (show in label instead)
-        self.person_combo.setVisible(len(persons) > 1)
+        # Keep it available when a single person's selection was explicitly cleared.
+        self.person_combo.setVisible(len(persons) > 1 or not pid)
 
     # ── Section builders ──────────────────────────────────────────────────────
 
@@ -724,16 +716,25 @@ class TaxScreen(QWidget):
         return l
 
     def _connect_signals(self):
-        for spin in [self.gross_salary, self.exemption_10, self.deduction_16ii, self.deduction_16iii,
+        self._input_spins = [self.gross_salary, self.exemption_10, self.deduction_16ii, self.deduction_16iii,
                      self.pension_income, self.stcg_normal, self.stcg_111a, self.ltcg_20, self.ltcg_112a,
                      self.presumptive_income, self.manufacturing_income, self.other_business_income,
                      self.savings_interest_input, self.fd_interest_input, self.other_interest,
                      self.dividend_income, self.rental_income, self.lottery_winnings,
-                     self.online_game_winnings, self.other_income_input]:
+                     self.online_game_winnings, self.other_income_input, self.tds_salary, self.tds_other,
+                     self.tcs_collected, self.advance_tax, self.self_assessment_tax]
+        for spin in self._input_spins:
             spin.valueChanged.connect(self._update_gross)
+            spin.valueChanged.connect(self._on_input_edited)
+
+    def _on_input_edited(self, *_):
+        if not self._loading_inputs:
+            self._manual_edits = True
+            self.estimate_status.setText("Manual edits · estimate is out of date. Select Estimate Tax to refresh results.")
 
     def _on_source_changed(self):
         self.data_source = "ais" if self.source_combo.currentIndex() == 0 else "app"
+        self.estimate_status.setText("Source changed · estimate inputs/results are being refreshed.")
         self._update_context_panel()
         self.refresh()
 
@@ -777,24 +778,43 @@ class TaxScreen(QWidget):
         fy  = session.selected_fy
         self._update_context_panel()
         self._update_projection()
-        if not pid:
+        person = get_person(pid) if pid else None
+        if pid and not person:
+            # Drop an orphaned session ID so the estimator and dashboard cannot
+            # disagree about which taxpayer is active.
+            session.set_person(None)
+            pid = None
+            self._update_context_panel()
+        if not person:
+            self.btn_calc.setEnabled(False)
             self.person_label.setText("Select a person")
+            self.person_label.setToolTip("")
             self.person_label.setProperty("textrole", "emphasis-sm")
+            self.taxpayer_label.setText("—")
+            self.pan_label.setText("—")
+            self.ay_label.setText("—")
             self._clear_inputs()
             self.advance_tax_banner.clear()
+            self.estimate_status.setText("Select a person and source, then estimate tax.")
             return
-        person = get_person(pid)
-        if person:
-            ay = get_assessment_year(fy)
-            self.person_label.setText(f"Tax Estimator for {person['full_name']}  ·  FY {fy}")
-            self.person_label.setProperty("textrole", "emphasis-sm")
-            self.taxpayer_label.setText(person["full_name"])
-            self.pan_label.setText(person.get("pan_number","—"))
-            self.ay_label.setText(ay)
+        self.btn_calc.setEnabled(True)
+        ay = get_assessment_year(fy)
+        self.person_label.setText(f"Tax Estimator for {person['full_name']}  ·  FY {fy}")
+        self.person_label.setProperty("textrole", "emphasis-sm")
+        self.person_label.setToolTip(person.get("full_name", "Unknown"))
+        self.taxpayer_label.setText(person["full_name"])
+        self.pan_label.setText(person.get("pan_number","—"))
+        self.ay_label.setText(ay)
+        self._loading_inputs = True
+        self._manual_edits = False
         if self.data_source == "ais":
             self._load_ais_data(pid, fy)
+            has_docs = bool(get_ais_tis_data(pid, fy, source_type="AIS") or get_ais_tis_data(pid, fy, source_type="TIS"))
+            basis = "saved AIS/TIS values" if has_docs else "no saved AIS/TIS document; zero inputs"
+            self.estimate_status.setText(f"{person['full_name']} · FY {fy} · {basis}; edits are manual. Estimate Tax to calculate.")
         else:
             self._load_app_data(pid, fy)
+        self._loading_inputs = False
         self._update_gross()
         self._update_advance_tax_banner()
 
@@ -820,6 +840,9 @@ class TaxScreen(QWidget):
         self.fd_interest_input.setValue(get_total_fd_interest(fy, pid))
         self.savings_interest_input.setValue(get_total_savings_interest(fy, pid))
         profile = get_tax_profile(pid, fy)
+        person = get_person(pid)
+        name = person.get("full_name", "Person") if person else "Person"
+        self.estimate_status.setText(f"{name} · FY {fy} · App data plus editable fields. Estimate Tax to calculate.")
         if profile:
             self.gross_salary.setValue(profile.get("salary_income",0))
             self.other_income_input.setValue(profile.get("other_income",0))
@@ -828,7 +851,8 @@ class TaxScreen(QWidget):
             self.advance_tax.setValue(profile.get("advance_tax_paid", 0))
             self.self_assessment_tax.setValue(profile.get("self_assessment_tax", 0))
 
-            # Recompute fresh from the stored income figures
+            # This saved summary uses stored profile totals, which may differ
+            # from the visible editable fields. Keep it explicitly identified.
             gross_total_income = profile.get("gross_total_income", 0)
             salary_income = profile.get("salary_income", 0)
             new = calculate_new_regime_tax(gross_total_income, salary_income=salary_income, financial_year=fy)
@@ -837,6 +861,7 @@ class TaxScreen(QWidget):
                 + profile.get("advance_tax_paid", 0) + profile.get("self_assessment_tax", 0)
             )
             self._display_waterfall(new, gross_total_income, salary_income, taxes_paid, pid, fy)
+            self.estimate_status.setText(f"{name} · FY {fy} · Stored profile summary; may differ from visible inputs. Select Estimate Tax to recalculate.")
 
     def _clear_income_fields(self):
         for s in [self.gross_salary, self.exemption_10, self.deduction_16ii, self.deduction_16iii,
@@ -906,6 +931,10 @@ class TaxScreen(QWidget):
         )
         self._display_waterfall(result["new_regime"], result["gross_total_income"],
                                salary, result["taxes_paid"], pid, session.selected_fy)
+        self.workflow_scroll.ensureWidgetVisible(self.results_section, 0, 12)
+        p = get_person(pid)
+        basis = f"manual edits on {self.source_combo.currentText()} inputs" if self._manual_edits else self.source_combo.currentText()
+        self.estimate_status.setText(f"Estimate calculated · {p.get('full_name', 'Person') if p else 'Person'} · FY {session.selected_fy} · {basis}")
         if self.parent_window:
             self.parent_window.refresh_overview()
         show_success(f"Tax calculated for FY {session.selected_fy}")

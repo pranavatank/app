@@ -12,11 +12,12 @@ Displays:
 """
 
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame,
+    QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame,
     QTableWidget, QTableWidgetItem, QHeaderView, QScrollArea
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont, QColor
+from datetime import date
 
 from ui.theme import Theme
 from ui.widgets.kpi_tile import KpiTile
@@ -35,6 +36,10 @@ class IncomePredictionScreen(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._prediction_data = {}
+        self._generation = 0
+        self._sections = {}
+        self._request_context = None
+        self._active_loader = None
         self._build_ui()
         self.load_data()
 
@@ -49,6 +54,7 @@ class IncomePredictionScreen(QWidget):
 
         # Create a scrollable area for content sections
         scroll = QScrollArea()
+        self.scroll_area = scroll
         scroll.setWidgetResizable(True)
         scroll.setStyleSheet(f"QScrollArea {{ border: none; background: {Theme.BG}; }}")
 
@@ -57,25 +63,9 @@ class IncomePredictionScreen(QWidget):
         content_layout.setContentsMargins(0, 0, 0, 0)
         content_layout.setSpacing(16)
 
-        # Headroom section
-        content_layout.addWidget(self._build_headroom_section())
-
-        # TDS Risk section
-        content_layout.addWidget(self._build_tds_risk_section())
-
-        # Timeline section
-        content_layout.addWidget(self._build_timeline_section())
-
-        # Comparison section
-        content_layout.addWidget(self._build_comparison_section())
-
-        # Strategies section
-        content_layout.addWidget(self._build_strategy_section())
-
-        # Advisory section
-        content_layout.addWidget(self._build_advisory_section())
-
-        content_layout.addStretch()
+        self._content_widget = content_widget
+        self._content_layout = content_layout
+        self._content_layout.addWidget(QLabel("Select a person to view an income prediction."))
 
         scroll.setWidget(content_widget)
         main_layout.addWidget(scroll, stretch=1)
@@ -102,10 +92,17 @@ class IncomePredictionScreen(QWidget):
             # Extract just the date part (YYYY-MM-DD)
             as_of_text = as_of_text[:10]
 
-        info_label = QLabel(f"FY {fy_text}  ·  As of {as_of_text}")
-        info_label.setFont(QFont("Segoe UI", 11))
-        info_label.setProperty("textrole", "secondary")
-        layout.addWidget(info_label)
+        self.context_label = QLabel(f"FY {fy_text}  ·  As of {as_of_text}")
+        self.context_label.setFont(QFont("Segoe UI", 11))
+        self.context_label.setProperty("textrole", "secondary")
+        self.context_label.setWordWrap(True)
+        self.context_label.setTextFormat(Qt.TextFormat.PlainText)
+        layout.addWidget(self.context_label, 1)
+        self.status_label = QLabel("Select a person to view a prediction.")
+        self.status_label.setProperty("textrole", "muted-sm")
+        self.status_label.setWordWrap(True)
+        self.status_label.setTextFormat(Qt.TextFormat.PlainText)
+        layout.addWidget(self.status_label)
 
         return header
 
@@ -266,6 +263,11 @@ class IncomePredictionScreen(QWidget):
             ylabel="Interest Amount (₹)"
         )
         layout.addWidget(self.tds_chart)
+        threshold = self._prediction_data.get("tds_risk", {}).get("threshold")
+        if threshold is not None:
+            threshold_note = QLabel(f"TDS threshold used for this projection: {format_inr(threshold)} per bank")
+            threshold_note.setProperty("textrole", "muted-sm")
+            layout.addWidget(threshold_note)
 
         return section
 
@@ -296,14 +298,13 @@ class IncomePredictionScreen(QWidget):
         self.timeline_chart.setAccessibleName("Monthly Timeline Chart")
         self.timeline_chart.setMinimumHeight(280)
 
-        month_names = [m.get("month_name", "—") for m in months]
+        month_names = [m.get("month_name", "—")[:3] for m in months]
         cumulative_values = [m.get("cumulative_projected", 0) for m in months]
 
         self.timeline_chart.plot_line(
             x_data=month_names,
             y_data=cumulative_values,
             title="Cumulative Projected Income",
-            xlabel="Month",
             ylabel="Cumulative Amount (₹)"
         )
         layout.addWidget(self.timeline_chart)
@@ -314,8 +315,12 @@ class IncomePredictionScreen(QWidget):
         self.timeline_table.setColumnCount(3)
         self.timeline_table.setHorizontalHeaderLabels(["Month", "Monthly Projected", "Cumulative"])
         self.timeline_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.timeline_table.setMaximumHeight(200)
         self.timeline_table.setAlternatingRowColors(True)
+        heading_height = self.timeline_table.horizontalHeader().sizeHint().height()
+        row_height = self.timeline_table.verticalHeader().defaultSectionSize()
+        self.timeline_table.setFixedHeight(
+            heading_height + min(4, len(months)) * row_height + 2 * self.timeline_table.frameWidth()
+        )
 
         for month_data in months:
             row = self.timeline_table.rowCount()
@@ -572,7 +577,7 @@ class IncomePredictionScreen(QWidget):
 
     def _build_strategy_section(self) -> QWidget:
         """Concrete actions for staying under the limit and keeping TDS off."""
-        section = CollapsibleSection("Strategies", expanded=True, accent="income_prediction")
+        section = CollapsibleSection("Strategies and assumptions", expanded=False, accent="income_prediction")
 
         layout = section.content_layout()
         layout.setSpacing(12)
@@ -689,7 +694,7 @@ class IncomePredictionScreen(QWidget):
 
     def _build_advisory_section(self) -> QWidget:
         """Build Advisory: warnings + disclaimer."""
-        section = CollapsibleSection("Advisories", expanded=True, accent="income_prediction")
+        section = CollapsibleSection("Advisories and data basis", expanded=False, accent="income_prediction")
 
         layout = section.content_layout()
         layout.setSpacing(8)
@@ -764,60 +769,154 @@ class IncomePredictionScreen(QWidget):
         return section
 
     def load_data(self):
-        """Load prediction data from the engine."""
+        """Dispatch a prediction using an immutable snapshot of the active context."""
+        self._generation += 1
+        generation = self._generation
+        if self._active_loader is not None:
+            # Its worker and relay still need to run to completion, but its
+            # overlay must not cover a newer result.
+            self._active_loader.hide()
+            self._active_loader = None
         person_id = session.selected_person_id
+        person_name = None
         if not person_id:
-            # "All persons" is the default. Fall back to the sole person when
-            # there is exactly one, so the screen is useful without a filter.
             try:
                 from models.person import get_all_persons
                 people = get_all_persons() or []
                 if len(people) == 1:
                     person_id = people[0]["person_id"]
+                    person_name = people[0].get("full_name") or people[0].get("name")
+                elif len(people) > 1:
+                    self._clear_result("Select one person to view a prediction.")
+                    return
+                else:
+                    self._clear_result("No person is available. Add a person to view a prediction.")
+                    return
             except Exception:
-                person_id = None
+                self._clear_result("Person selection is unavailable. Refresh after selecting a person.")
+                return
         if not person_id:
+            self._clear_result("Select a person to view a prediction.")
             return
+        try:
+            from models.person import get_all_persons
+            for person in get_all_persons() or []:
+                if person.get("person_id") == person_id:
+                    person_name = person.get("full_name") or person.get("name")
+                    break
+        except Exception:
+            pass
+        from engines.prediction_engine import _current_fy_or_default
+        financial_year = _current_fy_or_default(session.selected_fy)
+        as_of = date.today()
+        context = {"person_id": person_id, "person_name": person_name or f"Person {person_id}",
+                   "financial_year": financial_year, "as_of": as_of}
+        previous_context = self._request_context
+        self._request_context = context
+        self.context_label.setText(f"{context['person_name']} · FY {financial_year} · As of {as_of.isoformat()}")
+        if session.privacy_mode:
+            self._hide_private_result()
+            return
+        if previous_context and any(previous_context[key] != context[key]
+                                    for key in ("person_id", "financial_year", "as_of")):
+            self._prediction_data = {}
+            self._refresh_all_sections()
+        self.status_label.setText("Loading prediction…")
 
         def _load():
             from engines.prediction_engine import get_prediction_summary
-            try:
-                return get_prediction_summary(person_id, financial_year=session.selected_fy, as_of=None)
-            except Exception as e:
-                print(f"Error loading prediction: {e}")
-                return {}
+            return get_prediction_summary(person_id, financial_year=financial_year, as_of=as_of)
 
         def _on_done(result):
-            if result:
-                self._prediction_data = result
+            if generation != self._generation:
+                return
+            self._active_loader = None
+            if session.privacy_mode:
+                self._hide_private_result()
+                return
+            if not result:
+                self._prediction_data = {}
+                self.status_label.setText(f"Prediction unavailable · {context['person_name']} · FY {financial_year}")
                 self._refresh_all_sections()
+                return
+            self._prediction_data = result
+            self._prediction_data.setdefault("financial_year", financial_year)
+            self._prediction_data.setdefault("as_of", as_of.isoformat())
+            self.status_label.setText("Prediction ready")
+            self._refresh_all_sections()
 
         def _on_error(err):
-            print(f"Prediction loading failed: {err}")
+            if generation != self._generation:
+                return
+            self._active_loader = None
+            self._prediction_data = {}
+            self.status_label.setText(f"Prediction unavailable · {context['person_name']} · FY {financial_year}. Try refreshing.")
+            self._refresh_all_sections()
 
-        Loader.run(self, fn=_load, message="Loading prediction…", on_done=_on_done, on_error=_on_error)
+        self._active_loader = Loader.run(self, fn=_load, message="Loading prediction…", on_done=_on_done, on_error=_on_error)
+
+    def _hide_private_result(self):
+        self._prediction_data = {}
+        self._refresh_all_sections()
+        self.status_label.setText("Prediction amounts are hidden in privacy mode.")
+
+    def _clear_result(self, message):
+        """Invalidate pending work and remove data from a prior selection."""
+        self._generation += 1
+        self._request_context = None
+        self._prediction_data = {}
+        self.status_label.setText(message)
+        self._refresh_all_sections()
 
     def refresh(self):
         self.load_data()
 
     def _refresh_all_sections(self):
-        """Rebuild every section against freshly loaded data.
-
-        Sections read self._prediction_data at build time, so once the async
-        load returns the layout has to be rebuilt - otherwise the screen keeps
-        showing the empty state it was constructed with.
-        """
-        old = self.layout()
-        if old is not None:
-            while old.count():
-                item = old.takeAt(0)
-                w = item.widget()
-                if w is not None:
-                    w.setParent(None)
-                    w.deleteLater()
-            # A QWidget can only have one layout; detach the spent one.
-            QWidget().setLayout(old)
-        self._build_ui()
+        """Replace data sections inside a stable scroll viewport."""
+        scroll_value = self.scroll_area.verticalScrollBar().value()
+        old_sections = self._sections
+        expanded = {name: section.is_expanded() for name, section in old_sections.items()}
+        focus = QApplication.focusWidget()
+        focused_section = next(
+            (name for name, section in old_sections.items() if focus and section.isAncestorOf(focus)),
+            None,
+        )
+        focus_name = focus.objectName() if focused_section else ""
+        focus_accessible = focus.accessibleName() if focused_section else ""
+        while self._content_layout.count():
+            item = self._content_layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.setParent(None)
+                widget.deleteLater()
+        self._sections = {}
+        self.tds_chart = None
+        self.timeline_chart = None
+        if self._prediction_data:
+            specs = (("headroom", self._build_headroom_section),
+                     ("tds", self._build_tds_risk_section),
+                     ("timeline", self._build_timeline_section),
+                     ("comparison", self._build_comparison_section),
+                     ("strategy", self._build_strategy_section),
+                     ("advisory", self._build_advisory_section))
+            for name, builder in specs:
+                section = builder()
+                if name in expanded:
+                    section.set_expanded(expanded[name])
+                self._sections[name] = section
+                self._content_layout.addWidget(section)
+        self._content_layout.addStretch()
+        if self._request_context is None:
+            self.context_label.setText("No person selected")
+        self._content_layout.activate()
+        self.scroll_area.verticalScrollBar().setValue(scroll_value)
+        replacement_section = self._sections.get(focused_section)
+        if replacement_section and (focus_name or focus_accessible):
+            for widget in replacement_section.findChildren(QWidget):
+                if ((widget.accessibleName() == focus_accessible) if focus_accessible else
+                        (widget.objectName() == focus_name)):
+                    widget.setFocus(Qt.FocusReason.OtherFocusReason)
+                    break
 
     def refresh_theme(self):
         """Called after a live theme switch — refresh all chart and table widgets."""

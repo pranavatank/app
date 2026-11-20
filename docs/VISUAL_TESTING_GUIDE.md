@@ -160,6 +160,14 @@ The Batch 2 captures use an isolated synthetic database. The focused run reporte
 
 The offscreen Windows smoke passed using an isolated synthetic database at 1200 × 720 logical pixels with 125% scaling. All 51 focused tests passed. [Eight captures and smoke script](../artifacts/native/batch3-banking-income/), [focused test logs](../artifacts/pytest/batch3-final/)
 
+## Batch 4 tax and prediction verification
+
+- **Tax Documents.** Check that Form 26AS, AIS and TIS each show their state for the selected person and financial year. Switch between complete, partial and missing sets. Saved sources offer Replace, and missing sources accept a PDF drop or browse. Review the income, TDS and FD disclosures in the page scroll.
+- **Tax estimator.** At 1200 × 720 logical pixels with 125% scaling, scroll the inputs and results and verify that the selected person, year, source and Estimate action stay visible. Change the person or FY, including a year without saved documents. Enter a manual amount, estimate, and edit it again to verify the result status changes before recalculation.
+- **Income Prediction.** Dispatch two requests for different people or years and complete the older one last. Confirm that the latest person, FY and as-of date remain active. Clear the person selection and verify that the previous figures disappear. Compare the timeline chart with the engine's projected values. The timeline identifies projections where the engine supplies no corresponding reported monthly series.
+
+The offscreen Windows smoke passed at 1200 × 720 logical pixels with 125% scaling using an isolated synthetic database. All 78 focused tests passed across the integrated run and final UI rerun. Live saved-document visual confirmation and the real-database chart comparison remain pending. [Ten captures and smoke script](../artifacts/native/batch4-tax-prediction/), [integrated test logs](../artifacts/pytest/batch4-final/), [final UI rerun](../artifacts/pytest/batch4-ui-final/)
+
 ## Useful commands and sources
 
 Run from the repo root in PowerShell, one command at a time. The venv is `.venv\Scripts\python.exe`.
