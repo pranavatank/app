@@ -16,12 +16,35 @@ from models.income_expectation import (
     link_actual_transaction,
     unlink_actual_transaction
 )
-from models.transaction import add_transaction
+from models.transaction import add_transaction, update_transaction
 from config import get_current_financial_year, fy_date_range
 
 
 class TestIncomeExpectationMatching:
     """Test automatic matching of income expectations with transactions."""
+
+    def test_april_salary_can_match_a_march_credit_and_survive_a_note_edit(self):
+        person = add_person("Year boundary test")
+        account = add_account(person, "Test Bank", "Savings")
+        add_income_expectation(person, account, "Salary", 50000, "2026-04-02", "One-Time", "2026-27")
+        add_transaction(account, person, "2026-03-23", "Income", 50000, category="Salary")
+        early = add_transaction(account, person, "2026-03-30", "Income", 50000, category="Salary")
+
+        assert auto_link_income_expectations(person, account, "2026-27") == 1
+        assert get_income_expectations(person, "2026-27")[0]["actual_transaction_id"] == early
+        update_transaction(early, "2026-03-30", "Income", 50000, category="Salary", description="Verified receipt")
+        assert get_income_expectations(person, "2026-27")[0]["actual_transaction_id"] == early
+
+    def test_year_boundary_prefers_the_closer_expectation_even_when_matching_next_year_first(self):
+        person = add_person("Competing salary test")
+        account = add_account(person, "Test Bank", "Savings")
+        add_income_expectation(person, account, "Salary", 50000, "2026-03-29", "One-Time", "2025-26")
+        add_income_expectation(person, account, "Salary", 50000, "2026-04-02", "One-Time", "2026-27")
+        credit = add_transaction(account, person, "2026-03-29", "Income", 50000, category="Salary")
+
+        assert auto_link_income_expectations(person, account, "2026-27") == 0
+        assert auto_link_income_expectations(person, account, "2025-26") == 1
+        assert get_income_expectations(person, "2025-26")[0]["actual_transaction_id"] == credit
 
     def test_auto_link_income_expectations_basic_match(self):
         """Test basic matching of a salary expectation with a salary transaction."""

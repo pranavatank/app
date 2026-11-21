@@ -8,6 +8,7 @@ from engines.parser_registry import register as _register
 # Register available parsers in the registry for plugin discovery
 try:
 	_register("sbi", parse_sbi_pdf)
+	_register("state bank of india", parse_sbi_pdf)
 except Exception:
 	pass
 

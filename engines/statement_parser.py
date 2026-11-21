@@ -1538,7 +1538,8 @@ STATEMENT:
 # ── Main parser interface ─────────────────────────────────────────────────────
 
 def parse_statement_with_debug(file_path: str, file_type: str, bank_name: str = "Generic",
-                               password: Optional[str] = None, column_mapping: Optional[Dict[str, str]] = None) -> tuple[List[Dict], Dict]:
+                               password: Optional[str] = None, column_mapping: Optional[Dict[str, str]] = None,
+                               *, parser_mode: str | None = None) -> tuple[List[Dict], Dict]:
     """
     Parse bank statement and return list of transactions with diagnostics.
     
@@ -1550,7 +1551,7 @@ def parse_statement_with_debug(file_path: str, file_type: str, bank_name: str = 
     Returns:
         (transactions, debug_info)
     """
-    parser_mode = os.getenv("STATEMENT_PARSER_MODE", "auto").strip().lower()
+    parser_mode = (parser_mode or os.getenv("STATEMENT_PARSER_MODE", "auto")).strip().lower()
     debug_info: Dict = {
         "mode_requested": parser_mode,
         "mode_used": "",

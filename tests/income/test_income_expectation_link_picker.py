@@ -2,6 +2,7 @@
 
 from ui.dialogs import income_expectation_dialog as income_dialog_module
 from ui.dialogs.income_expectation_dialog import LinkActualDialog
+from PySide6.QtCore import QDate
 
 
 def test_link_picker_keeps_fy_boundary_dates_and_excludes_outside_or_linked(qapp, monkeypatch):
@@ -37,5 +38,9 @@ def test_link_picker_keeps_fy_boundary_dates_and_excludes_outside_or_linked(qapp
         "account_id": 9,
         "transaction_type": "Income",
     }
-    assert seen["expectations"] == {"person_id": 7, "financial_year": "2025-26"}
+    assert seen["expectations"] == {"person_id": 7}
+    dialog.date_range.start.setDate(QDate(2025, 3, 31))
+    dialog.date_range.end.setDate(QDate(2025, 4, 1))
+    ids = [int(dialog.table.item(row, 4).text()) for row in range(dialog.table.rowCount())]
+    assert ids == [10, 12]
     dialog.close()

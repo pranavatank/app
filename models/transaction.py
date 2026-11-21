@@ -367,6 +367,11 @@ def update_transaction(transaction_id: int, transaction_date: str,
 
     with closing(get_connection()) as conn, conn:
         conn.execute("BEGIN IMMEDIATE")
+        original = conn.execute(
+            "SELECT transaction_date FROM Transactions WHERE transaction_id = ?", (transaction_id,),
+        ).fetchone()
+        if original is None:
+            return
         conn.execute(f"""
             UPDATE Transactions
             SET {', '.join(set_clauses)}
@@ -383,19 +388,13 @@ def update_transaction(transaction_id: int, transaction_date: str,
                 _get_transfer_pair(conn, transaction_id, linked_id)
             except ValueError:
                 _clear_transfer_pair(conn, transaction_id)
-        try:
-            day = datetime.fromisoformat(transaction_date).date()
-            fy_start = day.year - (day.month < 4)
-            fy = f"{fy_start}-{(fy_start + 1) % 100:02d}"
-        except (TypeError, ValueError):
-            fy = ""
         conn.execute("""
             UPDATE IncomeExpectation SET actual_transaction_id = NULL
             WHERE actual_transaction_id = ?
               AND (account_id <> ? OR person_id <> ? OR ? <> 'Income' OR ? <= 0
-                OR ? IN ('Internal Transfer', 'FD Maturity') OR ? <> 0 OR financial_year <> ?)
+                OR ? IN ('Internal Transfer', 'FD Maturity') OR ? <> 0 OR ? <> ?)
         """, (transaction_id, updated["account_id"], updated["person_id"], txn_type, amount,
-              category, updated["is_internal_transfer"] or 0, fy))
+              category, updated["is_internal_transfer"] or 0, original["transaction_date"], transaction_date))
 
 
 def delete_transaction(transaction_id: int) -> None:

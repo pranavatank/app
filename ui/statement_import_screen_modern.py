@@ -49,6 +49,8 @@ from engines.statement_parser import (
 
 )
 from engines.statement import parse_statement_pdf
+from engines.bank_parsers import HDFCStatementParser, YESBankStatementParser, parse_sbi_pdf
+from engines.parser_registry import get as get_bank_parser
 from engines.statement.validate import (
     LowConfidenceParse,
     balance_walk,
@@ -97,8 +99,14 @@ class _StatementParseWorker(QObject):
             "failing_row_count": 0,
         }
 
-        # Use modern parser for PDF, fall back to legacy for Excel
+        parser = get_bank_parser(self.bank_name)
         if self.file_type and self.file_type.lower().startswith("pdf"):
+            if parser is parse_sbi_pdf or isinstance(parser, (HDFCStatementParser, YESBankStatementParser)):
+                bank_rows, bank_debug = parse_statement_with_debug(
+                    self.file_path, self.file_type, self.bank_name, password=self.password, parser_mode="rule",
+                )
+                if bank_rows:
+                    return bank_rows, bank_debug
             try:
                 txns = parse_statement_pdf(
                     self.file_path,
@@ -106,26 +114,29 @@ class _StatementParseWorker(QObject):
                     debug=debug_info,
                     min_confidence=0.0,  # Allow import even with low confidence (UI will check threshold)
                 )
+                if txns:
+                    if balance_walk(normalise_order(txns)):
+                        rules, rule_debug = parse_statement_with_debug(
+                            self.file_path, self.file_type, self.bank_name, password=self.password,
+                            parser_mode="rule",
+                        )
+                        ordered_rules = normalise_order(rules)
+                        if (len(rules) >= len(txns)
+                                and all(row.get("balance_after") is not None for row in rules)
+                                and not balance_walk(ordered_rules)):
+                            return rules, rule_debug
+                    return txns, debug_info
+            except StatementPasswordError:
+                raise
             except Exception:
-                # Fall back to legacy parser on modern failure
-                txns, debug_info = parse_statement_with_debug(
-                    self.file_path,
-                    self.file_type,
-                    self.bank_name,
-                    password=self.password,
-                    column_mapping=self.column_mapping,
-                )
-        else:
-            # Use legacy for Excel
-            txns, debug_info = parse_statement_with_debug(
-                self.file_path,
-                self.file_type,
-                self.bank_name,
-                password=self.password,
-                column_mapping=self.column_mapping,
-            )
-
-        return (txns, debug_info)
+                pass
+        return parse_statement_with_debug(
+            self.file_path,
+            self.file_type,
+            self.bank_name,
+            password=self.password,
+            column_mapping=self.column_mapping,
+        )
 
 
 class _TransactionImportWorker(QObject):

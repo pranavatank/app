@@ -1,7 +1,6 @@
 """Regression tests for bank ledger links and their downstream totals."""
 
 from datetime import date
-from types import SimpleNamespace
 
 import pytest
 
@@ -77,18 +76,28 @@ def test_detection_requires_shared_reference_across_accounts(household):
 
 
 def test_transaction_screen_links_selected_family_transfer(qapp, household, monkeypatch):
+    from PySide6.QtCore import QDate
+
     from core.session import session
     from ui import transactions_screen as ui
 
     payer, receiver, source, destination = household
     debit = add_transaction(source, payer, "2025-04-11", "Expense", 4600)
     credit = add_transaction(destination, receiver, "2025-04-11", "Income", 4600)
+    older = add_transaction(source, payer, "2025-03-30", "Expense", 125)
     monkeypatch.setattr(session, "selected_person_id", payer)
     monkeypatch.setattr(session, "selected_account_id", source)
     monkeypatch.setattr(session, "selected_fy", "2025-26")
-    monkeypatch.setattr(ui, "QInputDialog", SimpleNamespace(getItem=lambda *args: (args[3][0], True)))
+    monkeypatch.setattr(ui.TransactionsScreen, "_choose_transfer_counterpart", lambda self, txn, candidates: candidates[0]["transaction_id"])
     screen = ui.TransactionsScreen()
     screen._fetch_and_display()
+    assert [row["transaction_id"] for row in screen._current_rows] == [debit]
+    screen.ledger_dates.enabled.setChecked(True)
+    screen.ledger_dates.start.setDate(QDate(2025, 3, 29))
+    screen.ledger_dates.end.setDate(QDate(2025, 3, 31))
+    screen._fetch_and_display()
+    assert [row["transaction_id"] for row in screen._current_rows] == [older]
+    screen._clear_filters()
     screen.table.setCurrentCell(0, 1)
 
     assert screen.btn_link_transfer.isEnabled()

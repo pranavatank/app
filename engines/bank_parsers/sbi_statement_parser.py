@@ -171,22 +171,28 @@ def _clean_description(text: str) -> str:
     return cleaned or "Transaction"
 
 
-def _parse_amount_tokens(tokens: List[float]) -> tuple[Optional[float], Optional[float], Optional[float]]:
-    if not tokens:
-        return None, None, None
+_DATE_START = re.compile(r"^(\d{2}[/-]\d{2}[/-]\d{2,4})\b")
+_MONEY = r"[+-]?\d[\d,]*\.\d{2}"
+# Restrict amounts to the table's tail. Integer runs elsewhere belong to narration
+# or a bank reference. A dash in a money column represents a blank.
+_MONEY_TAIL = re.compile(rf"(?<!\S)(?P<columns>(?:{_MONEY}|-)(?:\s+(?:{_MONEY}|-)){{1,3}})\s*$")
 
-    if len(tokens) >= 3:
-        debit_val, credit_val, balance = tokens[-3], tokens[-2], tokens[-1]
-        return debit_val, credit_val, balance
-
-    if len(tokens) == 2:
-        amount, balance = tokens[0], tokens[1]
-        return amount, None, balance
-
-    if len(tokens) == 1:
-        return tokens[0], None, None
-
-    return None, None, None
+def _read_money_tail(text):
+    match = _MONEY_TAIL.search(text)
+    if not match:
+        return None
+    tokens = match.group("columns").split()
+    if tokens[-1] == "-":
+        return None
+    values = [float(token.replace(",", "")) if token != "-" else 0.0 for token in tokens]
+    columns, balance = values[-3:-1], values[-1]
+    if len(columns) == 2 and (columns[0] == 0) != (columns[1] == 0):
+        amount = abs(columns[0] or columns[1])
+        explicit_type = "Expense" if columns[0] else "Income"
+    else:
+        amount = abs(values[-2])
+        explicit_type = None
+    return match.start(), amount, balance, explicit_type
 
 
 def parse_sbi_pdf(file_path: str, password: Optional[str] = None,
@@ -219,136 +225,73 @@ def parse_sbi_pdf(file_path: str, password: Optional[str] = None,
                     continue
                 raw_lines.append(line)
 
-    date_re = re.compile(r"^\s*(\d{2}[/-]\d{2}[/-]\d{2,4})\b")
-    rows: List[str] = []
-    current = ""
-
+    logical = []
+    current = []
     for line in raw_lines:
-        if _is_summary_line(line):
-            continue
-
-        if date_re.match(line):
+        if _DATE_START.match(line):
             if current:
-                rows.append(current.strip())
-            current = line
-        else:
+                logical.append(current)
+            current = [line]
+        elif _is_summary_line(line):
             if current:
-                current = f"{current} {line}".strip()
-            else:
-                # Skip stray lines before first date
-                continue
-
+                logical.append(current)
+                current = []
+        elif current:
+            current.append(line)
     if current:
-        rows.append(current.strip())
+        logical.append(current)
 
-    transactions = []
     if debug is not None:
-        debug["rows_scanned"] = len(rows)
-
-    amount_re = re.compile(r"\d{1,3}(?:,\d{3})*(?:\.\d{1,2})")
-
-    prev_balance: Optional[float] = None
-
-    for row in rows:
-        cleaned = _strip_footer_noise(row)
-        if not cleaned:
-            continue
-
-        date_match = date_re.match(cleaned)
-        if not date_match:
-            _append_issue(debug, f"SBI row missing date: '{cleaned[:120]}'")
-            continue
-
-        date_text = date_match.group(1)
-        txn_date = _parse_date(date_text)
+        debug["rows_scanned"] = len(logical)
+    parsed = []
+    for lines in logical:
+        date_match = _DATE_START.match(lines[0])
+        txn_date = _parse_date(date_match.group(1))
         if not txn_date:
-            _append_issue(debug, f"SBI row invalid date: '{date_text}'")
             continue
+        head = _strip_footer_noise(lines[0][date_match.end():])
+        # SBI can wrap the narration under a complete monetary row. Prefer the
+        # dated line's own tail, then allow a split tail on its continuation.
+        money = _read_money_tail(head)
+        if money:
+            start, amount, balance, printed_direction = money
+            description = " ".join([head[:start], *lines[1:]])
+        else:
+            combined = _strip_footer_noise(" ".join([head, *lines[1:]]))
+            money = _read_money_tail(combined)
+            if not money:
+                continue
+            start, amount, balance, printed_direction = money
+            description = combined[:start]
+        parsed.append((txn_date, description, amount, balance, printed_direction))
 
-        details = cleaned[date_match.end():].strip()
-        if not details:
-            _append_issue(debug, f"SBI row missing details: '{cleaned[:120]}'")
+    if parsed and parsed[0][0] > parsed[-1][0]:
+        parsed.reverse()
+    transactions = []
+    previous = None
+    for txn_date, description, amount, balance, printed_direction in parsed:
+        delta = round(balance - previous, 2) if previous is not None else None
+        previous = balance
+        if amount <= 0:
             continue
-
-        if _is_summary_line(details):
+        upper = description.upper()
+        if delta and abs(delta) == amount:
+            txn_type = "Income" if delta > 0 else "Expense"
+        else:
+            txn_type = printed_direction or _infer_txn_type(upper)
+        if not txn_type:
+            _append_issue(debug, "SBI row has no supported debit or credit direction.")
             continue
-
-        desc_upper = details.upper()
-        inferred_type = _infer_txn_type(desc_upper)
-
-        tokens = [
-            float(tok.replace(",", ""))
-            for tok in amount_re.findall(details)
-        ]
-        debit, credit, balance = _parse_amount_tokens(tokens)
-
-        txn_type = None
-        amount: Optional[float] = None
-
-        # Prefer balance delta when possible (most reliable for SBI PDFs).
-        if balance is not None and prev_balance is not None:
-            delta = balance - prev_balance
-            if abs(delta) > 0.005:
-                txn_type = "Income" if delta > 0 else "Expense"
-                amount = abs(delta)
-        elif balance is not None and prev_balance is None:
-            # First transaction - if balance > 0, it's likely a credit
-            if balance > 0:
-                # Check if we have debit/credit columns
-                if len(tokens) >= 3:
-                    # tokens = [debit, credit, balance]
-                    debit_val = tokens[-3] if tokens[-3] > 0 else 0
-                    credit_val = tokens[-2] if tokens[-2] > 0 else 0
-                    if credit_val > 0 and debit_val == 0:
-                        txn_type = "Income"
-                        amount = credit_val
-                    elif debit_val > 0 and credit_val == 0:
-                        txn_type = "Expense"
-                        amount = debit_val
-
-        # If delta unavailable, fall back to markers and nearby amount token.
-        if amount is None:
-            txn_type = inferred_type
-            if txn_type is None:
-                txn_type = "Expense"
-
-            if len(tokens) >= 3:
-                # Try to use debit/credit columns
-                debit_val = tokens[-3] if len(tokens) >= 3 and tokens[-3] > 0 else 0
-                credit_val = tokens[-2] if len(tokens) >= 2 and tokens[-2] > 0 else 0
-                if credit_val > 0 and debit_val == 0:
-                    amount = credit_val
-                    txn_type = "Income"
-                elif debit_val > 0 and credit_val == 0:
-                    amount = debit_val
-                    txn_type = "Expense"
-                elif len(tokens) >= 2:
-                    amount = tokens[-2]
-            elif len(tokens) >= 2:
-                amount = tokens[-2]
-            elif tokens:
-                amount = tokens[-1]
-
-        if amount is None or amount <= 0:
-            _append_issue(debug, f"SBI row missing amount: '{details[:120]}'")
-            continue
-
-        # Clean description
-        clean_desc = _clean_description(details)
-
         transactions.append({
             "transaction_date": txn_date,
-            "description": clean_desc[:200],
-            "amount": float(amount),
+            "description": _clean_description(description)[:200],
+            "amount": amount,
             "transaction_type": txn_type,
-            "category": _guess_category(desc_upper, txn_type),
-            "mode": _guess_mode(desc_upper),
-            "reference_no": _extract_reference_no(details),
+            "category": _guess_category(upper, txn_type),
+            "mode": _guess_mode(upper),
+            "reference_no": _extract_reference_no(description),
             "balance_after": balance,
         })
-
-        if balance is not None:
-            prev_balance = balance
 
     if debug is not None:
         debug["rows_extracted"] = len(transactions)

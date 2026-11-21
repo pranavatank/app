@@ -3,11 +3,8 @@ engines/bank_parsers/yes_bank_statement_parser.py
 YES Bank PDF statement parser — uses pdfplumber table extraction so that
 Withdrawals and Deposits columns are never confused.
 
-YES Bank table columns (as extracted by pdfplumber):
-  Value Date | Cheque No/ Reference No | Description | Withdrawals | Deposits | Running Balance
-
-The "Transaction Date" column appears only in the raw text header; the table
-rows carry only the Value Date, so we use that as the transaction date.
+YES Bank exports can include both booking and value dates, or only value date.
+With both columns present, keep the booking date.
 """
 
 import re
@@ -39,7 +36,7 @@ _HEADER_KEYWORDS = {
 }
 
 
-def _parse_amount(text) -> Optional[float]:
+def _parse_amount(text, *, balance: bool = False) -> Optional[float]:
     if text is None:
         return None
     s = str(text).strip().replace(",", "")
@@ -47,7 +44,7 @@ def _parse_amount(text) -> Optional[float]:
         return None
     try:
         v = float(s)
-        return v if v > 0 else None
+        return v if balance or v > 0 else None
     except ValueError:
         return None
 
@@ -56,7 +53,7 @@ def _parse_date(text) -> Optional[str]:
     if not text:
         return None
     s = str(text).strip()
-    for fmt in ("%d-%b-%Y", "%d-%m-%Y", "%d/%m/%Y", "%Y-%m-%d"):
+    for fmt in ("%d-%b-%Y", "%d %b %Y", "%d-%m-%Y", "%d/%m/%Y", "%Y-%m-%d"):
         try:
             return datetime.strptime(s, fmt).strftime("%Y-%m-%d")
         except ValueError:
@@ -132,7 +129,7 @@ class YESBankStatementParser:
                             if debug is not None:
                                 debug["rows_scanned"] = debug.get("rows_scanned", 0) + 1
 
-                            if not row or _is_header_row(row):
+                            if not row or (not _parse_date(row[0]) and _is_header_row(row)):
                                 continue
 
                             txn = self._parse_row(row, debug, page_no)
@@ -149,30 +146,25 @@ class YESBankStatementParser:
         return transactions
 
     def _parse_row(self, row: list, debug: Optional[Dict], page_no: int) -> Optional[Dict]:
-        # Expected columns: Value Date | Ref No | Description | Withdrawals | Deposits | Balance
-        # Be tolerant of rows with fewer columns (multi-line cells merged differently)
-        if len(row) < 4:
+        if len(row) == 7 and _parse_date(row[1]):
+            date_raw, _, ref_raw, desc_raw, with_raw, dep_raw, bal_raw = row
+        elif len(row) == 6:
+            date_raw, ref_raw, desc_raw, with_raw, dep_raw, bal_raw = row
+        else:
             return None
-
-        date_raw = str(row[0] or "").strip()
-        ref_raw  = str(row[1] or "").strip() if len(row) > 1 else ""
-        desc_raw = str(row[2] or "").strip() if len(row) > 2 else ""
-        with_raw = str(row[3] or "").strip() if len(row) > 3 else ""
-        dep_raw  = str(row[4] or "").strip() if len(row) > 4 else ""
-        bal_raw  = str(row[5] or "").strip() if len(row) > 5 else ""
 
         txn_date = _parse_date(date_raw)
         if not txn_date:
             return None
 
         # Clean multi-line description (pdfplumber joins with \n)
-        desc = re.sub(r"\s+", " ", desc_raw.replace("\n", " ")).strip()
+        desc = re.sub(r"\s+", " ", str(desc_raw or "")).strip()
         if not desc or _is_skip_row(desc):
             return None
 
         withdrawal = _parse_amount(with_raw)
         deposit    = _parse_amount(dep_raw)
-        balance    = _parse_amount(bal_raw)
+        balance    = _parse_amount(bal_raw, balance=True)
 
         if withdrawal and not deposit:
             amount   = withdrawal
@@ -180,17 +172,12 @@ class YESBankStatementParser:
         elif deposit and not withdrawal:
             amount   = deposit
             txn_type = "Income"
-        elif deposit and withdrawal:
-            # Both filled — shouldn't happen but take the larger
-            if deposit >= withdrawal:
-                amount, txn_type = deposit, "Income"
-            else:
-                amount, txn_type = withdrawal, "Expense"
         else:
-            _append_issue(debug, f"YES Bank page {page_no}: no amount in row date={date_raw} desc={desc[:60]}")
+            _append_issue(debug, f"YES Bank page {page_no}: expected one amount in the debit or credit column.")
             return None
 
         # Reference number: prefer the dedicated column, fall back to description
+        ref_raw = str(ref_raw or "").strip()
         ref_no = ref_raw if ref_raw and ref_raw.upper() != "NA" else None
         if not ref_no:
             ref_no = _extract_reference_no(desc)

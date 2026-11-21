@@ -75,15 +75,15 @@ def _is_statement_summary_line(text: str) -> bool:
 # ── Patterns ──────────────────────────────────────────────────────────────────
 
 # DD/MM/YY at line start (HDFC uses 2-digit year)
-# Ref number is 15 or 16 digits (HDFC uses 15 zeros for interest/salary)
+# HDFC prints both numeric references and bank-prefixed transfer references.
+_BANK_REFERENCE = r"(?:\d{15,16}|[A-Z]{2,8}\d{8,22})"
+_DATE = r"\d{2}/\d{2}/\d{2}"
+_MONEY = r"[+-]?[\d,]+\.\d{2}"
 _TXN_START = re.compile(
-    r"^(\d{2}/\d{2}/\d{2})\s+"          # group 1: date DD/MM/YY
-    r"(.+?)\s+"                           # group 2: narration (non-greedy)
-    r"(\d{15,16})\s+"                     # group 3: 15-or-16-digit ref
-    r"(\d{2}/\d{2}/\d{2})\s+"            # group 4: value date
-    r"([\d,]+\.\d{2})\s+"                # group 5: first amount (withdrawal or deposit)
-    r"([\d,]+\.\d{2})$"                  # group 6: closing balance
+    rf"^({_DATE})\s+(.+?)\s+({_BANK_REFERENCE})\s+({_DATE})\s+({_MONEY})\s+({_MONEY})$",
+    re.IGNORECASE,
 )
+_TAIL = re.compile(rf"\b({_BANK_REFERENCE}\s+{_DATE}\s+{_MONEY}\s+{_MONEY})$", re.IGNORECASE)
 
 # Lines that are page headers / footers — skip them
 _SKIP_PATTERNS = [
@@ -167,6 +167,10 @@ def _is_skip_line(line: str) -> bool:
 
 def _infer_type(narration: str, amount: float, prev_balance: Optional[float],
                 closing: float) -> str:
+    if prev_balance is not None:
+        delta = round(closing - prev_balance, 2)
+        if delta and abs(delta) == amount:
+            return "Income" if delta > 0 else "Expense"
     upper = narration.upper()
     if any(k in upper for k in _INCOME_KEYWORDS):
         return "Income"
@@ -302,13 +306,6 @@ class HDFCStatementParser:
         the ref/amount tail, so we insert them into the narration rather than
         appending after the balance.
         """
-        # Pattern to detect a complete transaction line (has ref + value-date + amounts)
-        _COMPLETE = re.compile(
-            r"^(\d{2}/\d{2}/\d{2})\s+(.+?)\s+(\d{15,16})\s+(\d{2}/\d{2}/\d{2})\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s*$"
-        )
-        # Pattern to detect the tail of a complete line (ref + value-date + amounts)
-        _TAIL = re.compile(r"(\d{15,16}\s+\d{2}/\d{2}/\d{2}\s+[\d,]+\.\d{2}\s+[\d,]+\.\d{2})\s*$")
-
         logical: List[str] = []
         current: Optional[str] = None
         current_tail_start: int = -1  # position where the tail begins in current

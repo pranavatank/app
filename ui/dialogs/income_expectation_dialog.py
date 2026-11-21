@@ -11,7 +11,7 @@ from PySide6.QtCore import Qt, QDate
 from PySide6.QtGui import QFont, QColor
 
 import calendar
-from datetime import date, datetime
+from datetime import date, timedelta
 from dateutil.relativedelta import relativedelta
 
 from ui.dialogs.form_layout import configure_editor_form, focus_editor_field, editor_footer
@@ -20,12 +20,13 @@ from ui.icons import set_btn_icon, set_btn_icon_auto
 from ui.widgets.toast_utils import show_warning
 from ui.widgets.excel_table import ExcelTableWithStats
 from ui.widgets.money_label import format_inr
+from ui.widgets.transaction_date_range import TransactionDateRange
 from config import get_all_financial_years, fy_date_range, get_current_financial_year
 from core.session import session
 from models.bank_account import get_accounts_for_person
 from models.transaction import get_transactions
 from models.income_expectation import (
-    link_actual_transaction, unlink_actual_transaction, get_income_expectations
+    SALARY_EARLY_DAYS, link_actual_transaction, unlink_actual_transaction, get_income_expectations
 )
 
 
@@ -544,6 +545,14 @@ class LinkActualDialog(QDialog):
         instructions.setFont(QFont("Segoe UI", 12))
         layout.addWidget(instructions)
 
+        fy = self.expectation.get("financial_year")
+        start, end = fy_date_range(fy or get_current_financial_year())
+        if self.expectation.get("income_type") == "Salary":
+            start -= timedelta(days=SALARY_EARLY_DAYS)
+        self.date_range = TransactionDateRange(start, end, enabled=bool(fy), parent=self)
+        self.date_range.changed.connect(self._load_transactions)
+        layout.addWidget(self.date_range)
+
         # Transaction table (read-only, single selection)
         self.table_widget = ExcelTableWithStats(show_checkboxes=False, read_only=True)
         self.table = self.table_widget.table
@@ -573,16 +582,13 @@ class LinkActualDialog(QDialog):
         layout.addLayout(btns)
 
     def _load_transactions(self):
-        """Load unlinked income transactions for the selected account/FY."""
+        """Load eligible credits from the selected account and date range."""
         self.table.setRowCount(0)
 
         if not self.person_id or not self.account_id:
             return
 
         try:
-            fy = self.expectation.get("financial_year")
-            fy_start, fy_end = fy_date_range(fy) if fy else (None, None)
-
             # Get all income transactions
             txns = get_transactions(
                 person_id=self.person_id,
@@ -590,11 +596,10 @@ class LinkActualDialog(QDialog):
                 transaction_type="Income"
             )
 
-            # Filter: only within FY, and not already linked
+            # A credit linked in another financial year is also unavailable.
             linked_ids = set()
             existing = get_income_expectations(
                 person_id=self.person_id,
-                financial_year=fy
             )
             for exp in existing:
                 if exp.get("actual_transaction_id"):
@@ -603,21 +608,9 @@ class LinkActualDialog(QDialog):
             for txn in txns:
                 txn_id = txn.get("transaction_id")
                 if (txn_id in linked_ids or txn.get("is_internal_transfer")
+                        or not self.date_range.contains(txn.get("transaction_date"))
                         or txn.get("category") in {"Internal Transfer", "FD Maturity"}):
                     continue
-
-                # Filter by date range if FY is set
-                if fy_start and fy_end:
-                    txn_date_str = txn.get("transaction_date")
-                    try:
-                        txn_date = datetime.strptime(txn_date_str, "%Y-%m-%d").date()
-                        # fy_date_range returns datetime.date values (not datetimes).
-                        # Calling .date() here raised AttributeError and the broad
-                        # handler below silently removed every FY candidate.
-                        if not (fy_start <= txn_date <= fy_end):
-                            continue
-                    except (ValueError, TypeError, AttributeError):
-                        continue
 
                 row_data = [
                     txn.get("transaction_date", "—"),

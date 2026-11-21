@@ -7,10 +7,11 @@ from PySide6.QtWidgets import (
     QPushButton, QComboBox, QLineEdit, QTableWidget,
     QTableWidgetItem, QHeaderView, QDialog, QDialogButtonBox,
     QFormLayout, QDateEdit, QDoubleSpinBox, QTextEdit,
-    QMessageBox, QFrame, QAbstractItemView, QCheckBox, QTabWidget, QSizePolicy, QInputDialog
+    QMessageBox, QFrame, QAbstractItemView, QCheckBox, QTabWidget, QSizePolicy
 )
 from PySide6.QtCore import Qt, QDate, QTimer
 from PySide6.QtGui import QFont, QColor
+from datetime import date, timedelta
 
 from ui.widgets.excel_table import ExcelTableWithStats
 from ui.widgets.chart_widget import ChartWidget
@@ -18,6 +19,7 @@ from ui.widgets.section import CollapsibleSection
 from ui.widgets.states import EmptyState
 from ui.widgets.toast_utils import show_success, show_warning
 from ui.widgets.money_label import format_inr
+from ui.widgets.transaction_date_range import TransactionDateRange
 
 from ui.theme import Theme
 from ui.icons import icon as app_icon, is_available as icons_available
@@ -26,7 +28,7 @@ from ui.dialogs.transaction_dialog import TransactionDialog
 from core.session import session
 from config import (
     INCOME_CATEGORIES, EXPENSE_CATEGORIES,
-    TRANSACTION_MODES, get_all_financial_years, get_current_financial_year
+    TRANSACTION_MODES, fy_date_range, get_all_financial_years, get_current_financial_year
 )
 from models.person import get_all_persons
 from models.bank_account import get_accounts_for_person, get_all_accounts
@@ -286,9 +288,11 @@ class TransactionsScreen(QWidget):
         bar.setObjectName("filterBar")
         bar.setStyleSheet(Theme.filter_bar_style())
         self.filter_bar = bar  # keep ref for theme refresh
-        layout = QHBoxLayout(bar)
-        layout.setContentsMargins(16, 10, 16, 10)
+        panel_layout = QVBoxLayout(bar)
+        panel_layout.setContentsMargins(16, 10, 16, 10)
+        layout = QHBoxLayout()
         layout.setSpacing(12)
+        panel_layout.addLayout(layout)
 
         def lbl(t):
             l = QLabel(t)
@@ -321,6 +325,10 @@ class TransactionsScreen(QWidget):
         btn_clear.clicked.connect(self._clear_filters)
         layout.addWidget(btn_clear)
 
+        start, end = fy_date_range(session.selected_fy or get_current_financial_year())
+        self.ledger_dates = TransactionDateRange(start, end, enabled=False, parent=bar)
+        self.ledger_dates.setToolTip("This range filters the table and its totals. Charts use the selected financial year.")
+        panel_layout.addWidget(self.ledger_dates)
         return bar
 
     def _build_table(self) -> QWidget:
@@ -407,7 +415,16 @@ class TransactionsScreen(QWidget):
         typ = None if typ_text in ("All Types", "Transfer") else normalize_transaction_type(typ_text)
         term = self.f_search.text().strip().lower()
 
-        rows = get_transactions(account_id=aid, person_id=pid, financial_year=fy, transaction_type=typ)
+        custom_dates = self.ledger_dates.enabled.isChecked()
+        rows = get_transactions(
+            account_id=aid, person_id=pid, financial_year=None if custom_dates else fy, transaction_type=typ,
+        )
+        if custom_dates:
+            rows = [row for row in rows if self.ledger_dates.contains(row["transaction_date"])]
+        elif fy:
+            start, end = fy_date_range(fy)
+            self.ledger_dates.start.setDate(QDate(start.year, start.month, start.day))
+            self.ledger_dates.end.setDate(QDate(end.year, end.month, end.day))
         if is_transfer_filter:
             rows = [r for r in rows if r.get("is_internal_transfer")]
         elif typ is not None:
@@ -642,28 +659,59 @@ class TransactionsScreen(QWidget):
             unlink_internal_transfer(transaction_id)
         else:
             candidates = get_transfer_counterparts(transaction_id)
-            choices = {
-                (f"{row['transaction_date']} · {row['person_name']} · {row['bank_display_name']} · "
-                 f"{row['description'] or row['reference_no'] or 'Bank entry'} · #{row['transaction_id']}"): row["transaction_id"]
-                for row in candidates
-            }
-            if not choices:
+            if not candidates:
                 show_warning("No unlinked entry for the same amount was found in another account.")
                 return
-            choice, accepted = QInputDialog.getItem(
-                self, "Link Family Transfer", "Select the matching entry from another account.",
-                list(choices), 0, False,
-            )
-            if not accepted:
+            counterpart_id = self._choose_transfer_counterpart(txn, candidates)
+            if counterpart_id is None:
                 return
             try:
-                link_internal_transfer(transaction_id, choices[choice])
+                link_internal_transfer(transaction_id, counterpart_id)
             except ValueError as error:
                 show_warning(str(error))
                 return
         self._fetch_and_display()
         if self._parent_window:
             self._parent_window.refresh_overview()
+
+    def _choose_transfer_counterpart(self, txn, candidates):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Link Family Transfer")
+        dialog.setMinimumWidth(620)
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(QLabel("Select the matching entry from another account."))
+        day = date.fromisoformat(txn["transaction_date"])
+        dates = TransactionDateRange(day - timedelta(days=7), day + timedelta(days=7), enabled=False, parent=dialog)
+        layout.addWidget(dates)
+        choices = QComboBox(dialog)
+        choices.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        choices.setAccessibleName("Matching transaction")
+        layout.addWidget(choices)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        confirm = buttons.button(QDialogButtonBox.StandardButton.Ok)
+        confirm.setText("Link")
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        def populate():
+            choices.clear()
+            choices.addItem("Select a matching entry", None)
+            for row in candidates:
+                if dates.contains(row["transaction_date"]):
+                    choices.addItem(
+                        f"{row['transaction_date']} · {row['person_name']} · {row['bank_display_name']} · "
+                        f"{row['description'] or row['reference_no'] or 'Bank entry'} · #{row['transaction_id']}",
+                        row["transaction_id"],
+                    )
+
+        dates.changed.connect(populate)
+        choices.currentIndexChanged.connect(lambda: confirm.setEnabled(choices.currentData() is not None))
+        populate()
+        confirm.setEnabled(False)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            return choices.currentData()
+        return None
 
     def _add_transaction(self):
         persons  = get_all_persons()
@@ -966,6 +1014,7 @@ class TransactionsScreen(QWidget):
             return
         self.f_type.setCurrentIndex(0)
         self.f_search.clear()
+        self.ledger_dates.enabled.setChecked(False)
         self._fetch_and_display()
 
 
