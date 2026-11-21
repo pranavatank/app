@@ -193,7 +193,7 @@ class RealUIHarness:
         # chance of working.
         hwnd = win32gui.FindWindow(None, title)
         if hwnd:
-            win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+            win32gui.ShowWindow(hwnd, win32con.SW_SHOWMAXIMIZED if maximized else win32con.SW_RESTORE)
             try:
                 win32gui.SetForegroundWindow(hwnd)
             except win32gui.error:

@@ -444,6 +444,8 @@ def allocate_fd_interest_to_fy(fd_id: int) -> None:
 
     # Rebuild FY allocations for this FD to avoid stale/duplicate records.
     delete_fd_interest_records(fd_id)
+    if fd.get("maturity_calc_method") == "BankReported" and not fd.get("compounding_type"):
+        return
 
     fd_start = date.fromisoformat(fd["start_date"])
     fd_end = date.fromisoformat(fd["maturity_date"])

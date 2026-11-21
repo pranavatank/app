@@ -18,13 +18,14 @@ sys.path.insert(0, str(REPO_ROOT))
 
 import pytest
 from unittest.mock import patch, MagicMock
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QTimer, Qt
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from ui.statement_import_screen_modern import StatementImportScreen
 from ui.dialogs.account_metadata_dialog import AccountMetadataDialog
 from models.person import get_all_persons, add_person
 from models.bank_account import add_account, delete_account, get_account
+from models.transaction import add_transaction
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -75,6 +76,29 @@ def test_account_id(test_person_id):
 
 class TestStatementImportBlocking:
     """Test _import_blocked flag and import blocking behavior."""
+
+    def test_balance_fingerprint_matches_reformatted_narration_once(self, qapp, test_person_id, test_account_id):
+        day = "2025-04-02"
+        add_transaction(test_account_id, test_person_id, day, "Income", 100,
+                        description="Original narration", balance_after=1100, source="Statement Import")
+        screen = StatementImportScreen(None)
+        screen.selected_person_id = test_person_id
+        screen.selected_account_id = test_account_id
+        rows = [
+            {"transaction_date": day, "transaction_type": kind, "amount": amount,
+             "balance_after": balance, "description": description}
+            for kind, amount, balance, description in [
+                ("Income", 5, 1000, "Earlier entry"),
+                ("Income", 100, 1100, "Reformatted narration"),
+                ("Expense", 100, 1000, "Reversal"),
+                ("Income", 100, 1100, "Second bank posting"),
+            ]
+        ]
+
+        screen._process_parsed_statement(rows)
+
+        assert not screen._import_blocked
+        assert screen.preview_duplicate_flags == [False, True, False, False]
 
     def test_import_blocked_when_tied_rows_and_low_confidence(self, qapp, test_person_id, test_account_id):
         """
@@ -366,3 +390,39 @@ class TestStatementImportBlocking:
             assert screen._import_blocked, "_import_blocked should be True when has_balances=True and tied==0"
             assert "blocked" in screen.preview_status_label.text().lower()
             assert not screen.btn_next.isEnabled()
+    @pytest.mark.parametrize("masked_number,blocked", [("XXXX0001", False), ("XXXX0002", True)])
+    def test_masked_statement_number_respects_selected_account(
+        self, qapp, test_person_id, test_account_id, masked_number, blocked,
+    ):
+        screen = StatementImportScreen(None)
+        screen.selected_person_id = test_person_id
+        screen.selected_account_id = test_account_id
+        rows = [{"transaction_date": "2025-04-01", "amount": 20, "transaction_type": "Income",
+                 "description": "Synthetic credit"}]
+        with patch("ui.statement_import_screen_modern.extract_statement_text",
+                   return_value=f"Account No: {masked_number}"):
+            screen._process_parsed_statement(rows)
+
+        assert screen._statement_metadata["account_number_masked"] == masked_number
+        assert screen._statement_metadata["account_number_full"] is None
+        assert screen._import_blocked is blocked
+
+    def test_balance_failure_can_open_an_immutable_verified_subset(self, qapp, test_person_id, test_account_id):
+        screen = StatementImportScreen(None)
+        screen.selected_person_id = test_person_id
+        screen.selected_account_id = test_account_id
+        rows = [
+            {"transaction_date": f"2025-04-{day:02}", "amount": amount, "balance_after": balance,
+             "transaction_type": "Income", "description": "Synthetic credit"}
+            for day, amount, balance in [(1, 20, 100), (2, 15, 115), (3, 10, 250), (4, 5, 255)]
+        ]
+        screen._process_parsed_statement(rows)
+
+        assert screen._import_blocked
+        assert not screen.review_verified_btn.isHidden()
+        screen.review_verified_btn.click()
+        assert [row["transaction_date"] for row in screen.parsed_transactions] == ["2025-04-02", "2025-04-04"]
+        assert screen._unverified_preview_count == 2
+        assert not (screen.preview_table.item(0, 5).flags() & Qt.ItemFlag.ItemIsEditable)
+        assert not screen.bulk_edit_btn.isEnabled()
+        assert screen.btn_next.isEnabled()

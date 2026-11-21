@@ -2,6 +2,8 @@
 ui/dialogs/account_metadata_dialog.py — Confirm account metadata from statement
 """
 
+import re
+
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QLineEdit, QTextEdit, QCheckBox, QFrame, QScrollArea, QWidget, QGridLayout
@@ -12,6 +14,7 @@ from PySide6.QtGui import QFont
 from ui.theme import Theme
 from ui.icons import icon_label
 from models.bank_account import get_account, get_all_accounts, update_account
+from engines.statement_metadata_extractor import MASKED_ACCOUNT_NUMBER, mask_account_number
 from ui.widgets.toast_utils import show_warning
 
 
@@ -130,6 +133,7 @@ class AccountMetadataDialog(QDialog):
                 ('account_holder_name', 'Account Holder'),
                 ('customer_id', 'Customer ID'),
                 ('account_number_full', 'Account Number'),
+                ('account_number_masked', 'Masked Account Number'),
                 ('ckyc_id', 'CKYC ID'),
                 ('account_opening_date', 'Opening Date'),
                 ('account_status', 'Account Status'),
@@ -274,9 +278,7 @@ class AccountMetadataDialog(QDialog):
 
         # Update account
         if update_data:
-            # Generate masked account number if full number provided
-            if 'account_number_full' in update_data and 'account_number_masked' not in update_data:
-                from engines.statement_metadata_extractor import mask_account_number
+            if 'account_number_full' in update_data:
                 number = update_data['account_number_full']
                 account = get_account(self.account_id)
                 if not account or not number.isdigit() or not 8 <= len(number) <= 22:
@@ -291,6 +293,19 @@ class AccountMetadataDialog(QDialog):
                     show_warning("This account number already belongs to another account at this bank.")
                     return
                 update_data['account_number_masked'] = mask_account_number(number)
+            elif 'account_number_masked' in update_data:
+                masked = update_data['account_number_masked']
+                if not re.fullmatch(MASKED_ACCOUNT_NUMBER, masked):
+                    show_warning("Enter a masked account number ending in four digits.")
+                    return
+                account = get_account(self.account_id)
+                saved_number = (account or {}).get("account_number_full")
+                if saved_number and masked[-4:] != saved_number[-4:]:
+                    show_warning("The masked number differs from this account's saved number.")
+                    return
+                update_data['account_number_masked'] = (
+                    mask_account_number(saved_number) if saved_number else "X" * (len(masked) - 4) + masked[-4:]
+                )
             
             update_account(self.account_id, **update_data)
 

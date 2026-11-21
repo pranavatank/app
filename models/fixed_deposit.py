@@ -10,8 +10,8 @@ from core.database import get_connection
 
 def add_fd(account_id: int, person_id: int, principal_amount: float,
            start_date: str, tenure_months: int, interest_rate: float,
-           compounding_type: str, maturity_date: str,
-           maturity_amount: float,
+           compounding_type: str | None, maturity_date: str,
+           maturity_amount: float | None,
            maturity_amount_formula: float | None = None,
            maturity_amount_bank: float | None = None,
            maturity_calc_method: str = "Formula",
@@ -22,7 +22,8 @@ def add_fd(account_id: int, person_id: int, principal_amount: float,
            actual_interest_amount: float | None = None,
            linked_transaction_id: int | None = None,
            source_statement_file: str | None = None,
-           source_transaction_id: int | None = None) -> int:
+           source_transaction_id: int | None = None,
+           *, status: str = "Active") -> int:
     """Insert a Fixed Deposit record and allocate interest to FY. Returns new fd_id."""
     conn = get_connection()
     cur = conn.execute("""
@@ -35,7 +36,7 @@ def add_fd(account_id: int, person_id: int, principal_amount: float,
                  expected_interest_amount, actual_interest_amount,
                  linked_transaction_id, source_statement_file, source_transaction_id,
                  status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Active')
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (account_id, person_id, principal_amount, start_date,
             (fd_reference_no or None),
             tenure_years, tenure_months, tenure_days,
@@ -46,7 +47,7 @@ def add_fd(account_id: int, person_id: int, principal_amount: float,
             actual_interest_amount,
             linked_transaction_id,
             source_statement_file,
-            source_transaction_id))
+            source_transaction_id, status))
     conn.commit()
     fd_id = cur.lastrowid
     conn.close()
@@ -720,6 +721,8 @@ def apply_fd_details(fd_id: int, interest_rate: float,
     fd = get_fd(fd_id)
     if fd is None:
         raise ValueError(f"FD with id {fd_id} not found")
+    if fd.get("maturity_calc_method") == "BankReported":
+        raise ValueError("Edit the bank advice to change its reported terms.")
 
     # 2. Validate interest_rate (0 < rate <= 100)
     if not (0 < interest_rate <= 100):

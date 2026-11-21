@@ -38,7 +38,10 @@ from models.bank_account import (
     get_statement_password, set_statement_password
 )
 from models.bank import get_or_create_bank, update_bank_tan_code_if_exists
-from models.transaction import add_transaction, check_duplicate, display_transaction_type
+from models.transaction import (
+    add_transaction, check_duplicate, display_transaction_type, normalize_transaction_type,
+    statement_balance_counts,
+)
 from models.transaction import add_transactions_batch, delete_transactions_by_ids, reprocess_internal_transfers
 from models.fixed_deposit import add_fd_from_statement, apply_statement_redemption_event, delete_fd, get_all_fds
 from models.statement_import_log import log_import
@@ -56,12 +59,13 @@ from engines.statement.validate import (
     balance_walk,
     confidence,
     correct_balance_directions,
+    verified_balance_rows,
     direction_errors,
     extract_control_totals,
     normalise_order,
     reconcile_totals,
 )
-from engines.statement_metadata_extractor import extract_account_metadata
+from engines.statement_metadata_extractor import MASKED_ACCOUNT_NUMBER, extract_account_metadata
 from engines.interest_engine import allocate_savings_interest_to_fy
 from engines.balance_engine import recalculate_account_balance
 from config import get_all_financial_years, fy_date_range
@@ -120,10 +124,9 @@ class _StatementParseWorker(QObject):
                             self.file_path, self.file_type, self.bank_name, password=self.password,
                             parser_mode="rule",
                         )
-                        ordered_rules = normalise_order(rules)
-                        if (len(rules) >= len(txns)
-                                and all(row.get("balance_after") is not None for row in rules)
-                                and not balance_walk(ordered_rules)):
+                        verified_rules = verified_balance_rows(correct_balance_directions(normalise_order(rules)))
+                        verified_coordinate = verified_balance_rows(correct_balance_directions(normalise_order(txns)))
+                        if len(verified_rules) > len(verified_coordinate):
                             return rules, rule_debug
                     return txns, debug_info
             except StatementPasswordError:
@@ -356,6 +359,8 @@ class StatementImportScreen(QWidget):
         self.parse_confidence = 0.0
         self.failing_rows_balance = []
         self._import_blocked = False
+        self._verified_preview_only = False
+        self._unverified_preview_count = 0
         self._loader = None
         self._busy = False
         self._preview_cell_change_lock = False
@@ -579,6 +584,11 @@ class StatementImportScreen(QWidget):
         self.review_metadata_btn.hide()
         actions.addWidget(self.review_metadata_btn)
         actions.addWidget(self.review_balance_btn)
+        self.review_verified_btn = Theme.btn("Review verified rows", "secondary", height=34, min_width=155)
+        self.review_verified_btn.setAccessibleName("Review only rows verified by running balances")
+        self.review_verified_btn.clicked.connect(self._review_verified_rows)
+        self.review_verified_btn.hide()
+        actions.addWidget(self.review_verified_btn)
         
         actions.addStretch()
         
@@ -1220,6 +1230,8 @@ class StatementImportScreen(QWidget):
         try:
             self._statement_metadata = {}
             self._account_number_mismatch = False
+            self._verified_preview_only = False
+            self._unverified_preview_count = 0
             try:
                 self.statement_text = extract_statement_text(
                     self.selected_file, self.file_type, password=self._parse_password,
@@ -1229,11 +1241,13 @@ class StatementImportScreen(QWidget):
                 stored_number = str(account.get("account_number_full") or "").strip()
                 masked_number = str(account.get("account_number_masked") or "").strip()
                 source_number = str(self._statement_metadata.get("account_number_full") or "").strip()
-                if source_number.isdigit() and len(source_number) >= 8:
-                    if stored_number.isdigit():
-                        self._account_number_mismatch = stored_number != source_number
-                    elif re.fullmatch(r"[Xx*•]+\d{4}", masked_number):
-                        self._account_number_mismatch = masked_number[-4:] != source_number[-4:]
+                source_masked = self._statement_metadata.get("account_number_masked") or ""
+                if source_number and stored_number.isdigit():
+                    self._account_number_mismatch = stored_number != source_number
+                elif source_number or source_masked:
+                    known_number = stored_number if stored_number.isdigit() else masked_number
+                    if known_number.isdigit() or re.fullmatch(MASKED_ACCOUNT_NUMBER, known_number):
+                        self._account_number_mismatch = known_number[-4:] != (source_number or source_masked)[-4:]
             except Exception:
                 self.statement_text = ""
 
@@ -1295,30 +1309,45 @@ class StatementImportScreen(QWidget):
                 self._switch_to_preview()
                 return
 
-            # Check duplicates (lightweight DB queries, stay on UI thread)
-            self.preview_transactions = valid
-            self.preview_duplicate_flags = [
-                check_duplicate(
-                    self.selected_account_id,
-                    row["transaction_date"],
-                    row["amount"],
-                    row["description"],
-                    row.get("transaction_type"),
-                    row.get("reference_no"),
-                    row.get("balance_after"),
-                )
-                for row in valid
-            ]
-            unique = [row for row, is_dup in zip(valid, self.preview_duplicate_flags) if not is_dup]
-            dups = sum(1 for is_dup in self.preview_duplicate_flags if is_dup)
-            self.duplicate_count = dups
-
-            self.parsed_transactions = unique
-            self._populate_preview_table()
-            self._switch_to_preview()
+            self._show_validated_rows(valid)
 
         except Exception as e:
             QMessageBox.critical(self, "Parse Error", str(e))
+
+    def _show_validated_rows(self, rows):
+        self.preview_transactions = rows
+        saved_balances = statement_balance_counts(self.selected_account_id)
+        self.preview_duplicate_flags = []
+        for row in rows:
+            balance = row.get("balance_after")
+            key = (row["transaction_date"], normalize_transaction_type(row.get("transaction_type")),
+                   round(row["amount"] * 100), round(balance * 100) if balance is not None else None)
+            if key in saved_balances:
+                count = saved_balances[key]
+                self.preview_duplicate_flags.append(count > 0)
+                saved_balances[key] = max(0, count - 1)
+                continue
+            self.preview_duplicate_flags.append(check_duplicate(
+                self.selected_account_id, row["transaction_date"], row["amount"], row["description"],
+                row.get("transaction_type"), row.get("reference_no"), balance,
+            ))
+        self.parsed_transactions = [row for row, duplicate in zip(rows, self.preview_duplicate_flags) if not duplicate]
+        self._populate_preview_table()
+        self._switch_to_preview()
+
+    def _rows_with_verified_balances(self):
+        return verified_balance_rows(self.preview_transactions)
+
+    def _review_verified_rows(self):
+        if self._busy or self._account_number_mismatch or not self._import_blocked:
+            return
+        rows = self._rows_with_verified_balances()
+        if not rows:
+            return
+        self._unverified_preview_count = len(self.preview_transactions) - len(rows)
+        self._verified_preview_only = True
+        self._import_blocked = False
+        self._show_validated_rows(rows)
 
     def _switch_to_preview(self):
         """Switch to preview screen"""
@@ -1507,6 +1536,8 @@ class StatementImportScreen(QWidget):
         self.parse_confidence = 0.0
         self.failing_rows_balance = []
         self._import_blocked = False
+        self._verified_preview_only = False
+        self._unverified_preview_count = 0
 
         # Reset UI to selection screen step 1
         self.stack.setCurrentIndex(0)
@@ -1605,7 +1636,7 @@ class StatementImportScreen(QWidget):
 
             # Apply colors
             for col, item in enumerate([date_item, type_item, mode_item, cat_item, amt_item, bal_item, desc_item, status_item]):
-                if col != 7 and selectable:
+                if col != 7 and selectable and not self._verified_preview_only:
                     item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
                 else:
                     item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
@@ -1727,10 +1758,17 @@ class StatementImportScreen(QWidget):
             status = "Review the selected transactions before importing."
             if self.failing_rows_balance:
                 status += f" Initial balance check flagged {len(self.failing_rows_balance)} row(s)."
+        if self._verified_preview_only:
+            status += f" Only balance-verified rows are shown. {self._unverified_preview_count} rows are held for review."
         if self.validation_errors:
             status += f" {len(self.validation_errors)} invalid row(s) skipped. See the debug report."
+        if not self._account_number_mismatch and any(self._statement_metadata.values()):
+            status += " Open Account details to review and save the extracted fields."
         self.preview_status_label.setText(status)
         self.review_balance_btn.setVisible(self._import_blocked and not self._account_number_mismatch and bool(self.failing_rows_balance))
+        self.review_verified_btn.setVisible(
+            self._import_blocked and not self._account_number_mismatch and bool(self._rows_with_verified_balances())
+        )
         self.review_metadata_btn.setVisible(
             not self._account_number_mismatch and any(self._statement_metadata.values())
         )
@@ -1739,7 +1777,7 @@ class StatementImportScreen(QWidget):
         self.btn_select_all.setEnabled(editable and selected < new_count)
         self.btn_clear.setEnabled(editable and selected > 0)
         for button in (self.bulk_edit_btn, self.shift_dates_btn, self.split_row_btn, self.merge_rows_btn):
-            button.setEnabled(editable)
+            button.setEnabled(editable and not self._verified_preview_only)
         if self.stack.currentIndex() == 1:
             self.btn_next.setEnabled(editable and selected > 0)
             self.btn_next.setToolTip(status)
@@ -1894,19 +1932,22 @@ class StatementImportScreen(QWidget):
 
     def _setup_preview_tab_order(self):
         self._chain_tab_order(
-            "preview_table", "btn_back", "btn_next", "bulk_edit_btn",
+            "preview_table", "review_metadata_btn", "review_verified_btn", "btn_back", "btn_next", "bulk_edit_btn",
             "shift_dates_btn", "split_row_btn", "merge_rows_btn",
             "copy_debug_btn", "export_debug_btn")
         self.setTabOrder(self.export_debug_btn, self.debug_toggle_btn)
 
     def _on_preview_row_double_click(self, index):
         """Open edit dialog for transaction on double-click"""
+        if self._import_blocked or self._verified_preview_only:
+            return
         row = index.row()
         if row < 0 or row >= len(self.preview_transactions):
             return
         
+        if self.preview_duplicate_flags[row]:
+            return
         txn = self.preview_transactions[row]
-        is_duplicate = self.preview_duplicate_flags[row] if row < len(self.preview_duplicate_flags) else False
         
         # Import dialog here to avoid circular import
         from ui.dialogs.transaction_edit_dialog import TransactionEditDialog
@@ -1921,7 +1962,7 @@ class StatementImportScreen(QWidget):
             self._update_preview_summary()
 
     def _selected_preview_rows(self) -> list[int]:
-        if self._busy or self._import_blocked:
+        if self._busy or self._import_blocked or self._verified_preview_only:
             return []
         selected = {item.row() for item in self.preview_table.selectedItems()}
         if selected:
@@ -1929,7 +1970,7 @@ class StatementImportScreen(QWidget):
         return self._checked_new_preview_rows()
 
     def _on_preview_item_changed(self, item: QTableWidgetItem):
-        if self._preview_cell_change_lock:
+        if self._preview_cell_change_lock or self._verified_preview_only:
             return
         row = item.row()
         col = item.column()

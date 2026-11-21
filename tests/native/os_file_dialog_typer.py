@@ -66,8 +66,14 @@ def main():
         print(f"WARNING: SetForegroundWindow failed: {e!r}")
     time.sleep(0.7)
 
+    if win32gui.GetForegroundWindow() != hwnd:
+        print("STOP: the intended file dialog did not receive focus")
+        sys.exit(3)
     pyautogui.hotkey("alt", "n")
     time.sleep(0.3)
+    if win32gui.GetForegroundWindow() != hwnd:
+        print("STOP: the intended file dialog lost focus before typing")
+        sys.exit(3)
     pyautogui.write(args.path, interval=0.01)
     time.sleep(0.2)
     pyautogui.press("enter")

@@ -13,6 +13,7 @@ data/old logo.png
 
 # Owner's real financial documents - never track (see REBUILD_PLAN T001)
 data/PersonalData/
+/data/settings.json
 data/data/
 
 # Backup files

@@ -92,6 +92,20 @@ def correct_balance_directions(transactions: list[dict]) -> list[dict]:
     return corrected
 
 
+def verified_balance_rows(transactions: list[dict]) -> list[dict]:
+    """Keep rows whose amount and direction match two adjacent bank balances."""
+    verified = []
+    for prior, row in zip(transactions, transactions[1:]):
+        before, after = prior.get("balance_after"), row.get("balance_after")
+        if before is None or after is None:
+            continue
+        delta = round((after - before) * 100)
+        kind = "Income" if delta > 0 else "Expense"
+        if delta and abs(delta) == round(row["amount"] * 100) and row["transaction_type"] == kind:
+            verified.append(row)
+    return verified
+
+
 def _parse_transaction_date(date_str: str) -> Optional[datetime]:
     """
     Parse a transaction date string into a datetime object.

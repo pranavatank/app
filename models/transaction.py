@@ -533,6 +533,19 @@ def check_duplicate(account_id: int, transaction_date: str,
     return row["cnt"] > 0
 
 
+def statement_balance_counts(account_id: int) -> dict[tuple, int]:
+    """Count imported rows with the same date, direction, amount and bank balance."""
+    with closing(get_connection()) as conn:
+        rows = conn.execute("""
+            SELECT transaction_date, transaction_type, round(amount * 100) AS amount_cents,
+                   round(balance_after * 100) AS balance_cents, COUNT(*) AS occurrences
+            FROM Transactions
+            WHERE account_id = ? AND source = 'Statement Import' AND balance_after IS NOT NULL
+            GROUP BY transaction_date, transaction_type, amount_cents, balance_cents
+        """, (account_id,))
+        return {(day, kind, amount, balance): count for day, kind, amount, balance, count in rows}
+
+
 def get_account_transactions_for_balance(account_id: int) -> list[dict]:
     """Get all transactions for an account in chronological order for balance calculation."""
     conn = get_connection()

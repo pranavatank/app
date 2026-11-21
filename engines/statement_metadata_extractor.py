@@ -5,6 +5,8 @@ engines/statement_metadata_extractor.py — Extract account details from bank st
 import re
 from typing import Dict, Optional
 
+MASKED_ACCOUNT_NUMBER = r"[Xx*•]{2,}\d{4}"
+
 
 def extract_account_metadata(statement_text: str) -> Dict[str, Optional[str]]:
     """Extract explicitly labelled values from a statement header."""
@@ -34,11 +36,11 @@ def extract_account_metadata(statement_text: str) -> Dict[str, Optional[str]]:
         )
         return value if value and any(char.isalpha() for char in value) else None
 
+    account_label = r"(?:Account|A[ ]*/?[ ]*C|Acct\.?)[ ]*(?:Number|No\.?|#)"
+    masked = field(account_label, rf"{MASKED_ACCOUNT_NUMBER}(?![\w*])")
     metadata = {
-        "account_number_full": field(
-            r"(?:Account|A[ ]*/?[ ]*C|Acct\.?)[ ]*(?:Number|No\.?|#)",
-            r"\d{8,22}(?![\w*])",
-        ),
+        "account_number_full": field(account_label, r"\d{8,22}(?![\w*])"),
+        "account_number_masked": "X" * (len(masked) - 4) + masked[-4:] if masked else None,
         "account_holder_name": labelled_text(r"Account(?: Holder)? Name|Customer Name|Name of Account Holder"),
         "customer_id": field(r"Customer[ ]*(?:ID|Number|No\.?)|CIF(?:[ ]*(?:ID|No\.?))?", r"[A-Z]*\d{4,20}\b"),
         "ifsc_code": field(r"IFSC(?:[ ]*Code)?", r"[A-Z]{4}0[A-Z0-9]{6}\b"),

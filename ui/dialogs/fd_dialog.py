@@ -12,6 +12,7 @@ from PySide6.QtCore import Qt, QDate
 from PySide6.QtGui import QFont, QDoubleValidator
 
 from datetime import date
+from math import isfinite
 
 from ui.dialogs.form_layout import configure_editor_form, focus_editor_field, editor_footer
 from ui.theme import Theme
@@ -104,14 +105,30 @@ class FDDialog(QDialog):
 
         self.compounding_combo = QComboBox()
         self.compounding_combo.addItems(COMPOUNDING_TYPES)
+        self.compounding_combo.addItem("Unknown")
         self.compounding_combo.currentTextChanged.connect(self._calc)
         form.addRow("Compounding:", self.compounding_combo)
 
         self.amount_method_combo = QComboBox()
         self.amount_method_combo.addItem("Current Formula", userData="Formula")
         self.amount_method_combo.addItem("Bank-style Daily (Leap-aware)", userData="BankStyle")
+        self.amount_method_combo.addItem("Bank Advice", userData="BankReported")
         self.amount_method_combo.currentIndexChanged.connect(self._calc)
         form.addRow("Use Amount For FY/Tax:", self.amount_method_combo)
+
+        self.reported_start_input = QLineEdit()
+        self.reported_start_input.setPlaceholderText("YYYY-MM-DD")
+        self.reported_start_input.textChanged.connect(self._calc)
+        form.addRow("Bank-reported opening date", self.reported_start_input)
+        self.reported_date_input = QLineEdit()
+        self.reported_date_input.setPlaceholderText("YYYY-MM-DD")
+        self.reported_date_input.textChanged.connect(self._calc)
+        form.addRow("Bank-reported maturity date", self.reported_date_input)
+        self.reported_amount_input = QLineEdit()
+        self.reported_amount_input.setPlaceholderText("Leave blank if the advice does not state an amount")
+        self.reported_amount_input.textChanged.connect(self._calc)
+        form.addRow("Bank-reported maturity amount (₹)", self.reported_amount_input)
+        self._form = form
 
         self.start_date = QDateEdit()
         self.start_date.setCalendarPopup(True)
@@ -156,16 +173,18 @@ class FDDialog(QDialog):
         layout.addWidget(scroll, 1)
 
         btns = editor_footer()
-        btn_show = Theme.btn("Show Calculations", "secondary", height=36, min_width=130)
+        self.btn_show = btn_show = Theme.btn("Show Calculations", "secondary", height=36, min_width=130)
         btn_show.clicked.connect(self._on_show_calculations)
         btns.addWidget(btn_show)
         btn_cancel = Theme.btn("Cancel", "secondary", height=36, min_width=95)
         btn_cancel.clicked.connect(self.reject)
         btns.addWidget(btn_cancel)
         btn_save = Theme.btn("Save FD", "primary", height=36, min_width=100)
+        btn_save.setAccessibleName("Save fixed deposit")
         btn_save.clicked.connect(self._on_save)
         btns.addWidget(btn_save)
         layout.addLayout(btns)
+        self._calc()
 
     def _on_person_changed(self):
         pid = self.person_combo.currentData()
@@ -174,6 +193,12 @@ class FDDialog(QDialog):
             self.account_combo.addItem(f"{acc.get('bank_display_name', acc['bank_name'])} ({acc['account_type']})", userData=acc["account_id"])
 
     def _calc(self):
+        reported = self.amount_method_combo.currentData() == "BankReported"
+        self._form.setRowVisible(self.start_date, not reported)
+        self._form.setRowVisible(self.reported_start_input, reported)
+        self._form.setRowVisible(self.reported_date_input, reported)
+        self._form.setRowVisible(self.reported_amount_input, reported)
+        self.btn_show.setVisible(not reported)
         try:
             p = float(self.principal_input.text() or 0)
             r = float(self.rate_input.text() or 0)
@@ -181,7 +206,16 @@ class FDDialog(QDialog):
             m = int(self.tenure_months_input.text() or 0)
             d = int(self.tenure_days_input.text() or 0)
             c = self.compounding_combo.currentText()
-            s = self.start_date.date().toPyDate()
+            s = date.fromisoformat(self.reported_start_input.text().strip()) if reported else self.start_date.date().toPyDate()
+            if reported:
+                self.maturity_date_lbl.setText("—")
+                self.maturity_amount_formula_lbl.setText("—")
+                self.maturity_amount_bank_lbl.setText("—")
+                self.maturity_amount_lbl.setText("—")
+                mat_date, amount = self._bank_reported_terms(p, s)
+                self.maturity_date_lbl.setText(mat_date.strftime("%d/%m/%y"))
+                self.maturity_amount_lbl.setText(format_inr(amount) if amount is not None else "—")
+                return
             if p > 0 and r > 0 and (y > 0 or m > 0 or d > 0):
                 mat_date = calculate_fd_maturity_date(s, y, m, d)
                 mat_formula = calculate_fd_maturity_flexible(p, r, s, mat_date, c, y, m, d)
@@ -205,6 +239,14 @@ class FDDialog(QDialog):
             self.maturity_amount_formula_lbl.setText("—")
             self.maturity_amount_bank_lbl.setText("—")
             self.maturity_amount_lbl.setText("—")
+
+    def _bank_reported_terms(self, principal, start):
+        maturity = date.fromisoformat(self.reported_date_input.text().strip())
+        reported_amount = self.reported_amount_input.text().strip()
+        amount = float(reported_amount) if reported_amount else None
+        if maturity <= start or (amount is not None and (not isfinite(amount) or amount < principal)):
+            raise ValueError("Bank maturity date and amount must agree with the principal and opening date.")
+        return maturity, round(amount, 2) if amount is not None else None
 
     def _next_financial_year(self, fy: str) -> str:
         start = int(fy.split("-")[0]) + 1
@@ -420,10 +462,16 @@ class FDDialog(QDialog):
         self.tenure_years_input.setText("" if years in (None, 0) else str(years))
         self.tenure_months_input.setText("" if months in (None, 0) else str(months))
         self.tenure_days_input.setText("" if days in (None, 0) else str(days))
-        self.compounding_combo.setCurrentText(self.fd_data.get("compounding_type") or "Quarterly")
         method = self.fd_data.get("maturity_calc_method") or "Formula"
+        default_compounding = "Unknown" if method == "BankReported" else "Quarterly"
+        self.compounding_combo.setCurrentText(self.fd_data.get("compounding_type") or default_compounding)
         idx = self.amount_method_combo.findData(method)
         self.amount_method_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        if method == "BankReported":
+            self.reported_start_input.setText(self.fd_data.get("start_date") or "")
+            self.reported_date_input.setText(self.fd_data.get("maturity_date") or "")
+            amount = self.fd_data.get("maturity_amount")
+            self.reported_amount_input.setText("" if amount is None else str(amount))
         exp_i = self.fd_data.get("expected_interest_amount")
         act_i = self.fd_data.get("actual_interest_amount")
         self.expected_interest_input.setText("" if exp_i in (None, 0) else str(exp_i))
@@ -431,8 +479,9 @@ class FDDialog(QDialog):
         self.fd_count_spin.setValue(1)
         self.fd_count_spin.setEnabled(False)
         self.fd_numbers_input.setEnabled(False)
-        s = date.fromisoformat(self.fd_data["start_date"])
-        self.start_date.setDate(QDate(s.year, s.month, s.day))
+        if self.fd_data.get("start_date"):
+            s = date.fromisoformat(self.fd_data["start_date"])
+            self.start_date.setDate(QDate(s.year, s.month, s.day))
         self._calc()
 
     def _on_save(self):
@@ -445,6 +494,7 @@ class FDDialog(QDialog):
             tenure_months = int(self.tenure_months_input.text() or 0)
             tenure_days   = int(self.tenure_days_input.text() or 0)
             compounding= self.compounding_combo.currentText()
+            method = self.amount_method_combo.currentData() or "Formula"
             start      = self.start_date.date().toPyDate()
             fd_ref_no = (self.fd_no_input.text() or "").strip() or None
             expected_interest = float(self.expected_interest_input.text()) if (self.expected_interest_input.text() or "").strip() else None
@@ -454,23 +504,39 @@ class FDDialog(QDialog):
                 (principal <= 0, self.principal_input),
                 (not 0 < rate <= 100, self.rate_input),
                 (tenure_years <= 0 and tenure_months <= 0 and tenure_days <= 0, self.tenure_months_input),
+                (compounding == "Unknown" and method != "BankReported", self.compounding_combo),
             ) if invalid), None)
             if invalid_field is not None:
                 focus_editor_field(invalid_field)
                 show_warning("Please fill all fields correctly (interest rate must be between 0 and 100).")
                 return
-            mat_date = calculate_fd_maturity_date(start, tenure_years, tenure_months, tenure_days)
-            mat_formula = calculate_fd_maturity_flexible(
-                principal, rate, start, mat_date, compounding,
-                tenure_years, tenure_months, tenure_days
-            )
-            mat_bank = calculate_fd_maturity_bank_style(
-                principal, rate, start, mat_date, compounding,
-                tenure_years, tenure_months, tenure_days,
-            )
-            method = self.amount_method_combo.currentData() or "Formula"
-            mat_amt = mat_bank if method == "BankStyle" else mat_formula
-            if expected_interest is None:
+            status = "Active"
+            if method == "BankReported":
+                try:
+                    start = date.fromisoformat(self.reported_start_input.text().strip())
+                    mat_date, mat_amt = self._bank_reported_terms(principal, start)
+                except ValueError:
+                    show_warning("Check the dates and any maturity amount printed on the bank advice.")
+                    return
+                mat_formula, mat_bank = None, mat_amt
+                if compounding == "Unknown":
+                    compounding = None
+                if compounding is None or mat_amt is None:
+                    status = "Pending Details"
+                if self.fd_data and self.fd_data.get("status") == "Matured" and self.fd_data.get("linked_transaction_id"):
+                    status = "Matured"
+            else:
+                mat_date = calculate_fd_maturity_date(start, tenure_years, tenure_months, tenure_days)
+                mat_formula = calculate_fd_maturity_flexible(
+                    principal, rate, start, mat_date, compounding,
+                    tenure_years, tenure_months, tenure_days
+                )
+                mat_bank = calculate_fd_maturity_bank_style(
+                    principal, rate, start, mat_date, compounding,
+                    tenure_years, tenure_months, tenure_days,
+                )
+                mat_amt = mat_bank if method == "BankStyle" else mat_formula
+            if expected_interest is None and mat_amt is not None:
                 expected_interest = round(mat_amt - principal, 2)
             if self.mode == "add":
                 fd_count = int(self.fd_count_spin.value())
@@ -496,12 +562,13 @@ class FDDialog(QDialog):
                         ref,
                         expected_interest,
                         actual_interest,
+                        status=status,
                     )
                     created += 1
                 show_success(f"{created} Fixed Deposit record(s) added!")
             else:
                 update_fd(self.fd_id, principal, start.isoformat(), tenure_months, rate,
-                          compounding, mat_date.isoformat(), mat_amt, "Active",
+                          compounding, mat_date.isoformat(), mat_amt, status,
                           mat_formula, mat_bank, method,
                           tenure_years, tenure_days,
                           fd_ref_no,

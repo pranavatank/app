@@ -138,7 +138,8 @@ def _migrate_fixed_deposit_schema_if_needed(conn: sqlite3.Connection, cur: sqlit
         UPDATE FixedDeposit
         SET tenure_years = COALESCE(tenure_years, 0),
             tenure_days = COALESCE(tenure_days, 0),
-            maturity_amount_formula = COALESCE(maturity_amount_formula, maturity_amount),
+            maturity_amount_formula = CASE WHEN maturity_calc_method = 'BankReported' THEN maturity_amount_formula
+                                           ELSE COALESCE(maturity_amount_formula, maturity_amount) END,
             maturity_amount_bank = COALESCE(maturity_amount_bank, maturity_amount),
             maturity_calc_method = COALESCE(maturity_calc_method, 'Formula'),
             expected_interest_amount = COALESCE(expected_interest_amount, 0),

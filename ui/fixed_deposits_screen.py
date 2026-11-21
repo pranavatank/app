@@ -351,7 +351,7 @@ class FixedDepositsScreen(QWidget):
 
             # Read-only
             method = fd.get("maturity_calc_method") or "Formula"
-            method_text = "Bank-style" if method == "BankStyle" else "Formula"
+            method_text = {"BankStyle": "Bank-style", "BankReported": "Bank advice"}.get(method, "Formula")
             self.table.setItem(r, 12+1, item(method_text, editable=False))
 
             status_item = item(fd["status"], editable=False)
@@ -705,6 +705,10 @@ class FixedDepositsScreen(QWidget):
                 from models.fixed_deposit import get_fd
                 fd_data = get_fd(fd_id)
                 if not fd_data:
+                    continue
+
+                if fd_data.get("maturity_calc_method") == "BankReported":
+                    errors.append(f"Row {row+1}: Open the bank advice to edit its reported terms.")
                     continue
 
                 # Extract values from table
