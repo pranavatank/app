@@ -35,6 +35,19 @@ def test_page_is_a_widget_and_main_settings_are_compact(screen):
     assert screen.family_pool.isChecked()
     assert screen.reserve.value()==15000
     assert screen.horizon.currentData()==36
+    assert not screen.reserve.isVisible()
+    assert not screen.horizon.isVisible()
+    assert not screen.make_plan.isHidden()
+    assert screen.fd_tile._value_lbl.text()=='—'
+    assert screen.return_tile._value_lbl.text()=='—'
+    assert 'Rates current for 0/2 banks' in screen.status.text()
+
+
+def test_fit_to_view_and_zoom_controls_are_accessible(screen):
+    from PySide6.QtWidgets import QPushButton
+    buttons=screen.findChildren(QPushButton)
+    assert any(button.accessibleName()=='Fit money flow to view' for button in buttons)
+    assert any(button.accessibleName()=='Zoom in' for button in buttons)
 
 
 def test_family_tree_has_person_and_bank_branches(screen):

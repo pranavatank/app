@@ -12,9 +12,10 @@ from PySide6.QtCore import Qt, QDate, QTimer
 from PySide6.QtGui import QFont, QColor, QDoubleValidator
 
 from datetime import date
+from math import isfinite
 from dateutil.relativedelta import relativedelta
 
-from ui.widgets.excel_table import ExcelTableWithStats
+from ui.widgets.excel_table import ExcelTableWithStats, table_checkbox
 from ui.widgets.chart_widget import ChartWidget
 from ui.widgets.states import EmptyState
 from ui.widgets.toast_utils import show_success, show_warning, show_info
@@ -51,11 +52,18 @@ from engines.interest_engine import (
     fd_tds_threshold_status,
 )
 
+_INLINE_COLUMNS = (3, 4, 5, 6, 7, 8, 12)
+
 
 class FixedDepositsScreen(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.parent_window = parent
+        self._has_unsaved_edits = False
+        self._dirty_fd_ids = set()
+        self._inline_drafts = {}
+        self._original_inline_values = {}
+        self._last_filter = "All"
         self._build_ui()
         self._build_interest_dialog()
 
@@ -142,6 +150,25 @@ class FixedDepositsScreen(QWidget):
 
         layout.addWidget(self.header_frame)
 
+        # Compact status filters keep the ledger scannable while preserving
+        # the source status values stored by the model.
+        filter_row = QHBoxLayout()
+        self.status_filters = QComboBox()
+        self.status_filters.setObjectName("fdStatusFilter")
+        self.status_filters.setAccessibleName("Filter fixed deposits by status")
+        self.status_filters.addItems(["All", "Pending Details", "Active", "Matured"])
+        self.status_filters.currentTextChanged.connect(self._apply_status_filter)
+        filter_row.addWidget(self.status_filters)
+        self.status_counts = QLabel("")
+        self.status_counts.setObjectName("fdStatusCounts")
+        filter_row.addWidget(self.status_counts, 1)
+        self.edit_details_button = Theme.btn("Edit details", "secondary", height=34, min_width=130)
+        self.edit_details_button.setAccessibleName("Edit details for focused fixed deposit")
+        self.edit_details_button.setEnabled(False)
+        self.edit_details_button.clicked.connect(self._on_edit_fd)
+        filter_row.addWidget(self.edit_details_button)
+        layout.addLayout(filter_row)
+
         # TDS-threshold reminder banner (hidden until FD interest crosses the limit)
         self.tds_banner = QFrame()
         self.tds_banner.setObjectName("tdsBanner")
@@ -162,6 +189,9 @@ class FixedDepositsScreen(QWidget):
         # Table
         self.table_widget = ExcelTableWithStats(show_checkboxes=True)
         self.table = self.table_widget.table
+        # Keep a useful ledger viewport even in a short window: header plus
+        # five rows at the configured 32px row height.
+        self.table.setMinimumHeight(200)
         self.table.setAccessibleName("Fixed deposits table")
         self.table.setAccessibleDescription("Editable list of fixed deposit records and calculations.")
         self.table.editable = True  # Enable editing
@@ -183,6 +213,7 @@ class FixedDepositsScreen(QWidget):
         self.table.doubleClicked.connect(self._on_edit_fd)
         self.table.cellDataChanged.connect(self._on_table_data_changed)
         self.table.itemChanged.connect(self._on_item_changed)  # Track manual edits
+        self.table.currentCellChanged.connect(self._update_edit_details_action)
         # Override the base ExcelTable delete (which only removes UI rows)
         # so pressing Delete also removes the underlying FD records.
         self.table.deleteSelectedRows = self._delete_selected_fds
@@ -193,22 +224,28 @@ class FixedDepositsScreen(QWidget):
         # Tenure, Compounding, Method are short enums -> FIXED narrow
         # Dates and calculated fields -> FIXED
         col_specs = {
-            1: {"mode": "FIXED", "width": 150},     # Person (identifier, enough to distinguish)
-            2: {"mode": "FIXED", "width": 150},     # Bank (identifier, enough to distinguish)
+            1: {"mode": "FIXED", "width": 94},      # Person
+            2: {"mode": "FIXED", "width": 114},     # Bank
             3: {"mode": "FIXED", "width": 150},     # FD No (identifier, enough to distinguish)
-            4: {"mode": "FIXED", "width": 110},     # Principal
-            5: {"mode": "FIXED", "width": 80},      # Rate %
+            4: {"mode": "FIXED", "width": 108},     # Principal
+            5: {"mode": "FIXED", "width": 66},      # Rate %
             6: {"mode": "FIXED", "width": 100},     # Tenure
             7: {"mode": "FIXED", "width": 110},     # Compounding
-            8: {"mode": "FIXED", "width": 110},     # Start Date
-            9: {"mode": "FIXED", "width": 115},     # Maturity Date
-            10: {"mode": "FIXED", "width": 130},    # Maturity Amount
+            8: {"mode": "FIXED", "width": 90},      # Start Date
+            9: {"mode": "FIXED", "width": 107},     # Maturity Date
+            10: {"mode": "FIXED", "width": 121},    # Maturity Amount
             11: {"mode": "FIXED", "width": 130},    # Expected Interest
             12: {"mode": "FIXED", "width": 130},    # Actual Interest
             13: {"mode": "FIXED", "width": 100},    # Method
-            14: {"mode": "FIXED", "width": 100},    # Status
+            14: {"mode": "FIXED", "width": 128},    # Status
         }
         self.table.setColumnSizing(col_specs)
+        # Prioritize decision fields while keeping the ledger's logical column
+        # IDs stable for editing, paste, and save.
+        ledger_header = self.table.horizontalHeader()
+        main_columns_first = (0, 1, 2, 4, 5, 8, 9, 10, 14, 3, 6, 7, 11, 12, 13)
+        for visual_index, column in enumerate(main_columns_first):
+            ledger_header.moveSection(ledger_header.visualIndex(column), visual_index)
 
         # Set tooltip support for columns that may be truncated
         self.table.setColumnElidedWithTooltip(1)    # Person
@@ -243,9 +280,18 @@ class FixedDepositsScreen(QWidget):
         # Block signals during refresh to avoid triggering itemChanged
         self.table.blockSignals(True)
         fds = get_all_fds(person_id=session.selected_person_id)
+        self._all_fds = fds
+        counts = {s: sum(1 for fd in fds if fd.get("status") == s) for s in ("Pending Details", "Active", "Matured")}
+        self.status_counts.setText("   ·   ".join(f"{s}: {counts[s]}" for s in counts))
 
         # Show empty state if no FDs
         if not fds:
+            self._dirty_fd_ids.clear()
+            self._has_unsaved_edits = False
+            self.table.setRowCount(0)
+            self.table.clearSelection()
+            self._update_edit_details_action(-1)
+            self._show_inline_status()
             if self._empty_state is None:
                 self._empty_state = EmptyState(
                     icon_name="piggy-bank",
@@ -282,13 +328,15 @@ class FixedDepositsScreen(QWidget):
             "Closed":  QColor(Theme.TEXT_MUTED),
         }
 
-        for fd in fds:
+        visible_fds = [fd for fd in fds if self.status_filters.currentText() == "All" or fd.get("status") == self.status_filters.currentText()]
+        for fd in visible_fds:
             r = self.table.rowCount()
             self.table.insertRow(r)
             
             # Add checkbox widget in column 0
-            cb = QCheckBox()
+            cb = table_checkbox()
             cb.setChecked(False)
+            cb.setAccessibleName(f"Select fixed deposit {fd.get('fd_reference_no') or fd['fd_id']}")
             cb_widget = QWidget()
             cb_layout = QHBoxLayout(cb_widget)
             cb_layout.addWidget(cb)
@@ -362,17 +410,41 @@ class FixedDepositsScreen(QWidget):
             self.table.item(r, 0+1).setData(Qt.ItemDataRole.UserRole, fd["fd_id"])
             self.table.setRowHeight(r, 32)
 
-        self.table.setSortingEnabled(True)  # Re-enable sorting
-        self.table.blockSignals(False)  # Re-enable signals
-        count = self.table.rowCount()
-        self.status_label.setText(f"Showing {count} fixed deposit{'s' if count!=1 else ''}.")
-        self.status_label.setStyleSheet("")  # Reset style
+        self._original_inline_values = {
+            self.table.item(r, 1).data(Qt.ItemDataRole.UserRole): self._inline_values(r)
+            for r in range(self.table.rowCount()) if self.table.item(r, 1)
+        }
+        self._dirty_fd_ids.clear()
+        if not session.privacy_mode:
+            for row in range(self.table.rowCount()):
+                fd_id = self.table.item(row, 1).data(Qt.ItemDataRole.UserRole)
+                edits = self._inline_drafts.get(fd_id, {})
+                for column, text in edits.items():
+                    self.table.item(row, column).setText(text)
+                if edits:
+                    self._dirty_fd_ids.add(fd_id)
+        self._has_unsaved_edits = bool(self._dirty_fd_ids)
+        self.table.setSortingEnabled(True)
+        self.table.blockSignals(False)
+        self._update_edit_details_action(self.table.currentRow())
+        self._show_inline_status()
         self._update_tds_banner()
 
         # Reset horizontal scroll position to show Person/Bank columns from the start.
         # Deferred via singleShot: the scrollbar's range isn't finalized until Qt
         # finishes laying out the just-populated columns on the next event loop pass.
         QTimer.singleShot(0, lambda: self.table.horizontalScrollBar().setValue(0))
+
+    def _apply_status_filter(self, _status=None):
+        if self._dirty_fd_ids or self._has_unsaved_edits:
+            QMessageBox.information(self, "Unsaved changes", "Save your inline edits before changing the status filter.")
+            self.status_filters.blockSignals(True)
+            self.status_filters.setCurrentText(self._last_filter)
+            self.status_filters.blockSignals(False)
+            return
+        self._last_filter = self.status_filters.currentText()
+        if hasattr(self, "table"):
+            self.refresh()
 
     def _update_tds_banner(self):
         """Show a reminder when a person's FD interest with any bank crosses
@@ -420,6 +492,12 @@ class FixedDepositsScreen(QWidget):
     def _refresh_interest_chart(self):
         """Refresh the FD and Savings interest trend chart."""
         if not hasattr(self, 'interest_chart') or not self.interest_chart:
+            return
+
+        # ChartWidget retains values for both the plot and its accessible data
+        # table. Never pass financial amounts to it while privacy mode is on.
+        if session.privacy_mode:
+            self.interest_chart.show_empty_state("Interest amounts hidden in privacy mode")
             return
 
         fys = sorted(get_all_financial_years(since_year=2020))
@@ -478,9 +556,24 @@ class FixedDepositsScreen(QWidget):
         row = self.table.currentRow()
         if row < 0: return
         fd_id = self.table.item(row, 0+1).data(Qt.ItemDataRole.UserRole)
+        from models.fixed_deposit import get_fd
+        fd = get_fd(fd_id)
+        if not fd:
+            return
+        self.edit_details_button.setText("Complete details" if fd.get("status") == "Pending Details" else "Edit details")
         if FDDialog(self, mode="edit", fd_id=fd_id).exec() == QDialog.DialogCode.Accepted:
+            self._dirty_fd_ids.discard(fd_id)
+            self._inline_drafts.pop(fd_id, None)
+            self._has_unsaved_edits = bool(self._dirty_fd_ids)
             self.refresh()
             if self.parent_window: self.parent_window.refresh_overview()
+
+    def _update_edit_details_action(self, row, *_args):
+        item = self.table.item(row, 1) if row >= 0 else None
+        fd_id = item.data(Qt.ItemDataRole.UserRole) if item else None
+        status = next((fd.get("status") for fd in getattr(self, "_all_fds", []) if fd.get("fd_id") == fd_id), None)
+        self.edit_details_button.setText("Complete details" if status == "Pending Details" else "Edit details")
+        self.edit_details_button.setEnabled(fd_id is not None)
 
     def _delete_selected_fds(self):
         """Delete checked FDs from the table — unlike the base ExcelTable
@@ -545,9 +638,41 @@ class FixedDepositsScreen(QWidget):
 
     def _on_table_data_changed(self):
         """Handle data changes in table (after paste or edit)."""
-        # Show indicator that changes need to be saved
-        self.status_label.setText(f"⚠️ Unsaved changes - Click 'Save Changes' or 'Recalculate Selected' to update database")
-        self.status_label.setStyleSheet(f"color: {Theme.WARNING}; font-weight: 600;")
+        if session.privacy_mode:
+            return
+        for row in range(self.table.rowCount()):
+            id_item = self.table.item(row, 1)
+            if not id_item:
+                continue
+            fd_id = id_item.data(Qt.ItemDataRole.UserRole)
+            original = self._original_inline_values.get(fd_id)
+            if original is None:
+                continue
+            edits = {
+                column: current
+                for column, current, prior in zip(_INLINE_COLUMNS, self._inline_values(row), original)
+                if current != prior
+            }
+            if edits:
+                self._dirty_fd_ids.add(fd_id)
+                self._inline_drafts[fd_id] = edits
+            else:
+                self._dirty_fd_ids.discard(fd_id)
+                self._inline_drafts.pop(fd_id, None)
+        self._has_unsaved_edits = bool(self._dirty_fd_ids)
+        self._show_inline_status()
+
+    def _show_inline_status(self):
+        if self._has_unsaved_edits:
+            self.status_label.setText("⚠️ Unsaved changes - Click 'Save Changes' or 'Recalculate Selected' to update database")
+            self.status_label.setStyleSheet(f"color: {Theme.WARNING}; font-weight: 600;")
+        else:
+            count = self.table.rowCount()
+            self.status_label.setText(f"Showing {count} fixed deposit{'s' if count != 1 else ''}.")
+            self.status_label.setStyleSheet("")
+
+    def _inline_values(self, row):
+        return tuple(self.table.item(row, col).text() if self.table.item(row, col) else "" for col in _INLINE_COLUMNS)
 
     def _on_item_changed(self, item):
         """Handle individual cell edits."""
@@ -572,6 +697,7 @@ class FixedDepositsScreen(QWidget):
 
         saved = 0
         errors = []
+        saved_ids = set()
 
         for row in checked_rows:
             try:
@@ -596,7 +722,7 @@ class FixedDepositsScreen(QWidget):
                 rate_text = self.table.item(row, 4+1).text().replace("%", "").strip()
                 rate = float(rate_text) if rate_text and rate_text != "—" else fd_data.get("interest_rate")
 
-                if principal <= 0:
+                if not isfinite(principal) or principal <= 0:
                     raise ValueError("Principal must be greater than 0")
                 if rate is not None and (rate <= 0 or rate > 100):
                     raise ValueError("Interest rate must be between 0 and 100")
@@ -637,12 +763,9 @@ class FixedDepositsScreen(QWidget):
                             start_date = fd_data["start_date"]
 
                 actual_interest_text = self.table.item(row, 11+1).text().replace("₹", "").replace(",", "").strip()
-                actual_interest = None
-                if actual_interest_text and actual_interest_text != "—":
-                    try:
-                        actual_interest = float(actual_interest_text)
-                    except:
-                        pass
+                actual_interest = float(actual_interest_text) if actual_interest_text not in ("", "—") else None
+                if actual_interest is not None and not isfinite(actual_interest):
+                    raise ValueError("Actual interest must be a finite number.")
 
                 # Update FD with edited values (keep existing calculated values)
                 update_fd(
@@ -668,6 +791,8 @@ class FixedDepositsScreen(QWidget):
                     fd_data.get("source_transaction_id")
                 )
                 saved += 1
+                saved_ids.add(fd_id)
+                self._original_inline_values[fd_id] = self._inline_values(row)
 
             except Exception as e:
                 errors.append(f"Row {row+1}: {str(e)}")
@@ -681,9 +806,14 @@ class FixedDepositsScreen(QWidget):
         else:
             show_success(f"Successfully saved {saved} FD(s)!")
 
-        self.refresh()
-        if self.parent_window:
-            self.parent_window.refresh_overview()
+        self._dirty_fd_ids.difference_update(saved_ids)
+        for fd_id in saved_ids:
+            self._inline_drafts.pop(fd_id, None)
+        self._has_unsaved_edits = bool(self._dirty_fd_ids)
+        if not errors and not self._dirty_fd_ids:
+            self.refresh()
+            if self.parent_window:
+                self.parent_window.refresh_overview()
 
     def _on_recalculate_selected(self):
         """Recalculate maturity for selected FDs based on edited values."""
@@ -694,6 +824,7 @@ class FixedDepositsScreen(QWidget):
 
         recalculated = 0
         errors = []
+        recalculated_ids = set()
 
         for row in checked_rows:
             try:
@@ -786,6 +917,9 @@ class FixedDepositsScreen(QWidget):
                 method_text = self.table.item(row, 12+1).text()
                 method = "BankStyle" if "Bank" in method_text else "Formula"
                 mat_amt = mat_bank if method == "BankStyle" else mat_formula
+                actual_interest_text = self.table.item(row, 11+1).text().replace("₹", "").replace(",", "").strip()
+                actual_interest = (float(actual_interest_text) if actual_interest_text and actual_interest_text != "—"
+                                   else fd_data.get("actual_interest_amount"))
 
                 # Update FD in database
                 update_fd(
@@ -795,12 +929,14 @@ class FixedDepositsScreen(QWidget):
                     years, days,
                     self.table.item(row, 2+1).text() if self.table.item(row, 2+1).text() != "—" else None,
                     mat_amt - principal,  # expected interest
-                    fd_data.get("actual_interest_amount"),  # actual interest - keep existing
+                    actual_interest,  # preserve any inline actual-interest edit
                     fd_data.get("linked_transaction_id"),  # linked_transaction_id - keep existing
                     fd_data.get("source_statement_file"),  # source_statement_file - keep existing
                     fd_data.get("source_transaction_id")   # source_transaction_id - keep existing
                 )
                 recalculated += 1
+                recalculated_ids.add(fd_id)
+                self._original_inline_values[fd_id] = self._inline_values(row)
 
             except Exception as e:
                 errors.append(f"Row {row+1}: {str(e)}")
@@ -814,9 +950,14 @@ class FixedDepositsScreen(QWidget):
         else:
             show_success(f"Successfully recalculated {recalculated} FD(s)!")
 
-        self.refresh()
-        if self.parent_window:
-            self.parent_window.refresh_overview()
+        self._dirty_fd_ids.difference_update(recalculated_ids)
+        for fd_id in recalculated_ids:
+            self._inline_drafts.pop(fd_id, None)
+        self._has_unsaved_edits = bool(self._dirty_fd_ids)
+        if not errors and not self._dirty_fd_ids:
+            self.refresh()
+            if self.parent_window:
+                self.parent_window.refresh_overview()
 
     def _on_enter_real_rates(self):
         """Open the bulk rate-entry dialog and refresh once it closes."""

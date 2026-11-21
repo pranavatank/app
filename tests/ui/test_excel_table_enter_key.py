@@ -10,11 +10,12 @@ Verifies:
 
 import pytest
 from unittest.mock import MagicMock, patch
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QCheckBox
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeyEvent
 
 from ui.widgets.excel_table import ExcelTable, ExcelTableWithStats
+from ui.theme import Theme
 
 
 @pytest.fixture(scope="session")
@@ -145,6 +146,21 @@ class TestEnterKeyEditMode:
 
 class TestCheckboxColumnClicking:
     """Test checkbox column click behavior."""
+
+    def test_table_padding_does_not_clip_checkbox(self, qapp, excel_table_with_checkboxes):
+        table = excel_table_with_checkboxes
+        original_stylesheet = qapp.styleSheet()
+        try:
+            qapp.setStyleSheet(Theme.get_stylesheet())
+            table.setColumnWidth(0, 40)
+            table.setRowHeight(0, 32)
+            table.show()
+            qapp.processEvents()
+            checkbox = table.cellWidget(0, 0).findChild(QCheckBox)
+            assert checkbox.visibleRegion().boundingRect() == checkbox.rect()
+        finally:
+            table.close()
+            qapp.setStyleSheet(original_stylesheet)
 
     def test_checkbox_cell_toggle_on_click(self, qapp, excel_table_with_checkboxes):
         """Verify clicking a checkbox cell toggles the checkbox."""

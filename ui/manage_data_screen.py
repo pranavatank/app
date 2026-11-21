@@ -42,8 +42,8 @@ class ManageDataScreen(QWidget):
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
-        layout.setSpacing(16)
-        layout.setContentsMargins(24, 20, 24, 20)
+        layout.setSpacing(8)
+        layout.setContentsMargins(12, 10, 12, 10)
 
         self.tabs = QTabWidget()
         self.tabs.addTab(self._build_people_tab(), "People")
@@ -51,11 +51,16 @@ class ManageDataScreen(QWidget):
         self.tabs.addTab(self._build_accounts_tab(), "Accounts")
         layout.addWidget(self.tabs)
 
+    def select_tab(self, tab: str):
+        """Select the management tab requested by Settings."""
+        indexes = {"people": 0, "banks": 1, "accounts": 2}
+        self.tabs.setCurrentIndex(indexes[tab])
+
     def _build_people_tab(self) -> QWidget:
         """Build the People management tab."""
         page = QWidget()
         layout = QVBoxLayout(page)
-        layout.setSpacing(16)
+        layout.setSpacing(8)
         layout.setContentsMargins(0, 0, 0, 0)
 
         # Header
@@ -112,7 +117,7 @@ class ManageDataScreen(QWidget):
         """Build the Banks management tab."""
         page = QWidget()
         layout = QVBoxLayout(page)
-        layout.setSpacing(16)
+        layout.setSpacing(8)
         layout.setContentsMargins(0, 0, 0, 0)
 
         header = QHBoxLayout()
@@ -166,7 +171,7 @@ class ManageDataScreen(QWidget):
         """Build the Accounts management tab."""
         page = QWidget()
         layout = QVBoxLayout(page)
-        layout.setSpacing(16)
+        layout.setSpacing(8)
         layout.setContentsMargins(0, 0, 0, 0)
 
         header = QHBoxLayout()
@@ -189,7 +194,10 @@ class ManageDataScreen(QWidget):
             "Person", "Bank Name", "TAN", "Type", "Account No.", "IFSC",
             "Opening Balance", "Current Balance", "ID"
         ])
-        self.accounts_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        account_header = self.accounts_table.horizontalHeader()
+        account_header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        account_header.setStretchLastSection(True)
+        self.accounts_table.setHorizontalScrollMode(QTableWidget.ScrollMode.ScrollPerPixel)
         self.accounts_table.setColumnHidden(8, True)
         self.accounts_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.accounts_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)

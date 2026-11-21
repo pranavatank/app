@@ -23,7 +23,7 @@ from engines.parser_utils import (
     _append_issue,
     infer_statement_category,
 )
-from engines.bank_parsers import parse_sbi_pdf
+from engines.bank_parsers import UjjivanStatementParser, parse_sbi_pdf
 from engines.parser_registry import get as get_bank_parser, register as register_bank_parser
 from engines.statement_passwords import (
     StatementPasswordError,
@@ -1598,10 +1598,14 @@ def parse_statement_with_debug(file_path: str, file_type: str, bank_name: str = 
             "issues": plugin_debug.get("issues", []),
         })
         debug_info["issues"].extend(plugin_debug.get("issues", []))
+        if plugin_debug.get("reconciliation_failed"):
+            debug_info["mode_used"] = f"plugin-{bank_name.lower()}"
+            debug_info["reconciliation_failed"] = True
+            return [], debug_info
         if transactions:
             debug_info["mode_used"] = f"plugin-{bank_name.lower()}"
             return transactions, debug_info
-        if parser_mode in ["rule", bank_name.lower()]:
+        if parser_mode in ["rule", bank_name.lower()] and not isinstance(bank_plugin, UjjivanStatementParser):
             debug_info["mode_used"] = f"plugin-{bank_name.lower()}"
             return [], debug_info
 

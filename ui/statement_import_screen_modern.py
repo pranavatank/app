@@ -52,7 +52,7 @@ from engines.statement_parser import (
 
 )
 from engines.statement import parse_statement_pdf
-from engines.bank_parsers import HDFCStatementParser, YESBankStatementParser, parse_sbi_pdf
+from engines.bank_parsers import HDFCStatementParser, UjjivanStatementParser, YESBankStatementParser, parse_sbi_pdf
 from engines.parser_registry import get as get_bank_parser
 from engines.statement.validate import (
     LowConfidenceParse,
@@ -105,12 +105,16 @@ class _StatementParseWorker(QObject):
 
         parser = get_bank_parser(self.bank_name)
         if self.file_type and self.file_type.lower().startswith("pdf"):
-            if parser is parse_sbi_pdf or isinstance(parser, (HDFCStatementParser, YESBankStatementParser)):
+            fallback = None
+            if parser is parse_sbi_pdf or isinstance(parser, (HDFCStatementParser, UjjivanStatementParser, YESBankStatementParser)):
                 bank_rows, bank_debug = parse_statement_with_debug(
                     self.file_path, self.file_type, self.bank_name, password=self.password, parser_mode="rule",
                 )
-                if bank_rows:
+                if bank_debug.get("reconciliation_failed"):
                     return bank_rows, bank_debug
+                if bank_rows and bank_debug.get("mode_used") != "rule-pdf":
+                    return bank_rows, bank_debug
+                fallback = (bank_rows, bank_debug) if bank_rows else None
             try:
                 txns = parse_statement_pdf(
                     self.file_path,
@@ -120,7 +124,7 @@ class _StatementParseWorker(QObject):
                 )
                 if txns:
                     if balance_walk(normalise_order(txns)):
-                        rules, rule_debug = parse_statement_with_debug(
+                        rules, rule_debug = fallback or parse_statement_with_debug(
                             self.file_path, self.file_type, self.bank_name, password=self.password,
                             parser_mode="rule",
                         )
@@ -133,6 +137,8 @@ class _StatementParseWorker(QObject):
                 raise
             except Exception:
                 pass
+            if fallback:
+                return fallback
         return parse_statement_with_debug(
             self.file_path,
             self.file_type,
@@ -1276,7 +1282,7 @@ class StatementImportScreen(QWidget):
                 self.preview_duplicate_flags = []
                 self.validation_errors = []
                 self.duplicate_count = 0
-                self._import_blocked = False
+                self._import_blocked = bool(self.import_debug_info.get("reconciliation_failed"))
                 self.parse_confidence = 0.0
                 self.failing_rows_balance = []
                 self._populate_preview_table()
@@ -1744,6 +1750,8 @@ class StatementImportScreen(QWidget):
             status = "Importing selected rows…"
         elif self._account_number_mismatch:
             status = "Import blocked. This statement's account number differs from the selected account. Go back to change the account."
+        elif self.import_debug_info.get("reconciliation_failed"):
+            status = "Import blocked. The Ujjivan transactions do not reconcile with the printed statement summary."
         elif self._import_blocked:
             failures = len(self.failing_rows_balance)
             detail = f"{failures} balance mismatch(es) found." if failures else "The running balances could not be verified."

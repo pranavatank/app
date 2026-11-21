@@ -50,6 +50,14 @@ class NoFocusRectDelegate(QStyledItemDelegate):
             """)
         return editor
 
+    def updateEditorGeometry(self, editor, option, index):
+        table = self.parent()
+        if table.show_checkboxes and index.column() == 0:
+            # Qt's text-editor insets clip index widgets in the checkbox column.
+            editor.setGeometry(option.rect)
+            return
+        super().updateEditorGeometry(editor, option, index)
+
 
 def table_checkbox() -> QCheckBox:
     checkbox = QCheckBox()

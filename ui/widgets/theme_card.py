@@ -33,6 +33,9 @@ class ThemeCard(QAbstractButton):
         self._c         = self._load()
         self.setCheckable(True)
         self.setChecked(is_active)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setAccessibleName(f"{info['name']} theme")
+        self.setAccessibleDescription(info.get("description", ""))
         self.setMinimumSize(self.W, self.H)
         self.setMaximumHeight(self.H)
         from PySide6.QtWidgets import QSizePolicy
@@ -165,6 +168,11 @@ class ThemeCard(QAbstractButton):
             cp = QPen(QColor(Theme.TEXT_ON_PRIMARY)); cp.setWidth(2); p.setPen(cp)
             f = p.font(); f.setPixelSize(9); f.setBold(True); p.setFont(f)
             p.drawText(bx, by, r, r, Qt.AlignmentFlag.AlignCenter, "✓")
+        if self.hasFocus():
+            focus = QPen(QColor(Theme.FOCUS_RING), 2, Qt.PenStyle.DashLine)
+            p.setPen(focus)
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawRoundedRect(5, 5, W - 10, H - 10, 6, 6)
         p.end()
 
     def sizeHint(self): return QSize(self.W, self.H)

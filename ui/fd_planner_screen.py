@@ -31,6 +31,7 @@ class FDPlannerScreen(QWidget):
             from engines.official_bank_rates import load_bundles
             self._bundles=load_bundles(Path(config.DATA_DIR)/'family_bank_rates.json');self._populate_rates()
         except (ImportError,ValueError,OSError,TypeError):pass
+        if self._data:self.status.setText(self._readiness_text())
         self.refresh()
         if self._data and not any(bundle.usable() for bundle in self._bundles.values()):QTimer.singleShot(350,self._refresh_rates)
     def _button(self,label,slot,primary=False):
@@ -48,49 +49,44 @@ class FDPlannerScreen(QWidget):
         self.source_label=QLabel('Your family accounts, current bank rates and one investment plan.');self.source_label.setWordWrap(True);outer.addWidget(self.source_label)
         kpis=QHBoxLayout()
         self.cash_tile=KpiTile('Family savings',0,accent='primary')
-        self.fd_tile=KpiTile('Plan in FDs',0,accent='success')
-        self.return_tile=KpiTile('Projected interest',0,accent='info')
-        for tile in [self.cash_tile,self.fd_tile,self.return_tile]:tile.setFixedHeight(88);kpis.addWidget(tile)
+        self.fd_tile=KpiTile('Plan in FDs','—',is_currency=False,accent='success')
+        self.return_tile=KpiTile('Projected interest','—',is_currency=False,accent='info')
+        for tile in [self.cash_tile,self.fd_tile,self.return_tile]:tile.setFixedHeight(72);kpis.addWidget(tile)
         outer.addLayout(kpis)
-        controls=QHBoxLayout()
-        controls.addWidget(QLabel('Keep available'))
-        self.reserve=QDoubleSpinBox();self.reserve.setRange(0,1e11);self.reserve.setDecimals(0);self.reserve.setPrefix('₹ ');self.reserve.setSingleStep(100000)
-        self.reserve.setFixedHeight(40)
-        self.reserve.setMinimumWidth(145);controls.addWidget(self.reserve)
-        controls.addSpacing(12);controls.addWidget(QLabel('Plan up to'))
-        self.horizon=QComboBox()
-        self.horizon.setFixedHeight(40)
-        for label,months in [('1 year',12),('2 years',24),('3 years',36),('5 years',60)]:self.horizon.addItem(label,months)
-        self.horizon.setCurrentIndex(2);controls.addWidget(self.horizon)
-        controls.addStretch();self.make_plan=self._button('Build my plan',self._build_plan,True);controls.addWidget(self.make_plan)
-        outer.addLayout(controls)
+        readiness=QHBoxLayout();self.status=QLabel('');self.status.setWordWrap(True);readiness.addWidget(self.status,1)
+        self.make_plan=self._button('Build my plan',self._build_plan,True);readiness.addWidget(self.make_plan);outer.addLayout(readiness)
         settings_line=QHBoxLayout()
         self.settings_toggle=QToolButton();self.settings_toggle.setObjectName('plannerSettings');self.settings_toggle.setText('Plan settings');self.settings_toggle.setCheckable(True)
         self.settings_toggle.setArrowType(Qt.ArrowType.RightArrow);self.settings_toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.settings_toggle.toggled.connect(self._toggle_settings);settings_line.addWidget(self.settings_toggle)
         self.pooling_label=QLabel('Family transfers enabled · general-customer rates');self.pooling_label.setProperty('textrole','secondary')
-        settings_line.addWidget(self.pooling_label);settings_line.addStretch()
-        settings_line.addWidget(self._button('Reload data',self._load_data));settings_line.addWidget(self._button('Choose workbook',self._choose_workbook))
-        outer.addLayout(settings_line)
+        settings_line.addWidget(self.pooling_label);settings_line.addStretch();outer.addLayout(settings_line)
         self.settings_panel=QWidget();grid=QGridLayout(self.settings_panel);grid.setContentsMargins(0,0,0,0)
+        self.reserve=QDoubleSpinBox();self.reserve.setRange(0,1e11);self.reserve.setDecimals(0);self.reserve.setPrefix('₹ ');self.reserve.setSingleStep(100000)
+        self.reserve.setFixedHeight(40);self.reserve.setMinimumWidth(145)
+        self.horizon=QComboBox();self.horizon.setFixedHeight(40)
+        for label,months in [('1 year',12),('2 years',24),('3 years',36),('5 years',60)]:self.horizon.addItem(label,months)
+        self.horizon.setCurrentIndex(2)
+        grid.addWidget(QLabel('Keep available'),0,0);grid.addWidget(self.reserve,0,1);grid.addWidget(QLabel('Plan up to'),0,2);grid.addWidget(self.horizon,0,3)
         self.family_pool=QCheckBox('Allow transfers across family accounts');self.family_pool.setChecked(True)
         self.insurance=QCheckBox('Keep new FDs within ₹5 lakh bank cover');self.insurance.setChecked(True)
         self.insurance.setToolTip('For each holder and legal bank, include existing FDs, new maturity values and retained savings. Incomplete buckets are excluded from new insured FDs.')
         self.tax_limit=QCheckBox('Enforce annual interest / income limits');self.tax_limit.setChecked(True)
         self.tax_limit.setToolTip('Known annual FD interest up to ₹50,000 per holder/bank; ordinary taxable income up to ₹12 lakh for individuals or ₹4 lakh for HUF. Incomplete income makes the estimate provisional.')
         self.concentration=QSpinBox();self.concentration.setRange(5,100);self.concentration.setValue(20);self.concentration.setSuffix(' %')
-        grid.addWidget(self.family_pool,0,0);grid.addWidget(self.insurance,0,1);grid.addWidget(self.tax_limit,1,0)
-        grid.addWidget(QLabel('Maximum family exposure to one bank'),1,1);grid.addWidget(self.concentration,1,2)
+        grid.addWidget(self.family_pool,1,0,1,2);grid.addWidget(self.insurance,1,2,1,2);grid.addWidget(self.tax_limit,2,0,1,2)
+        grid.addWidget(QLabel('Maximum family exposure to one bank'),2,2);grid.addWidget(self.concentration,2,3)
+        grid.addWidget(self._button('Reload data',self._load_data),3,0);grid.addWidget(self._button('Choose workbook',self._choose_workbook),3,1)
         self.settings_panel.hide();outer.addWidget(self.settings_panel)
-        self.status=QLabel('');self.status.setWordWrap(True);outer.addWidget(self.status)
         self.tabs=QTabWidget();outer.addWidget(self.tabs,1)
         flow=QWidget();flow_layout=QVBoxLayout(flow);flow_layout.setContentsMargins(0,5,0,0)
-        toolbar=QHBoxLayout();self.flow_hint=QLabel('Select a person to see their bank accounts and FD branches.');toolbar.addWidget(self.flow_hint,1)
+        toolbar=QHBoxLayout();self.flow_hint=QLabel('Choose a person to inspect accounts and FDs.');toolbar.addWidget(self.flow_hint,1)
         self.animate=QCheckBox('Animate flow');self.animate.setChecked(True);toolbar.addWidget(self.animate)
-        for label,factor in [('−',.9),('+',1.1)]:
-            button=self._button(label,lambda checked=False,f=factor:self.tree.zoom(f));button.setFixedWidth(38)
+        for label,factor,accessible in [('−',.9,'Zoom out'),('+',1.1,'Zoom in')]:
+            button=self._button(label,lambda checked=False,f=factor:self.tree.zoom(f));button.setFixedWidth(38);button.setAccessibleName(accessible)
             button.setStyleSheet(button.styleSheet()+'QPushButton {padding:0px;}');toolbar.addWidget(button)
-        toolbar.addWidget(self._button('Reset view',lambda:self.tree.reset_zoom()));flow_layout.addLayout(toolbar)
+        fit=self._button('Fit to view',lambda:self.tree.fit_to_view());fit.setAccessibleName('Fit money flow to view');toolbar.addWidget(fit)
+        reset=self._button('Reset view',lambda:self.tree.reset_zoom());reset.setAccessibleName('Reset money flow view');toolbar.addWidget(reset);flow_layout.addLayout(toolbar)
         self.tree=FamilyMoneyTree();self.tree.nodeSelected.connect(self._selected_node);self.animate.toggled.connect(self.tree.set_animation)
         flow_layout.addWidget(self.tree,1);self.detail=QLabel('');self.detail.setWordWrap(True);flow_layout.addWidget(self.detail)
         self.tabs.addTab(flow,'Money flow')
@@ -143,8 +139,7 @@ class FDPlannerScreen(QWidget):
             self.source_label.setText(f'{Path(self._data.source_path).name} · {len(self._data.people)} family entries · {len(self._data.banks)} banks · Read-only source')
             self._fill(self.timeline,[(r['date'],r['person'],r['bank'],r['kind'],session.mask(r['amount'])) for r in self._data.receipts])
             self._populate_rates()
-            missing=sum(a['unknown_fds'] for a in self._data.accounts)
-            self.status.setText(f'Family cash is pooled for planning. {missing} existing FDs still need detailed terms.' if missing else 'Family cash is pooled for planning. Refresh rates, then build your plan.')
+            self.status.setText(self._readiness_text())
         except Exception as exc:
             self._data=None;self.tree.set_data(None);self._refresh_amounts()
             self.timeline.setRowCount(0);self.rates_table.setRowCount(0);self.slab_table.setRowCount(0)
@@ -183,8 +178,7 @@ class FDPlannerScreen(QWidget):
             self.status.setText('Official bank-rate adapters are being updated. Existing values are not presented as live rates.')
     def _rates_done(self,bundles):
         self._bundles=bundles;self._populate_rates();self._invalidate()
-        ready=sum(bool(b.fd_rates or b.savings) and b.usable() for b in bundles.values())
-        self.status.setText(f'Official rates available for {ready} of {len(bundles)} selected banks. Unavailable banks are clearly marked; no comparison-site rates are substituted.')
+        self.status.setText(self._readiness_text())
     def _build_plan(self):
         try:
             from engines.family_fd_engine import build_family_plan
@@ -244,8 +238,19 @@ class FDPlannerScreen(QWidget):
         self._revision+=1;self._plan=None;self.plan_table.setRowCount(0);self.transfer_table.setRowCount(0);self.explanation.clear();self.detail.clear();self._refresh_amounts()
         self.pooling_label.setText(('Family transfers enabled' if self.family_pool.isChecked() else 'Separate owner budgets')+' · general-customer rates')
         if self._data:self.tree.set_data(self._data)
-        self.status.setText('Settings changed. Build the plan again.')
+        self.status.setText('Settings changed. '+self._readiness_text())
     def _toggle_settings(self,shown):self.settings_panel.setVisible(shown);self.settings_toggle.setArrowType(Qt.ArrowType.DownArrow if shown else Qt.ArrowType.RightArrow)
+    def _readiness_text(self):
+        if not self._data:return 'No family workbook loaded.'
+        banks=list(self._data.banks)
+        current=sum(bool((bundle:=self._bundles.get(bank)) and (bundle.fd_rates or bundle.savings) and bundle.usable())
+                    for bank in banks)
+        missing=sum(a['unknown_fds'] for a in self._data.accounts)
+        rates=(f'Rates current for {current}/{len(banks)} banks.' if banks else 'No selected banks.')
+        terms=(f' {missing} existing FD records need terms.' if missing else '')
+        if current<len(banks):rates+=' Refresh rates; unavailable banks stay excluded.'
+        elif current:rates+=' Ready to build.'
+        return rates+terms
     def _selected_node(self,node):self.detail.setText(node.get('detail','') if not session.privacy_mode else node.get('title',''))
     def _rate_details(self,row,column,*args):
         self.slab_table.setRowCount(0)
@@ -271,9 +276,13 @@ class FDPlannerScreen(QWidget):
             self._fill(self.timeline,[(r['date'],r['person'],r['bank'],r['kind'],session.mask(r['amount'])) for r in self._data.receipts])
             if self._plan:self._plan_done(self._plan)
     def _refresh_amounts(self):
-        values=[self._data.cash if self._data else 0,self._plan.invested if self._plan else 0,self._plan.gross_interest if self._plan else 0]
-        for tile,value in zip([self.cash_tile,self.fd_tile,self.return_tile],values):
-            tile.set_value('₹ ••••' if session.privacy_mode else value,is_currency=not session.privacy_mode)
+        cash=self._data.cash if self._data else 0
+        self.cash_tile.set_value('₹ ••••' if session.privacy_mode else cash,is_currency=not session.privacy_mode)
+        for tile,value in ((self.fd_tile,self._plan.invested if self._plan else None),
+                           (self.return_tile,self._plan.gross_interest if self._plan else None)):
+            if session.privacy_mode:tile.set_value('₹ ••••',is_currency=False)
+            elif value is None:tile.set_value('—',is_currency=False)
+            else:tile.set_value(value,is_currency=True)
     def refresh_theme(self):
         for tile in [self.cash_tile,self.fd_tile,self.return_tile]:tile.refresh_theme()
         if self._data:self.tree.set_data(self._data,self._plan)

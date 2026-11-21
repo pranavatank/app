@@ -2,14 +2,17 @@
 ui/dialogs/transaction_edit_dialog.py — Quick edit dialog for transactions in preview
 """
 
+from math import isfinite
+
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-    QComboBox, QDateEdit, QFormLayout, QFrame
+    QApplication, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
+    QComboBox, QDateEdit, QFormLayout, QFrame, QScrollArea, QWidget,
 )
 from PySide6.QtCore import Qt, QDate
 from PySide6.QtGui import QFont
 
 from ui.theme import Theme
+from ui.dialogs.form_layout import configure_editor_form, focus_editor_field
 from ui.icons import icon_label
 from config import INCOME_CATEGORIES, EXPENSE_CATEGORIES, TRANSACTION_MODES
 
@@ -42,9 +45,9 @@ class TransactionEditDialog(QDialog):
         layout.addLayout(title_row)
 
         # Form
-        form = QFormLayout()
-        form.setSpacing(12)
-        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        form_body = QWidget(self)
+        form = QFormLayout(form_body)
+        configure_editor_form(form)
 
         # Date
         self.date_edit = QDateEdit()
@@ -98,6 +101,7 @@ class TransactionEditDialog(QDialog):
         self.amount_edit.setToolTip("Enter the transaction amount.")
         self.amount_edit.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         form.addRow(self._label("Amount:"), self.amount_edit)
+        self.amount_error = self._error_label(form)
 
         # Balance
         self.balance_edit = QLineEdit()
@@ -108,6 +112,7 @@ class TransactionEditDialog(QDialog):
         self.balance_edit.setToolTip("Enter the account balance after the transaction, if known.")
         self.balance_edit.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         form.addRow(self._label("Balance:"), self.balance_edit)
+        self.balance_error = self._error_label(form)
 
         # Description
         self.description_edit = QLineEdit()
@@ -129,7 +134,15 @@ class TransactionEditDialog(QDialog):
         self.reference_edit.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         form.addRow(self._label("Reference:"), self.reference_edit)
 
-        layout.addLayout(form)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setWidget(form_body)
+        screen = self.screen() or QApplication.primaryScreen()
+        available_height = screen.availableGeometry().height() if screen else 720
+        scroll.setMinimumHeight(min(form_body.sizeHint().height(), max(120, available_height - 190)))
+        layout.addWidget(scroll, 1)
 
         # Divider
         div = QFrame()
@@ -149,7 +162,7 @@ class TransactionEditDialog(QDialog):
         btns.addWidget(btn_cancel)
         
         btn_save = Theme.btn("Save", "primary", height=38, min_width=100)
-        btn_save.clicked.connect(self.accept)
+        btn_save.clicked.connect(self._validate_and_accept)
         btn_save.setDefault(True)
         btn_save.setShortcut("Return")
         btn_save.setAccessibleName("Save transaction edit")
@@ -167,6 +180,46 @@ class TransactionEditDialog(QDialog):
         self.setTabOrder(self.description_edit, self.reference_edit)
         self.setTabOrder(self.reference_edit, btn_cancel)
         self.setTabOrder(btn_cancel, btn_save)
+
+    @staticmethod
+    def _error_label(form):
+        message = QLabel()
+        message.setWordWrap(True)
+        message.setProperty("textrole", "label")
+        message.setProperty("color", "danger")
+        message.hide()
+        form.addRow("", message)
+        return message
+
+    def _validate_and_accept(self):
+        first_error = None
+        fields = (
+            (self.amount_edit, self.amount_error, "amount", True, "Enter an amount greater than zero."),
+            (self.balance_edit, self.balance_error, "balance_after", False, "Enter a numeric balance or leave it blank."),
+        )
+        for field, error, key, required, text in fields:
+            try:
+                value = self._number(field, key)
+                valid = (value is None and not required) or (
+                    value is not None and isfinite(value) and (not required or value > 0)
+                )
+            except ValueError:
+                valid = False
+            error.setText("" if valid else text)
+            error.setVisible(not valid)
+            if not valid and first_error is None:
+                first_error = field
+        if first_error is not None:
+            focus_editor_field(first_error)
+            return
+        self.accept()
+
+    def _number(self, field, key):
+        text = field.text().strip()
+        original = self.transaction_data.get(key)
+        if original is not None and text == f"{original:.2f}":
+            return original
+        return float(text) if text else None
 
     def _label(self, text: str) -> QLabel:
         lbl = QLabel(text)
@@ -210,12 +263,12 @@ class TransactionEditDialog(QDialog):
 
         # Amount
         amount = self.transaction_data.get("amount", 0)
-        self.amount_edit.setText(str(amount))
+        self.amount_edit.setText(f"{amount:.2f}")
 
         # Balance
         balance = self.transaction_data.get("balance_after")
         if balance is not None:
-            self.balance_edit.setText(str(balance))
+            self.balance_edit.setText(f"{balance:.2f}")
 
         # Description
         desc = self.transaction_data.get("description", "")
@@ -227,24 +280,13 @@ class TransactionEditDialog(QDialog):
 
     def get_data(self) -> dict:
         """Get edited transaction data"""
-        balance_text = self.balance_edit.text().strip()
-        try:
-            balance_after = float(balance_text) if balance_text else None
-        except ValueError:
-            balance_after = None
-
-        try:
-            amount = float(self.amount_edit.text().strip() or "0")
-        except ValueError:
-            amount = 0.0
-
         return {
             "transaction_date": self.date_edit.date().toString("yyyy-MM-dd"),
             "transaction_type": self.type_combo.currentText(),
             "mode": self.mode_combo.currentText().strip() or None,
             "category": self.category_combo.currentText().strip() or None,
-            "amount": amount,
-            "balance_after": balance_after,
+            "amount": self._number(self.amount_edit, "amount"),
+            "balance_after": self._number(self.balance_edit, "balance_after"),
             "description": self.description_edit.text().strip() or None,
             "reference_no": self.reference_edit.text().strip() or None,
         }

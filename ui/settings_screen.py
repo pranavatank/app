@@ -90,6 +90,8 @@ class SettingsScreen(QWidget):
         self._warmup_worker = None
         self._ai_status_cache = None  # Cache (is_available, timestamp)
         self._ai_status_cache_ttl = 10  # seconds
+        self._manage_data_dialog = None
+        self._manage_data_widget = None
 
         self._build_ui()
         # Register AFTER build so callback has valid widget refs
@@ -123,12 +125,21 @@ class SettingsScreen(QWidget):
         grid.setVerticalSpacing(16)
         grid.setColumnStretch(0, 1)
         grid.setColumnStretch(1, 1)
-        grid.addWidget(self._section_security(), 0, 0)
-        grid.addWidget(self._section_data(),     0, 1)
-        grid.addWidget(self._section_privacy(),  1, 0)
-        grid.addWidget(self._section_backup(),   1, 1)
-        grid.addWidget(self._section_ai(),       2, 0)
-        grid.addWidget(self._section_device(),   2, 1)
+        grid.addWidget(self._section_data(), 0, 0, Qt.AlignmentFlag.AlignTop)
+        security = self._group("Security and privacy")
+        security_layout = QVBoxLayout(security)
+        security_layout.setSpacing(10)
+        self._section_security(security_layout)
+        self._section_privacy(security_layout)
+        grid.addWidget(security, 1, 0, Qt.AlignmentFlag.AlignTop)
+
+        maintenance = self._group("Backup and diagnostics")
+        maintenance_layout = QVBoxLayout(maintenance)
+        maintenance_layout.setSpacing(10)
+        self._section_backup(maintenance_layout)
+        self._section_ai(maintenance_layout)
+        self._section_device(maintenance_layout)
+        grid.addWidget(maintenance, 0, 1, 2, 1, Qt.AlignmentFlag.AlignTop)
         cl.addLayout(grid)
         cl.addStretch()
 
@@ -163,7 +174,7 @@ class SettingsScreen(QWidget):
         t.setFont(QFont("Segoe UI", 15, QFont.Weight.Bold))
         t.setObjectName("hdrTitle")
         col.addWidget(t)
-        s = QLabel("Security  ·  Privacy  ·  Theme  ·  Data  ·  Backup")
+        s = QLabel("Appearance, household data, and app preferences")
         s.setObjectName("hdrSubtitle")
         col.addWidget(s)
         layout.addLayout(col)
@@ -213,15 +224,13 @@ class SettingsScreen(QWidget):
         hdr = QHBoxLayout()
         ic = QLabel("🎨"); ic.setFont(QFont("Segoe UI Emoji", 14))
         ic.setObjectName("transparentSurface"); hdr.addWidget(ic)
-        title = QLabel("Color Theme")
+        title = QLabel("Appearance")
         title.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
         title.setProperty("textrole", "title-sm")
         hdr.addWidget(title); hdr.addSpacing(10)
         live = QLabel("● Live — no restart needed")
         live.setObjectName("themeLiveIndicator")
         hdr.addWidget(live); hdr.addStretch()
-        sub = QLabel("Click any card to switch instantly")
-        sub.setProperty("textrole", "muted-md"); hdr.addWidget(sub)
         vl.addLayout(hdr)
 
         # Container
@@ -330,9 +339,7 @@ class SettingsScreen(QWidget):
 
     # ── Sections ──────────────────────────────────────────────────────────────
 
-    def _section_security(self) -> QGroupBox:
-        g = self._group("Security"); gl = QVBoxLayout(g); gl.setSpacing(10)
-
+    def _section_security(self, gl: QVBoxLayout) -> None:
         c1 = self._card(); l1 = QVBoxLayout(c1); l1.setSpacing(10)
         l1.addWidget(self._card_title("Change Master Password"))
         form = QFormLayout(); form.setSpacing(8)
@@ -365,28 +372,25 @@ class SettingsScreen(QWidget):
         l2.addWidget(self.totp_checkbox)
         l2.addWidget(self._muted("Required at every login when enabled."))
         gl.addWidget(c2)
-        return g
-
     def _section_data(self) -> QGroupBox:
-        g = self._group("Data Management"); gl = QVBoxLayout(g); gl.setSpacing(10)
-        for title, desc, variant, handler in [
-            ("People", "Add or manage persons for tracking.",    "secondary", self._on_manage_persons),
-            ("Bank Accounts",  "Manage accounts per family member.",     "secondary", self._on_manage_accounts),
-            ("Banks (Master)", "Master bank list used across the app.",  "secondary", self._on_manage_banks),
+        g = self._group("People and banks"); gl = QVBoxLayout(g); gl.setSpacing(10)
+        for title, desc, caption, accessible, handler in [
+            ("People", "Add or manage family members.", "Manage People", "Manage people", self._on_manage_persons),
+            ("Bank accounts", "Manage accounts per family member.", "Manage Bank Accounts", "Manage bank accounts", self._on_manage_accounts),
+            ("Banks", "Manage the banks shared across the app.", "Manage Banks", "Manage banks (master)", self._on_manage_banks),
         ]:
             c = self._card(); lc = QVBoxLayout(c); lc.setSpacing(6)
             lc.addWidget(self._card_title(title))
             lc.addWidget(self._muted(desc))
-            b = Theme.btn(f"Manage {title.split()[0]}", variant, height=36, min_width=155)
-            b.setAccessibleName(f"Manage {title.lower()}")
+            b = Theme.btn(caption, "secondary", height=36, min_width=155)
+            b.setAccessibleName(accessible)
             b.setAccessibleDescription(desc)
             b.clicked.connect(handler)
             lc.addWidget(self._left_aligned(b))
             gl.addWidget(c)
         return g
 
-    def _section_privacy(self) -> QGroupBox:
-        g = self._group("Privacy"); gl = QVBoxLayout(g)
+    def _section_privacy(self, gl: QVBoxLayout) -> None:
         c = self._card(); lc = QVBoxLayout(c)
         lc.addWidget(self._card_title("Privacy Mode"))
         self.privacy_checkbox = QCheckBox("Mask all financial amounts  (₹ ****)")
@@ -397,11 +401,7 @@ class SettingsScreen(QWidget):
         lc.addWidget(self.privacy_checkbox)
         lc.addWidget(self._muted("Toggle any time. All screens reflect immediately."))
         gl.addWidget(c)
-        return g
-
-    def _section_backup(self) -> QGroupBox:
-        g = self._group("Backup & Restore"); gl = QVBoxLayout(g); gl.setSpacing(10)
-
+    def _section_backup(self, gl: QVBoxLayout) -> None:
         c1 = self._card(); l1 = QVBoxLayout(c1)
         l1.addWidget(self._card_title("Create Backup"))
         l1.addWidget(self._muted("Copies database to the backups folder."))
@@ -426,11 +426,7 @@ class SettingsScreen(QWidget):
         b2.clicked.connect(self._on_restore_backup)
         l2.addWidget(self._left_aligned(b2))
         gl.addWidget(c2)
-        return g
-
-    def _section_ai(self) -> QGroupBox:
-        g = self._group("Parser Configuration"); gl = QVBoxLayout(g); gl.setSpacing(10)
-
+    def _section_ai(self, gl: QVBoxLayout) -> None:
         c = self._card(); lc = QVBoxLayout(c); lc.setSpacing(8)
         lc.addWidget(self._card_title("Local AI Parser"))
         lc.addWidget(self._muted("For advanced statement parsing using local AI models."))
@@ -465,11 +461,12 @@ class SettingsScreen(QWidget):
 
         # Initial status check
         self._refresh_ai_status()
-        return g
-
-    def _section_device(self) -> QGroupBox:
-        g = self._group("Device Information"); gl = QVBoxLayout(g)
-        c = self._card(); fl = QFormLayout(c)
+    def _section_device(self, gl: QVBoxLayout) -> None:
+        c = self._card()
+        layout = QVBoxLayout(c)
+        layout.addWidget(self._card_title("Device information"))
+        fl = QFormLayout()
+        layout.addLayout(fl)
         fl.setSpacing(8)
         fl.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         info = _device_info()
@@ -481,8 +478,6 @@ class SettingsScreen(QWidget):
         fl.addRow(self._form_lbl("Hostname"),  QLabel(info.get("hostname","—")))
         fl.addRow("", self._muted("This app is cryptographically bound to this device."))
         gl.addWidget(c)
-        return g
-
     # ── Helpers ───────────────────────────────────────────────────────────────
 
     def _group(self, title: str) -> QGroupBox:
@@ -645,28 +640,46 @@ class SettingsScreen(QWidget):
             dashboard.deleteLater()
 
     def _on_manage_persons(self):
-        self._show_manage_data_screen()
+        self._show_manage_data_screen("people")
 
     def _on_manage_accounts(self):
-        self._show_manage_data_screen()
+        self._show_manage_data_screen("accounts")
 
     def _on_manage_banks(self):
-        self._show_manage_data_screen()
+        self._show_manage_data_screen("banks")
 
-    def _show_manage_data_screen(self):
-        """Show the Manage Data sub-screen as a non-modal dialog."""
+    def _show_manage_data_screen(self, tab="people"):
+        """Show and focus the requested Manage Data tab."""
         try:
             from ui.manage_data_screen import ManageDataScreen
-            dlg = QDialog(self)
-            dlg.setWindowTitle("Manage Data")
-            dlg.setMinimumSize(900, 600)
-            layout = QVBoxLayout(dlg)
-            layout.setContentsMargins(0, 0, 0, 0)
-            manage_widget = ManageDataScreen(dlg)
-            layout.addWidget(manage_widget)
+            dlg = self._manage_data_dialog
+            if dlg is None:
+                dlg = QDialog(self)
+                dlg.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+                dlg.setWindowTitle("Manage Data")
+                dlg.setMinimumSize(560, 360)
+                screen = self.screen() or QApplication.primaryScreen()
+                if screen:
+                    available = screen.availableGeometry()
+                    dlg.resize(min(900, available.width() - 24), min(600, available.height() - 64))
+                layout = QVBoxLayout(dlg)
+                layout.setContentsMargins(0, 0, 0, 0)
+                manage_widget = ManageDataScreen(dlg)
+                layout.addWidget(manage_widget)
+                self._manage_data_dialog = dlg
+                self._manage_data_widget = manage_widget
+                dlg.finished.connect(lambda _result, d=dlg: self._clear_manage_data_dialog(d))
+            self._manage_data_widget.select_tab(tab)
             dlg.show()
+            dlg.raise_()
+            dlg.activateWindow()
         except Exception as e:
             show_warning(str(e))
+
+    def _clear_manage_data_dialog(self, dialog):
+        if self._manage_data_dialog is dialog:
+            self._manage_data_dialog = None
+            self._manage_data_widget = None
 
     def _refresh_ai_status(self):
         """Check and display AI parser availability (with caching)"""

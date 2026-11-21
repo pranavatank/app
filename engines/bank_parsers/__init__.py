@@ -3,6 +3,7 @@
 from .sbi_statement_parser import parse_sbi_pdf
 from .hdfc_statement_parser import HDFCStatementParser
 from .yes_bank_statement_parser import YESBankStatementParser
+from .ujjivan_statement_parser import UjjivanStatementParser
 from engines.parser_registry import register as _register
 
 # Register available parsers in the registry for plugin discovery
@@ -22,4 +23,6 @@ try:
 except Exception:
 	pass
 
-__all__ = ["parse_sbi_pdf", "HDFCStatementParser", "YESBankStatementParser"]
+_register("ujjivan", UjjivanStatementParser())
+
+__all__ = ["parse_sbi_pdf", "HDFCStatementParser", "YESBankStatementParser", "UjjivanStatementParser"]

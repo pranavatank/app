@@ -1033,7 +1033,7 @@ QCheckBox#setupTotpCheck {{ color: {t.TEXT_SECONDARY}; font-size: 12px; }}
 /* Title variants */
 QCheckBox[tableCheckbox="true"] {{ padding: 0; margin: 0; spacing: 0; }}
 QCheckBox[tableCheckbox="true"]::indicator {{
-    width: 16px; height: 16px; border-radius: 4px;
+    width: 16px; height: 16px; border-radius: {t.RADIUS_CONTROL}px;
 }}
 QToolButton#chartDataButton {{
     color: {t.TEXT_PRIMARY}; background-color: {t.SURFACE};

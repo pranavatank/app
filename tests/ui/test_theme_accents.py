@@ -89,11 +89,8 @@ def composite(fg_hex: str, bg_hex: str, alpha: float) -> str:
 def _pixel_at(widget, x, y):
     """Grab a widget and return the (r, g, b) color at local point (x, y)."""
     pm = widget.grab()
-    img = pm.toImage().convertToFormat(QImage.Format.Format_RGBA8888)
-    arr = np.frombuffer(img.constBits(), dtype=np.uint8).reshape(img.height(), img.bytesPerLine())
-    arr = arr[:, : img.width() * 4].reshape(img.height(), img.width(), 4)
-    r, g, b, a = arr[y, x]
-    return int(r), int(g), int(b)
+    scale = pm.devicePixelRatio()
+    return pm.toImage().pixelColor(round(x * scale), round(y * scale)).getRgb()[:3]
 
 
 def _hex_to_rgb(hex_color):

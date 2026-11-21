@@ -168,6 +168,22 @@ The offscreen Windows smoke passed using an isolated synthetic database at 1200 
 
 The offscreen Windows smoke passed at 1200 × 720 logical pixels with 125% scaling using an isolated synthetic database. All 78 focused tests passed across the integrated run and final UI rerun. Live saved-document visual confirmation and the real-database chart comparison remain pending. [Ten captures and smoke script](../artifacts/native/batch4-tax-prediction/), [integrated test logs](../artifacts/pytest/batch4-final/), [final UI rerun](../artifacts/pytest/batch4-ui-final/)
 
+## Batch 5 Fixed Deposits and Planner
+
+- Filter Fixed Deposits by Pending Details, Active, or Matured. Check that the counts cover the selected person or family and that completing a deposit opens the same record. In the editor, compare the maturity basis and source information. Open Interest Trend separately and verify that privacy mode clears the chart and its accessible data view.
+- Open Family FD Planner at compact width with a missing workbook and with loaded data. Check that the setup is collapsed initially, the build action stays available in context, and amounts for an unbuilt plan show dashes. Open Plan settings to change the reserve and horizon. Use Zoom in, Zoom out, Fit to view, and Reset view on a tree with expanded branches.
+- The compact synthetic ledger showed five complete rows in all four themes. The principal, rate, dates, maturity, and status fit in the first group of columns, and row checkboxes fit their hit areas. The capture set includes the deposit queue and interest chart, Planner flow and settings, and the transaction preview editor with two field errors. [Native Windows captures at 125%](../artifacts/native/visual-audit-final/windows-native/), [offscreen captures at 100%](../artifacts/native/visual-audit-final/offscreen-100/)
+
+## Batch 6 Settings and cross-screen verification
+
+- From Settings, open **Manage People**, **Manage Bank Accounts**, and **Manage Banks**. Each shortcut opens its matching tab. An open dialog is reused, and closing it releases its tables.
+- Resize Manage Data to a compact window. Check that Add, Edit, and Delete remain visible on each tab. On Accounts, scroll sideways to see the Opening Balance and Current Balance columns.
+- Settings groups Appearance, People and banks, Security and privacy, and Backup and diagnostics. The theme cards show the applied theme, expose keyboard focus, and can be selected with Space. At 125% scaling, the compact Manage Data dialog passed routing, scrolling, and close-and-reopen checks in all four themes. The native Settings campaign asserts the initial tab when a shortcut opens. [Synthetic Manage Data captures](../artifacts/native/visual-audit-final/manage-data/)
+- The statement preview editor displays amounts at two decimals, preserves unchanged stored precision, distinguishes an empty balance from zero, and focuses the first invalid field while keeping Save and Cancel reachable.
+- The live prediction chart agreement checks passed using read-only connections. The saved Tax Documents check covered three complete person-year contexts and five missing contexts on a local scratch copy. The live database fingerprint stayed unchanged. The theme pixel checks now sample the same widget coordinate at 100% and 125%. All five cross-screen render checks passed. The native Planner and Settings campaigns now check the revised control paths. The current native rendering evidence uses synthetic data. [Focused test logs](../artifacts/pytest/visual-final-integrated/), [updated focused checks](../artifacts/pytest/visual-final-rerun/), [cross-screen render logs](../artifacts/pytest/visual-final-render/)
+
+Sol medium planned and independently reviewed the last two batches. Luna medium implemented the FD ledger and Planner changes. The coordinator integrated those changes and verified Settings, themes, the statement preview editor, and the live data comparisons.
+
 ## Useful commands and sources
 
 Run from the repo root in PowerShell, one command at a time. The venv is `.venv\Scripts\python.exe`.

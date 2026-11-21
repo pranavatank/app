@@ -87,6 +87,13 @@ def run_r(p):
     # finish through the normal event loop before teardown or further actions.
     p.wait_for_page_jobs("initial FD Planner refresh")
     p.checks.check("initial planner refresh settled", not page._busy)
+    p.checks.check("plan setup initially collapsed", not page.settings_panel.isVisible())
+    p.harness.shot("fd_planner_overview")
+
+    # Reserve and horizon are part of the collapsed setup controls. Expand it
+    # before validating those inputs or exercising their changes.
+    p.harness.click_via_os(page.settings_toggle, wait=0.2)
+    p.checks.check("plan setup expands", page.settings_panel.isVisible())
 
     required = [
         ("cash reserve input", page.reserve),
@@ -104,9 +111,10 @@ def run_r(p):
                    page.source_label.text())
     p.checks.check("money tree has family nodes", bool(_nodes(page.tree, "family")))
     p.checks.check("money tree has person nodes", bool(_nodes(page.tree, "person")))
+    p.checks.check("plan readiness is visible", page.status.isVisible() and bool(page.status.text()))
     p.observe("FD Planner", f"loaded={page._data is not None}; people={len(page._data.people) if page._data else 0}; "
                             f"accounts={len(page._data.accounts) if page._data else 0}")
-    p.harness.shot("fd_planner_overview")
+    p.harness.shot("fd_planner_setup_expanded")
 
     # Exercise user-visible controls and restore their original values. These
     # only alter the in-memory planning inputs and must clear any prior plan.
@@ -129,6 +137,7 @@ def run_r(p):
         os_select_combo(p.harness, page.horizon, original_horizon)
         p.checks.check("planning horizon restores", page.horizon.currentText() == original_horizon)
 
+    p.harness.click_via_os(page.settings_toggle, wait=0.2)
     animate_before = page.animate.isChecked()
     os_click_widget(p.harness, page.animate, wait=0.3)
     p.checks.check("animation pauses", page.animate.isChecked() != animate_before and not page.tree._animate)
@@ -137,13 +146,18 @@ def run_r(p):
                    page.tree._animate == animate_before)
 
     plus = _button(page, "+")
+    fit = _button(page, "Fit to view")
     reset = _button(page, "Reset view")
-    p.checks.check("zoom and reset controls found", plus is not None and reset is not None)
-    if plus and reset:
+    p.checks.check("fit, zoom and reset controls found",
+                   plus is not None and fit is not None and reset is not None)
+    if plus and fit and reset:
         zoom_before = page.tree.transform().m11()
         os_click_widget(p.harness, plus, wait=0.3)
         zoomed = page.tree.transform().m11()
         p.checks.check("zoom control changes scale", abs(zoomed - zoom_before) > 0.001)
+        os_click_widget(p.harness, fit, wait=0.3)
+        p.checks.check("fit control fits the money flow", not page.tree._auto_fit and
+                       page.tree.transform().m11() <= 1.001)
         os_click_widget(p.harness, reset, wait=0.3)
         p.checks.check("reset view restores overview", page.tree._auto_fit)
 

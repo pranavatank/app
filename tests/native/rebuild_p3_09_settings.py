@@ -242,7 +242,11 @@ def run_r(p):
     except Exception as e:
         p.checks.check("settings AI availability", False, repr(e))
 
-    for dialog_title in ["Manage people", "Manage bank accounts", "Manage banks (master)"]:
+    for dialog_title, expected_tab in [
+        ("Manage people", "People"),
+        ("Manage bank accounts", "Accounts"),
+        ("Manage banks (master)", "Banks"),
+    ]:
         try:
             os_click(p.harness, settings_page, dialog_title, wait=0.8)
             p.harness.settle(0.5)
@@ -252,6 +256,9 @@ def run_r(p):
             p.checks.check(f"settings {dialog_title} dialog found", ok_dlg)
 
             if dlg:
+                manage = dlg.findChild(ManageDataScreen)
+                selected_tab = manage.tabs.tabText(manage.tabs.currentIndex()) if manage else None
+                p.checks.check(f"settings {dialog_title} opens {expected_tab}", selected_tab == expected_tab)
                 dlg.reject()
                 p.harness.settle(0.3)
         except Exception as e:

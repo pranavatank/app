@@ -13,6 +13,7 @@ from PySide6.QtGui import QFont, QDoubleValidator
 
 from datetime import date
 from math import isfinite
+from pathlib import Path
 
 from ui.dialogs.form_layout import configure_editor_form, focus_editor_field, editor_footer
 from ui.theme import Theme
@@ -51,6 +52,12 @@ class FDDialog(QDialog):
         title = QLabel("Fixed Deposit Details")
         title.setObjectName("FDDialogTitle")
         layout.addWidget(title)
+
+        self.provenance_label = QLabel("")
+        self.provenance_label.setObjectName("FDProvenanceLabel")
+        self.provenance_label.setWordWrap(True)
+        self.provenance_label.setVisible(False)
+        layout.addWidget(self.provenance_label)
 
         helper = QLabel("Enter FD inputs below. Scroll for advanced fields and bulk-create options.")
         helper.setObjectName("FDDialogHelper")
@@ -447,6 +454,13 @@ class FDDialog(QDialog):
     def _load_fd(self):
         self.fd_data = get_fd(self.fd_id)
         if not self.fd_data: return
+        source = self.fd_data.get("source_statement_file")
+        method = self.fd_data.get("maturity_calc_method") or "Formula"
+        if source or method == "BankReported":
+            source_name = Path(source).name if source else "not recorded"
+            kind = "Bank reported (advice)" if method == "BankReported" else "Statement imported"
+            self.provenance_label.setText(f"{kind} · Source: {source_name}. Bank reported values are preserved; formula projections are estimates.")
+            self.provenance_label.setVisible(True)
         for i in range(self.person_combo.count()):
             if self.person_combo.itemData(i) == self.fd_data["person_id"]:
                 self.person_combo.setCurrentIndex(i); break

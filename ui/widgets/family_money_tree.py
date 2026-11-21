@@ -28,7 +28,7 @@ class MoneyNode(QGraphicsObject):
         self.setAcceptHoverEvents(True)
         self.hovered=False
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setToolTip(record.get('detail','') if not session.privacy_mode else record.get('title',''))
+        self.setToolTip(record.get('detail') or record.get('title','') if not session.privacy_mode else record.get('title',''))
     def boundingRect(self):return QRectF(0,0,self.width,100)
     def paint(self,painter,option,widget=None):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -122,7 +122,7 @@ class FamilyMoneyTree(QGraphicsView):
         if not self._show_all and len(selected_accounts)>5:
             selected_accounts,hidden=selected_accounts[:4],selected_accounts[4:]
         slots=len(selected_accounts)+bool(hidden)
-        width=max(self.viewport().width()-24,slots*220,len(people)*235,900)
+        width=max(self.viewport().width()-24,slots*210,len(people)*220,600)
         root_amount=(plan.invested+plan.liquid) if plan else sum(account_total(a) for a in data.accounts if a['eligible'])
         root=self._node(dict(kind='family',title='Family investment plan' if plan else 'Recorded family deposits',amount=root_amount,
                              subtitle='FDs + ready cash' if plan else 'Cash + FD value estimates',foot='Select a person below'),width/2-125,10,250,Theme.PRIMARY)
@@ -173,8 +173,7 @@ class FamilyMoneyTree(QGraphicsView):
             if self._selected in persons:self._edge(persons[self._selected],more,total)
         self.scene_graph.setSceneRect(-10,0,width+20,max_bottom+30)
         if self._auto_fit:self._fit_overview()
-        self.centerOn(width/2,0)
-        self.verticalScrollBar().setValue(self.verticalScrollBar().minimum())
+        if self._auto_fit:self.centerOn(self.sceneRect().center())
         self._tick()
     def _tick(self):
         if not self._animate:return
@@ -182,15 +181,20 @@ class FamilyMoneyTree(QGraphicsView):
         for coin,path,phase in self._coins:coin.setPos(path.pointAtPercent((t+phase)%1))
     def zoom(self,factor):
         current=self.transform().m11()
-        if .55<=current*factor<=1.8:self._auto_fit=False;self.scale(factor,factor)
-    def _fit_overview(self):
+        if .01<=current*factor<=1.8:self._auto_fit=False;self.scale(factor,factor)
+    def _fit_overview(self,minimum_scale=.35):
         self.resetTransform()
-        scale=max(.75,min(1,(self.viewport().height()-10)/550,self.viewport().width()/max(1,self.sceneRect().width())))
+        bounds=self.sceneRect()
+        scale=min(1,(self.viewport().height()-16)/max(1,bounds.height()),
+                  (self.viewport().width()-16)/max(1,bounds.width()))
+        scale=max(minimum_scale,scale)
         self.scale(scale,scale)
+        self.centerOn(bounds.center())
+    def fit_to_view(self):
+        self._auto_fit=False
+        self._fit_overview(minimum_scale=.001)
     def reset_zoom(self):
         self._auto_fit=True;self._fit_overview()
-        self.verticalScrollBar().setValue(self.verticalScrollBar().minimum())
-        self.centerOn(self.sceneRect().center().x(),0)
 
 
 def date_from(value):
